@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# sk2gog — SUSTech Schedule CLI
+# Usage:
+#     sk2gog calendar [--check] [--update] [--year YYYY] [--all]
+#     sk2gog parse [--year YYYY]
+#     sk2gog date [YYYY-MM-DD]
+#     sk2gog week [YYYY-MM-DD]
+
+DIR="$(cd "$(dirname "$0")" && pwd)"
+python3 "$DIR/sk2gog.py" "$@"

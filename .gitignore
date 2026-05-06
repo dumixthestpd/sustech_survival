@@ -1,0 +1,67 @@
+# Credentials & secrets — NEVER commit
+credentials.txt
+creds.txt
+*.session
+*.json.tmp
+bb_session.json
+bb_session.json.tmp
+session.json
+session.json.tmp
+*_session.json
+*_session.json.tmp
+lib_session.json
+
+# Personal data files
+lastcourse.txt
+courses.json
+bb-courses.json
+content_discovery.json
+
+# Cache — personal per-user state
+bb/cache/
+_cache.py
+
+# Cookies — personal auth tokens
+*cookie*.txt
+*cookie*.txt.tmp
+bilibili_cookie.txt
+bilibili_cookies_netscape.txt
+
+# Temp / build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.log
+*.aux
+*.out
+*.pdf
+*.swf
+*.wav
+*.mp3
+*.mp4
+
+# Temp bilibili downloads
+bili_temp/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+*.sublime-*
+
+# Personal data directories — keep structure, remove content
+personal/
+sustech/
+
+# Embedded repos
+wewe-rss/
+
+# Clone/backup of other skills (not this skill)
+nskills/
+workspace/
+
+# Temp / scratch
+tmp/
+*.tmp
