@@ -91,7 +91,7 @@ def scrape_attempt_files(ctx, course_id, content_id, attempt_id):
     # Look for the date pattern (e.g. "26-3-28" or "2026-3-28") near the attempt header
     ts = ""
     try:
-        date_pattern = page.query_selector("text=/\d{1,2}[-/]\d{1,2}[-/]\d{2,4}/")
+        date_pattern = page.query_selector(r"text=/\d{1,2}[-/]\d{1,2}[-/]\d{2,4}/")
         if date_pattern:
             ts = date_pattern.inner_text()[:40]
     except Exception:
@@ -217,7 +217,7 @@ def scrape_attempt_details(ctx, course_id, content_id, attempt_id):
     # Timestamp
     ts = ""
     try:
-        date_pattern = page.query_selector("text=/\d{1,2}[-/]\d{1,2}[-/]\d{2,4}/")
+        date_pattern = page.query_selector(r"text=/\d{1,2}[-/]\d{1,2}[-/]\d{2,4}/")
         if date_pattern:
             ts = date_pattern.inner_text()[:40]
     except Exception:
