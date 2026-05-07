@@ -59,7 +59,7 @@ python3 sustech-lib-search/login-lib.py
 - **schedule2gog**: reads `courses.csv` → creates Google Calendar events via gog
 - **sustech-lib-search**: browser relay or direct CAS for login, then 4-step research method
 
-## Data Locations
+## Data Locations (Canonical)
 
 | Data | Location |
 |------|----------|
@@ -67,24 +67,9 @@ python3 sustech-lib-search/login-lib.py
 | BB structure | `/tmp/bb_structure.json` |
 | BB courses | `bb/bb-courses.json` |
 | Calendar | Google Calendar (via gog) |
-| EAP research | `~/.openclaw/workspace/sustech/26spring/eap/research/` |
 
-## SUSTech Lab Report Template
-
-**Template:** `~/.openclaw/workspace/sustech/26spring/实验报告模板_物理化学.docx`
-
-Used for: Physical Chemistry Experiments (SE03), Basic Experiments for Organic Chemistry.
-
-**Formatting spec:** Times New Roman 12pt, 2.5cm margins, 1.5 line spacing, hanging indent ~0.64cm.
-
-**Workflow:**
-1. `conda activate docx_env`
-2. Fill placeholder paragraphs ONLY (don't touch styles)
-3. `soffice --headless --convert-to pdf input.docx --outdir /tmp/`
-4. `openclaw message send --media /tmp/input.pdf --channel telegram --target 7680374260`
-
-Skill: `skills/docx-env/SKILL.md`
+**Course-specific resources** (templates, EAP, per-course data): see `personal.md` — gitignored, contains real paths on this device.
 
 ## Credentials
 
-`~/.openclaw/workspace/credentials.txt` — format: `username:password`
+See `personal.md` for credentials file locations. `bb/creds.txt` format: `username:password`

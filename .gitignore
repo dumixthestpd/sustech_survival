@@ -53,6 +53,7 @@ Thumbs.db
 
 # Personal data directories — keep structure, remove content
 personal/
+personal.md
 sustech/
 
 # Embedded repos
