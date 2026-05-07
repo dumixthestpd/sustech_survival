@@ -23,9 +23,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 try:
-    from .session import BB_BASE, load_session, discover_attempt_ids, check_session
+    from .session import BB_BASE, load_session, check_session
 except ImportError:
-    from session import BB_BASE, load_session, discover_attempt_ids, check_session
+    from session import BB_BASE, load_session, check_session
+try:
+    from .download import discover_attempt_ids, scrape_attempt_details
+except ImportError:
+    from download import discover_attempt_ids, scrape_attempt_details
 from playwright.sync_api import sync_playwright
 
 SESSION_FILE = Path(__file__).parent / "session.json"
@@ -36,7 +40,7 @@ def load_cookies():
     return load_session()[1]
 
 
-def submit_assignment(course_id, content_id, file_paths):
+def submit_assignment(course_id, content_id, file_paths, skip_dedup=False):
     cookies = load_cookies()
     resolved = []
     for fp in file_paths:
@@ -64,6 +68,37 @@ def submit_assignment(course_id, content_id, file_paths):
     file_b64 = base64.b64encode(file_content).decode()
     fname = clean_name
 
+    # ── Step 0: Deduplication check ─────────────────────────────────────────
+    # Compare against prior submissions by filename (UUID suffix + URL decode stripped)
+    import urllib.parse, hashlib
+    local_hash = hashlib.md5(file_content).hexdigest()
+    local_clean = re.sub(r'---[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?=\.)', '', fname)
+
+    prior_files = []
+    try:
+        with sync_playwright() as p_dedup:
+            browser_d = p_dedup.chromium.launch()
+            ctx_d = browser_d.new_context()
+            ctx_d.add_cookies(cookies)
+            attempts = discover_attempt_ids(ctx_d, course_id, content_id)
+            for aid, (anum, _) in attempts:
+                details = scrape_attempt_details(ctx_d, course_id, content_id, aid)
+                for fname_on_bb, _ in details.get('files', []):
+                    # URL-decode and strip UUID suffix, then compare
+                    decoded = urllib.parse.unquote(fname_on_bb)
+                    bb_clean = re.sub(r'---[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?=\.)', '', decoded)
+                    if bb_clean == local_clean:
+                        prior_files.append((anum, fname_on_bb, aid))
+            browser_d.close()
+    except Exception as e:
+        print(f"  Dedup check failed (continuing anyway): {e}")
+
+    if prior_files:
+        dup_list = ', '.join([f"attempt {a} ('{n}')" for a, n, _ in prior_files])
+        if not skip_dedup:
+            return None, f"DUPLICATE: '{local_clean}' already submitted in {dup_list}"
+        print(f"  ⚠️  Dedup: '{local_clean}' found in {dup_list} — submitting anyway")
+
     with sync_playwright() as p:
         browser = p.chromium.launch()
         ctx = browser.new_context()
@@ -72,9 +107,10 @@ def submit_assignment(course_id, content_id, file_paths):
         page.set_viewport_size({"width": 1280, "height": 900})
 
         # Step 1: Load upload page
+        # NOTE: content_id MUST come before course_id; group_id= must be present
         new_attempt_url = (
             f"{BB_BASE}/webapps/assignment/uploadAssignment"
-            f"?action=newAttempt&course_id=_{course_id}_1&content_id=_{content_id}_1"
+            f"?action=newAttempt&content_id=_{content_id}_1&course_id=_{course_id}_1&group_id="
         )
         page.goto(new_attempt_url, wait_until="domcontentloaded", timeout=30000)
         page.wait_for_timeout(3000)
@@ -210,10 +246,11 @@ def get_attempt_info(course_id, content_id):
         ctx.add_cookies(cookies)
 
         # Get assignment name from the upload page title
+        # Uses correct param order: content_id before course_id, with group_id=
         page = ctx.new_page()
         page.goto(
             f'{BB_BASE}/webapps/assignment/uploadAssignment'
-            f'?action=newAttempt&course_id=_{course_id}_1&content_id=_{content_id}_1',
+            f'?action=newAttempt&content_id=_{content_id}_1&course_id=_{course_id}_1&group_id=',
             wait_until='domcontentloaded',
             timeout=20000
         )
@@ -223,13 +260,24 @@ def get_attempt_info(course_id, content_id):
         assignment_name = m.group(1).strip() if m else 'unknown'
         page.close()
 
-        # Discover all prior attempts using the reliable shared logic
+        # Discover all prior attempts + files using the reliable shared logic
         attempts = discover_attempt_ids(ctx, course_id, content_id)
         attempt_count = len(attempts)
 
         if attempts:
             last_ts = attempts[-1][1][1]  # (aid, (num, ts))
             print(f"  Prior attempts found: {attempt_count} (last: {last_ts})")
+            # Show file names per attempt
+            for aid, (anum, ts) in attempts:
+                try:
+                    details = scrape_attempt_details(ctx, course_id, content_id, aid)
+                    files_str = ', '.join([f"'{n}'" for n, _ in details.get('files', [])]) or 'no files'
+                    graded = '✅' if details.get('graded') else '⬜'
+                    score = details.get('score', '')
+                    score_str = f" [{score}]" if score else ''
+                    print(f"    [{graded}] Attempt {anum} ({ts}) — {files_str}{score_str}")
+                except Exception:
+                    print(f"    Attempt {anum} ({ts})")
         else:
             print(f"  No prior submissions found on BB.")
 
@@ -303,7 +351,24 @@ def main():
 
     success, msg = submit_assignment(args.course, args.content, args.files)
     print()
-    if success:
+    if success is None and msg.startswith("DUPLICATE"):
+        print(f"⚠️  {msg}")
+        print("Submit anyway? Use --yes to override.")
+        if not args.yes:
+            try:
+                response = input("Submit anyway? [y/N]: ").strip().lower()
+                if response != 'y':
+                    print("Aborted.")
+                    sys.exit(0)
+            except EOFError:
+                print("No terminal input. Use --yes flag.")
+                sys.exit(1)
+            # Retry without dedup check (user explicitly chose to submit)
+            success, msg = submit_assignment(args.course, args.content, args.files, skip_dedup=True)
+            if success is None:
+                print(f"❌ {msg}")
+                sys.exit(1)
+    elif success:
         print(f"✅ {msg}")
     else:
         print(f"❌ {msg}")

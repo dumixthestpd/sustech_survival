@@ -20,11 +20,11 @@ BB_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(BB_DIR))
 
 import click
-from session import load_session, ensure_session, check_session, refresh, login, slugify
-from courses import list_courses, find_course, get_course_numeric_id, discover_assignments_for_course, load_courses
-from download import discover_attempt_ids, scrape_attempt_details, download_file
-from pages import preview_page
-from query import (
+from .session import load_session, ensure_session, check_session, refresh, login, slugify
+from .courses import list_courses, find_course, get_course_numeric_id, discover_assignments_for_course, load_courses
+from .download import discover_attempt_ids, scrape_attempt_details, download_file
+from .pages import preview_page
+from .query import (
     discover_all_items, type_stats_items, print_stats,
     format_item,
 )
@@ -295,7 +295,7 @@ def search_cmd(course, type_filter, text, content_text, has_attachments,
                hide_types, show_types, sort_by, output_fmt, verbose, refresh):
     """Search and filter BB items (fully dynamic - live scrape)."""
     load_session_or_exit()
-    from query import discover_all_items, format_item
+    from .query import discover_all_items, format_item
     from _cache import invalidate_all
 
     if refresh:
@@ -351,7 +351,7 @@ def search_cmd(course, type_filter, text, content_text, has_attachments,
 def types_cmd(course_filter, refresh):
     """Show BB item type statistics (fully dynamic - live scrape)."""
     load_session_or_exit()
-    from query import type_stats_items, print_stats
+    from .query import type_stats_items, print_stats
     from _cache import invalidate_all
 
     if refresh:

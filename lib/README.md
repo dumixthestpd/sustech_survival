@@ -4,18 +4,27 @@ Research method + database guide for SUSTech students.
 
 ## Login
 
-**Headless (no browser):**
+**Python (recommended):**
 ```bash
-cd ~/.openclaw/workspace/skills/sustech-survival/sustech-lib-search
-python3 login-lib.py
+cd ~/.openclaw/workspace/skills/sustech_survival/lib
+python3 login.py
+```
+Reads credentials from `sustech_survival/credentials.txt`.
+
+**Shell fallback:**
+```bash
+./login.sh
 ```
 
-Requires `~/.openclaw/workspace/credentials.txt` with your SUSTech CAS credentials (`username:password`).
+## Python API
 
-**Browser relay (manual browsing):**
-```bash
-openclaw browser --browser-profile openclaw start
-# Then open library URL
+```python
+from sustech_survival import lib
+
+lib.login()           # CAS login via Playwright / requests
+lib.check()           # check session validity
+lib.refresh()        # re-auth via requests
+lib.ensure()         # check + auto-refresh
 ```
 
 ## Databases
@@ -51,15 +60,6 @@ Use boolean:
 - **Broad coverage** → Scopus
 - **Chinese sources** → CNKI
 
-## Example: Dark Humor Research
-
-Search query:
-```
-("dark humor" OR "gallows humor" OR "offensive humor") AND (death OR tragedy OR war) AND (censorship OR "free speech")
-```
-
-WoS: `TS=(dark humor OR gallows humor) AND (death OR war) AND censorship`
-
 ## Citation Management
 
 Use **NoteExpress** (SUSTech site license) for citation management.
@@ -67,4 +67,4 @@ Use **NoteExpress** (SUSTech site license) for citation management.
 ## Getting Help
 
 - Library guides: `https://lib.sustech.edu.cn`
-- Research methodology: Ask the AI (me) for search strategy help
+- Research methodology: Ask the AI for search strategy help

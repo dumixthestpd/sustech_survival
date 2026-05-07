@@ -1,6 +1,6 @@
 #!/bin/bash
 # SUSTech Library Login Check
-# Usage: ./check-login.sh
+# Usage: ./check.sh
 # Returns: 0 if logged in, 1 if not logged in
 
 PRIMO_HOME="https://sustc.primo.exlibrisgroup.com.cn/discovery/search?vid=86SUSTC_INST:86SUSTC"

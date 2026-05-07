@@ -15,8 +15,8 @@ description: Interact with SUSTech Blackboard (bb.sustech.edu.cn). Use when user
 
 ```python
 import sys
-sys.path.insert(0, '/Users/dumix/.openclaw/workspace/skills/sustech-survival')
-import bb
+sys.path.insert(0, '/Users/dumix/.openclaw/workspace/skills/sustech_survival/src')
+import sustech_survival.bb as bb
 
 # Session
 bb.credentials('creds.txt')              # set credentials file (username:password)

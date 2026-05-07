@@ -570,8 +570,11 @@ def discover_attempt_ids(ctx, course_id, content_id):
     attempt_info = {}
     for row in page.query_selector_all(".attemptInfo, .attemptNumber"):
         try:
-            txt = row.inner_text()
-            m = re.match(r'第\s*(\d+)\s*次尝试\s*(.+)', txt.strip())
+            txt = row.inner_text().strip()
+            # Try Chinese "第 X 次尝试" first, then English "Attempt X"
+            m = re.match(r'第\s*(\d+)\s*次尝试\s*(.+)', txt)
+            if not m:
+                m = re.match(r'Attempt\s+(\d+)\s*(.+)', txt, re.IGNORECASE)
             if not m: continue
             anum, ts = int(m.group(1)), m.group(2).strip()[:30]
             try:

@@ -1,6 +1,6 @@
 #!/bin/bash
 # TIS Login Check - Robust Version
-# Usage: ./check-login.sh
+# Usage: ./check.sh
 # Returns: 0 if logged in, 1 if not logged in
 
 # Use authentication/main page - more reliable than main page

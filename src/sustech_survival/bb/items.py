@@ -5,6 +5,7 @@ Each item represents a sub-element within a BB content page.
 """
 
 import re
+import urllib.parse
 from typing import List, Tuple
 
 try:
@@ -133,25 +134,46 @@ class HomeworkItem(Item):
 
     def __init__(self, sub_id: str, title: str, bb_url: str = "",
                  description: str = "", description_html: str = "",
-                 files: list = None, submission_count: int = 0, deadline: str = ""):
+                 files: list = None, submission_count: int = 0, deadline: str = "",
+                 content_id: str = "", course_id: str = "", group_id: str = ""):
         super().__init__(sub_id, title, bb_url, description, description_html)
         self.files = files or []
         self.submission_count = submission_count
         self.deadline = deadline
+        self.content_id = content_id  # BB content_id (e.g. "610795")
+        self.course_id = course_id    # BB course numeric ID (e.g. "8328")
+        self.group_id = group_id      # BB group_id (usually empty string)
 
     @property
     def has_attachment(self) -> bool:
         return bool(self.files)
 
+    def submission_url(self, action="newAttempt") -> str:
+        """Build the submission URL for this homework item.
+        Args:
+            action: 'newAttempt' (default), 'view', or 'submit'
+        Returns URL string ready to open in browser.
+        """
+        if not (self.content_id and self.course_id):
+            return ""
+        return (
+            f"{BB_BASE}/webapps/assignment/uploadAssignment"
+            f"?action={action}&content_id=_{self.content_id}_1"
+            f"&course_id=_{self.course_id}_1&group_id={self.group_id or ''}"
+        )
+
     def to_row(self) -> str:
         deadline_str = self.deadline or "-"
         sub_count = str(self.submission_count)
+        ids_str = f"{self.course_id}/{self.content_id}" if self.course_id else self.sub_id
         desc = self._fmt_desc()
-        return (f"{self.sub_id}\t{self.TYPE}\t{self.title[:40]}\t"
+        return (f"{ids_str}\t{self.TYPE}\t{self.title[:40]}\t"
                 f"{len(self.files)}\t0\t{sub_count}\t{deadline_str}\t{desc}")
 
     def to_markdown(self) -> str:
         lines = [f"## {self.title}\n"]
+        if self.course_id and self.content_id:
+            lines.append(f"**`course={self.course_id} content={self.content_id}`**\n")
         if self.description:
             lines.append(f"{self.description}\n")
         if self.files:
@@ -313,8 +335,17 @@ def _classify_item(sub_id: str, title: str, bb_url: str,
       unknown   — nothing detectable
     """
     if upload_url:
+        # Parse content_id, course_id, group_id from uploadAssignment URL
+        # URL format: /webapps/assignment/uploadAssignment?content_id=_610795_1&course_id=_8328_1&group_id=&mode=view
+        m_cid = re.search(r'content_id=_(\d+)_1', upload_url)
+        m_crs = re.search(r'course_id=_(\d+)_1', upload_url)
+        m_grp = re.search(r'group_id=([^&\s"\']*)', upload_url)
+        cid = m_cid.group(1) if m_cid else ""
+        crs = m_crs.group(1) if m_crs else ""
+        grp = urllib.parse.unquote(m_grp.group(1)) if m_grp else ""
         return HomeworkItem(sub_id, title, bb_url, desc_text, desc_html,
-                           files=files, submission_count=0, deadline="")
+                           files=files, submission_count=0, deadline="",
+                           content_id=cid, course_id=crs, group_id=grp)
     if video_url:
         return VideoItem(sub_id, title, bb_url, desc_text, desc_html,
                         video_url=video_url)
