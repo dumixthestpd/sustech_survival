@@ -89,6 +89,38 @@ For external SUSTech resources (student handbooks, portal links, maps, course re
 
 **Notable:** [sustech.online](https://sustech.online/) (南科手册) — community student handbook with useful sub-pages we may build skills around later (bus tracker, campus map, talks, freshman guides).
 
+---
+
+## Todo List — Ideas & Future Work
+
+Inspired by [SUSTech-CRA/awesome-sustech-service-tools](https://github.com/SUSTech-CRA/awesome-sustech-service-tools). Listed here to track what could be built.
+
+### High Priority
+
+- [ ] **BB grade scraper** — pull grades from Blackboard beyond what TIS exposes. [sustech.online resources/SKILL.md](../resources/SKILL.md) has BB + Sakai links; BB has gradebook but no official API
+- [ ] **Course review skill** — integrate with [NCES (ncesnext.com)](https://ncesnext.com/) API or scrape course reviews. Auth: SUSTech email required
+- [ ] **LaTeX template manager** — fetch from [SUSTC/latex-template](https://github.com/SUSTC/latex-template), auto-select template by course. Templates include lab reports, thesis, recommendation letters
+
+### Medium Priority
+
+- [ ] **sustech.online bus tracker skill** — scrape or API `sustech.online/transport/bustimer` for live bus schedules + vehicle positions
+- [ ] **sustech.online campus map skill** — serve the interactive street view `/facility/` as a reference
+- [ ] **TIS auto-enroll watcher** — notify when a full course opens up (watchdog on enrollment status). Based on [SUSTechTISHelper](https://github.com/Fros1er/SUSTechTISHelper) patterns
+- [ ] **Grade exporter** — convert TIS/BB grade data to CSV/Excel. Based on [sustech-tis-converter](https://github.com/lethal233/sustech-tis-converter)
+
+### Low Priority / Exploratory
+
+- [ ] **IPTV live skill** — stream campus live TV via [liziwl/iptv-panel-react](https://github.com/liziwl/iptv-panel-react)
+- [ ] **SUSTown integration** — community platform with [WeChat/QQ mini-program](https://github.com/SUSTech-CRA/SUSTown); could surface announcements
+- [ ] **ShareLaTeX project sync** — open/edit LaTeX projects on CRA's [ShareLaTeX instance](https://sharelatex.cra.ac.cn/) via their API
+- [ ] **c.x-d.fun auto-scheduler** — [xCipHanD's TIS auto-scheduler](https://c.x-d.fun/) as an alternative to manual enrollment
+
+### References
+
+- Full community projects list: [awesome-sustech-service-tools](https://github.com/SUSTech-CRA/awesome-sustech-service-tools)
+- SUSTech LaTeX templates: [SUSTC/latex-template](https://github.com/SUSTC/latex-template)
+- CRA service dashboard: [monitor.cra.moe](https://monitor.cra.moe)
+
 ## Credentials
 
 All services read from `credentials.txt` at skill root.
