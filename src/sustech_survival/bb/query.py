@@ -31,7 +31,10 @@ _TYPE_ICON = {
 
 def _load_session():
     """Load BB session cookies."""
-    from .session import load_session
+    try:
+        from .session import load_session
+    except ImportError:
+        from sustech_survival.bb.session import load_session
     raw, pw = load_session()
     return pw
 

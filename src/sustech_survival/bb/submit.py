@@ -23,9 +23,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 try:
-    from .session import BB_BASE, load_session, check_session
+    from .session import BB_BASE, load_session, ensure_session
 except ImportError:
-    from session import BB_BASE, load_session, check_session
+    from session import BB_BASE, load_session, ensure_session
 try:
     from .download import discover_attempt_ids, scrape_attempt_details
 except ImportError:
@@ -299,10 +299,11 @@ def main():
         print(f"  Files: {', '.join(args.files)}")
     print()
 
-    # Check session validity first
-    session_ok, reason = check_session()
+    # Ensure session validity — auto-refreshes via CAS if expired
+    session_ok, reason = ensure_session()
     if not session_ok:
         print(f"❌ {reason}")
+        print("Run 'sustech bb session login' to open a browser for CAS login.")
         sys.exit(1)
 
     # Check session + attempt count

@@ -1,6 +1,7 @@
 ---
 name: sustech_survival
 description: SUSTech academic systems — TIS schedule, Blackboard, Google Calendar sync, library search. Use for anything related to SUSTech courses, BB, TIS, or academic tasks.
+publish: personal
 ---
 
 # SUSTech Survival
@@ -14,15 +15,15 @@ SUSTech academic systems: TIS, Blackboard, calendar sync, library search.
 ```python
 import sustech_survival as sustech
 
-sustech.bb.check_session()    # (bool, reason)
-sustech.bb.login()            # Playwright headful CAS login
-sustech.bb.courses()          # enrolled courses
+# Auth is fully automatic — never call session functions manually
+sustech.bb.courses()          # enrolled courses (auto-authenticates as needed)
+sustech.bb.search(text='hw')  # search BB items (auto-authenticates as needed)
 sustech.lib.login()           # Library CAS login
 sustech.lib.check()           # check session validity
 sustech.tis.courses()         # TIS schedule
 ```
 
-**Auth (`sso.py`):** `Authorizer` base class with `check()`, `refresh()`, `login()`, `ensure()`. Decorator: `@require_auth("bb")`.
+**Auth (`sso.py`):** `Authorizer` base class with `check()`, `refresh()`, `login()`, `ensure()`. All BB operations auto-refresh the session via CAS when needed — agents never call session functions manually.
 
 ## CLI
 

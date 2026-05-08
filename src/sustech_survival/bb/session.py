@@ -36,8 +36,13 @@ class BBAuth(Authorizer):
         return _Path(self._skill_dir) / "bb" / "session.json"
 
     @property
+    def creds_file(self):
+        # Credentials live alongside session at bb/credentials.txt
+        return _Path(self._skill_dir) / "bb" / "credentials.txt"
+
+    @property
     def submodule_dir(self):
-        return Path(self._skill_dir) / "bb"
+        return _Path(self._skill_dir) / "bb"
 
     def _reset_cached_data(self):
         # Courses and structure live at skill root level alongside session

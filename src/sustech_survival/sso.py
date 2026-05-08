@@ -167,10 +167,13 @@ class Authorizer:
     # ── Public API ──────────────────────────────────────────────────────────
 
     def check(self) -> tuple[bool, str]:
-        """Check if session is valid. Returns (True, '') or (False, reason)."""
+        """Check if session is valid. Auto-refreshes via CAS if expired. Returns (True, '') or (False, reason)."""
         try:
             raw = self.load()
         except FileNotFoundError:
+            # No session file — try login immediately (credentials may be present)
+            if self.refresh():
+                return True, ""
             return False, f"No session: {self.session_file.name}"
         except Exception as e:
             return False, f"Session corrupt: {e}"
@@ -187,7 +190,10 @@ class Authorizer:
             if r.status_code in (302, 303):
                 loc = r.headers.get("Location", "")
                 if "cas.sustech.edu.cn" in loc or "/login" in loc.lower():
-                    return False, "Session expired. Run auth.login() or auth.refresh()."
+                    # Session expired — try auto-refresh via CAS before declaring failure
+                    if self.refresh():
+                        return True, ""
+                    return False, "Session expired and auto-refresh failed. Check credentials.txt."
             return True, ""
         except Exception as e:
             return False, f"Could not reach {self.BASE_URL}: {e}"
@@ -196,7 +202,8 @@ class Authorizer:
         """Re-authenticate via CAS requests. Returns True on success."""
         try:
             username, password = self.read_creds()
-        except AuthorizerError:
+        except AuthorizerError as e:
+            print(f"❌ CAS refresh skipped: {e}")
             return False
 
         sess = requests.Session()
@@ -218,13 +225,24 @@ class Authorizer:
         return True
 
     def ensure(self) -> tuple[bool, str]:
-        """Check session; auto-refresh if expired. Returns (bool, reason)."""
-        ok, reason = self.check()
+        """
+        Check session validity. Auto-refreshes via CAS if expired.
+        Returns (True, '') on success, (False, reason) on failure.
+        
+        Note: check() now handles auto-refresh internally, so this is just
+        a convenience wrapper that adds actionable hints on failure.
+        """
+        ok, reason = self.check()  # check() auto-refreshes if expired
         if ok:
             return True, ""
-        if self.refresh():
-            return True, ""
-        return False, reason or "Auth failed. Run auth.login()."
+        # check() already tried refresh; reason is the final failure cause
+        if "credentials" in reason.lower() or "wrong" in reason.lower():
+            hint = " CAS credentials are invalid. Fix credentials.txt at skill root bb/credentials.txt or run 'sustech bb session login' for browser-based login."
+        elif "no session" in reason.lower():
+            hint = " Run 'sustech bb session login' to open a browser for CAS login."
+        else:
+            hint = " Try 'sustech bb session login' (browser) or check credentials.txt."
+        return False, reason + hint
 
     def login(self, *, headless: bool = False):
         """Playwright headful login — opens browser for manual CAS login."""
