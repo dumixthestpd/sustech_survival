@@ -70,8 +70,8 @@ class Item:
         return self.to_row()
 
 
-# ── Item subclasses ───────────────────────────────────────────────────────────
 
+# ── Item subclasses ──
 class FileItem(Item):
     """Item with downloadable file attachments (PDF, doc, etc.)."""
     TYPE = "file"
@@ -194,6 +194,76 @@ class HomeworkItem(Item):
                 f"{deadline_note}"
             )
         return "\n".join(lines)
+
+    def _fetch_attempts(self):
+        """Lazy-fetch attempt details for this homework item. Cached on first call."""
+        if hasattr(self, '_attempts_cached'):
+            return self._attempts_cached
+        try:
+            from .download import discover_attempt_ids, scrape_attempt_details
+            from .session import load_session
+        except ImportError:
+            try:
+                from download import discover_attempt_ids, scrape_attempt_details
+                from session import load_session
+            except ImportError:
+                self._attempts_cached = []
+                return []
+        raw, pw = load_session()
+        if not (getattr(self, 'course_id', None) and getattr(self, 'content_id', None)):
+            self._attempts_cached = []
+            return []
+        try:
+            from playwright.sync_api import sync_playwright
+            with sync_playwright() as p:
+                browser = p.chromium.launch()
+                ctx = browser.new_context()
+                ctx.add_cookies(pw)
+                attempts = discover_attempt_ids(ctx, str(self.course_id), str(self.content_id))
+                results = []
+                for aid, (anum, ts) in attempts:
+                    try:
+                        det = scrape_attempt_details(ctx, str(self.course_id), str(self.content_id), aid)
+                        results.append({
+                            'anum': anum, 'ts': ts,
+                            'files': det.get('files', []),
+                            'graded': det.get('graded', False),
+                            'grade': det.get('grade'),
+                            'score': det.get('score'),
+                            'feedback': det.get('comment'),
+                        })
+                    except Exception:
+                        results.append({'anum': anum, 'ts': ts, 'files': [], 'graded': False, 'grade': None, 'score': None, 'feedback': None})
+                browser.close()
+                self._attempts_cached = results
+                return results
+        except Exception:
+            self._attempts_cached = []
+            return []
+
+    def __str__(self) -> str:
+        """Full status string including submission history, grade, and feedback."""
+        lines = [self.title]
+        if getattr(self, 'course_id', None) and getattr(self, 'content_id', None):
+            lines.append(f"   course={self.course_id} content={self.content_id}")
+        lines.append(f"   deadline: {self.deadline or 'not set'}")
+        if self.files:
+            lines.append(f"   attachments: {', '.join(f[0] for f in self.files)}")
+
+        attempts = self._fetch_attempts()
+        if not attempts:
+            lines.append("   status: not submitted")
+        else:
+            for a in attempts:
+                graded_mark = '[GRADED]' if a['graded'] else '[UNGRADED]'
+                grade_str = f" {a['score']}/{a['grade']}" if a['score'] and a['grade'] else f" {a['grade']}/100" if a['grade'] else ''
+                files_str = ', '.join([f"'{n}'" for n, _ in a['files']]) or 'no files'
+                feedback = a.get('feedback') or ''
+                feedback_preview = (feedback[:60] + '...') if len(feedback) > 60 else feedback
+                lines.append(f"   {graded_mark} attempt {a['anum']}{grade_str} -- {files_str}")
+                if feedback_preview:
+                    lines.append(f"        feedback: {feedback_preview}")
+        return chr(10).join(lines)
 
 
 class InlineItem(Item):

@@ -7,7 +7,8 @@ description: Interact with SUSTech Blackboard (bb.sustech.edu.cn). Use when user
 
 > ⚠️  CRITICAL — NEVER submit to BB without explicit permission.
 > Every test run creates a REAL submission on Blackboard and counts as an attempt.
-> Before ANY submission: (1) ask dumix first, (2) check session is valid, (3) confirm no prior submission exists.
+> Before ANY submission: (1) ask dumix first, (2) confirm no prior submission exists.
+> Auth is fully automatic — do NOT call check_session() or login() manually; all BB operations auto-refresh the session as needed.
 > UUID suffixes on filenames (e.g. `---cf8274ec...`) must be stripped before submitting.
 > **submit.py requires a `y` confirmation before submitting** (or `--yes` flag).
 
@@ -15,13 +16,15 @@ description: Interact with SUSTech Blackboard (bb.sustech.edu.cn). Use when user
 
 ```python
 import sys
-sys.path.insert(0, '/Users/dumix/.openclaw/workspace/skills/sustech_survival/src')
-import sustech_survival.bb as bb
+sys.path.insert(0, '/Users/dumix/.openclaw/workspace/skills/sustech-survival')
+import bb
 
-# Session
-bb.credentials('creds.txt')              # set credentials file (username:password)
-ok, reason = bb.session()                # check session: (bool, reason)
-bb.login()                               # CAS login via headless Playwright
+# Session — use ensure_session() for auto-refresh; use check_session() for read-only check
+ok, reason = bb.ensure_session()       # check + auto-refresh via CAS if expired (no browser needed)
+ok, reason = bb.check_session()         # read-only check: (bool, reason) — does NOT auto-refresh
+bb.refresh()                            # force refresh via CAS (no browser needed)
+bb.login()                              # Playwright browser login (opens browser window)
+bb.credentials()                        # return credentials file path
 
 # Browse
 bb.courses()                             # [(id, name), ...] — all enrolled courses (from cache)
@@ -152,93 +155,36 @@ python3 bb.py submit --course 8328 --content 610812 --list
 python3 bb.py submit --course 8328 --content 610812 --files report.pdf
 ```
 
-## Submit — BB Assignment Submission
-
-> ⚠️  CRITICAL — NEVER submit to BB without explicit permission. Every test run creates a REAL submission and counts as an attempt.
-> Before submission: (1) ask dumix first, (2) confirm no prior submission exists.
-> **Naming format:** `12413021+姓名+作业N` (e.g. `12413021段斯宸作业10.pdf`)
-
-### Python API (via bb_submit_skill.py)
-
-```python
-import sys
-sys.path.insert(0, '/Users/dumix/.openclaw/workspace/skills/sustech_survival/src')
-from sustech_survival.bb.bb_submit_skill import submit, check_attempts, find_assignment, list_upcoming
-
-# Check attempts (before submitting)
-count, name = check_attempts('623874', '8053')
-print(f'{name}: {count} prior attempt(s), next would be #{count+1}')
-
-# Submit a file
-ok, msg = submit('623874', '/tmp/12413021段斯宸作业10.pdf', '8053')
-print(f'Success: {ok} — {msg}')
-
-# Find assignment by keyword
-results = find_assignment('尺规')
-for r in results:
-    print(f'[{r["course"]}] {r["title"]} (c={r["content_id"]}) due={r["due"]} submitted={r["submitted"]}')
-
-# List upcoming assignments
-upcoming = list_upcoming(limit=20)
-for course, title, cid, coid, due, *_ in upcoming:
-    print(f'[{due}] {course} | {title}')
-```
-
-### CLI
-
-```bash
-# Check attempt count
-python3 src/sustech_survival/bb/bb_submit_skill.py check <content_id> [course_id]
-
-# Submit
-python3 src/sustech_survival/bb/bb_submit_skill.py submit <content_id> <file_path> [course_id]
-
-# Find by keyword
-python3 src/sustech_survival/bb/bb_submit_skill.py find "尺规"
-
-# List upcoming
-python3 src/sustech_survival/bb/bb_submit_skill.py list-due --limit 20
-```
-
-### Known Assignment IDs (CAD 2026 Spring)
-
-| Assignment | Content ID | Course ID | Due |
-|-----------|-----------|-----------|-----|
-| 第十周作业 (Assignment for Lecture 10) | 623874 | 8053 | 2026年5月10日 星期日 上午8:00 |
-| 第十周实验作业 | 624232 | 8053 | 2026年5月16日 星期六 |
-| 第九次实验作业 | 623434 | 8053 | 2026年5月9日 星期六 |
-
-### Submission Flow
-
-1. **Confirm with dumix** before any submission
-2. **Check attempts** — `check_attempts(content_id, course_id)` → if count > 0, confirm again
-3. **Rename file** to `12413021段斯宸作业N.pdf` (strip any OpenClaw UUID suffix)
-4. **Submit** — `submit(content_id, file_path, course_id)` → returns (ok, message)
-5. **Verify** — re-run check_attempts to confirm attempt count increased
-
 ## Architecture
 
 ```
 bb/
-├── __init__.py      # Public Python API
-├── cli.py           # CLI implementation (courses, search, types)
-├── items.py         # Item class hierarchy
-├── pages.py         # Page scraping
-├── courses.py       # Course loading
-├── download.py      # Content/attempt download + submit_homework()
-├── submit.py        # Core submission logic (submit_assignment, get_attempt_info)
-├── bb_submit_skill.py  # Skill entry point (submit, check, find, list-due)
-└── session.py       # CAS auth
+├── __init__.py    # Public Python API (bb.courses, bb.items, bb.search, ...)
+├── cli.py         # CLI implementation
+├── bb.py          # CLI entry point shim
+├── items.py       # Item class hierarchy (FileItem, HomeworkItem, ...)
+├── pages.py       # Page scraping (discover_course_pages, preview_page)
+├── courses.py     # Course loading from courses.json
+├── download.py    # Content/attempt download functions
+├── session.py     # CAS auth (login, refresh, session check)
+└── query.py       # Search and type statistics (fully dynamic)
 ```
 
 ## Session
 
+**Fully automatic — agents never call session functions manually.** All BB operations auto-refresh the session via CAS when needed.
+
 - Session cookies: `bb/session.json`
-- `bb.login()` / `sustech bb session login` creates it; `refresh` renews when expired
-- Credentials: `creds.txt` in `bb/` dir (format: `username:password`)
+- Credentials: `bb/credentials.txt` (format: `username:password`, e.g. `12413021:yourpass`)
+- `bb.refresh()` / `sustech bb session refresh` — force CAS re-auth (rarely needed)
+- `bb.login()` / `sustech bb session login` — browser-based login (only if CAS refresh repeatedly fails)
+- `bb.check_session()` — exists for debugging, not needed in normal flow
 
 ## BB Quirks
 
+- **Portal "课程" tab URL**: `?tab_tab_group_id=_1_1` (NOT `?tabType=2` — that redirects to wrong tab)
+- **Cookie popup** — BB sometimes shows a dialog; handled automatically with retries
 - **DDLs in body text** — deadlines appear in page content, not sidebar labels
-- **Image comments** — BB stores picture comments as `<img>` tags in comment HTML
+- **Stale content** — BB occasionally serves wrong course data for a page
 - **PhysChem schedule** — experimental arrangement page has non-standard structure
+- **Image comments** — BB stores picture comments as `<img>` tags in comment HTML; `scrape_attempt_files()` extracts these automatically

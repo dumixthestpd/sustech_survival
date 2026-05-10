@@ -662,26 +662,28 @@ def main():
 
 # ── Homework Submission ───────────────────────────────────────────────────────
 
-def submit_homework(content_id, file_path, *, course_id=None, comment=None):
+def submit_homework(content_id, file_path=None, *, course_id=None, comment=None, text_content=None, file_paths=None):
     """
-    Submit a homework assignment by uploading a file.
+    Submit a homework assignment by uploading files and/or text.
 
     Args:
         content_id:  homework content ID, e.g. "622821"  (or "_622821_1" also OK)
-        file_path:   absolute path to the file to upload
+        file_path:   path to file (single file, for backward compat)
         course_id:   optional course ID (auto-resolved if omitted)
         comment:     optional comment text
+        text_content: optional text content to submit
+        file_paths:  list of file paths (preferred over file_path)
 
     Returns:
         True on success, raises RuntimeError on failure.
 
     Example:
-        submit_homework("622821", "/tmp/hw.pdf", course_id="8221")
+        submit_homework("622821", file_paths=["/tmp/hw.pdf"], course_id="8221")
+        submit_homework("622821", text_content="My answer here")
     """
-    ensure_session()
-    raw, pw = load_session()
+    from .submit import submit_assignment
 
-    # Normalize content_id to bare numeric form
+    # Resolve content_id
     cid = str(content_id).lstrip('_').split('_')[0]
 
     # Resolve course_id if not given
@@ -691,8 +693,24 @@ def submit_homework(content_id, file_path, *, course_id=None, comment=None):
             raise ValueError(f"Cannot resolve course_id for content_id={cid}. "
                              "Specify course_id= explicitly.")
 
-    # Normalize course_id
     course_num = str(course_id).lstrip('_').split('_')[0]
+
+    # Build file list (file_paths preferred, file_path for compat)
+    paths = file_paths or []
+    if isinstance(file_path, (list, tuple)):
+        paths = [str(p) for p in file_path]
+    elif file_path:
+        paths = [str(file_path)]
+
+    ok, msg = submit_assignment(
+        course_num, cid,
+        paths,
+        skip_dedup=True,
+        text_content=text_content
+    )
+    if ok:
+        return True
+    raise RuntimeError(msg)
 
     # BB URL form IDs: course_id=_8221_1  content_id=_622821_1
     bb_course_id = f"_{course_num}_1"

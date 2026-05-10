@@ -26,6 +26,7 @@ if str(_src) not in sys.path:
 import click
 
 from sustech_survival import bb as bb_mod
+from sustech_survival.bb.query import format_item
 from sustech_survival import tis as tis_mod
 from sustech_survival import lib as lib_mod
 
@@ -89,21 +90,37 @@ def bb_search(text, course, type_filter, has_attachments):
         kwargs["has_attachments"] = True
 
     results = bb_mod.search(**kwargs)
-    for item in results:
-        click.echo(f"  {item.id_}: [{item.type_}] {item.title}")
+    if hasattr(results, '__iter__') and results and isinstance(results[0], dict):
+        # discover_all_items returns dicts — use format_item like the CLI
+        for item in results:
+            format_item(item)
+    else:
+        # Fallback for any legacy Item objects
+        for item in results:
+            click.echo(f"  {item.id_}: [{item.type_}] {item.title}")
 
 
 @bb.command("submit")
 @click.argument("content_id")
-@click.argument("filepath", type=click.Path(exists=True))
+@click.argument("filepath", required=False, type=click.Path(exists=True))
 @click.option("--course", help="Course ID")
 @click.option("--yes", is_flag=True, help="Skip confirmation")
-def bb_submit(content_id, filepath, course, yes):
-    """Submit FILE to BB assignment CONTENT_ID."""
+@click.option("--text", "text_content", help="Text content to submit")
+@click.option("--files", "file_paths", multiple=True, help="Additional file paths (can repeat)")
+def bb_submit(content_id, filepath, course, yes, text_content, file_paths):
+    """Submit FILE(s) and/or TEXT to BB assignment CONTENT_ID."""
     course_kw = {"course_id": course} if course else {}
-    if not yes:
-        click.confirm(f"Submit {filepath} to {content_id}?", abort=True)
-    result = bb_mod.submit_homework(content_id, filepath, **course_kw)
+    text_kw = {"text_content": text_content} if text_content else {}
+    # Combine filepath argument with --files options
+    all_paths = list(file_paths or [])
+    if filepath:
+        all_paths.insert(0, filepath)
+    if not all_paths and not text_content:
+        click.echo("Error: provide FILE and/or --text and/or --files")
+        sys.exit(1)
+    if not yes and (all_paths or text_content):
+        click.confirm(f"Submit to {content_id}?", abort=True)
+    result = bb_mod.submit_homework(content_id, file_paths=all_paths, **course_kw, **text_kw)
     click.echo(f"OK: {result}")
 
 

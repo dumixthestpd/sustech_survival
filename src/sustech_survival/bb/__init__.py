@@ -139,9 +139,8 @@ def download(content_id, out_dir=None):
 
     @require_auth("bb")
     def _download():
-        if out_dir is None:
-            out_dir = _Path.home() / "Downloads" / "bb"
-        return download_content(content_id, str(out_dir))
+        _out_dir = out_dir if out_dir is not None else _Path.home() / "Downloads" / "bb"
+        return download_content(content_id, str(_out_dir))
     return _download()
 
 

@@ -22,19 +22,16 @@ BB_BASE = "https://bb.sustech.edu.cn"
 ITEM_TYPES = ["file", "video", "homework", "folder", "inline", "link", "text", "unknown"]
 
 _TYPE_ICON = {
-    "file": "[file]", "video": "[video]", "homework": "[hw]",
-    "folder": "[folder]", "inline": "[img]", "link": "[link]",
-    "text": "[text]", "unknown": "[?]",
+    "file": "📄", "video": "🎬", "homework": "📝",
+    "folder": "📁", "inline": "🖼", "link": "🔗",
+    "text": "📃", "unknown": "❓",
 }
 
 # ── Session ─────────────────────────────────────────────────────────────────
 
 def _load_session():
     """Load BB session cookies."""
-    try:
-        from .session import load_session
-    except ImportError:
-        from sustech_survival.bb.session import load_session
+    from session import load_session
     raw, pw = load_session()
     return pw
 
@@ -212,7 +209,6 @@ def scrape_page_items(content_id, course_id, course_name):
                 "ext":     ext,
                 "ddl":     ddl,
                 "n":       getattr(it, "submission_count", 0) or 0,
-                "status":  str(it) if it.TYPE == "homework" else "",
             }
             result.append(row)
         return result
@@ -346,26 +342,21 @@ def format_item(u, verbose=False):
     t = u.get("type", "?")
     icon = _TYPE_ICON.get(t, "?")
     att_count = len(u.get("files", []))
-    att_tag = f" +{att_count}" if att_count else ""
-    type_tag = f"[{t}]"
+    att_tag = f" 📎{att_count}" if att_count else ""
+    type_tag = f" [{t}]"
     title = u.get("title", "Untitled").replace("\n", " ")
     course = u.get("course", "")[:30]
-    print(f"  {course:<30} {type_tag:<12} {icon} {title[:40]}{att_tag}")
-    if verbose and u.get("desc"):
-        preview = u["desc"].replace("\n", " ")[:100].strip()
-        print(f"    💬 {preview}")
-    # Show full submission status for homework items (always, not just verbose)
-    if u.get("status"):
-        for line in u["status"].split("\n"):
-            print(f"    {line}")
+    print(f"  {course:<30} {type_tag:<14} {icon} {title[:40]}{att_tag}")
     if verbose:
+        if u.get("desc"):
+            preview = u["desc"].replace("\n", " ")[:100].strip()
+            print(f"    💬 {preview}")
         if u.get("ext"):
             for url in u["ext"]:
-                print(f"    Link: {url[:70]}")
+                print(f"    🔗 {url[:70]}")
         if u.get("files"):
             for fname, fpath in u["files"]:
-                print(f"    File: {fname}  [{fpath[:60]}]")
-                print(f"    File: {fname}  [{fpath[:60]}]")
+                print(f"    📄 {fname}  [{fpath[:60]}]")
 
 
 def print_stats(stats, courses=None):
