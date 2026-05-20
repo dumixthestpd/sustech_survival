@@ -7,18 +7,16 @@
 #     sustech.bb.courses()
 #     sustech.tis.courses()
 #     sustech.lib.login()
-#
-#     sustech.bb.login()
-#     sustech.lib.ensure()
+#     sustech.papers.search_and_fetch(queries=["electrochromic polymer"])
 #
 # Or import submodules directly:
-#     from sustech_survival import bb, tis, lib, sso
+#     from sustech_survival import bb, tis, lib, sso, papers
 #     from sustech_survival.sso import Authorizer, require_auth
 # =============================================================================
 
 from pathlib import Path
 
-__all__ = ["bb", "tis", "lib", "sso"]
+__all__ = ["bb", "tis", "lib", "sso", "papers"]
 
 _PKG_ROOT = Path(__file__).resolve().parent
 
@@ -32,4 +30,7 @@ from . import tis
 from . import lib
 
 # ── sso ───────────────────────────────────────────────────────────────────
-from .sso import Authorizer, AuthorizerError, require_auth, CAS_BASE, UA
+from . import sso
+
+# ── papers ─────────────────────────────────────────────────────────────────
+from . import papers
