@@ -11,7 +11,7 @@ from typing import Optional
 
 import cloudscraper
 
-from ..base import Authorizer, register_auth
+from ..authorizer import Authorizer, register_auth
 
 ACS_BASE = "https://pubs.acs.org"
 ACS_SSO = f"{ACS_BASE}/action/ssostart?redirecturi=%2f"

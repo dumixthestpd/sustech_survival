@@ -16,7 +16,7 @@ from typing import Optional
 
 import cloudscraper
 
-from ..base import Authorizer, register_auth
+from ..authorizer import Authorizer, register_auth
 
 IEEE_BASE = "https://ieeexplore.ieee.org"
 IEEE_SEARCH = f"{IEEE_BASE}/search/searchresult"

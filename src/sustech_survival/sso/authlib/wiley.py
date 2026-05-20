@@ -7,7 +7,7 @@ from typing import Optional
 
 import cloudscraper
 
-from ..base import Authorizer, register_auth
+from ..authorizer import Authorizer, register_auth
 
 WILEY_BASE = "https://onlinelibrary.wiley.com"
 WILEY_SSO = f"{WILEY_BASE}/action/ssostart?redirecturi=%2f"

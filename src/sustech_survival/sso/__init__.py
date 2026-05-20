@@ -1,60 +1,8 @@
 # ── Public API ────────────────────────────────────────────────────────────────
 
-from .base import Authorizer, AuthorizerError, CAS_BASE, UA, register_auth, get_auth, require_auth
+from .authorizer import Authorizer, AuthorizerError, CAS_BASE, UA, register_auth, get_auth, require_auth
 from .providers.cas import CASAuthorizer
 from .providers.shibboleth import ShibbolethAuthorizer
-
-
-# ── Credentials ───────────────────────────────────────────────────────────────
-
-class Credentials:
-    """
-    Load SUSTech CAS username/password from credentials file.
-
-    File: <skill_root>/credentials.txt
-    Format: username:password
-    """
-
-    CREDENTIALS_FILENAME = "credentials.txt"
-
-    def __init__(self, path: str = None):
-        from pathlib import Path
-        if path:
-            self._path = Path(path)
-        else:
-            # Search upward from sso/__init__.py for credentials.txt (skill root)
-            # __file__ = .../skills/sustech_survival/src/sustech_survival/sso/__init__.py
-            here = Path(__file__).resolve().parent  # sso/
-            for parent in [here, here.parent, here.parent.parent, here.parent.parent.parent]:
-                if (parent / self.CREDENTIALS_FILENAME).exists():
-                    self._path = parent / self.CREDENTIALS_FILENAME
-                    break
-            else:
-                # Fallback: assume standard skills/ layout
-                self._path = here.parent.parent.parent / self.CREDENTIALS_FILENAME
-
-    @property
-    def username(self) -> str:
-        return self.load()[0]
-
-    @property
-    def password(self) -> str:
-        return self.load()[1]
-
-    def load(self):
-        """Return (username, password) tuple."""
-        from pathlib import Path
-        p = Path(self._path)
-        if not p.exists():
-            return None, None
-        line = p.read_text().strip()
-        if ':' not in line:
-            return None, None
-        return line.split(':', 1)[0].strip(), line.split(':', 1)[1].strip()
-
-    def __repr__(self):
-        u, _ = self.load()
-        return f"Credentials(user={u!r})"
 
 
 __all__ = [
@@ -64,14 +12,46 @@ __all__ = [
     "UA",
     "CASAuthorizer",
     "ShibbolethAuthorizer",
-    "Credentials",
+    "Credentials",      # backwards compat — redirects to Authorizer.username/password
     "register_auth",
     "get_auth",
     "require_auth",
 ]
 
+# Backwards-compat shim: Credentials was merged into Authorizer.
+# Keep the name working so old code doesn't break.
+Credentials = Authorizer
+
+
 # ── Auto-register all authlib modules ────────────────────────────────────────
 # Importing any authlib subpackage triggers its register_auth("name", obj) call,
-# populating the global _auth_registry in base.py.
+# populating the global _auth_registry in authorizer.py.
 # We import the top-level authlib package which re-exports everything.
 from . import authlib  # noqa: F401
+
+# Re-export authlib submodules at sso namespace level AND register them in
+# sys.modules so "from sustech_survival.sso.rsc import ..." works.
+# Python checks sys.modules before package.__dict__ for submodule imports.
+import sys as _sys
+for _name in ("bb", "tis", "lib", "wos", "rsc", "cnki"):
+    _mod = getattr(authlib, _name)
+    globals()[_name] = _mod
+    _sys.modules[f"sustech_survival.sso.{_name}"] = _mod
+
+# ── Lazy-load optional authlib submodules (acs, wiley, springer, etc.) ───────
+# These modules need optional deps (cloudscraper).  They are loaded on first
+# access via authlib.__getattr__, keeping the sso layer intact even if deps are
+# missing.
+_LAZY_NAMES = frozenset({"acs", "wiley", "springer",
+                          "scopus", "jstor", "pubmed", "ieee"})
+
+def __getattr__(name):
+    if name in _LAZY_NAMES:
+        import sys
+        from importlib import import_module
+        # Delegate to authlib (which has its own lazy loading)
+        if "sustech_survival.sso.authlib" not in sys.modules:
+            import_module("sustech_survival.sso.authlib")
+        authlib = sys.modules["sustech_survival.sso.authlib"]
+        return getattr(authlib, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

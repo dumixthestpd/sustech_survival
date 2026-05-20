@@ -19,7 +19,7 @@
 
 from pathlib import Path
 from ..providers.shibboleth import ShibbolethAuthorizer
-from ..base import register_auth
+from ..authorizer import register_auth
 
 WOS_BASE = "https://www.webofscience.com"
 WOS_INIT = "https://www.webofscience.com/wos/woscc/summary/basic"

@@ -18,7 +18,7 @@ from urllib.parse import urlencode
 
 import requests
 
-from ..base import Authorizer, register_auth
+from ..authorizer import Authorizer, register_auth
 
 NCBI_BASE = "https://eutils.ncbi.nlm.nih.gov"
 ENTREZ_EUTILS = f"{NCBI_BASE}/entrez/eutils"

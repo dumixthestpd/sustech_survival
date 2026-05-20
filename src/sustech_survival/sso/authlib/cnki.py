@@ -18,7 +18,7 @@
 
 from pathlib import Path
 from ..providers.shibboleth import ShibbolethAuthorizer
-from ..base import register_auth
+from ..authorizer import register_auth
 
 CNKI_BASE = "https://www.cnki.net"
 CNKI_FSSO = "https://fsso.cnki.net/Shibboleth.sso/Login"

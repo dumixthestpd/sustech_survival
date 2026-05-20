@@ -20,7 +20,7 @@
 # AuthnRequest/SAMLResponse directly.
 # =============================================================================
 
-from ..base import Authorizer, AuthorizerError, UA
+from ..authorizer import Authorizer, AuthorizerError, UA
 
 # Playwright is only needed at runtime, not for import — lazy import in login()
 import importlib

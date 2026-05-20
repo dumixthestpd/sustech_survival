@@ -13,7 +13,7 @@ from typing import Optional
 
 import cloudscraper
 
-from ..base import Authorizer, register_auth
+from ..authorizer import Authorizer, register_auth
 
 JSTOR_BASE = "https://www.jstor.org"
 JSTOR_SEARCH = f"{JSTOR_BASE}/search/build-results"

@@ -18,7 +18,7 @@
 
 from pathlib import Path
 from ..providers.shibboleth import ShibbolethAuthorizer
-from ..base import register_auth
+from ..authorizer import register_auth
 
 # RSC Shibboleth configuration
 RSC_BASE = "https://pubs.rsc.org"

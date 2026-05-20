@@ -17,7 +17,7 @@
 
 import re
 import requests
-from ..base import Authorizer, AuthorizerError, CAS_BASE, UA
+from ..authorizer import Authorizer, AuthorizerError, CAS_BASE, UA
 
 
 class CASAuthorizer(Authorizer):

@@ -16,7 +16,7 @@ from typing import Optional
 
 import cloudscraper
 
-from ..base import Authorizer, register_auth
+from ..authorizer import Authorizer, register_auth
 
 SPRINGER_BASE = "https://link.springer.com"
 SPRINGER_IDP = "https://idp.springer.com"
