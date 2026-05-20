@@ -40,7 +40,7 @@ def load_cookies():
     return load_session()[1]
 
 
-def submit_assignment(course_id, content_id, file_paths, skip_dedup=False):
+def submit_assignment(course_id, content_id, file_paths, skip_dedup=False, text_content=None):
     cookies = load_cookies()
     resolved = []
     for fp in file_paths:

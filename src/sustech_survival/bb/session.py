@@ -70,7 +70,9 @@ def _make_bbauth(authorizer_cls):
 import sustech_survival.sso as _sso
 
 # Singleton — sso is fully loaded at this point
-BBAuth = _make_bbauth(_sso.Authorizer)
+# BBAuth must inherit from CASAuthorizer (not Authorizer) to get headless
+# CAS ticket-granting flow via get_ticket_cookies()
+BBAuth = _make_bbauth(_sso.CASAuthorizer)
 _auth = BBAuth(skill_dir=str(SKILL_ROOT), submodule_dir=str(BB_DIR))
 _sso.register_auth("bb", _auth)
 
