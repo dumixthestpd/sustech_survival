@@ -1,149 +1,113 @@
-#!/usr/bin/env python3
 """
-Extract course info from TIS course selection page and save to Downloads.
-Usage: python fetch_courses.py
+tis courses — Show enrolled courses from TIS.
+
+Uses CAS login. Note: TIS does not have a public API for course catalog.
+For enrolled courses, we use the grade API which returns all taken courses,
+or the course selection page for current semester.
+
+The grade API is the most reliable source since it returns all enrolled
+courses across all semesters.
 """
 
-import os
-import csv
-import subprocess
-import re
-from bs4 import BeautifulSoup
+import sys
+from pathlib import Path as _Path
 
-TIS_COURSES_CSV = os.path.expanduser("~/.openclaw/workspace/sustech/26spring/courses.csv")
+_SKILL_ROOT = _Path(__file__).resolve().parent.parent.parent.parent
+sys.path.insert(0, str(_SKILL_ROOT / "src"))
 
-def get_page_text(selector):
-    """Get page HTML using AppleScript and JavaScript"""
-    result = subprocess.run(
-        ['osascript', '-e', f'tell application "Google Chrome" to tell active tab of front window to execute javascript "document.querySelector(\'{selector}\').innerHTML"'],
-        capture_output=True, text=True
+__all__ = ["run"]
+
+
+def _login():
+    from sustech_survival.tis.login import cas_login
+    creds_file = _SKILL_ROOT / "credentials.txt"
+    with open(creds_file) as f:
+        username, password = f.read().strip().split(":", 1)
+    return cas_login(username, password, "https://tis.sustech.edu.cn/cas")
+
+
+def _get_grades(cookies: dict, semester: str = None):
+    import requests
+    h = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+        "X-Requested-With": "XMLHttpRequest",
+        "Content-Type": "application/json",
+        "Cookie": f"route={cookies['route']}; JSESSIONID={cookies['JSESSIONID']}"
+    }
+    r = requests.post(
+        "https://tis.sustech.edu.cn/cjgl/grcjcx/grcjcx",
+        json={"xn": None, "xq": None, "kcmc": None, "cxbj": "-1", "pylx": "1", "current": 1, "pageSize": 500},
+        headers=h, timeout=15
     )
-    return result.stdout
-
-def check_login():
-    """Check if logged in to TIS"""
-    result = subprocess.run(
-        ['osascript', '-e', 'tell application "Google Chrome" to get URL of active tab of front window'],
-        capture_output=True, text=True
-    )
-    url = result.stdout.strip()
-    return 'tis.sustech.edu.cn' in url and 'session/invalid' not in url and 'cas.' not in url
-
-def parse_courses(html_content):
-    """Parse course info from HTML"""
-    soup = BeautifulSoup(html_content, 'lxml')
-    
-    courses = []
-    
-    # Find all table rows
-    rows = soup.select('tr.ivu-table-row')
-    
-    for row in rows:
-        try:
-            # Extract course name (Chinese)
-            name_elem = row.select_one('.ivu-table-cell a')
-            course_name = name_elem.get_text(strip=True) if name_elem else ''
-            
-            # Extract course code
-            code_elem = row.select_one('td[class*="l0YlU1"] span')
-            course_code = code_elem.get_text(strip=True) if code_elem else ''
-            
-            # Extract class section
-            section_elem = row.select_one('td[class*="XIBzry"] span')
-            section = section_elem.get_text(strip=True) if section_elem else ''
-            
-            # Extract course nature (required/elective)
-            nature_elem = row.select_one('td[class*="4BDzAq"] span')
-            nature = nature_elem.get_text(strip=True) if nature_elem else ''
-            
-            # Extract course category
-            category_elem = row.select_one('td[class*="lS7CCo"] span')
-            category = category_elem.get_text(strip=True) if category_elem else ''
-            
-            # Extract credits
-            credits_elem = row.select_one('td[class*="4Jl7qj"] span')
-            credits = credits_elem.get_text(strip=True) if credits_elem else ''
-            
-            # Extract schedule info
-            schedule_elems = row.select('.ivu-table-cell .ivu-tag-text p')
-            schedule = '; '.join([s.get_text(strip=True) for s in schedule_elems])
-            
-            # Extract teacher
-            teacher_elems = row.select('.ivu-table-cell a[href="javascript:void(0);"]')
-            teachers = ', '.join([t.get_text(strip=True) for t in teacher_elems])
-            
-            # Extract department
-            dept_elem = row.select_one('td[class*="OUWoov"] span')
-            department = dept_elem.get_text(strip=True) if dept_elem else ''
-            
-            if course_name or course_code:
-                courses.append({
-                    'Course Code': course_code,
-                    'Course Name': course_name,
-                    'Section': section,
-                    'Nature': nature,
-                    'Category': category,
-                    'Credits': credits,
-                    'Teacher': teachers,
-                    'Schedule': schedule,
-                    'Department': department
-                })
-        except Exception as e:
-            print(f"Error parsing row: {e}")
-            continue
-    
+    if r.status_code != 200:
+        raise RuntimeError(f"TIS returned {r.status_code}")
+    courses = r.json().get("content", {}).get("list", [])
+    if semester:
+        courses = [c for c in courses if semester in c.get("xnxqmc", "")]
     return courses
 
-def save_to_csv(courses, output_path):
-    """Save courses to CSV"""
+
+def run(semester: str = None, format: str = "table"):
+    """
+    Show enrolled courses from TIS.
+
+    Args:
+        semester: e.g. '2025秋季' or '2026春季' (default: current/next semester).
+        format: 'table' (default) or 'csv'.
+    """
+    print("🔑 CAS login...")
+    cookies = _login()
+    if not cookies:
+        print("❌ TIS login failed")
+        sys.exit(1)
+
+    print("📚 Fetching courses...")
+    courses = _get_grades(cookies, semester)
+
     if not courses:
-        print("No courses found!")
-        return False
-    
-    # Ensure directory exists
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    
-    fieldnames = ['Course Code', 'Course Name', 'Section', 'Nature', 'Category', 'Credits', 'Teacher', 'Schedule', 'Department']
-    
-    with open(output_path, 'w', newline='', encoding='utf-8-sig') as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(courses)
-    
-    print(f"Saved {len(courses)} courses to {output_path}")
-    return True
+        print("❌ No courses found")
+        sys.exit(1)
 
-def main():
-    print("=== TIS Course Fetcher ===")
-    
-    # Step 1: Check login
-    print("\n[1/3] Checking login status...")
-    if not check_login():
-        print("NOT LOGGED IN! Please login via CAS first.")
-        print("Run: ./login-tis.sh")
-        return
-    
-    print("✓ Logged in")
-    
-    # Step 2: Visit course selection page
-    print("\n[2/3] Fetching course selection page...")
-    # Get the table body content using JavaScript
-    html = get_page_text(".ivu-table-body")
-    
-    if not html or 'session/invalid' in html:
-        print("Session expired! Please login again.")
-        return
-    
-    print("✓ Page fetched")
-    
-    # Step 3: Parse and save
-    print("\n[3/3] Parsing courses...")
-    courses = parse_courses(html)
-    
-    if save_to_csv(courses, TIS_COURSES_CSV):
-        print(f"\n✅ Done! Courses saved to {TIS_COURSES_CSV}")
-    else:
-        print("\n❌ Failed to save courses")
+    # Group by semester
+    by_sem = {}
+    for c in courses:
+        sem = c.get("xnxqmc", "未知")
+        by_sem.setdefault(sem, []).append(c)
 
-if __name__ == '__main__':
-    main()
+    if format == "csv":
+        import csv
+        out = _SKILL_ROOT.parent.parent / "workspace" / "sustech" / "courses_tis.csv"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        fields = ["课程代码", "课程名称", "学期", "学分", "课程性质", "院系"]
+        with open(out, "w", newline="", encoding="utf-8-sig") as f:
+            w = csv.DictWriter(f, fieldnames=fields)
+            w.writeheader()
+            for c in courses:
+                w.writerow({
+                    "课程代码": c.get("kcdm", ""),
+                    "课程名称": c.get("kcmc", "") or c.get("kcmc_en", ""),
+                    "学期": c.get("xnxqmc", ""),
+                    "学分": c.get("xf", ""),
+                    "课程性质": c.get("kcxz", ""),
+                    "院系": c.get("yxmc", ""),
+                })
+        print(f"📄 已导出至 {out}")
+        return
+
+    # Default: human-readable table
+    for sem, sem_courses in sorted(by_sem.items()):
+        total_credits = sum(c.get("xf", 0) for c in sem_courses)
+        print(f"\n{'─' * 55}")
+        print(f"  {sem}  ({len(sem_courses)} 门课, {total_credits:.0f} 学分)")
+        print(f"  {'─' * 55}")
+        for c in sem_courses:
+            code = c.get("kcdm", "")
+            name = c.get("kcmc", "") or c.get("kcmc_en", "")
+            credit = c.get("xf", 0)
+            teacher = c.get("dgjsmc", "") or ""
+            nature = c.get("kcxz", "")
+            # Trim long names
+            display = f"{code} {name}" if code else name
+            print(f"    {display[:45]:<46} {credit:.1f}学分")
+            if teacher:
+                print(f"      👤 {teacher}")

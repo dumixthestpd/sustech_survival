@@ -2,58 +2,54 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Usage:
 #   from sustech_survival import tis
-#   tis.login()           # CAS login via requests (headless)
-#   tis.courses()         # scrape courses from TIS → CSV
-#   tis.check_login()     # check Chrome tabs for TIS session
+#   tis.login()             # CAS login (headless)
+#   tis.grades()            # fetch + display TIS grades + GPA
+#   tis.courses()           # show enrolled courses from TIS (grade API)
+#   from sustech_survival.bb import ddl
+#   ddl()                   # show upcoming BB assignment deadlines
 # ─────────────────────────────────────────────────────────────────────────────
 
-import os as _os
-import sys as _sys
+import sys
 from pathlib import Path as _Path
 
 _SKILL_ROOT = _Path(__file__).resolve().parent.parent.parent
-_sys.path.insert(0, str(_SKILL_ROOT))
+sys.path.insert(0, str(_SKILL_ROOT / "src"))
 
-__all__ = ["login", "courses", "check_login"]
-
-TIS_BASE = "https://tis.sustech.edu.cn"
+__all__ = ["login", "grades", "courses"]
 
 
 def login(username=None, password=None):
-    """
-    Headless CAS login for TIS using requests.
-    Reads credentials from <skill_root>/credentials.txt if not provided.
-    """
-    from tis.login import cas_login as _cas_login
+    """Headless CAS login for TIS. Returns cookies dict or None."""
+    from sustech_survival.tis.login import cas_login as _cas_login
     if username is None or password is None:
         creds_file = _SKILL_ROOT / "credentials.txt"
         with open(creds_file) as f:
             line = f.read().strip()
         if ':' not in line:
-            raise ValueError(f"Invalid credentials format in {creds_file}")
+            raise ValueError(f"Invalid credentials in {creds_file}")
         username, password = line.split(':', 1)
+    return _cas_login(username, password, "https://tis.sustech.edu.cn/cas")
 
-    return _cas_login(username, password, f"{TIS_BASE}/cas")
 
-
-def courses(out_path=None):
+def grades(semester: str = None, export: str = None):
     """
-    Scrape enrolled courses from TIS via Chrome AppleScript.
-    Saves to ~/.openclaw/workspace/sustech/26spring/courses.csv by default.
+    Print TIS grades with GPA summary.
+
+    Args:
+        semester: Filter by semester, e.g. '2025秋季' (default: all).
+        export: 'csv' to export to ~/.openclaw/workspace/sustech/grades.csv
     """
-    from tis.courses import main as _fetch
-    if out_path:
-        _os.environ['TIS_COURSES_CSV'] = out_path
-    _fetch()
+    from sustech_survival.tis.grades import run as _run
+    _run(semester=semester, export=export)
 
 
-def check_login() -> bool:
-    """Check if Chrome has an active TIS session."""
-    import subprocess
-    result = subprocess.run(
-        ['osascript', '-e',
-         'tell application "Google Chrome" to get URL of active tab of front window'],
-        capture_output=True, text=True
-    )
-    url = result.stdout.strip()
-    return 'tis.sustech.edu.cn' in url and 'session/invalid' not in url and 'cas.' not in url
+def courses(semester: str = None, format: str = "table"):
+    """
+    Show enrolled courses from TIS.
+
+    Args:
+        semester: e.g. '2025秋季', '2026春季' (default: all).
+        format: 'table' (default) or 'csv'.
+    """
+    from sustech_survival.tis.courses import run as _run
+    _run(semester=semester, format=format)
