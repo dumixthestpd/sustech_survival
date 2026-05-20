@@ -18,9 +18,11 @@ import sustech_survival as sustech
 # Auth is fully automatic — never call session functions manually
 sustech.bb.courses()          # enrolled courses (auto-authenticates as needed)
 sustech.bb.search(text='hw')  # search BB items (auto-authenticates as needed)
-sustech.lib.login()           # Library CAS login
-sustech.lib.check()           # check session validity
-sustech.tis.courses()         # TIS schedule
+sustech.bb.ddl(days=14)       # upcoming deadlines across all enrolled courses
+sustech.lib.login()            # Library CAS login
+sustech.lib.check()            # check session validity
+sustech.tis.courses()         # TIS course schedule
+sustech.tis.grades()          # TIS grades + GPA (official SUSTech 4.0 scale)
 
 # Paper research — search academic papers and download PDFs
 sustech.papers.search_and_fetch(
@@ -37,12 +39,16 @@ sustech.papers.search_and_fetch(
 ## CLI
 
 ```bash
+# TIS — grades and schedule
+python3 -c "from sustech_survival.tis.grades import run; run()"
+python3 -c "from sustech_survival.tis.courses import run; run()"
+
+# BB — deadlines and course materials
+python3 -c "from sustech_survival.bb import ddl; ddl(days=14)"
+
+# Auth check
 python3 sustech.py bb session check
-python3 sustech.py bb courses
-python3 sustech.py bb search "homework"
-python3 sustech.py tis courses
 python3 sustech.py lib login
-python3 sustech.py lib check
 ```
 
 Run `python3 sustech.py --help` for all commands.
@@ -72,17 +78,13 @@ sustech_survival/               <- Skill root (ClawHub publishes this)
 
 ## Architecture
 
-- **Shared Auth (`sso.py`)**: `Authorizer` + `@require_auth("bb")` decorator
-  - `check()` -> (bool, reason) — verify session
-  - `refresh()` -> bool — re-auth via CAS requests
-  - `login()` -> bool — Playwright headful login
-  - `ensure()` -> (bool, reason) — check + auto-refresh
-  - Decorator: `@require_auth("bb")` gates any function needing auth
-- **BB**: CAS auth, session at `bb/session.json`
-- **TIS**: CAS auth via `tis/login.py`
-- **Lib**: CAS auth for Primo, session at `lib/session.json`
-- **RSC**: CARSI/Shibboleth SSO via `sso/authlib/rsc.py` — **no session file, login every time**
-- **schedule2gog**: reads `courses.csv` -> Google Calendar via gog
+- **SSO (`sso/`):** `Authorizer` base class, `CASAuthorizer` mixin. `check()`, `refresh()`, `login()`, `ensure()`.
+  - Credentials: `from sustech_survival.sso import Credentials` — reads `credentials.txt` at skill root
+  - Public attributes after `login()`: `auth.browser`, `auth.page`, `auth.ctx`
+- **BB (`bb/`):** `BBAuth` inherits `CASAuthorizer`. Session at `bb/session.json`. Auto-refresh on 401.
+- **TIS (`tis/`):** Same CAS auth pattern. Grades API: `POST https://tis.sustech.edu.cn/cjgl/grcjcx/grcjcx`
+- **Lib (`lib/`):** CAS auth for Primo. Session at `lib/session.json`
+- **RSC/WoS/CNKI (`sso/authlib/`):** `*Authorizer` classes with Playwright headless login. CARSI/Shibboleth SSO. No session file — login each time.
 
 ## RSC Shibboleth SSO (2026-05-19)
 
@@ -110,9 +112,9 @@ auth = RSCAuthorizer()
 ok = auth.login()          # reads credentials automatically, headless=True
 # or: ok = auth.login(username="12413021", password="pass", headless=True)
 if ok:
-    auth._page.goto("https://pubs.rsc.org/en/search?q=electrochromic")
+    auth.page.goto("https://pubs.rsc.org/en/search?q=electrochromic")
     # ... browse ...
-    auth._browser.close()
+    auth.browser.close()
 ```
 
 ### No Session File — Login Every Time
@@ -241,8 +243,8 @@ Inspired by [SUSTech-CRA/awesome-sustech-service-tools](https://github.com/SUSTe
 
 - [ ] **sustech.online bus tracker skill** — scrape or API `sustech.online/transport/bustimer` for live bus schedules + vehicle positions
 - [ ] **sustech.online campus map skill** — serve the interactive street view `/facility/` as a reference
-- [ ] **TIS auto-enroll watcher** — notify when a full course opens up (watchdog on enrollment status). Based on [SUSTechTISHelper](https://github.com/Fros1er/SUSTechTISHelper) patterns
-- [ ] **Grade exporter** — convert TIS/BB grade data to CSV/Excel. Based on [sustech-tis-converter](https://github.com/lethal233/sustech-tis-converter)
+- [x] ~~**Assignment deadline tracker**~~ — done: `sustech_survival/bb/_ddl.py` — REST API (fast) + BB portal page fallback for course IDs. Finds "我的作业" content per course, parses due dates including recurring (每周六晚12点).
+- [x] ~~**TIS grade + course companion**~~ — done: `tis/grades.py` (grades + GPA) and `tis/courses.py` (schedule). Uses official SUSTech GPA table.
 
 ### Low Priority / Exploratory
 
