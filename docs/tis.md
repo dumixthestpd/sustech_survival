@@ -61,6 +61,50 @@ Cookie: route=<val>; JSESSIONID=<val>
 Body: {}
 ```
 Returns: JSON array of exam entries. Key fields: `KCMC` (course), `KCDM` (code), `KSRQ` (date), `KSJTSJ` (time), `JXLMC` (building), `JXCDMC` (room), `XQJMC` (weekday), `KSSJDMC` (type), `XNXQMC` (semester).
+**Note:** Returns the CURRENT semester's exams only. The `xn`/`xq` body params are accepted but ignored — the system always reads the active semester from the session. Fall 2026 exams are not available until that term is active in the system.
+Access: ✅ Student
+
+### Campus-wide Course Schedule (全校课表)
+```
+POST https://tis.sustech.edu.cn/Xsxktz/queryRwxxcxList
+Content-Type: application/x-www-form-urlencoded
+Cookie: route=<val>; JSESSIONID=<val>
+
+Body (form data):
+  p_xn=2025-2026    academic year
+  p_xq=2            semester (1=fall, 2=spring)
+  p_xiaoqu=         campus filter ("一期校区", "二期校区", etc.)
+  p_kkyx=           college code
+  p_kclb=           course category code (from queryKclb)
+  p_kcxz=           course nature ("必修", "选修")
+  p_gjz=            keyword search (course name)
+  p_rwlx=           task type
+  pageNum=1
+  pageSize=500
+```
+Returns: `{total: N, pageSize: 500, rwList: {list: [courses]}}`
+Key course fields: `kcmc` (name), `kcmc_en`, `kcdm` (code), `kkyxmc` (college), `dgjsmc` (instructor), `kcxx` (HTML schedule), `xf` (credits), `kclbmc` (category), `kcxzmc` (nature), `xiaoqumc` (campus), `sksj` (time slots), `nj` (grade), `zrl` (enrollment cap), `pkjgmx` (HTML schedule detail).
+**Semesters:** `xn=2025-2026&xq=2` → Spring 2026 (current), `xn=2025-2026&xq=1` → Fall 2025.
+Access: ✅ Student
+
+### Course Category Tree (培养环节 etc.)
+```
+POST https://tis.sustech.edu.cn/component/queryKclb
+Content-Type: application/json
+Cookie: route=<val>; JSESSIONID=<val>
+
+Body: {}
+```
+Returns: 26-node category hierarchy (培养环节, 专业基础课, 专业必修课, etc. with subcategories like 人文类, 社科类, 艺术类). No actual course list — classification only.
+Access: ✅ Student
+
+### Available Menu Features
+```
+POST https://tis.sustech.edu.cn/user/mk
+POST https://tis.sustech.edu.cn/user/getMknodeMore
+```
+`/user/mk` → top-level categories (业务查询, 业务办理, 选课业务).
+`/getMknodeMore` with `mkdm[]=002&mkdm[]=102&mkdm[]=007&mkdm[]=16` → all feature items with their `url`, `qxdm`, `jsdm`. Use this to discover new REST endpoints.
 Access: ✅ Student
 
 ### Login
