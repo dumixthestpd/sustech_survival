@@ -211,11 +211,41 @@ def fetch_sections(codes: list[str], cookies: dict, xn: str, xq: str) -> dict[st
     return result
 
 
+def parse_block(block_str: str) -> tuple[int, set[int]]:
+    """Parse 'FRI:9-10' or 'FRI:9' → (day_int 0-6, {periods})."""
+    day_str, periods_str = block_str.upper().split(":", 1)
+    DAY_MAP = {"MON": 0, "TUE": 1, "WED": 2, "THU": 3, "FRI": 4, "SAT": 5, "SUN": 6}
+    day = DAY_MAP.get(day_str.strip())
+    if day is None:
+        raise ValueError(f"Unknown day: {day_str}. Use MON/TUE/WED/THU/FRI/SAT/SUN")
+    periods = set()
+    for part in periods_str.split(","):
+        part = part.strip()
+        if "-" in part:
+            start, end = part.split("-", 1)
+            periods.update(range(int(start), int(end) + 1))
+        else:
+            periods.add(int(part))
+    return day, periods
+
+
+def section_blocks_blocked(sec: dict, blocked: list[tuple[int, set[int]]]) -> bool:
+    """True if sec has any slot that overlaps a blocked day+period."""
+    for slot in sec.get("slots", []):
+        slot_periods = set(slot["periods"])
+        for blocked_day, blocked_periods in blocked:
+            if slot["day"] == blocked_day and slot_periods & blocked_periods:
+                return True
+    return False
+
+
 # ── Solver ─────────────────────────────────────────────────────────────────────
-def solve(sections: dict[str, list[dict]], max_results: int = 100) -> list[list[dict]]:
+def solve(sections: dict[str, list[dict]], max_results: int = 100,
+          blocked: list[tuple[int, set[int]]] = None) -> list[list[dict]]:
     codes = list(sections.keys())
     results: list[list[dict]] = []
 
+    blocked = blocked or []
     def backtrack(i: int, current: list[dict]):
         if i == len(codes):
             results.append(list(current))
@@ -224,6 +254,8 @@ def solve(sections: dict[str, list[dict]], max_results: int = 100) -> list[list[
             return
         code = codes[i]
         for sec in sections[code]:
+            if section_blocks_blocked(sec, blocked):
+                continue
             conflict = any(
                 section_conflict(sec, sel)
                 for sel in current
@@ -288,6 +320,8 @@ def main():
                         help="Format: YYYY-YYYY-Q (default: 2025-2026-2)")
     parser.add_argument("--max", type=int, default=100)
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--block", "-b", action="append", default=[],
+                        help="Block a time slot: DAY:PERIODS (e.g. FRI:9-10, MON:5,6)")
     args = parser.parse_args()
 
     # Load codes
@@ -299,6 +333,15 @@ def main():
     if not codes:
         print("❌ No courses specified", file=sys.stderr)
         sys.exit(1)
+
+    # Parse blocked slots
+    blocked: list[tuple[int, set[int]]] = []
+    for b in args.block:
+        try:
+            blocked.append(parse_block(b))
+        except ValueError as e:
+            print(f"❌ {e}", file=sys.stderr)
+            sys.exit(1)
 
     parts = args.semester.rsplit("-", 1)
     xn, xq = parts[0], parts[1]
@@ -325,7 +368,11 @@ def main():
         print("❌ Nothing to schedule.", file=sys.stderr)
         sys.exit(1)
 
-    results = solve(sections, max_results=args.max)
+    blocked_desc = ", ".join(f"{DAY_LABELS[d]}:{','.join(str(p) for p in sorted(ps))}"
+                              for d, ps in blocked)
+    if blocked:
+        print(f"🚫 Blocked: {blocked_desc}", file=sys.stderr)
+    results = solve(sections, max_results=args.max, blocked=blocked)
 
     if args.json:
         out = [{"schedule": r, "total_credits": sum(3 for _ in r)} for r in results]
