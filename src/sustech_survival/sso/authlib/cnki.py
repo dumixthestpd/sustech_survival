@@ -28,7 +28,7 @@ CNKI_CAS = "https://cas.sustech.edu.cn/cas/login"
 
 
 class CNKIAuth(ShibbolethAuthorizer):
-    BASE_URL = CNKI_BASE
+    """CNKI (中国知网) via FSSO/Shibboleth — no session file, login every time."""
     SP_INIT_URL = CNKI_FSSO
     IDP_LOGIN_URL = CNKI_CAS
     SUSTECH_IDP = CNKI_IDP_ENTITYID
@@ -42,22 +42,7 @@ class CNKIAuth(ShibbolethAuthorizer):
         return None
 
     def login(self, *, headless: bool = False, username: str = None, password: str = None):
-        """
-        Full CNKI FSSO login via SUSTech CAS/Shibboleth.
-
-        Reads credentials from credentials.txt if not provided as params.
-
-        Flow:
-          1. Navigate to CNKI Shibboleth endpoint with SUSTech entityID
-          2. Redirect to SUSTech CAS → login
-          3. Redirect to SUSTech IdP consent → Accept
-          4. Redirect back to CNKI → session established
-
-        Returns:
-            True on success (browser/page live on auth.browser / auth.page).
-            Caller MUST call auth.browser.close() when done.
-            False on failure.
-        """
+        """See docs/cnki.md."""
         from playwright.sync_api import sync_playwright
 
         # Load credentials

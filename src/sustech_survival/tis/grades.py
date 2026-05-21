@@ -1,8 +1,4 @@
-"""
-tis grades — Fetch and display TIS grades with GPA.
-
-Uses headless CAS login + JSON API. Reference: lethal233/sustech-tis-converter.
-"""
+"""See docs/grades.md."""
 
 import sys
 from pathlib import Path as _Path
@@ -138,13 +134,7 @@ def _format_grade_row(c):
 
 
 def run(semester: str = None, export: str = None):
-    """
-    Display TIS grades.
-
-    Args:
-        semester: Filter by semester, e.g. '2025秋季' or '2025-2026-1' (default: all).
-        export: If 'csv', export to ~/.openclaw/workspace/sustech/grades.csv
-    """
+    """See docs/grades.md."""
     print("🔑 CAS login...")
     cookies = _login()
     if not cookies:

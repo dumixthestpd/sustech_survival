@@ -71,27 +71,7 @@ class RSCAuthorizer(ShibbolethAuthorizer):
         return True
 
     def login(self, *, headless: bool = True, username: str = None, password: str = None):
-        """
-        Full RSC Shibboleth login via SUSTech CARSI.
-
-        Flow:
-          1. Navigate directly to RSC Shibboleth check URL (bypasses WAYF)
-          2. SUSTech CAS login page → fill credentials
-          3. SUSTech IdP consent → accept
-          4. Back at RSC — session established
-
-        Returns:
-            True on success, False on failure.
-            On success, access the browser/page via: auth._browser, auth._page
-            Caller MUST call browser.close() when done.
-
-        Usage:
-            ok = auth.login()
-            if ok:
-                auth._page.goto("https://pubs.rsc.org/en/search?q=electrochromic")
-                # ... do stuff ...
-                auth._browser.close()
-        """
+        """See docs/rsc.md."""
         from playwright.sync_api import sync_playwright
 
         # Load credentials if not provided

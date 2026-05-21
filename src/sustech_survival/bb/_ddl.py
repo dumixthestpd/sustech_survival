@@ -133,7 +133,7 @@ def _parse_due_date(title, body):
 
 
 def run(days: int = 7, course_id: str = None):
-    session = _get_session()
+    """See docs/bb.md."""
 
     # 1. Get enrolled courses from portal (REST API doesn't have them all)
     all_courses = _get_enrolled_courses()

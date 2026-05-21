@@ -16,12 +16,6 @@ __all__ = ["ddl"]
 
 
 def ddl(days: int = 7, course_id: str = None):
-    """
-    Print upcoming BB assignment deadlines.
-
-    Args:
-        days: Only show deadlines within N days (default 7).
-        course_id: Filter to a specific BB course ID (e.g. '_8053_1').
-    """
+    """See docs/bb.md."""
     from sustech_survival.bb._ddl import run as _run
     _run(days=days, course_id=course_id)

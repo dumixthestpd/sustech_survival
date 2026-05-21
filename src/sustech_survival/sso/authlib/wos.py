@@ -29,7 +29,7 @@ WOS_IDP_ENTITYID = "https://idp.sustech.edu.cn/idp/shibboleth"
 
 
 class WoSAuth(ShibbolethAuthorizer):
-    BASE_URL = WOS_BASE
+    """Web of Science via CARSI/Shibboleth SSO — no session file, login every time."""
     SP_INIT_URL = WOS_INIT
     ACS_URL = WOS_ACS
     IDP_LOGIN_URL = WOS_CAS
@@ -94,24 +94,7 @@ class WoSAuth(ShibbolethAuthorizer):
         return True
 
     def login(self, *, headless: bool = False, username: str = None, password: str = None):
-        """
-        Full WoS Shibboleth login via CARSI/SUSTech CAS.
-
-        Reads credentials from credentials.txt if not provided as params.
-
-        Flow:
-          1. Navigate to SP_INIT_URL → Clarivate access portal
-          2. _handle_wayf() → select CHINA CERNET Federation → CARSI DS WAYF
-          3. CARSI WAYF: search SUSTech → submit → SUSTech CAS
-          4. CAS login with student ID + password
-          5. SUSTech IdP consent: Accept
-          6. Done — access WoS via auth._page
-
-        Returns:
-            True on success (browser/page live on auth._browser / auth._page).
-            Caller MUST call auth._browser.close() when done.
-            False on failure.
-        """
+        """See docs/wos.md."""
         from playwright.sync_api import sync_playwright
 
         # Load credentials

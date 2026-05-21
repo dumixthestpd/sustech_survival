@@ -1,13 +1,4 @@
-"""
-tis courses — Show enrolled courses from TIS.
-
-Uses CAS login. Note: TIS does not have a public API for course catalog.
-For enrolled courses, we use the grade API which returns all taken courses,
-or the course selection page for current semester.
-
-The grade API is the most reliable source since it returns all enrolled
-courses across all semesters.
-"""
+"""See docs/courses.md."""
 
 import sys
 from pathlib import Path as _Path
@@ -48,13 +39,7 @@ def _get_grades(cookies: dict, semester: str = None):
 
 
 def run(semester: str = None, format: str = "table"):
-    """
-    Show enrolled courses from TIS.
-
-    Args:
-        semester: e.g. '2025秋季' or '2026春季' (default: current/next semester).
-        format: 'table' (default) or 'csv'.
-    """
+    """See docs/courses.md."""
     print("🔑 CAS login...")
     cookies = _login()
     if not cookies:
