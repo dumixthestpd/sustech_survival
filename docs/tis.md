@@ -1,25 +1,24 @@
 # TIS (Teaching Information System)
 
-教学信息管理系统 — exam schedule, grades, course info.
+教学信息管理系统 — exam schedule, grades, course info, campus schedule.
 
-**⚠️ Access levels:** Student account (学生（本）) vs Teacher account. Some endpoints return 403 for students.
+**Auth:** CAS session (`route` + `JSESSIONID` cookies). Login → redirect ticket exchange.
+
+**⚠️ Access levels:** Student (学生（本）) vs teacher. Some endpoints are 403 for students.
 
 ---
 
-## Access Denied / Unavailable
+## Login
 
-These paths exist in the frontend JS but return 403 or empty for student accounts — they are teacher-only or require additional auth:
+```
+POST https://cas.sustech.edu.cn/cas/login?service=https%3A%2F%2Ftis.sustech.edu.cn%2Fcas
+Body: username=<sid>&password=<pass>&execution=<token>&_eventId=submit
+```
+1. GET the login page → extract `execution` token from `name="execution" value="..."`
+2. POST credentials → follow `Location` header (ticket URL)
+3. Final response `Set-Cookie` contains `route=...; JSESSIONID=...`
 
-| Endpoint | Status | Reason |
-|----------|--------|--------|
-| `POST /kscxtj/queryJkcxByXh` | 403 Forbidden | Invigilation schedule (教师) |
-| `POST /kscxtj/queryJskccxByXh` | 403 Forbidden | Unknown (教师) |
-| `POST /component/queryJsKsxxcxList` | 200, empty | Unknown (教师) |
-| `POST /kscxtj/queryXskscxByXh` | 200, empty | Not implemented (no data) |
-| `POST /ksgl/*` | 404 | Exam management module not accessible via REST |
-| `POST /kscx/*` | 404 | Exam query module not accessible via REST |
-| `POST /xsgrkb/*` | 404 | Personal schedule module not accessible via REST |
-| `GET /student_index` | 200, HTML only | Iframe shell — actual data loaded inside browser Vue app |
+---
 
 ## Quick Status Check
 
@@ -27,21 +26,24 @@ These paths exist in the frontend JS but return 403 or empty for student account
 curl -s -o /dev/null -w "%{http_code}" \
   -b "route=<ROUTE>; JSESSIONID=<JSESSIONID>" \
   https://tis.sustech.edu.cn/user/me
-# 200 = logged in, 401/302 = not logged in
+# 200 = logged in, 401/302 = session expired
 ```
 
 ---
 
-## Known APIs (Student Access ✅)
+## User Profile
 
-### User Profile
 ```
 GET https://tis.sustech.edu.cn/user/me
+Cookie: route=<val>; JSESSIONID=<val>
 ```
-Returns: student ID, name, department, role, 50+ authority codes.
+Returns: `studentId`, `id` (internal), `name`, `department`, `pylx` (student type), 50+ auth codes.
 Access: ✅ Student
 
-### Grades
+---
+
+## Grades
+
 ```
 POST https://tis.sustech.edu.cn/cjgl/grcjcx/grcjcx
 Content-Type: application/json
@@ -49,10 +51,19 @@ Cookie: route=<val>; JSESSIONID=<val>
 
 Body: {"xn":null,"xq":null,"kcmc":null,"cxbj":"-1","pylx":"1","current":1,"pageSize":500}
 ```
-Returns: list of grade records with `kcmc` (course), `xscj` (letter grade), `zzcj` (numeric score), `xf` (credits), `xnxqmc` (semester).
+Returns: `content.list[]` with `kcmc`, `kcmc_en`, `kcdm`, `xscj` (letter grade), `zzcj` (numeric score), `xf` (credits), `xnxqmc` (semester), `kcxz` (nature), `yxmc` (department).
 Access: ✅ Student
 
-### Exam Schedule
+GPA is calculated using SUSTech's official 4.0 scale. Run via:
+```bash
+python3 src/sustech_survival/tis/grades.py          # display
+python3 src/sustech_survival/tis/grades.py --csv   # export CSV
+```
+
+---
+
+## Exam Schedule
+
 ```
 POST https://tis.sustech.edu.cn/component/queryKsxxByXs
 Content-Type: application/json
@@ -60,35 +71,72 @@ Cookie: route=<val>; JSESSIONID=<val>
 
 Body: {}
 ```
-Returns: JSON array of exam entries. Key fields: `KCMC` (course), `KCDM` (code), `KSRQ` (date), `KSJTSJ` (time), `JXLMC` (building), `JXCDMC` (room), `XQJMC` (weekday), `KSSJDMC` (type), `XNXQMC` (semester).
-**Note:** Returns the CURRENT semester's exams only. The `xn`/`xq` body params are accepted but ignored — the system always reads the active semester from the session. Fall 2026 exams are not available until that term is active in the system.
+Returns: current semester exam entries. Key fields: `KCMC` (course), `KCDM` (code), `KSRQ` (date), `KSJTSJ` (time), `JXLMC` (building), `JXCDMC` (room), `XQJMC` (weekday), `KSSJDMC` (type), `XNXQMC` (semester).
+
+**Note:** Returns the active semester only. Body `xn`/`xq` params are accepted but ignored. Fall 2026 exams are not in the system until that term is active.
 Access: ✅ Student
 
-### Campus-wide Course Schedule (全校课表)
+Run via:
+```bash
+python3 src/sustech_survival/tis/exams.py          # display
+python3 src/sustech_survival/tis/exams.py --csv   # export CSV
+```
+
+---
+
+## Campus-wide Course Schedule (全校课表)
+
 ```
 POST https://tis.sustech.edu.cn/Xsxktz/queryRwxxcxList
 Content-Type: application/x-www-form-urlencoded
 Cookie: route=<val>; JSESSIONID=<val>
 
-Body (form data):
-  p_xn=2025-2026    academic year
-  p_xq=2            semester (1=fall, 2=spring)
-  p_chaxunpylx=     cultivation type filter: ''=default filtered (~188/sem), '1'=undergrad (~1200/sem), '2'=grad (~445/sem), '3'=both+all history (1488 total, ignores xn/xq)
-  p_xiaoqu=         campus filter ("一期校区", "二期校区", etc.)
-  p_kkyx=           college code
-  p_kclb=           course category code (from queryKclb)
-  p_kcxz=           course nature ("必修", "选修")
-  p_gjz=            keyword search (course name)
-  p_rwlx=           task type
+Form data:
+  p_xn=2025-2026         academic year
+  p_xq=2                 semester (1=fall, 2=spring)
+  p_chaxunpylx=         cultivation type filter:
+                          ''     = default filtered view (~188/sem)
+                          '1'    = undergrad only (~1200/sem for Spr2026)
+                          '2'    = grad only (~445/sem)
+                          '3'    = full campus list (1488 for Spr2026, paginate)
+  p_xiaoqu=             campus ("一期校区", "二期校区", etc.)
+  p_kkyx=               college code
+  p_kclb=               course category code (from queryKclb)
+  p_kcxz=               course nature ("必修", "选修")
+  p_gjz=                keyword search
+  p_rwlx=               task type
   pageNum=1
-  pageSize=500
+  pageSize=500          max per page; use full=True in code to auto-paginate
 ```
+
 Returns: `{total: N, pageSize: 500, rwList: {list: [courses]}}`
-Key course fields: `kcmc` (name), `kcmc_en`, `kcdm` (code), `kkyxmc` (college), `dgjsmc` (instructor), `kcxx` (HTML schedule), `xf` (credits), `kclbmc` (category), `kcxzmc` (nature), `xiaoqumc` (campus), `sksj` (time slots), `nj` (grade), `zrl` (enrollment cap), `pkjgmx` (HTML schedule detail).
-**Semesters:** `xn=2025-2026&xq=2` → Spring 2026 (current), `xn=2025-2026&xq=1` → Fall 2025.
+
+Key course fields:
+- `kcmc` / `kcmc_en` — course name (Chinese / English)
+- `kcdm` — course code (e.g. MSE306)
+- `kkyxmc` — college/department
+- `dgjsmc` — instructor
+- `sksj` — time slots (e.g. "1-15周,星期三第3-4节")
+- `xf` — credits
+- `kclbmc` — category (培养环节, 专业基础课, 专业必修课, 专业选修课, 通识必修课, 通识选修课, etc.)
+- `kcxzmc` — nature (必修/选修)
+- `xiaoqumc` — campus
+- `nj` — grade level (undergrad/grad)
+- `pylx` — student type (1=undergrad, 2=grad)
+
+Semesters: `xn=2025-2026&q=2` = Spring 2026, `xn=2025-2026&q=1` = Fall 2025.
 Access: ✅ Student
 
-### Course Category Tree (培养环节 etc.)
+Run via:
+```bash
+python3 src/sustech_survival/tis/campus_schedule.py --semester 2025-2026-2 --full
+# --json for JSON output, --csv for CSV
+```
+
+---
+
+## Course Category Tree (培养环节 etc.)
+
 ```
 POST https://tis.sustech.edu.cn/component/queryKclb
 Content-Type: application/json
@@ -96,42 +144,66 @@ Cookie: route=<val>; JSESSIONID=<val>
 
 Body: {}
 ```
-Returns: 26-node category hierarchy (培养环节, 专业基础课, 专业必修课, etc. with subcategories like 人文类, 社科类, 艺术类). No actual course list — classification only.
+Returns: 26-node category hierarchy. Top-level categories:
+
+| Code | Name | Subcategories |
+|---|---|---|
+| 01 | 培养环节 | 劳动教育, 军事理论, 创业创新, ... |
+| 03 | 专业基础课 | (理科大类, 工科大类 etc.) |
+| 04 | 专业必修课 | |
+| 05 | 专业选修课 | |
+| 06 | 专业核心课 | |
+| 07 | 通识必修课 | 思政类, 体育类, 外语类, 军理类, 计算机类 |
+| 08 | 通识选修课 | 人文类, 社科类, 艺术类, 生命健康类, 工程认证类 |
+
+**Note:** This is a classification tree only. It does NOT return course lists. Use 全校课表 with `p_kclb` filter to get courses in a specific category.
 Access: ✅ Student
 
-### Available Menu Features
+---
+
+## Menu Feature Discovery
+
+Use this to find new endpoints before they are documented:
+
 ```
 POST https://tis.sustech.edu.cn/user/mk
+Body (form): {}  → top-level categories
+
 POST https://tis.sustech.edu.cn/user/getMknodeMore
+Body (form): mkdm[]=002&mkdm[]=102&mkdm[]=007&mkdm[]=16
+→ all 27 feature items with `text` (name) and `url` (route)
 ```
-`/user/mk` → top-level categories (业务查询, 业务办理, 选课业务).
-`/getMknodeMore` with `mkdm[]=002&mkdm[]=102&mkdm[]=007&mkdm[]=16` → all feature items with their `url`, `qxdm`, `jsdm`. Use this to discover new REST endpoints.
+
 Access: ✅ Student
 
-### Login
-```
-POST https://cas.sustech.edu.cn/cas/login?service=https%3A%2F%2Ftis.sustech.edu.cn%2Fcas
-Body: username=<sid>&password=<pass>&execution=<token>&_eventId=submit
-```
-Exchange the resulting ticket at the `Location` header to get `route` and `JSESSIONID` cookies.
-Access: ✅ Anyone
+---
+
+## Blocked (FineReport — browser-only)
+
+These pages render entirely in-browser via FineReport JS. No REST equivalent found.
+
+| Page | URL | Contains |
+|---|---|---|
+| 学业修读情况 | `/browserRedirect/queryReport?viewlet=byyt/xsxy/学业修读情况.cpt` | Per-category credit totals (earned vs. required) |
+| 培养方案 | `/browserRedirect/queryReport?viewlet=byyt/pyfa/培养方案.cpt` | Curriculum requirements |
+| 学分绩查询 | `/cjgl/xscjgl/xsgrcjcx/xspjxfjcx` | GPA details |
+
+The FineReport server is at `/webroot/decision/view/report` but `op=fs/load/execute` all return "Unresolvable Operation". Data loads client-side via FineReport's proprietary AJAX protocol.
+Access: ❌ CLI (browser-only)
 
 ---
 
-## Running the Exam Fetcher
+## Building a Curriculum Todo List
 
-```bash
-cd ~/.openclaw/skills/sustech_survival
-python3 src/sustech_survival/tis/exams.py          # display
-python3 src/sustech_survival/tis/exams.py --csv   # export to ~/.openclaw/workspace/sustech/exams.csv
-```
+What's available:
+1. **全校课表** → all courses with `kclbmc` (category) + `kcxzmc` (nature) + `xf` (credits)
+2. **queryKclb** → category tree with codes
+3. **Your grades** → courses you've already taken
 
----
+What's missing:
+- **Credit minimums per category** — the 培养方案 requirements. Source options:
+  - 教务处 website (currently unreachable from this network)
+  - FineReport 学业修读情况 (browser-only)
+  - Manual input from student handbook
 
-## Running Grades
-
-```bash
-cd ~/.openclaw/skills/sustech_survival
-python3 src/sustech_survival/tis/grades.py          # display
-python3 src/sustech_survival/tis/grades.py --csv   # export to ~/.openclaw/workspace/sustech/grades.csv
-```
+For 通识通修 specifically: the category tree shows 思政类, 体育类, 外语类, 军理类 under 通识必修课 (07). Cross-reference your grades against these categories to find missing courses.
