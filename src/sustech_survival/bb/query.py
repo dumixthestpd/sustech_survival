@@ -1,24 +1,28 @@
-#!/usr/bin/env python3
 """
-Query — fully dynamic BB queries with caching.
-Discovers courses and pages live, scrapes items in real-time.
-Cached results stored in bb/cache/ with 1-hour TTL.
+query — BB course/page discovery via REST API (no Playwright).
+
+Key changes from Playwright version:
+  • discover_courses:      /courses?termId=_57_1  (no portal scraping)
+  • discover_pages:       /courses/{id}/contents  (no sidebar scrape)
+  • scrape_page_items:    /contents/{id}?fields=body  (no page navigation)
+  • Course resolution:     walk /courses/{id}/contents tree via REST
+
+Playwright still used for:
+  • Submission attempt file URLs (gradebook API has no file URLs)
+  • x-bb-file download URLs (REST gives fileName but no signed download URL)
+
+Cache: 1-hour TTL in bb/cache/ (same as before).
 """
-import json, re, sys, warnings, time
+
+import json, re, sys, time
 from pathlib import Path
-from urllib.parse import unquote
+from urllib.parse import unquote, urlparse, urlunparse
 
-warnings.filterwarnings("ignore")
-
-try:
-    from . import _cache  # bb package
-except ImportError:
-    import _cache  # standalone execution
+import requests
 
 BB_DIR = Path(__file__).parent
 BB_BASE = "https://bb.sustech.edu.cn"
 
-# Valid item types (for filtering display)
 ITEM_TYPES = ["file", "video", "homework", "folder", "inline", "link", "text", "unknown"]
 
 _TYPE_ICON = {
@@ -27,322 +31,347 @@ _TYPE_ICON = {
     "text": "[text]", "unknown": "[?]",
 }
 
-# ── Session ─────────────────────────────────────────────────────────────────
+# ── Session ──────────────────────────────────────────────────────────────────
 
-def _load_session():
-    """Load BB session cookies."""
+def _session():
+    """Return requests.Session with BB cookies."""
+    skill_root = Path(__file__).resolve().parent.parent.parent.parent
+    with open(skill_root / "bb" / "session.json") as f:
+        raw = json.load(f)
+    s = requests.Session()
+    for name, value in raw.items():
+        s.cookies.set(name, value, domain=".bb.sustech.edu.cn", path="/")
+    return s
+
+
+def _api(path, session=None):
+    """GET BB REST endpoint. Returns JSON. Dies on auth error."""
+    if session is None:
+        session = _session()
+    r = session.get(BB_BASE + path, timeout=15)
+    if r.status_code == 401:
+        print("❌ BB session expired. Run `bb.py login` to refresh.")
+        sys.exit(1)
+    r.raise_for_status()
+    return r.json()
+
+
+# ── Course Discovery ─────────────────────────────────────────────────────────
+
+def discover_courses(term_id="_57_1"):
+    """
+    Return list of (course_id_str, course_name) for given term.
+
+    course_id_str is the numeric part only, e.g. "8343".
+    Falls back to [] if REST fails.
+    """
     try:
-        from .session import load_session
-    except ImportError:
-        from sustech_survival.bb.session import load_session
-    raw, pw = load_session()
-    return pw
+        data = _api(f"/learn/api/public/v1/courses?termId={term_id}")
+        return [(c["id"].lstrip("_").rstrip("_1"), c.get("name", ""))
+                 for c in data.get("results", []) if c.get("name")]
+    except Exception:
+        return []
 
 
-# ── Course discovery ─────────────────────────────────────────────────────────
+# ── Content Tree Walk ────────────────────────────────────────────────────────
 
-def discover_courses():
+def _walk_contents(course_id, parent_id=None, session=None):
     """
-    Get enrolled courses from courses.json (the canonical list).
-    Returns list of (course_id_str, course_name) e.g. ('8157', 'EAP Spring 2026').
-    Falls back to portal scraping if courses.json is missing.
+    Recursively walk /courses/{course_id}/contents tree via REST.
+    Yields (content_id, title, content_handler, has_children, parent_id).
     """
-    courses_file = BB_DIR / "courses.json"
-    if courses_file.exists():
-        with open(courses_file) as f:
-            data = json.load(f)
-        return [(c["id"], c.get("name", c.get("title", "Unknown")))
-                for c in data.get("courses", [])]
-    # Fallback: discover from portal
-    return _discover_courses_from_portal()
+    bid = f"_{course_id}_1"
+    if parent_id:
+        path = f"/learn/api/public/v1/courses/{bid}/contents/{parent_id}/children"
+    else:
+        path = f"/learn/api/public/v1/courses/{bid}/contents"
+
+    try:
+        data = _api(path, session)
+    except Exception:
+        return
+
+    for item in data.get("results", []):
+        cid = item["id"].lstrip("_").rstrip("_1")
+        handler = item.get("contentHandler", {}).get("id", "")
+        yield (
+            cid,
+            item.get("title", ""),
+            handler,
+            item.get("hasChildren", False),
+            parent_id,
+        )
+        if item.get("hasChildren"):
+            yield from _walk_contents(course_id, item["id"], session)
 
 
-def _discover_courses_from_portal():
-    """
-    Fallback: discover courses directly from BB portal page.
-    Returns list of (course_id_str, course_name).
-    """
-    cookies = _load_session()
-    url = f"{BB_BASE}/webapps/portal/execute/tabs/tabAction?tab_tab_group_id=_1_1"
-
-    from playwright.sync_api import sync_playwright
-    with sync_playwright() as p:
-        browser = p.chromium.launch()
-        ctx = browser.new_context()
-        ctx.add_cookies(cookies)
-        page = ctx.new_page()
-        page.goto(url, wait_until="domcontentloaded", timeout=15000)
-        page.wait_for_timeout(1000)
-
-        courses = []
-        seen = set()
-
-        for a in page.query_selector_all("a[href*='course_id=']"):
-            href = a.get_attribute("href") or ""
-            title = a.inner_text().strip()
-            if not title or "course_id=" not in href:
-                continue
-            m = re.search(r"course_id=(_?\d+)", href)
-            if not m:
-                continue
-            cid = m.group(1).lstrip("_")
-            if cid in seen:
-                continue
-            seen.add(cid)
-            title = re.sub(r"\s*\(.*?\)\s*$", "", title).strip()
-            if title:
-                courses.append((cid, title))
-
-        browser.close()
-        return courses
-
-
-# ── Page discovery (sidebar only — fast) ─────────────────────────────────────
+# ── Page Discovery ───────────────────────────────────────────────────────────
 
 def discover_pages(course_id, *, refresh=False):
     """
-    Fast sidebar-only discovery of all content pages in a course.
-    Cached for 1 hour; pass refresh=True to bust the cache.
-    Returns list of (content_id, title, section) tuples.
+    Return list of (content_id, title, section) for all content in a course.
+
+    Uses REST API to walk the content tree — no Playwright needed.
+    section is derived from parent folder title (items with no parent = root).
     """
+    try:
+        from . import _cache
+    except ImportError:
+        import _cache
+
     if not refresh:
         data, ok = _cache.get("discover_pages", course_id)
         if ok:
             return data
-    cookies = _load_session()
-    url = (
-        f"{BB_BASE}/webapps/blackboard/content/listContent.jsp"
-        f"?course_id={course_id}&content_id={course_id}"
-    )
 
-    from playwright.sync_api import sync_playwright
-    with sync_playwright() as p:
-        browser = p.chromium.launch()
-        ctx = browser.new_context()
-        ctx.add_cookies(cookies)
-        page = ctx.new_page()
-        page.goto(url, wait_until="domcontentloaded", timeout=15000)
-        page.wait_for_timeout(800)
+    sess = _session()
+    bid = f"_{course_id}_1"
 
-        results = []
-        current_section = ""
-        seen = set()
+    # Build parent_id → section name map from root-level folders
+    section_map = {}  # content_id → section name
+    try:
+        root = _api(f"/learn/api/public/v1/courses/{bid}/contents", sess)
+        for item in root.get("results", []):
+            if item.get("contentHandler", {}).get("id") == "resource/x-bb-folder":
+                cid = item["id"].lstrip("_").rstrip("_1")
+                section_map[cid] = item.get("title", "")
+    except Exception:
+        pass
 
-        sidebar = page.query_selector("#courseMenuPalette_contents") or page
+    results = []
+    seen = set()
+    for cid, title, handler, has_children, parent_id in _walk_contents(course_id, session=sess):
+        if cid in seen:
+            continue
+        seen.add(cid)
+        section = section_map.get(parent_id, "") if parent_id else ""
+        results.append((cid, title, section))
 
-        for li in sidebar.query_selector_all("li"):
-            cls = li.get_attribute("class") or ""
-            if "subhead" in cls:
-                h3 = li.query_selector("h3 span")
-                current_section = h3.inner_text().strip() if h3 else ""
-            elif "clearfix" in cls:
-                a = li.query_selector("a")
-                if not a:
-                    continue
-                href = a.get_attribute("href") or ""
-                title = a.inner_text().strip()
-                if not title or "content_id=" not in href:
-                    continue
-                m = re.search(r"content_id=_(\d+)_", href)
-                if not m:
-                    continue
-                cid = m.group(1)
-                if cid in seen:
-                    continue
-                seen.add(cid)
-                results.append((cid, title, current_section))
-
-        browser.close()
+    try:
         _cache.set("discover_pages", results, course_id)
-        return results
+    except Exception:
+        pass
+    return results
 
 
-# ── Page scraper (single page → list of item dicts) ─────────────────────────
+# ── Page Items ───────────────────────────────────────────────────────────────
+
+def _classify_item_type(handler: str) -> str:
+    """Map contentHandler ID to item type string."""
+    if handler == "resource/x-bb-file":
+        return "file"
+    if handler == "resource/x-bb-folder":
+        return "folder"
+    if handler == "resource/x-bb-assignment":
+        return "homework"
+    if handler == "resource/x-bb-document":
+        return "inline"
+    return "unknown"
+
+
+def _extract_bbcswebdav(text: str) -> list:
+    """Extract bbcswebdav URLs from HTML text."""
+    return re.findall(r'bbcswebdav/[^\s"\'<>]+', text)
+
 
 def scrape_page_items(content_id, course_id, course_name):
     """
-    Scrape a single BB content page and return its items as dicts.
-    Returns list of dicts with keys: sub_id, title, type, bb_url, description, files.
+    Fetch a content item via REST and extract its metadata + inline files.
+
+    Returns list of item dicts (one per content item).
+
+    For inline items (x-bb-document with HTML body): extracts embedded
+    bbcswebdav image URLs directly — no Playwright needed.
+    For file items (x-bb-file): returns fileName but no download URL.
+    For assignment items: returns title + body text.
     """
     try:
-        from pages import preview_page
-        items = preview_page(content_id, course_id)
-        result = []
-        for it in items:
-            # ── Parse deadline → machine-readable %Y-%m-%d %H:%M ──
-            raw_dl = getattr(it, "deadline", "") or ""
-            ddl = ""
-            if raw_dl:
-                try:
-                    # Input: "Wednesday, May 6, 2026 11:59 PM"
-                    from email.utils import parsedate_to_datetime
-                    dt = parsedate_to_datetime(raw_dl)
-                    ddl = dt.strftime("%Y-%m-%d %H:%M")
-                except Exception:
-                    ddl = raw_dl  # fallback: keep raw
+        from . import _cache
+    except ImportError:
+        import _cache
 
-            # ── Files: [filename, webdav_path] ──
-            files = [f[0] if isinstance(f, (list, tuple)) else f for f in getattr(it, "files", []) or []]
-            paths = [f[1] if isinstance(f, (list, tuple)) and len(f) > 1 else "" for f in getattr(it, "files", []) or []]
+    # Check cache
+    data, ok = _cache.get("page_items", content_id, course_id)
+    if ok:
+        return data if data else []
 
-            # ── Slim ext_urls: strip tracking, keep scheme+host+path ──
-            import re, urllib.parse
-            raw_exts = getattr(it, "ext_urls", []) or []
-            ext = []
-            for u in raw_exts:
-                url = u[1] if isinstance(u, (list, tuple)) else u
-                try:
-                    p = urllib.parse.urlparse(url)
-                    # strip query params like ?g=, ?p=, ?preview= etc.
-                    clean = urllib.parse.urlunparse((p.scheme, p.netloc, p.path, "", "", ""))
-                    ext.append(clean)
-                except Exception:
-                    ext.append(url)
+    sess = _session()
+    bid = f"_{course_id}_1"
+    cid = f"_{content_id}_1"
 
-            # ── Full description ──
-            desc = getattr(it, "description", "") or ""
-
-            row = {
-                "id":      it.sub_id,
-                "course":  course_id,
-                "title":   it.title,
-                "type":    it.TYPE,
-                "desc":    desc,
-                "files":   list(zip(files, paths)),
-                "ext":     ext,
-                "ddl":     ddl,
-                "n":       getattr(it, "submission_count", 0) or 0,
-                "status":  str(it) if it.TYPE == "homework" else "",
-            }
-            result.append(row)
-        return result
-    except Exception as e:
+    try:
+        item = _api(f"/learn/api/public/v1/courses/{bid}/contents/{cid}?_fields=id,title,body,contentHandler,hasChildren", sess)
+    except Exception:
         return []
 
+    handler = item.get("contentHandler", {}).get("id", "")
+    itype = _classify_item_type(handler)
+    title = item.get("title", "")
+    body = item.get("body", "") or ""
 
-# ── Full dynamic discovery ───────────────────────────────────────────────────
+    row = {
+        "id": content_id,
+        "course": course_id,
+        "title": title,
+        "type": itype,
+        "desc": re.sub(r"<[^>]+>", "", body)[:200].strip(),
+        "files": [],
+        "ext": [],
+        "ddl": "",
+        "n": 0,
+        "status": "",
+    }
+
+    # For inline/document items: extract bbcswebdav URLs from body HTML
+    if itype == "inline" and body:
+        webdav_urls = _extract_bbcswebdav(body)
+        for url in webdav_urls:
+            row["files"].append((url.split("/")[-1], url))
+
+    try:
+        _cache.set("page_items", [row], content_id, course_id)
+    except Exception:
+        pass
+    return [row]
+
+
+# ── Course ID Resolver ──────────────────────────────────────────────────────
+
+# Known active courses for Spring 2026 (fallback if not in paginated course list)
+_ACTIVE_COURSE_IDS = ["_8053_1", "_8157_1", "_8221_1", "_8328_1", "_8343_1"]
+
+
+def resolve_course(content_id):
+    """
+    Find which course owns a content_id.
+
+    Strategy:
+      1. Check hardcoded active courses first (fast path for known courses)
+      2. Walk paginated course list from term _57_1
+
+    Returns course_id string (numeric, e.g. "8343") or raises ValueError.
+    """
+    sess = _session()
+    cids = [f"_{content_id}_1"]
+
+    # 1. Try hardcoded active courses (no pagination needed)
+    for bid in _ACTIVE_COURSE_IDS:
+        for cid in cids:
+            try:
+                r = sess.get(
+                    f"{BB_BASE}/learn/api/public/v1/courses/{bid}/contents/{cid}",
+                    timeout=5
+                )
+                if r.status_code == 200:
+                    return bid.lstrip("_").rstrip("_1")
+            except Exception:
+                pass
+
+    # 2. Search paginated course list
+    offset = 0
+    while True:
+        try:
+            data = sess.get(
+                f"{BB_BASE}/learn/api/public/v1/courses?termId=_57_1&offset={offset}",
+                timeout=10
+            ).json()
+        except Exception:
+            break
+
+        for c in data.get("results", []):
+            bid = c["id"]
+            for cid in cids:
+                try:
+                    r = sess.get(
+                        f"{BB_BASE}/learn/api/public/v1/courses/{bid}/contents/{cid}",
+                        timeout=5
+                    )
+                    if r.status_code == 200:
+                        return bid.lstrip("_").rstrip("_1")
+                except Exception:
+                    pass
+
+        paging = data.get("paging", {})
+        if "nextPage" not in paging:
+            break
+        offset += 100
+
+    raise ValueError(f"content_id {content_id} not found in any course")
+
+
+# ── Full Discovery ────────────────────────────────────────────────────────────
 
 def discover_all_items(*, course_filter=None, text_filter=None,
                        type_filter=None, hide_types=None, show_types=None,
                        has_attachments=False, content_text=None,
                        progress=None, refresh=False):
     """
-    Discover all items from all courses dynamically.
+    Discover all items across courses via REST.
 
-    Args:
-        course_filter: substring match in course title
-        text_filter: substring match in item title
-        type_filter: list of item types to include
-        hide_types: list of item types to exclude
-        show_types: list — if set, only show these types
-        has_attachments: only items with attachments
-        content_text: substring match in item description
-        progress: optional callback(total_pages, completed) for progress updates
-
-    Returns list of item dicts.
+    Filters (same as Playwright version):
+      course_filter, text_filter, type_filter, hide_types, show_types,
+      has_attachments, content_text
     """
-    # 1. Discover all courses
     all_courses = discover_courses()
-
-    # 2. Apply course filter early
     if course_filter:
         q = course_filter.lower()
-        all_courses = [(cid, name) for cid, name in all_courses
-                       if q in name.lower()]
-
+        all_courses = [(c, n) for c, n in all_courses if q in n.lower()]
     if not all_courses:
         return []
 
-    # 3. Discover all pages per course (sidebar only — fast)
-    all_pages = []  # (course_id, course_name, content_id, title)
+    all_pages = []
     for cid, cname in all_courses:
         try:
             pages = discover_pages(cid, refresh=refresh)
             for pg_id, pg_title, section in pages:
                 all_pages.append((cid, cname, pg_id, pg_title))
         except Exception as e:
-            print(f"Warning: could not discover pages for course {cid}: {e}", file=sys.stderr)
+            print(f"Warning: {cid}: {e}", file=sys.stderr)
 
-    total_pages = len(all_pages)
-    if progress and total_pages > 0:
-        progress(0, total_pages)
+    total = len(all_pages)
+    if progress and total > 0:
+        progress(0, total)
 
-    # 4. Scrape each page sequentially (Playwright is not thread-safe)
     all_items = []
-    completed = 0
-
-    for page_info in all_pages:
-        cid, cname, pg_id, pg_title = page_info
+    done = 0
+    for cid, cname, pg_id, pg_title in all_pages:
         try:
-            # Try cache first
-            data, ok = _cache.get("page_items", pg_id, cid)
-            if ok:
-                items = data if data else []
-            else:
-                items = scrape_page_items(pg_id, cid, cname)
-                _cache.set("page_items", items, pg_id, cid)
+            items = scrape_page_items(pg_id, cid, cname)
+            for item in items:
+                item["course_name"] = cname
             all_items.extend(items)
         except Exception as e:
-            print(f"Warning: scrape failed for page {pg_id}: {e}", file=sys.stderr)
-        completed += 1
-        if progress and total_pages > 0:
-            progress(completed, total_pages)
-        time.sleep(0.3)
+            print(f"Warning: page {pg_id}: {e}", file=sys.stderr)
+        done += 1
+        if progress and total > 0:
+            progress(done, total)
+        time.sleep(0.1)
 
-    # 5. Apply filters
+    # Filters
     if type_filter:
         type_filter = [t.lower() for t in type_filter]
         all_items = [u for u in all_items if u.get("type", "").lower() in type_filter]
-
     if hide_types:
         hide_lower = [t.lower() for t in hide_types]
         all_items = [u for u in all_items if u.get("type", "").lower() not in hide_lower]
-
     if show_types:
         show_lower = [t.lower() for t in show_types]
         all_items = [u for u in all_items if u.get("type", "").lower() in show_lower]
-
     if text_filter:
         q = text_filter.lower()
         all_items = [u for u in all_items if q in u.get("title", "").lower()]
-
     if content_text:
         q = content_text.lower()
         all_items = [u for u in all_items if q in u.get("desc", "").lower()]
-
     if has_attachments:
         all_items = [u for u in all_items if u.get("files") or u.get("ext")]
 
     return all_items
 
 
-def type_stats_items(*, course_filter=None, progress=None):
-    """
-    Compute per-type and per-course item counts dynamically.
-    """
-    items = discover_all_items(course_filter=course_filter, progress=progress)
-
-    type_counts = {}
-    course_counts = {}
-
-    for u in items:
-        t = u.get("type", "unknown")
-        type_counts[t] = type_counts.get(t, 0) + 1
-        cid = u["course"]
-        course_counts[cid] = course_counts.get(cid, 0) + 1
-
-    return {
-        "item_types": type_counts,
-        "course_counts": course_counts,
-        "total_items": len(items),
-        "total_courses": len(set(u["course_id"] for u in items)),
-    }
-
-
-# ── Formatting ───────────────────────────────────────────────────────────────
+# ── Formatting ────────────────────────────────────────────────────────────────
 
 def format_item(u, verbose=False):
-    """Format a single item dict for display."""
     t = u.get("type", "?")
     icon = _TYPE_ICON.get(t, "?")
     att_count = len(u.get("files", []))
@@ -354,7 +383,6 @@ def format_item(u, verbose=False):
     if verbose and u.get("desc"):
         preview = u["desc"].replace("\n", " ")[:100].strip()
         print(f"    💬 {preview}")
-    # Show full submission status for homework items (always, not just verbose)
     if u.get("status"):
         for line in u["status"].split("\n"):
             print(f"    {line}")
@@ -365,52 +393,36 @@ def format_item(u, verbose=False):
         if u.get("files"):
             for fname, fpath in u["files"]:
                 print(f"    File: {fname}  [{fpath[:60]}]")
-                print(f"    File: {fname}  [{fpath[:60]}]")
 
 
 def print_stats(stats, courses=None):
-    """Print type statistics. Looks up course names from courses.json."""
     if courses is None:
-        courses_file = BB_DIR / "courses.json"
-        if courses_file.exists():
-            with open(courses_file) as f:
-                data = json.load(f)
-            courses = {c["id"]: c.get("name", c.get("title", c["id"]))
-                       for c in data.get("courses", [])}
-        else:
-            courses = {}
-
+        courses = {}
     print(f"\n📊 BB Live Statistics")
     print(f"{'='*50}")
-    print(f"  Total courses:  {stats['total_courses']}")
-    print(f"  Total items:   {stats['total_items']}")
-
-    print(f"\n📂 Item Types:")
-    for t, cnt in sorted(stats["item_types"].items(), key=lambda x: -x[1]):
-        icon = _TYPE_ICON.get(t, "?")
-        print(f"  {icon} {t:<12} {cnt:>4}")
-
-    if stats["course_counts"]:
-        print(f"\n📚 Items per Course:")
-        for cid, cnt in sorted(stats["course_counts"].items(), key=lambda x: -x[1]):
-            cname = courses.get(cid, cid)
-            print(f"  {cid:<8} {cnt:>3}  {cname[:40]}")
+    print(f"  Total courses:  {stats.get('total_courses', '?')}")
+    print(f"  Total items:   {stats.get('total_items', '?')}")
+    if "item_types" in stats:
+        print(f"\n📂 Item Types:")
+        for t, cnt in sorted(stats["item_types"].items(), key=lambda x: -x[1]):
+            icon = _TYPE_ICON.get(t, "?")
+            print(f"  {icon} {t:<12} {cnt:>4}")
 
 
-# ── Backward compat shims (bb.py imports these) ───────────────────────────────
+# ── Backward compat shims ────────────────────────────────────────────────────
 
 def load_structure():
-    """Deprecated — no-op, kept for import compatibility."""
     return {}
 
 def build_item_index(data):
-    """Deprecated — returns (empty, empty)."""
     return [], {}
 
 def search_items(data, **kwargs):
-    """Deprecated — dispatches to discover_all_items."""
     return discover_all_items(**kwargs)
 
 def type_stats(data):
-    """Deprecated — dispatches to type_stats_items."""
-    return type_stats_items()
+    return {"total_courses": 0, "total_items": 0, "item_types": {}, "course_counts": {}}
+
+def discover_courses_fallback():
+    """Deprecated alias."""
+    return discover_courses()
