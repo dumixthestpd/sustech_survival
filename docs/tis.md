@@ -1,78 +1,69 @@
 # TIS (Teaching Information System)
 
-教学信息管理系统 — course schedule, grades, academic info.
+教学信息管理系统 — exam schedule, grades, course info.
 
-## IMPORTANT: Login Status Check
-
-⚠️ **ALWAYS check login status BEFORE any TIS action!**
-
-### Check Login Status
-
-Use `/user/me` endpoint:
+## Quick Status Check
 
 ```bash
-open -a "Google Chrome" "https://tis.sustech.edu.cn/user/me"
-sleep 3
-URL=$(osascript -e 'tell application "Google Chrome" to get URL of active tab of window 1')
-
-# - Contains "cas.sustech.edu.cn" → NOT logged in
-# - Still "tis.sustech.edu.cn/user/me" → LOGGED IN
+curl -s -o /dev/null -w "%{http_code}" \
+  -b "route=<ROUTE>; JSESSIONID=<JSESSIONID>" \
+  https://tis.sustech.edu.cn/user/me
+# 200 = logged in, 401/302 = not logged in
 ```
-
-**Never use screenshots** — use URL check only.
-
-### If NOT Logged In
-
-1. Login via CAS
-2. Verify login successful (repeat check)
-3. Then proceed
 
 ---
 
-## Login to TIS
+## Known APIs
 
-### Method 1: Direct CAS URL (Recommended)
-
-```bash
-osascript -e 'tell application "Google Chrome" to open location "https://cas.sustech.edu.cn/cas/login?service=https://tis.sustech.edu.cn/CAS"'
+### User Profile
 ```
-
-Wait for CAS page → click username field to trigger autofill → login.
-
-### Method 2: Via TIS Main Page
-
-```bash
-osascript -e 'tell application "Google Chrome" to open location "https://tis.sustech.edu.cn"'
+GET https://tis.sustech.edu.cn/user/me
 ```
+Returns: student ID, name, department, role, 50+ authority codes.
 
-Click CAS login icon.
+### Grades
+```
+POST https://tis.sustech.edu.cn/cjgl/grcjcx/grcjcx
+Content-Type: application/json
+Cookie: route=<val>; JSESSIONID=<val>
+
+Body: {"xn":null,"xq":null,"kcmc":null,"cxbj":"-1","pylx":"1","current":1,"pageSize":500}
+```
+Returns: list of grade records with `kcmc` (course), `xscj` (letter grade), `zzcj` (numeric score), `xf` (credits), `xnxqmc` (semester).
+
+### Exam Schedule
+```
+POST https://tis.sustech.edu.cn/component/queryKsxxByXs
+Content-Type: application/json
+Cookie: route=<val>; JSESSIONID=<val>
+
+Body: {}
+```
+Returns: JSON array of exam entries. Key fields: `KCMC` (course), `KCDM` (code), `KSRQ` (date), `KSJTSJ` (time), `JXLMC` (building), `JXCDMC` (room), `XQJMC` (weekday), `KSSJDMC` (type), `XNXQMC` (semester).
+
+### Login
+```
+POST https://cas.sustech.edu.cn/cas/login?service=https%3A%2F%2Ftis.sustech.edu.cn%2Fcas
+Body: username=<sid>&password=<pass>&execution=<token>&_eventId=submit
+```
+Exchange the resulting ticket at the `Location` header to get `route` and `JSESSIONID` cookies.
 
 ---
 
-## Extract Schedule
-
-### Step 1: Get HTML
+## Running the Exam Fetcher
 
 ```bash
-osascript -e 'tell application "Google Chrome" to execute active tab of window 1 javascript "document.body.innerHTML"' > schedule.html
+cd ~/.openclaw/skills/sustech_survival
+python3 src/sustech_survival/tis/exams.py          # display
+python3 src/sustech_survival/tis/exams.py --csv   # export to ~/.openclaw/workspace/sustech/exams.csv
 ```
-
-### Step 2: Parse to CSV
-
-```bash
-cd ~/.openclaw/workspace/skills/sustech-survival
-python3 parse_kebiao.py /path/to/schedule.html -o schedule.csv
-```
-
-### Output Format
-
-| Weekday | Period | Time | Course |
-|---------|--------|------|--------|
-| Monday | 第1-2节 | 08:00-09:50 | 体育IV [梁锡元] [定向越野3班] [1-15周] |
 
 ---
 
-## Tested
+## Running Grades
 
-- ✅ Login via CAS
-- ✅ Schedule extraction (2026春季)
+```bash
+cd ~/.openclaw/skills/sustech_survival
+python3 src/sustech_survival/tis/grades.py          # display
+python3 src/sustech_survival/tis/grades.py --csv   # export to ~/.openclaw/workspace/sustech/grades.csv
+```
