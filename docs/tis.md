@@ -1,6 +1,6 @@
 # TIS (Teaching Information System)
 
-教学信息管理系统 — exam schedule, grades, course info, campus schedule.
+教学信息管理系统 — exam schedule, grades, course info, campus schedule, **timetable solver**.
 
 **Auth:** CAS session (`route` + `JSESSIONID` cookies). Login → redirect ticket exchange.
 
@@ -207,3 +207,47 @@ What's missing:
   - Manual input from student handbook
 
 For 通识通修 specifically: the category tree shows 思政类, 体育类, 外语类, 军理类 under 通识必修课 (07). Cross-reference your grades against these categories to find missing courses.
+
+---
+
+## Timetable Conflict Solver
+
+**Module:** `src/sustech_survival/tis/timetable.py`
+
+Given a list of course codes, finds all non-conflicting section combinations for a semester.
+
+### Usage
+
+```bash
+python3 src/sustech_survival/tis/timetable.py MSE306 MSE202 MSE210 --max 5
+python3 src/sustech_survival/tis/timetable.py MSE306 EAP --exclude SS143 --semester 2025-2026-2
+python3 src/sustech_survival/tis/timetable.py --codes-file my_courses.txt --json
+```
+
+**Flags:**
+- `--exclude CODE` — remove a course from the search (e.g. already taken)
+- `--codes-file F` — read course codes from file (one per line)
+- `--semester Y-Q` — academic year and quarter (default: 2025-2026-2)
+- `--max N` — max schedules to show (default: 100)
+- `--json` — output as JSON
+
+### How it works
+
+1. Logs in via CAS (reads `credentials.txt`)
+2. For each course code, queries `POST /Xsxktz/queryRwxxcxList` with `p_gjz=<code>` + `p_chaxunpylx=1` (undergrad)
+3. Parses `pkjgmx_en` HTML field — extracts plain text from `<p>` tags, then regex-matches English slot format: `1-15单Week,Mon. 5-6 一教321`
+4. Backtracking solver: tries all combinations, skips any with time slot conflicts (same day + overlapping weeks + shared periods)
+5. Renders ASCII grid or JSON
+
+### Slot format (pkjgmx_en English HTML)
+
+```
+1-15单Week,Mon. 5-6 一教321
+1-9,11,13-15Week,Wed. 5-6 一教321
+10Week,Wed. 5-6 分析测试中心109实验室
+13Week,Sat. 3-4 一教321
+```
+
+Regex: `(\d[\d,-]+)(单|双)?Week,(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\.? (\d+-\d+|\d+) (.+)`
+
+Note: 单 (odd weeks) and 双 (even weeks) are embedded in the weeks string, not a separate group.
