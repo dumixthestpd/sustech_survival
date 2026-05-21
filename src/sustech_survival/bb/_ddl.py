@@ -1,239 +1,250 @@
 """
-bb ddl — Extract assignment deadlines from Blackboard.
+bb ddl — Assignment deadlines from Blackboard.
 
-Uses the BB REST API (fast, no browser needed) to:
-1. List enrolled courses
-2. Find "我的作业" content folder per course
-3. List assignment items from that folder
-4. Extract due dates from item title (Week N) or body text
+Uses BB REST API exclusively (no Playwright):
+  1. /courses?termId=_57_1  → enrolled courses
+  2. /courses/{id}/gradebook/columns → assignments + ISO due dates + scores
+
+Due dates come as ISO timestamps directly from BB — no regex parsing needed.
 """
 
-import html as html_mod
 import re
 import sys
-import urllib.parse
 from datetime import datetime, timedelta
 
 import requests
-from playwright.sync_api import sync_playwright
 
 # ── session ──────────────────────────────────────────────────────────────────
 
-def _get_session():
-    from sustech_survival.bb.session import BBAuth
-    _auth = BBAuth()
-    if not _auth.refresh():
-        if not _auth.login():
-            print("❌ BB login failed")
-            sys.exit(1)
-    cookies = _auth.cookies_for_requests(_auth.load())
-    s = requests.Session()
-    for name, value in cookies.items():
-        s.cookies.set(name, value, domain=".sustech.edu.cn", path="/")
-    return s
+BB_BASE = "https://bb.sustech.edu.cn"
+SESSION_FILE = None  # resolved at runtime
 
 
-def _get_enrolled_courses():
-    """Return list of (course_id, course_name) from BB portal via Playwright.
+def _session():
+    """Return requests.Session with BB CAS cookies."""
+    from pathlib import Path
+    skill_root = Path(__file__).resolve().parent.parent.parent.parent
+    session_file = skill_root / "bb" / "session.json"
 
-    The REST API doesn't include all enrolled courses. The portal page does.
+    import json
+    with open(session_file) as f:
+        raw = json.load(f)
+
+    sess = requests.Session()
+    # BB expects these cookies on .bb.sustech.edu.cn
+    for name, value in raw.items():
+        sess.cookies.set(name, value, domain=".bb.sustech.edu.cn", path="/")
+    return sess
+
+
+def _api(path: str, session=None):
+    """GET BB REST API endpoint. Returns JSON dict or dies."""
+    if session is None:
+        session = _session()
+    url = BB_BASE + path
+    r = session.get(url, timeout=15)
+    if r.status_code == 401:
+        print("❌ BB session expired. Run `bb.py login` to refresh.")
+        sys.exit(1)
+    r.raise_for_status()
+    return r.json()
+
+
+# ── course list ──────────────────────────────────────────────────────────────
+
+def _get_courses(session=None, term_id="_57_1"):
+    """Return list of (course_id, course_name) for given termId.
+
+    course_id format: "_8157_1" (with underscores, as BB uses them)
     """
-    cookies_dict = _get_session().cookies.get_dict(domain=".sustech.edu.cn")
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        ctx = browser.new_context()
-        ctx.add_cookies([
-            {"name": n, "value": v, "domain": ".sustech.edu.cn", "path": "/"}
-            for n, v in cookies_dict.items()
-        ])
-        page = ctx.new_page()
-        page.goto(
-            "https://bb.sustech.edu.cn/webapps/portal/execute/tabs/tabAction?tab_tab_group_id=_2_1",
-            timeout=15000
+    data = _api(f"/learn/api/public/v1/courses?termId={term_id}", session)
+    courses = []
+    for c in data.get("results", []):
+        cid = c["id"]           # already in "_xxx_1" format
+        name = c.get("name", "")
+        if name:
+            courses.append((cid, name))
+    return courses
+
+
+# ── gradebook ────────────────────────────────────────────────────────────────
+
+def _get_gradebook_columns(course_id, session=None):
+    """Return list of grade-column dicts for a course.
+
+    Each dict:
+      id           — column ID (e.g. "_413533_1")
+      name         — assignment name
+      content_id   — maps to content item
+      due          — ISO datetime string or "" if none
+      possible     — max score (float)
+      scoring_type — "Attempts" / "Calculated"
+    """
+    cols = _api(
+        f"/learn/api/public/v1/courses/{course_id}/gradebook/columns"
+        f"?_fields=id,name,contentId,score,grading",
+        session,
+    )
+    results = []
+    for col in cols.get("results", []):
+        grading = col.get("grading", {})
+        due_raw = grading.get("due", "") or ""
+        results.append({
+            "id": col.get("id", ""),
+            "name": col.get("name", ""),
+            "content_id": col.get("contentId", ""),
+            "possible": col.get("score", {}).get("possible", 0),
+            "due": due_raw,
+            "scoring_type": grading.get("type", ""),
+        })
+    return results
+
+
+def _get_user_attempts(course_id, column_id, session=None):
+    """Return list of attempt dicts for current user on one column."""
+    try:
+        data = _api(
+            f"/learn/api/public/v1/courses/{course_id}/gradebook/columns/{column_id}/attempts",
+            session,
         )
-        page.wait_for_load_state("networkidle", timeout=10000)
-        page.wait_for_timeout(2000)
-        page_html = page.content()
-        page.close()
-        browser.close()
-
-    # BB HTML-encodes & as &amp; in href attributes
-    link_re = re.compile(r'<a[^>]+href="([^"]+launcher[^"]+)"[^>]*>\s*([^<]+)\s*</a>')
-    result = []
-    for href_raw, text in link_re.findall(page_html):
-        try:
-            # Unescape HTML entities (&amp; → &) before URL parsing
-            href = html_mod.unescape(href_raw)
-            parsed = urllib.parse.urlparse(href)
-            params = dict(urllib.parse.parse_qsl(parsed.query))
-            cid = params.get('id', '')
-            if cid.startswith('_') and len(cid) > 1:
-                name = text.strip()
-                if name:
-                    result.append((cid, name))
-        except Exception:
-            continue
-    return result
-
-
-def _get_hw_content_id(session, course_id):
-    """Find content_id of the '我的作业' folder in a course."""
-    BASE = "https://bb.sustech.edu.cn"
-    r = session.get(
-        BASE + f"/learn/api/public/v1/courses/{course_id}/contents",
-        timeout=15
-    )
-    if r.status_code != 200:
-        return None
-    for item in r.json().get("results", []):
-        title = item.get("title", "")
-        if "作业" in title or "homework" in title.lower() or "assignment" in title.lower():
-            return item["id"]
-    return None
-
-
-def _get_assignments(session, course_id, content_id):
-    """Return list of (item_id, title, due_hint) from assignment folder."""
-    BASE = "https://bb.sustech.edu.cn"
-    r = session.get(
-        BASE + f"/learn/api/public/v1/courses/{course_id}/contents/{content_id}/children",
-        timeout=15
-    )
-    if r.status_code != 200:
+        return data.get("results", [])
+    except Exception:
         return []
-    items = []
-    for item in r.json().get("results", []):
-        title = item.get("title", "")
-        body = item.get("body", "")
-        due = _parse_due_date(title, body)
-        items.append((item["id"], title, due))
-    return items
 
 
-def _parse_due_date(title, body):
-    """Extract a human-readable due date hint from assignment title + body."""
-    # Title patterns like "第12周作业" → "第12周" or "Week 12"
-    m = re.search(r'第(\d+)周', title)
-    if m:
-        return f"第{m.group(1)}周"
-    m = re.search(r'Week\s*(\d+)', title, re.I)
-    if m:
-        return f"Week {m.group(1)}"
+# ── date helpers ─────────────────────────────────────────────────────────────
 
-    # Body: look for specific date patterns
-    date_m = re.search(r'(\d{4}[-/]\d{1,2}[-/]\d{1,2}\s+\d{1,2}:\d{2})', body)
-    if date_m:
-        return date_m.group(1)
+def _parse_iso(iso: str):
+    """Parse BB ISO timestamp → datetime. Returns None if unparseable."""
+    if not iso:
+        return None
+    try:
+        # "2026-03-25T15:59:00.000Z"
+        return datetime.fromisoformat(iso.replace("Z", "+00:00")).replace(tzinfo=None)
+    except ValueError:
+        return None
 
-    # Body: "每周六晚12点-周日早8点" → weekly recurring
-    if "每周" in body and "点" in body:
-        return "每周六晚12点-周日早8点"
 
-    return "见BB"
+def _format_due(iso: str):
+    """Human-readable due date from ISO string."""
+    dt = _parse_iso(iso)
+    if not dt:
+        return "无截止日"
+    return dt.strftime("%m-%d %H:%M")
 
+
+# ── main ────────────────────────────────────────────────────────────────────
 
 def run(days: int = 7, course_id: str = None):
     """See docs/bb.md."""
+    session = _session()
+    now = datetime.now()
+    cutoff = now + timedelta(days=days)
 
-    # 1. Get enrolled courses from portal (REST API doesn't have them all)
-    all_courses = _get_enrolled_courses()
-    if not all_courses:
+    # 1. Get enrolled courses for current term
+    courses = _get_courses(session, term_id="_57_1")
+    if not courses:
         print("❌ 无法获取课程列表，请重新登录")
         return
 
-    # 2. Filter courses
+    # 2. Filter
     if course_id:
-        courses = [(c, n) for c, n in all_courses if c == course_id]
+        courses = [(c, n) for c, n in courses if c == course_id]
     else:
-        active_ids = {'_8053_1', '_8157_1', '_8221_1', '_8328_1', '_8343_1'}
+        active_ids = {"_8053_1", "_8157_1", "_8221_1", "_8328_1", "_8343_1"}
         courses = [
-            (c, n) for c, n in all_courses
+            (c, n) for c, n in courses
             if "2026" in n or c in active_ids
         ]
         if not courses:
-            courses = all_courses
+            courses = _get_courses(session, term_id="_57_1")
 
-    now = datetime.now()
-    cutoff = now + timedelta(days=days)
-    results = []
+    all_items = []  # (course_name, name, due_iso, status, score, feedback)
 
     for cid, cname in courses:
-        hw_content_id = _get_hw_content_id(session, cid)
-        if not hw_content_id:
+        try:
+            cols = _get_gradebook_columns(cid, session)
+        except Exception as e:
             continue
 
-        assignments = _get_assignments(session, cid, hw_content_id)
-        for item_id, title, due in assignments:
-            due_parsed = _due_hint_to_datetime(due, now)
-            status = ""
-            if due_parsed:
-                if due_parsed < now:
+        for col in cols:
+            if col["scoring_type"] != "Attempts":
+                continue   # skip Total, averages, etc.
+            if not col["name"]:
+                continue
+
+            due_iso = col["due"]
+            due_dt = _parse_iso(due_iso)
+            due_str = _format_due(due_iso)
+
+            # Status relative to now
+            if due_dt:
+                if due_dt < now:
                     status = "已截止"
-                elif due_parsed <= cutoff:
-                    status = f"还有 {(due_parsed - now).days} 天"
+                elif due_dt <= cutoff:
+                    delta = (due_dt - now).days
+                    status = f"还有 {delta} 天"
                 else:
                     status = f"{days} 天后"
-            results.append({
+            else:
+                status = ""
+
+            # Attempt info
+            attempts = _get_user_attempts(cid, col["id"], session)
+            score_str = ""
+            feedback_str = ""
+            if attempts:
+                latest = attempts[-1]
+                s = latest.get("score")
+                score_str = f" {s}" if s is not None else " 未评分"
+                fb = latest.get("feedback", "") or ""
+                if fb:
+                    # strip HTML tags
+                    fb_clean = re.sub(r"<[^>]+>", "", fb)
+                    feedback_str = f" 评语: {fb_clean[:50]}"
+
+            all_items.append({
                 "course": cname,
-                "assignment": title,
-                "due": due,
-                "due_parsed": due_parsed,
+                "name": col["name"],
+                "due_iso": due_iso,
+                "due_str": due_str,
                 "status": status,
+                "score": score_str,
+                "feedback": feedback_str,
+                "due_dt": due_dt,
             })
 
-    if not results:
+    if not all_items:
         print("📭 暂无作业信息")
         return
 
-    # Group by course
-    print(f"📚 作业列表 ({len(results)} 项)\n")
+    # Sort: upcoming first, then by date
+    def sort_key(item):
+        dt = item["due_dt"]
+        if dt is None:
+            return (1, datetime.max)
+        if dt < now:
+            return (2, dt)
+        return (0, dt)
+
+    all_items.sort(key=sort_key)
+
+    # Print
+    print(f"📚 作业列表 ({len(all_items)} 项)\n")
     current_course = None
-    for r in results:
-        if r["course"] != current_course:
-            current_course = r["course"]
+    for item in all_items:
+        if item["course"] != current_course:
+            current_course = item["course"]
             print(f"\n{'='*50}")
             print(f"  {current_course[:50]}")
             print(f"{'='*50}")
-        delta_str = r["status"] if r["status"] else ""
-        due_str = r["due"]
-        print(f"  • {r['assignment'][:45]}")
-        print(f"    截止: {due_str}  {delta_str}")
-
-
-def _due_hint_to_datetime(hint, now):
-    """Convert a due hint string to datetime for filtering."""
-    # "每周六晚12点-周日早8点" → next Saturday 23:59
-    if "每周" in hint and "周六" in hint:
-        days_until_sat = (5 - now.weekday()) % 7
-        if days_until_sat == 0:
-            days_until_sat = 7  # next Saturday, not today
-        next_sat = now + timedelta(days=days_until_sat)
-        return next_sat.replace(hour=23, minute=59, second=0)
-
-    # Week pattern: "第12周"
-    m = re.search(r'第(\d+)周', hint)
-    if m:
-        week = int(m.group(1))
-        # Spring 2026 started around 2026-02-23 (week 1)
-        semester_start = datetime(2026, 2, 23)
-        due_date = semester_start + timedelta(weeks=week - 1)
-        due_date = due_date.replace(hour=23, minute=59, second=0)
-        return due_date
-
-    # Week pattern: "Week 12"
-    m = re.search(r'Week\s*(\d+)', hint, re.I)
-    if m:
-        week = int(m.group(1))
-        semester_start = datetime(2026, 2, 23)
-        due_date = semester_start + timedelta(weeks=week - 1)
-        due_date = due_date.replace(hour=23, minute=59, second=0)
-        return due_date
-
-    # Date pattern: "2026-05-25 23:59"
-    for fmt in ["%Y-%m-%d %H:%M", "%Y/%m/%d %H:%M"]:
-        try:
-            return datetime.strptime(hint, fmt)
-        except ValueError:
-            continue
-
-    return None
+        delta = item["status"]
+        print(f"  • {item['name'][:45]}")
+        parts = [f"截止: {item['due_str']}"]
+        if delta:
+            parts.append(delta)
+        if item["score"]:
+            parts.append(item["score"])
+        print(f"    {' | '.join(parts)}")
+        if item["feedback"]:
+            print(f"    {item['feedback']}")
