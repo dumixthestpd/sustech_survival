@@ -95,7 +95,7 @@ def get_campus_schedule(xn="2025-2026", xq="2", page_size=500, page_num=1, **kwa
         "p_rwlx": "",
         "p_kclb": "",
         "p_kcxz": "",
-        "p_chapylx": "",
+        "p_chaxunpylx": "",     # ''=default filtered, '1'=undergrad, '2'=grad, '3'=both+all history
         "pageNum": str(page_num),
         "pageSize": str(page_size),
     }

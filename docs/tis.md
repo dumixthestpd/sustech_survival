@@ -73,6 +73,7 @@ Cookie: route=<val>; JSESSIONID=<val>
 Body (form data):
   p_xn=2025-2026    academic year
   p_xq=2            semester (1=fall, 2=spring)
+  p_chaxunpylx=     cultivation type filter: ''=default filtered (~188/sem), '1'=undergrad (~1200/sem), '2'=grad (~445/sem), '3'=both+all history (1488 total, ignores xn/xq)
   p_xiaoqu=         campus filter ("一期校区", "二期校区", etc.)
   p_kkyx=           college code
   p_kclb=           course category code (from queryKclb)
