@@ -15,41 +15,10 @@ _PKG_ROOT = str(_Path(__file__).resolve().parent.parent.parent)
 if _PKG_ROOT not in _sys.path:
     _sys.path.insert(0, _PKG_ROOT)
 
-import sustech_survival.sso as _sso
-Authorizer = _sso.Authorizer
-register_auth = _sso.register_auth
+from sustech_survival.sso.authorizer import get_auth
 
-PRIMO_HOME = "https://sustc.primo.exlibrisgroup.com.cn/discovery/search?vid=86SUSTC_INST:86SUSTC"
-PRIMO_CAS_SERVICE = (
-    "https%3A%2F%2Fsustc.primo.exlibrisgroup.com.cn%2Finfra%2FcasRedirect%3Fctx%3D%2Fprimaws"
-)
-
-LIB_DIR = _Path(__file__).resolve().parent
-# Skill root is the parent of src/ (which is the skill dir)
-SKILL_ROOT = LIB_DIR.parent.parent.parent
-
-
-class LibAuth(Authorizer):
-    BASE_URL = "https://sustc.primo.exlibrisgroup.com.cn"
-    SERVICE_URL = PRIMO_CAS_SERVICE
-
-    @property
-    def session_file(self):
-        # Session lives at skill root level, not alongside code in src/
-        return _Path(self._skill_dir) / "lib" / "session.json"
-
-    @property
-    def submodule_dir(self):
-        return _Path(self._skill_dir) / "lib"
-
-    @property
-    def _domain(self) -> str:
-        return "sustc.primo.exlibrisgroup.com.cn"
-
-
-# Singleton
-_auth = LibAuth(skill_dir=str(SKILL_ROOT), submodule_dir=str(LIB_DIR))
-register_auth("lib", _auth)
+# Use the LibAuth singleton registered by sso.authlib
+_auth = get_auth("lib")
 
 
 def main():

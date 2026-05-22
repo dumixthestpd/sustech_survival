@@ -7,12 +7,11 @@
 #       cas.py        — CAS (Central Authentication Service) v3.0
 #       shibboleth.py — Shibboleth SP (Service Provider) via WAYF/DS
 #     authlib/
-#       bb.py         — SUSTech Blackboard
-#       tis.py        — SUSTech Teaching Information System
-#       lib.py        — SUSTech Library (Primo)
+#       __init__.py   — TISAuth, BBAuth, LibAuth (CAS headless)
 #       wos.py        — Web of Science (Shibboleth)
 #       rsc.py        — Royal Society of Chemistry
 #       cnki.py       — CNKI
+#       ...           — ieee, jstor, pubmed, acs, wiley, springer, scopus
 #
 # Quick start:
 #   from sustech_survival.sso import Authorizer, AuthorizerError

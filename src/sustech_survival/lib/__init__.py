@@ -8,19 +8,12 @@
 #   lib.ensure()          # check + auto-refresh
 # ─────────────────────────────────────────────────────────────────────────────
 
-from pathlib import Path as _Path
-
-from ..sso import Authorizer, register_auth
-from .login import LibAuth as _LibAuth
-
-LIB_DIR = _Path(__file__).resolve().parent
-# Skill root is the parent of src/ (which is the skill dir)
-SKILL_ROOT = LIB_DIR.parent.parent.parent
-
 __all__ = ["login", "check", "refresh", "ensure"]
 
-_auth = _LibAuth(skill_dir=str(SKILL_ROOT), submodule_dir=str(LIB_DIR))
-register_auth("lib", _auth)
+from sustech_survival.sso.authorizer import get_auth
+
+# Use the LibAuth singleton registered by sso.authlib
+_auth = get_auth("lib")
 
 
 def login(*, headless: bool = False):

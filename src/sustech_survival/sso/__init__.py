@@ -29,16 +29,7 @@ Credentials = Authorizer
 # We import the top-level authlib package which re-exports everything.
 from . import authlib  # noqa: F401
 
-# Re-export authlib submodules at sso namespace level AND register them in
-# sys.modules so "from sustech_survival.sso.rsc import ..." works.
-# Python checks sys.modules before package.__dict__ for submodule imports.
-import sys as _sys
-for _name in ("bb", "tis", "lib", "wos", "rsc", "cnki"):
-    _mod = getattr(authlib, _name)
-    globals()[_name] = _mod
-    _sys.modules[f"sustech_survival.sso.{_name}"] = _mod
-
-# ── Lazy-load optional authlib submodules (acs, wiley, springer, etc.) ───────
+# ── Lazy-load optional authlib submodules (acs, wiley, springer, etc.) ────────
 # These modules need optional deps (cloudscraper).  They are loaded on first
 # access via authlib.__getattr__, keeping the sso layer intact even if deps are
 # missing.
