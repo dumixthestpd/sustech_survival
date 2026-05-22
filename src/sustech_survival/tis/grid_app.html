@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SUSTech 课表</title>
+<link rel="stylesheet" href="https://unpkg.com/element-plus@2.4.4/dist/index.css">
+<script src="https://unpkg.com/vue@3.4.15/dist/vue.global.prod.js"></script>
+<script src="https://unpkg.com/element-plus@2.4.4/dist/index.full.js"></script>
+<script src="https://unpkg.com/fuse.js@7.0.0/dist/fuse.min.js"></script>
+<style>
+:root {
+  --cell-h: 46px;
+  --header-h: 32px;
+  --time-w: 68px;
+  --day-w: 118px;
+  --border: 1px solid #ebebeb;
+  --radius: 6px;
+  --pal1: #4A90D9;--pal2: #50C878;--pal3: #E0746B;--pal4: #9B59B6;
+  --pal5: #F5A623;--pal6: #1ABC9C;--pal7: #E74C3C;--pal8: #3498DB;
+  --pal9: #2ECC71;--pal10: #F39C12;--pal11: #8E44AD;--pal12: #16A085;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f0f2f5; color: #1a1a2e; }
+
+/* ── Top bar ── */
+.topbar {
+  background: #fff; border-bottom: var(--border); padding: 10px 20px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  position: sticky; top: 0; z-index: 200; box-shadow: 0 1px 4px rgba(0,0,0,.06);
+}
+.topbar h1 { font-size: 16px; font-weight: 800; color: #1a1a2e; letter-spacing: -.3px; }
+.sem-tag { font-size: 12px; background: #e8f0fe; color: #1a73e8; padding: 2px 8px; border-radius: 10px; }
+.topbar .tabs { display: flex; gap: 3px; margin-left: 8px; }
+.tab { padding: 5px 14px; border-radius: 16px; cursor: pointer; font-size: 12px; background: #f5f5f5; color: #666; transition: .12s; border: 1px solid transparent; }
+.tab.active { background: #1a1a2e; color: #fff; }
+.tab:hover:not(.active) { background: #e8e8e8; }
+.ctrl { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.btn { padding: 6px 14px; border-radius: 8px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; transition: .12s; }
+.btn-primary { background: #1a1a2e; color: #fff; }
+.btn-primary:hover { background: #2d2d4a; }
+.btn-ghost { background: transparent; color: #666; border: 1px solid #ddd; }
+.btn-ghost:hover { background: #f5f5f5; }
+.status { font-size: 11px; color: #aaa; }
+.status.ok { color: #27ae60; }
+.status.warn { color: #e74c3c; }
+
+/* ── Layout ── */
+.layout { display: flex; height: calc(100vh - 57px); overflow: hidden; }
+
+/* ── Left panel ── */
+.left { width: 320px; flex-shrink: 0; border-right: var(--border); background: #fff; display: flex; flex-direction: column; overflow: hidden; }
+.panel-head { padding: 12px 14px 8px; border-bottom: var(--border); }
+.panel-head h2 { font-size: 13px; color: #888; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 8px; }
+.search-input { width: 100%; }
+.dept-filters { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 14px; border-bottom: var(--border); }
+.dept-chip { font-size: 10px; padding: 2px 7px; border-radius: 10px; cursor: pointer; background: #f0f0f0; color: #666; transition: .1s; }
+.dept-chip.active { background: #1a1a2e; color: #fff; }
+.dept-chip:hover:not(.active) { background: #e0e0e0; }
+.course-list { flex: 1; overflow-y: auto; padding: 6px 8px; }
+.course-card {
+  border: 1px solid #ebebeb; border-radius: var(--radius); padding: 9px 11px;
+  margin-bottom: 6px; cursor: pointer; transition: .1s;
+  border-left: 3px solid transparent;
+}
+.course-card:hover { border-color: #1a1a2e; background: #fafafa; }
+.course-card.selected { border-left-color: #1a1a2e; background: #f5f5f8; }
+.course-card .c-name { font-size: 13px; font-weight: 700; color: #1a1a2e; line-height: 1.3; }
+.course-card .c-meta { font-size: 11px; color: #999; margin-top: 2px; display: flex; gap: 6px; flex-wrap: wrap; }
+.course-card .c-slot { font-size: 10px; background: #e8f0fe; color: #1a73e8; padding: 1px 5px; border-radius: 8px; }
+.course-card .c-teacher { font-size: 11px; color: #666; }
+.empty-list { text-align: center; padding: 40px 20px; color: #aaa; font-size: 13px; }
+
+/* ── Middle panel (selected) ── */
+.middle { width: 260px; flex-shrink: 0; border-right: var(--border); background: #fff; display: flex; flex-direction: column; overflow: hidden; }
+.middle-list { flex: 1; overflow-y: auto; padding: 8px; }
+.selected-item {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  border-radius: var(--radius); margin-bottom: 4px; cursor: pointer;
+  font-size: 12px; border: 1px solid #ebebeb; background: #fafafa;
+}
+.selected-item .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.selected-item .txt { flex: 1; min-width: 0; }
+.selected-item .c-name { font-weight: 700; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.selected-item .c-teacher { font-size: 10px; color: #999; }
+.selected-item .remove { color: #ccc; font-size: 14px; padding: 0 4px; }
+.selected-item .remove:hover { color: #e74c3c; }
+.solve-btn-wrap { padding: 10px; border-top: var(--border); }
+
+/* ── Right panel (grid) ── */
+.right { flex: 1; overflow: auto; padding: 16px; background: #f0f2f5; }
+.grid-header { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+.grid-header h2 { font-size: 15px; font-weight: 700; }
+.nav-arrows { display: flex; gap: 4px; }
+.nav-btn { width: 28px; height: 28px; border-radius: 6px; border: 1px solid #ddd; background: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+.nav-btn:hover { background: #f0f0f0; }
+.sched-label { font-size: 12px; color: #888; }
+.grid-table { display: grid; grid-template-columns: var(--time-w) repeat(7, var(--day-w)); border: var(--border); border-radius: 10px; overflow: hidden; background: #fff; box-shadow: 0 2px 12px rgba(0,0,0,.08); min-width: 900px; }
+.corner { background: #1a1a2e; color: #fff; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; padding: 6px; border-right: var(--border); }
+.day-hd { background: #f8f9fa; font-size: 12px; font-weight: 700; color: #444; text-align: center; padding: 8px 4px; border-right: var(--border); border-bottom: var(--border); }
+.time-cl { background: #fafafa; font-size: 10px; color: #bbb; text-align: center; padding: 4px 2px; border-right: var(--border); border-bottom: var(--border); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; }
+.time-cl .p { font-size: 12px; font-weight: 700; color: #555; }
+.time-cl .c { font-size: 9px; }
+.cell { border-right: var(--border); border-bottom: var(--border); height: var(--cell-h); position: relative; }
+.cell.wknd { background: #fafafa; }
+
+.card {
+  position: absolute; left: 2px; right: 2px; border-radius: 5px;
+  padding: 4px 6px; color: #fff; font-size: 11px; overflow: hidden;
+  cursor: default; z-index: 1; transition: filter .1s;
+}
+.card:hover { filter: brightness(1.12); }
+.card .n { font-weight: 700; font-size: 11px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .t { font-size: 10px; opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .r { font-size: 9px; opacity: .7; }
+.card .wk { position: absolute; top: 2px; right: 4px; font-size: 8px; background: rgba(0,0,0,.22); padding: 1px 4px; border-radius: 8px; }
+
+.no-result { text-align: center; padding: 60px 20px; color: #aaa; }
+.no-result p { font-size: 14px; margin-top: 10px; }
+.solve-status { font-size: 12px; color: #888; padding: 8px 14px; border-top: var(--border); }
+.solve-status .ok { color: #27ae60; }
+.solve-status .fail { color: #e74c3c; }
+
+.no-data-hint { padding: 30px 16px; color: #aaa; font-size: 13px; text-align: center; }
+.no-data-hint p { margin: 6px 0; }
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- Top bar -->
+  <div class="topbar">
+    <h1>📅 SUSTech 课表</h1>
+    <span class="sem-tag">{{ semester }}</span>
+    <div class="tabs">
+      <div class="tab" :class="{active: weekMode===0}" @click="weekMode=0">单周</div>
+      <div class="tab" :class="{active: weekMode===1}" @click="weekMode=1">双周</div>
+      <div class="tab" :class="{active: weekMode===2}" @click="weekMode=2">全部</div>
+    </div>
+    <div class="ctrl">
+      <span class="status" :class="dataStatus.class">{{ dataStatus.text }}</span>
+      <button class="btn btn-ghost" @click="refresh" :disabled="loading">刷新数据</button>
+      <button class="btn btn-primary" @click="solve" :disabled="solving || selected.length===0">
+        {{ solving ? '计算中…' : '排课' }}
+      </button>
+    </div>
+  </div>
+
+  <!-- Layout -->
+  <div class="layout">
+
+    <!-- Left: search -->
+    <div class="left">
+      <div class="panel-head">
+        <h2>搜索课程</h2>
+        <el-input class="search-input" v-model="query" placeholder="课程名 / 教师 / 代码" clearable size="small" />
+      </div>
+      <div class="dept-filters">
+        <span class="dept-chip" :class="{active:!deptFilter}" @click="deptFilter=''">全部</span>
+        <span class="dept-chip" :class="{active:deptFilter===d}" v-for="d in depts" :key="d" @click="deptFilter=d">{{d}}</span>
+      </div>
+      <div class="course-list" v-if="filtered.length">
+        <div class="course-card" :class="{selected:isSelected(c)}"
+          v-for="c in filtered.slice(0,200)" :key="c.id"
+          @click="toggle(c)">
+          <div class="c-name">{{c.name}}</div>
+          <div class="c-meta">
+            <span>{{c.code}}</span>
+            <span class="c-teacher">{{c.teacher||'未知教师'}}</span>
+            <span class="c-slot" v-for="s in c.slots.slice(0,1)" :key="s">{{slotLabel(s)}}</span>
+          </div>
+        </div>
+        <div class="empty-list" v-if="filtered.length > 200">显示前200条，共 {{filtered.length}} 条</div>
+      </div>
+      <div class="empty-list" v-else-if="query">无结果</div>
+      <div class="empty-list" v-else>点击「刷新数据」加载课程</div>
+    </div>
+
+    <!-- Middle: selected -->
+    <div class="middle">
+      <div class="panel-head"><h2>已选课程 ({{selected.length}})</h2></div>
+      <div class="middle-list">
+        <div class="selected-item" v-for="c in selected" :key="c.id">
+          <div class="dot" :style="{background: colorOf(c.code)}"></div>
+          <div class="txt">
+            <div class="c-name">{{c.name}}</div>
+            <div class="c-teacher">{{c.teacher||''}}</div>
+          </div>
+          <span class="remove" @click="toggle(c)">×</span>
+        </div>
+        <div class="empty-list" v-if="!selected.length">点击左侧课程添加</div>
+      </div>
+      <div class="solve-btn-wrap" v-if="selected.length">
+        <button class="btn btn-primary" style="width:100%" @click="solve" :disabled="solving">
+          {{ solving ? '计算中…' : '生成课表 ('+solutions.length+'个方案)' }}
+        </button>
+      </div>
+      <div class="solve-status" v-if="solutions.length">
+        <span :class="solutions.length ? 'ok' : 'fail'">
+          {{ solutions.length }} 个无冲突方案
+        </span>
+        · 按 ← → 浏览
+      </div>
+    </div>
+
+    <!-- Right: grid -->
+    <div class="right">
+      <template v-if="currentSol">
+        <div class="grid-header">
+          <h2>方案 {{solIdx+1}} / {{solutions.length}}</h2>
+          <div class="nav-arrows">
+            <button class="nav-btn" @click="solIdx=Math.max(0,solIdx-1)">‹</button>
+            <button class="nav-btn" @click="solIdx=Math.min(solutions.length-1,solIdx+1)">›</button>
+          </div>
+          <span class="sched-label">{{ currentSol.length }} 门课 · {{ solCredits }} 学分</span>
+        </div>
+        <div class="grid-table">
+          <div class="corner">时间/星期</div>
+          <div class="day-hd" v-for="(d,i) in DAYS" :key="i">{{d}}</div>
+
+          <template v-for="row in 12" :key="row">
+            <div class="time-cl">
+              <span class="p">{{row*2-1}}-{{row*2}}</span>
+              <span class="c">{{TIMES[row-1]}}</span>
+            </div>
+            <div class="cell" v-for="(d,di) in 7" :key="di" :class="{wknd:di>=5}">
+              <template v-for="card in cellCards(row, di)" :key="card.uid">
+                <div class="card" :style="cardStyle(card)"
+                  :class="{odd:card.weekType==='odd',even:card.weekType==='even'}">
+                  <div class="wk" v-if="card.weekType!=='all'">{{card.weekType==='odd'?'单':'双'}}</div>
+                  <div class="n">{{card.name}}</div>
+                  <div class="t">{{card.teacher}}</div>
+                  <div class="r">{{card.room}}</div>
+                </div>
+              </template>
+            </div>
+          </template>
+        </div>
+      </template>
+
+      <div class="no-result" v-else-if="!selected.length">
+        <div style="font-size:48px;margin-bottom:16px">📚</div>
+        <p>选择课程 → 生成课表</p>
+      </div>
+      <div class="no-result" v-else-if="solutions.length===0 && !solving">
+        <div style="font-size:48px;margin-bottom:16px">⚠️</div>
+        <p>所选课程存在冲突</p>
+        <p style="font-size:12px;color:#bbb;margin-top:8px">尝试减少课程数量或调整选课</p>
+      </div>
+      <div class="no-result" v-else-if="solving">
+        <div style="font-size:48px;margin-bottom:16px">⚙️</div>
+        <p>计算中…</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const { createApp, ref, computed, watch, onMounted } = Vue;
+const DAYS = ["周一","周二","周三","周四","周五","周六","周日"];
+const TIMES = ["08:00","10:20","14:00","16:20","19:00","21:00","21:50"];
+const DEPT_MAP = {MSE:"材料系",MA:"数学系",PHY:"物理系",CH:"化学系",CS:"计算机系",
+  HUM:"人文",SS:"社科",CLE:"语言",GE:"体育",BIO:"生物系",IPE:"思政"};
+const DEPT_CODES = Object.keys(DEPT_MAP);
+const PALETTE = ["#4A90D9","#50C878","#E0746B","#9B59B6","#F5A623",
+  "#1ABC9C","#E74C3C","#3498DB","#2ECC71","#F39C12","#8E44AD","#16A085"];
+
+createApp({
+  setup() {
+    const courses = ref([]);
+    const selected = ref([]);
+    const solutions = ref([]);
+    const solIdx = ref(0);
+    const query = ref("");
+    const deptFilter = ref("");
+    const weekMode = ref(0);
+    const loading = ref(false);
+    const solving = ref(false);
+    const semester = ref("2025-2026-2");
+    const dataStatus = ref({text:"未加载",class:"warn"});
+    let fuse = null;
+    let colorIdx = 0;
+    const codeColorIdx = {};
+
+    const depts = DEPT_CODES;
+
+    function colorOf(code) {
+      if (!(code in codeColorIdx)) codeColorIdx[code] = colorIdx++;
+      return PALETTE[codeColorIdx[code] % PALETTE.length];
+    }
+
+    function slotLabel(s) {
+      const d = ["一","二","三","四","五","六","日"][s.day];
+      const p = s.periods.join(",");
+      const w = s.week_type === "odd" ? "单" : s.week_type === "even" ? "双" : "";
+      return `周${d} ${p}节${w}`;
+    }
+
+    async function refresh() {
+      loading.value = true;
+      try {
+        const r = await fetch("/api/refresh", {method:"POST"});
+        const j = await r.json();
+        if (j.error) { alert(j.error); return; }
+        await loadCourses();
+      } finally { loading.value = false; }
+    }
+
+    async function loadCourses() {
+      const r = await fetch("/api/courses");
+      const j = await r.json();
+      if (j.status === "ok") {
+        courses.value = j.courses;
+        dataStatus.value = {text: j.count+" 门课已加载", class:"ok"};
+        fuse = new Fuse(j.courses, {keys:["name","code","teacher"],threshold:.4});
+      } else if (j.status === "stale") {
+        dataStatus.value = {text:"数据已过期", class:"warn"};
+      } else {
+        dataStatus.value = {text:"请先刷新数据", class:"warn"};
+      }
+    }
+
+    async function solve() {
+      if (!selected.value.length) return;
+      solving.value = true;
+      solutions.value = [];
+      solIdx.value = 0;
+      try {
+        const r = await fetch("/api/solve", {
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({
+            selected: selected.value.map(c=>c.code),
+            blocked: [],
+            max: 20,
+          })
+        });
+        const j = await r.json();
+        if (j.error) { alert(j.error); return; }
+        solutions.value = j.solutions || [];
+        solIdx.value = 0;
+      } finally { solving.value = false; }
+    }
+
+    const filtered = computed(() => {
+      let list = courses.value;
+      if (deptFilter.value) list = list.filter(c=>c.code.startsWith(deptFilter.value));
+      if (query.value.trim()) {
+        if (fuse) {
+          const r = fuse.search(query.value.trim());
+          list = r.map(x=>x.item);
+        } else {
+          const q = query.value.toLowerCase();
+          list = list.filter(c=>
+            c.name.toLowerCase().includes(q)||c.code.toLowerCase().includes(q)||(c.teacher||"").includes(q)
+          );
+        }
+      }
+      return list;
+    });
+
+    function isSelected(c) { return selected.value.some(s=>s.id===c.id); }
+    function toggle(c) {
+      const i = selected.value.findIndex(s=>s.id===c.id);
+      if (i>=0) selected.value.splice(i,1);
+      else selected.value.push(c);
+      solutions.value = [];
+    }
+
+    const currentSol = computed(()=> solutions.value[solIdx.value] || null);
+    const solCredits = computed(()=> {
+      if (!currentSol.value) return 0;
+      return currentSol.value.reduce((s,c)=>s+(c.credits||0),0).toFixed(1);
+    });
+
+    function cardStyle(card) {
+      const bg = colorOf(card.code);
+      const row0 = Math.floor((card.periods[0]-1)/2);
+      const row1 = Math.floor((card.periods[card.periods.length-1]-1)/2);
+      const top = row0 * 46;
+      const height = (row1-row0+1) * 46 - 4;
+      return {background:bg, top:top+"px", height:height+"px", zIndex: card.weekType==="all"?2:3};
+    }
+
+    function cellCards(periodRow, dayIdx) {
+      // periodRow: 1-12
+      const pStart = periodRow;
+      const pEnd = periodRow;
+      if (!currentSol.value) return [];
+      const cards = [];
+      for (const c of currentSol.value) {
+        for (const slot of (c.slots||[])) {
+          if (slot.day !== dayIdx) continue;
+          const wp = slot.week_type;
+          if (weekMode.value === 0 && wp === "even") continue;
+          if (weekMode.value === 1 && wp === "odd") continue;
+          const overlap = slot.periods.some(p=>p>=pStart&&p<=pEnd);
+          if (!overlap) continue;
+          cards.push({uid:c.id+"_"+slot.day+"_"+slot.periods.join(""),
+            name:c.name, teacher:c.teacher||"", room:slot.room||"",
+            code:c.code, periods:slot.periods, weekType:wp});
+        }
+      }
+      return cards;
+    }
+
+    // Keyboard: arrows navigate solutions, 1/2/3 switch week mode
+    document.addEventListener("keydown", e => {
+      if (e.key==="ArrowRight") solIdx.value=Math.min(solutions.value.length-1,solIdx.value+1);
+      if (e.key==="ArrowLeft")  solIdx.value=Math.max(0,solIdx.value-1);
+      if (e.key==="1") weekMode.value=0;
+      if (e.key==="2") weekMode.value=1;
+      if (e.key==="3") weekMode.value=2;
+    });
+
+    onMounted(() => { loadCourses(); });
+
+    return { courses, selected, solutions, solIdx, query, deptFilter,
+      weekMode, loading, solving, semester, dataStatus, depts,
+      filtered, currentSol, solCredits, DAYS, TIMES,
+      isSelected, toggle, refresh, solve, slotLabel, colorOf, cardStyle, cellCards };
+  }
+}).use(ElementPlus).mount("#app");
+</script>
+</body>
+</html>
