@@ -2,10 +2,14 @@
 bb ddl — Assignment deadlines from Blackboard.
 
 Uses BB REST API exclusively (no Playwright):
-  1. /courses?termId=_57_1  → enrolled courses
-  2. /courses/{id}/gradebook/columns → assignments + ISO due dates + scores
+  1. /users/me                 → current user ID
+  2. /users/{uid}/courses      → enrolled courses for current term
+  3. /courses/{id}/gradebook/columns  → assignment names + ISO due dates
+  4. /courses/{id}/gradebook/users/{uid}  → all grades + status for user
 
 Due dates come as ISO timestamps directly from BB — no regex parsing needed.
+Scores and NeedsGrading status come from the users endpoint — no per-column
+attempt API calls needed.
 """
 
 import re
@@ -14,24 +18,18 @@ from datetime import datetime, timedelta
 
 import requests
 
-# ── session ──────────────────────────────────────────────────────────────────
+# ── session via SSO auth layer ─────────────────────────────────────────────────
 
 BB_BASE = "https://bb.sustech.edu.cn"
-SESSION_FILE = None  # resolved at runtime
 
 
 def _session():
-    """Return requests.Session with BB CAS cookies."""
-    from pathlib import Path
-    skill_root = Path(__file__).resolve().parent.parent.parent.parent
-    session_file = skill_root / "bb" / "session.json"
+    """Return requests.Session with BB CAS cookies from SSO auth layer."""
+    from sustech_survival.sso.authorizer import get_auth
 
-    import json
-    with open(session_file) as f:
-        raw = json.load(f)
-
+    auth = get_auth("bb")
+    raw = auth.load()
     sess = requests.Session()
-    # BB expects these cookies on .bb.sustech.edu.cn
     for name, value in raw.items():
         sess.cookies.set(name, value, domain=".bb.sustech.edu.cn", path="/")
     return sess
@@ -50,76 +48,99 @@ def _api(path: str, session=None):
     return r.json()
 
 
-# ── course list ──────────────────────────────────────────────────────────────
+# ── user + course list ─────────────────────────────────────────────────────────
 
-def _get_courses(session=None, term_id="_57_1"):
-    """Return list of (course_id, course_name) for given termId.
+def _get_user_id(session=None) -> str:
+    """Return current user ID string (e.g. '_70745_1')."""
+    data = _api("/learn/api/public/v1/users/me", session)
+    return data["id"]
 
-    course_id format: "_8157_1" (with underscores, as BB uses them)
+
+def _get_enrolled_courses(session=None, term_id="_57_1"):
     """
-    data = _api(f"/learn/api/public/v1/courses?termId={term_id}", session)
+    Return list of (course_id, course_name) for given termId.
+
+    Uses /users/{uid}/courses (enrollments) which gives ALL enrolled courses
+    regardless of pagination — more reliable than /courses?termId= which can
+    miss courses at certain offsets.
+    """
+    uid = _get_user_id(session)
+    data = _api(f"/learn/api/public/v1/users/{uid}/courses", session)
     courses = []
-    for c in data.get("results", []):
-        cid = c["id"]           # already in "_xxx_1" format
-        name = c.get("name", "")
+    seen_ids = set()
+    for enrollment in data.get("results", []):
+        cid = enrollment.get("id", "")   # e.g. "_551150_1" — enrollment record id
+        course_id = enrollment.get("courseId", "")  # e.g. "_8343_1"
+        if not course_id or course_id in seen_ids:
+            continue
+        seen_ids.add(course_id)
+        # Fetch course name
+        try:
+            course_data = _api(f"/learn/api/public/v1/courses/{course_id}", session)
+            name = course_data.get("name", "")
+        except Exception:
+            name = ""
         if name:
-            courses.append((cid, name))
+            courses.append((course_id, name))
     return courses
 
 
-# ── gradebook ────────────────────────────────────────────────────────────────
+# ── gradebook ──────────────────────────────────────────────────────────────────
 
 def _get_gradebook_columns(course_id, session=None):
-    """Return list of grade-column dicts for a course.
-
-    Each dict:
-      id           — column ID (e.g. "_413533_1")
-      name         — assignment name
-      content_id   — maps to content item
-      due          — ISO datetime string or "" if none
-      possible     — max score (float)
-      scoring_type — "Attempts" / "Calculated"
-    """
+    """Return dict mapping columnId → {name, due} for assignments with due dates."""
     cols = _api(
         f"/learn/api/public/v1/courses/{course_id}/gradebook/columns"
-        f"?_fields=id,name,contentId,score,grading",
+        f"?_fields=id,name,contentId,grading",
         session,
     )
-    results = []
+    result = {}
     for col in cols.get("results", []):
         grading = col.get("grading", {})
-        due_raw = grading.get("due", "") or ""
-        results.append({
-            "id": col.get("id", ""),
+        if grading.get("type") != "Attempts":
+            continue
+        col_id = col.get("id", "")
+        if not col_id:
+            continue
+        result[col_id] = {
             "name": col.get("name", ""),
             "content_id": col.get("contentId", ""),
-            "possible": col.get("score", {}).get("possible", 0),
-            "due": due_raw,
-            "scoring_type": grading.get("type", ""),
-        })
-    return results
+            "due": grading.get("due", "") or "",
+        }
+    return result
 
 
-def _get_user_attempts(course_id, column_id, session=None):
-    """Return list of attempt dicts for current user on one column."""
-    try:
-        data = _api(
-            f"/learn/api/public/v1/courses/{course_id}/gradebook/columns/{column_id}/attempts",
-            session,
-        )
-        return data.get("results", [])
-    except Exception:
-        return []
+def _get_user_grades(course_id, user_id, session=None):
+    """
+    Return dict mapping columnId → {score, status} for all grade columns
+    in a course for the current user.
+
+    One API call replaces N per-column attempt calls.
+    Status values: 'Graded', 'NeedsGrading', 'In Progress', 'Not Attempted'.
+    """
+    data = _api(
+        f"/learn/api/public/v1/courses/{course_id}/gradebook/users/{user_id}",
+        session,
+    )
+    result = {}
+    for entry in data.get("results", []):
+        col_id = entry.get("columnId", "")
+        if not col_id:
+            continue
+        result[col_id] = {
+            "score": entry.get("score"),
+            "status": entry.get("status", ""),
+        }
+    return result
 
 
-# ── date helpers ─────────────────────────────────────────────────────────────
+# ── date helpers ──────────────────────────────────────────────────────────────
 
 def _parse_iso(iso: str):
     """Parse BB ISO timestamp → datetime. Returns None if unparseable."""
     if not iso:
         return None
     try:
-        # "2026-03-25T15:59:00.000Z"
         return datetime.fromisoformat(iso.replace("Z", "+00:00")).replace(tzinfo=None)
     except ValueError:
         return None
@@ -133,21 +154,21 @@ def _format_due(iso: str):
     return dt.strftime("%m-%d %H:%M")
 
 
-# ── main ────────────────────────────────────────────────────────────────────
+# ── main ──────────────────────────────────────────────────────────────────────
 
 def run(days: int = 7, course_id: str = None):
-    """See docs/bb.md."""
+    """Print upcoming BB assignment deadlines. See docs/bb.md."""
     session = _session()
     now = datetime.now()
     cutoff = now + timedelta(days=days)
 
-    # 1. Get enrolled courses for current term
-    courses = _get_courses(session, term_id="_57_1")
+    # 1. Get enrolled courses
+    courses = _get_enrolled_courses(session, term_id="_57_1")
     if not courses:
         print("❌ 无法获取课程列表，请重新登录")
         return
 
-    # 2. Filter
+    # 2. Filter to active courses if no specific course requested
     if course_id:
         courses = [(c, n) for c, n in courses if c == course_id]
     else:
@@ -157,20 +178,32 @@ def run(days: int = 7, course_id: str = None):
             if "2026" in n or c in active_ids
         ]
         if not courses:
-            courses = _get_courses(session, term_id="_57_1")
+            courses = _get_enrolled_courses(session, term_id="_57_1")
 
-    all_items = []  # (course_name, name, due_iso, status, score, feedback)
+    # 3. Get current user ID (for grade lookup)
+    uid = _get_user_id(session)
+
+    all_items = []  # (course_name, name, due_iso, status, score_str)
 
     for cid, cname in courses:
         try:
+            # Columns: gives us name + ISO due date
             cols = _get_gradebook_columns(cid, session)
-        except Exception as e:
+        except Exception:
             continue
 
-        for col in cols:
-            if col["scoring_type"] != "Attempts":
-                continue   # skip Total, averages, etc.
-            if not col["name"]:
+        if not cols:
+            continue
+
+        try:
+            # All user grades in one call: gives score + NeedsGrading status
+            grades = _get_user_grades(cid, uid, session)
+        except Exception:
+            grades = {}
+
+        for col_id, col in cols.items():
+            name = col["name"]
+            if not name:
                 continue
 
             due_iso = col["due"]
@@ -189,28 +222,24 @@ def run(days: int = 7, course_id: str = None):
             else:
                 status = ""
 
-            # Attempt info
-            attempts = _get_user_attempts(cid, col["id"], session)
+            # Grade info from users endpoint (no extra API calls)
+            grade_info = grades.get(col_id, {})
+            score = grade_info.get("score")
+            grade_status = grade_info.get("status", "")
+
             score_str = ""
-            feedback_str = ""
-            if attempts:
-                latest = attempts[-1]
-                s = latest.get("score")
-                score_str = f" {s}" if s is not None else " 未评分"
-                fb = latest.get("feedback", "") or ""
-                if fb:
-                    # strip HTML tags
-                    fb_clean = re.sub(r"<[^>]+>", "", fb)
-                    feedback_str = f" 评语: {fb_clean[:50]}"
+            if grade_status == "Graded" and score is not None:
+                score_str = f" {score}"
+            elif grade_status == "NeedsGrading":
+                score_str = " 待评分"
 
             all_items.append({
                 "course": cname,
-                "name": col["name"],
+                "name": name,
                 "due_iso": due_iso,
                 "due_str": due_str,
                 "status": status,
                 "score": score_str,
-                "feedback": feedback_str,
                 "due_dt": due_dt,
             })
 
@@ -246,5 +275,3 @@ def run(days: int = 7, course_id: str = None):
         if item["score"]:
             parts.append(item["score"])
         print(f"    {' | '.join(parts)}")
-        if item["feedback"]:
-            print(f"    {item['feedback']}")

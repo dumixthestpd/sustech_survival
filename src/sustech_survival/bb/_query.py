@@ -34,11 +34,11 @@ _TYPE_ICON = {
 # ── Session ──────────────────────────────────────────────────────────────────
 
 def _session():
-    """Return requests.Session with BB cookies."""
-    skill_root = Path(__file__).resolve().parent.parent.parent.parent
-    with open(skill_root / "bb" / "session.json") as f:
-        raw = json.load(f)
-    s = requests.Session()
+    """Return requests.Session with BB cookies from SSO auth layer."""
+    from sustech_survival.sso.authorizer import get_auth
+    auth = get_auth("bb")
+    raw = auth.load()
+    s = __import__('requests').Session()
     for name, value in raw.items():
         s.cookies.set(name, value, domain=".bb.sustech.edu.cn", path="/")
     return s
@@ -60,14 +60,16 @@ def _api(path, session=None):
 
 def discover_courses(term_id="_57_1"):
     """
-    Return list of (course_id_str, course_name) for given term.
+    Return list of (course_id, course_name) for given term.
 
-    course_id_str is the numeric part only, e.g. "8343".
+    course_id is in BB format e.g. "_8343_1" (use lstrip(' _').rstrip('_1')
+    to get numeric part '8343' if needed).
+
     Falls back to [] if REST fails.
     """
     try:
         data = _api(f"/learn/api/public/v1/courses?termId={term_id}")
-        return [(c["id"].lstrip("_").rstrip("_1"), c.get("name", ""))
+        return [(c["id"], c.get("name", ""))
                  for c in data.get("results", []) if c.get("name")]
     except Exception:
         return []
@@ -79,8 +81,11 @@ def _walk_contents(course_id, parent_id=None, session=None):
     """
     Recursively walk /courses/{course_id}/contents tree via REST.
     Yields (content_id, title, content_handler, has_children, parent_id).
+
+    course_id must be in BB format e.g. "_8343_1".
+    content_id yielded is stripped (numeric part only, e.g. "610783").
     """
-    bid = f"_{course_id}_1"
+    bid = course_id if course_id.startswith("_") else f"_{course_id}_1"
     if parent_id:
         path = f"/learn/api/public/v1/courses/{bid}/contents/{parent_id}/children"
     else:
@@ -125,7 +130,7 @@ def discover_pages(course_id, *, refresh=False):
             return data
 
     sess = _session()
-    bid = f"_{course_id}_1"
+    bid = course_id if course_id.startswith("_") else f"_{course_id}_1"
 
     # Build parent_id → section name map from root-level folders
     section_map = {}  # content_id → section name

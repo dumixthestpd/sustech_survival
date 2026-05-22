@@ -196,47 +196,63 @@ class HomeworkItem(Item):
         return "\n".join(lines)
 
     def _fetch_attempts(self):
-        """Lazy-fetch attempt details for this homework item. Cached on first call."""
+        """Fetch attempt details via REST API. Cached on first call."""
         if hasattr(self, '_attempts_cached'):
             return self._attempts_cached
-        try:
-            from .download import discover_attempt_ids, scrape_attempt_details
-            from .session import load_session
-        except ImportError:
-            try:
-                from download import discover_attempt_ids, scrape_attempt_details
-                from session import load_session
-            except ImportError:
-                self._attempts_cached = []
-                return []
-        raw, pw = load_session()
-        if not (getattr(self, 'course_id', None) and getattr(self, 'content_id', None)):
+
+        course_id = getattr(self, 'course_id', None)
+        content_id = getattr(self, 'content_id', None)
+        if not (course_id and content_id):
             self._attempts_cached = []
             return []
+
         try:
-            from playwright.sync_api import sync_playwright
-            with sync_playwright() as p:
-                browser = p.chromium.launch()
-                ctx = browser.new_context()
-                ctx.add_cookies(pw)
-                attempts = discover_attempt_ids(ctx, str(self.course_id), str(self.content_id))
-                results = []
-                for aid, (anum, ts) in attempts:
-                    try:
-                        det = scrape_attempt_details(ctx, str(self.course_id), str(self.content_id), aid)
-                        results.append({
-                            'anum': anum, 'ts': ts,
-                            'files': det.get('files', []),
-                            'graded': det.get('graded', False),
-                            'grade': det.get('grade'),
-                            'score': det.get('score'),
-                            'feedback': det.get('comment'),
-                        })
-                    except Exception:
-                        results.append({'anum': anum, 'ts': ts, 'files': [], 'graded': False, 'grade': None, 'score': None, 'feedback': None})
-                browser.close()
-                self._attempts_cached = results
-                return results
+            from sustech_survival.sso.authorizer import get_auth
+            auth = get_auth("bb")
+            raw = auth.load()
+            import requests
+            sess = requests.Session()
+            for name, value in raw.items():
+                sess.cookies.set(name, value, domain=".bb.sustech.edu.cn", path="/")
+
+            BB_BASE = "https://bb.sustech.edu.cn"
+
+            # 1. Find the grade column ID for this content item
+            bid = "_" + course_id + "_1"
+            cid = "_" + content_id + "_1"
+            cols_data = sess.get(
+                f"{BB_BASE}/learn/api/public/v1/courses/{bid}/gradebook/columns"
+                f"?_fields=id,contentId",
+                timeout=10
+            ).json()
+            col_id = None
+            for col in cols_data.get("results", []):
+                if col.get("contentId") == cid:
+                    col_id = col.get("id")
+                    break
+            if not col_id:
+                self._attempts_cached = []
+                return []
+
+            # 2. Get attempts for this column
+            attempts_data = sess.get(
+                f"{BB_BASE}/learn/api/public/v1/courses/{bid}/gradebook/columns/{col_id}/attempts",
+                timeout=10
+            ).json()
+
+            results = []
+            for attempt in attempts_data.get("results", []):
+                results.append({
+                    'anum': 1,
+                    'ts': attempt.get('created', ''),
+                    'files': [],
+                    'graded': attempt.get('status') == 'Completed',
+                    'score': attempt.get('score'),
+                    'grade': attempt.get('score'),  # same field in this API
+                    'feedback': attempt.get('feedback', ''),
+                })
+            self._attempts_cached = results
+            return results
         except Exception:
             self._attempts_cached = []
             return []

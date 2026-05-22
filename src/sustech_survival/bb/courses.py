@@ -1,112 +1,107 @@
-# Courses — course data loading, discovery, and live scraping
+# Courses — BB course data loading and discovery via REST API
 """
-Course loading, listing, finding, and assignment discovery.
-All pulled from session.py during the modularization.
+Course loading, listing, finding via REST API (no Playwright).
+
+REST-only flow:
+  1. /users/me                    → current user ID
+  2. /users/{uid}/courses        → enrollment records with courseId
+  3. /courses/{courseId}         → course name + details
+
+Playwright is NOT used for course discovery — only for discovering
+assignment slots when structure.json is unavailable.
 """
-import json, re, sys
+
+import json
+import re
+import sys
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
-from playwright.sync_api import sync_playwright
+from typing import List, Dict
 
 try:
-    from .session import BB_BASE, load_session
+    from .session import BB_BASE
 except ImportError:
-    from session import BB_BASE, load_session
+    BB_BASE = "https://bb.sustech.edu.cn"
 
 BB_DIR = Path(__file__).resolve().parent
 COURSES_FILE = BB_DIR / "courses.json"
 STRUCTURE_FILE = BB_DIR / "structure.json"
-
-# ── Live Scraping — get YOUR enrolled courses from BB portal ──────────────────
 
 SKIP_COURSE_NAMES = {
     '大学物理', '高等数学', 'college physics', 'higher mathematics',
     '微积分', '线性代数', 'calculus', 'linear algebra',
 }
 
-BB_PORTAL = "https://bb.sustech.edu.cn/webapps/portal/execute/tabs/tabAction?tab_tab_group_id=_1_1"
+
+# ── REST-based course discovery ────────────────────────────────────────────────
+
+def _session():
+    """Return requests.Session with BB cookies from SSO auth layer."""
+    from sustech_survival.sso.authorizer import get_auth
+    auth = get_auth("bb")
+    raw = auth.load()
+    sess = __import__('requests').Session()
+    for name, value in raw.items():
+        sess.cookies.set(name, value, domain=".bb.sustech.edu.cn", path="/")
+    return sess
+
+
+def _api(path, session=None):
+    """GET BB REST endpoint. Returns JSON. Dies on auth error."""
+    if session is None:
+        session = _session()
+    r = session.get(BB_BASE + path, timeout=15)
+    if r.status_code == 401:
+        print("❌ BB session expired. Run `bb.py login` to refresh.")
+        sys.exit(1)
+    r.raise_for_status()
+    return r.json()
 
 
 def scrape_enrolled_courses() -> List[Dict[str, str]]:
     """
-    Visit the BB portal "课程" tab and extract the CURRENT USER's enrolled courses.
-    Uses Playwright JS to find 'courseMain' and 'launcher?type=Course' links.
+    Fetch current user's enrolled courses via REST API.
 
-    Returns list of dicts: [{"id": "_8343_1", "name": "Physical Chemistry...", "href": "..."}, ...]
+    Uses /users/me → /users/{uid}/courses → /courses/{courseId}
+    to build the full course list with names — no Playwright needed.
 
-    Raises RuntimeError if not logged in.
+    Returns list of dicts: [{"id": "_8343_1", "name": "Physical Chemistry...", "href": ""}, ...]
     """
-    raw, pw = load_session()
-    if not pw:
-        raise RuntimeError("Not logged into BB — run 'bb.py login' first")
+    # 1. Get current user ID
+    me = _api("/learn/api/public/v1/users/me")
+    uid = me["id"]
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch()
-        ctx = browser.new_context()
-        ctx.add_cookies(pw)
+    # 2. Get all enrollments
+    enrollments = _api(f"/learn/api/public/v1/users/{uid}/courses")
+    seen_ids = set()
+    courses = []
 
-        page = ctx.new_page()
-        page.goto(BB_PORTAL, timeout=15000)
-        page.wait_for_timeout(6000)
+    for enrollment in enrollments.get("results", []):
+        course_id = enrollment.get("courseId", "")  # e.g. "_8343_1"
+        if not course_id or course_id in seen_ids:
+            continue
 
-        if 'login' in page.url.lower():
-            browser.close()
-            raise RuntimeError("BB session expired — re-login required")
+        # 3. Fetch course name
+        try:
+            course_data = _api(f"/learn/api/public/v1/courses/{course_id}")
+            name = course_data.get("name", "")
+        except Exception:
+            name = ""
 
-        course_links = page.evaluate('''
-() => {
-    const links = document.querySelectorAll('a[href*="courseMain"], a[href*="launcher?type=Course"]');
-    const seen = new Set();
-    const results = [];
-    for (const l of links) {
-        if (l.href && l.textContent.trim().length > 2 && !seen.has(l.href)) {
-            seen.add(l.href);
-            results.push({href: l.href, text: l.textContent.trim().slice(0, 80)});
-        }
-    }
-    return results;
-}
-''')
-        browser.close()
+        if not name:
+            continue
 
-        courses = []
-        seen_ids = set()
-        for cl in course_links:
-            href = cl['href']
-            # Extract course_id from either courseMain?course_id=_XXX_1 or launcher?type=Course&id=_XXX_1
-            # Extract course_id — two URL formats:
-            #   courseMain?course_id=_XXX_1   → extract _XXX_1
-            #   launcher?type=Course&id=_XXX_1 → extract _XXX_1
-            m = re.search(r'(?:course_id|id)=(_?\d+_?\d+)', href)
-            if not m:
-                continue
-            raw = m.group(1)  # e.g. "8053_1" or "_8462_1" or "30021580_2026SP_1"
-            # Normalize: strip leading _, split, take first numeric segment, append _1
-            raw = raw.lstrip('_')
-            num = raw.split('_')[0]  # first numeric part
-            if not num.isdigit():
-                continue
-            cid = f"_{num}_1"
-            if cid in seen_ids:
-                continue
-            name = re.sub(r'^→\s*|^《|》$', '', cl['text'].strip())
-            name = re.sub(r'\s*\(?\d{4}[-/]\d{1,2}\)?\s*$', '', name).strip()
-            if not name or len(name) < 3:
-                continue
-            # Skip catch-all/non-course recordings (physics/math lecture recordings)
-            if any(sn.lower() in name.lower() for sn in SKIP_COURSE_NAMES):
-                continue
-            seen_ids.add(cid)
-            courses.append({'id': cid, 'name': name, 'href': href})
+        # Skip physics/math recordings
+        if any(sn.lower() in name.lower() for sn in SKIP_COURSE_NAMES):
+            continue
 
-        return courses
+        seen_ids.add(course_id)
+        courses.append({"id": course_id, "name": name, "href": ""})
+
+    return courses
 
 
 def refresh_courses_json() -> List[Dict[str, str]]:
-    """
-    Scrape live from BB portal and update courses.json.
-    Returns the scraped course list.
-    """
+    """Scrape live from REST API and update courses.json."""
     courses = scrape_enrolled_courses()
     COURSES_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(COURSES_FILE, 'w') as f:
@@ -116,7 +111,8 @@ def refresh_courses_json() -> List[Dict[str, str]]:
         print(f"  - {c['name']} ({c['id']})")
     return courses
 
-# ── Course Data ─────────────────────────────────────────────────────────────
+
+# ── Course Data ────────────────────────────────────────────────────────────────
 
 def load_courses():
     """Load course list from courses.json. Returns list of course dicts."""
@@ -153,49 +149,40 @@ def list_courses():
     return [(c["id"], c.get("name", "Unknown")) for c in load_courses()]
 
 
-# ── Course Discovery ────────────────────────────────────────────────────────
-
-NAV_NOISE = {"打开快速链接", "页面标志", "内容大纲", "键盘快捷键", "Top Frame Tabs",
-                "Current Location", "Menu Management Options", "Course Menu:"}
-
+# ── Assignment Discovery (Playwright only when structure.json unavailable) ─────
 
 def _get_content_title(page, content_id):
-    """Get the content page title. Tries page title, then filtered h1/h2, then falls back."""
-    # Page title is most reliable: "Page Name – Course Name" or "Page Name"
+    """Get the content page title via Playwright."""
     title_el = page.query_selector("title")
     if title_el:
         txt = title_el.inner_text().strip()
-        # Strip " – Course Name" suffix and leading "--" or "- " from BB naming
         if " – " in txt:
             txt = txt.split(" – ")[0]
         txt = txt.lstrip("-").lstrip(" ").strip()
         if txt and len(txt) > 2:
             return txt
-
-    # h1/h2/h3: skip navigation chrome
     for selector in ("h1", "h2", "h3"):
         for el in page.query_selector_all(selector):
             txt = el.inner_text().strip()
-            if txt and len(txt) > 2 and txt not in NAV_NOISE and txt.startswith("--"):
+            if txt and len(txt) > 2 and txt not in {
+                "打开快速链接", "页面标志", "内容大纲", "键盘快捷键",
+                "Top Frame Tabs", "Current Location", "Menu Management Options",
+                "Course Menu:"
+            } and txt.startswith("--"):
                 return txt.lstrip("-").strip()
     return f"Content {content_id}"
 
 
 def discover_assignments_for_course(pw_cookies, course_id_str):
     """
-    Discover all BB uploadAssignment slots for a course.
+    Discover all BB uploadAssignment slots for a course via Playwright.
+    Used as fallback when structure.json is unavailable.
 
     Returns list of (assignment_content_id, title) tuples.
-
-    Uses structure.json to get content IDs, then visits each content page
-    sequentially in one browser to find uploadAssignment links.
-
-    Falls back to slow recursive crawl if structure.json is unavailable.
     """
     from playwright.sync_api import sync_playwright
-    from session import BB_BASE
 
-    # Fast path: use structure.json for content IDs, sequential single-browser check
+    # Fast path: use structure.json for content IDs
     if STRUCTURE_FILE.exists():
         try:
             with open(STRUCTURE_FILE) as f:
@@ -227,10 +214,10 @@ def discover_assignments_for_course(pw_cookies, course_id_str):
                         )
                         page.wait_for_timeout(800)
 
-                        # Dismiss cookie dialog
                         for _ in range(3):
                             d = page.query_selector('[role="dialog"]')
-                            if not d: break
+                            if not d:
+                                break
                             b = d.query_selector("button")
                             if b:
                                 b.click()
@@ -241,22 +228,22 @@ def discover_assignments_for_course(pw_cookies, course_id_str):
                             if "uploadAssignment" not in href or "action=" in href:
                                 continue
                             m = re.search(r"content_id=_(\d+)_", href)
-                            if not m: continue
+                            if not m:
+                                continue
                             upload_cid = m.group(1)
                             title = _get_content_title(page, upload_cid)
                             results.append((upload_cid, title))
-                            break  # one assignment per content page
+                            break
                     except Exception:
                         pass
                     finally:
                         page.close()
 
                 browser.close()
-
                 if results:
                     return results
 
-    # Slow fallback: recursive crawl
+    # Slow fallback: Playwright recursive crawl
     def visit_page(ctx, course_id_str, content_id, depth=0):
         results = []
         page = ctx.new_page()
@@ -267,9 +254,11 @@ def discover_assignments_for_course(pw_cookies, course_id_str):
                 wait_until="domcontentloaded", timeout=20000
             )
             page.wait_for_timeout(2000)
+
             for _ in range(3):
                 d = page.query_selector('[role="dialog"]')
-                if not d: break
+                if not d:
+                    break
                 b = d.query_selector("button")
                 if b:
                     b.click()
@@ -283,9 +272,11 @@ def discover_assignments_for_course(pw_cookies, course_id_str):
                 if "content_id=_" not in href or not text or len(text) < 3:
                     continue
                 m = re.search(r"content_id=_(\d+)_\s*", href)
-                if not m: continue
+                if not m:
+                    continue
                 cid = m.group(1)
-                if cid in seen: continue
+                if cid in seen:
+                    continue
                 seen.add(cid)
                 links.append((cid, text))
 
@@ -327,7 +318,8 @@ def discover_assignments_for_course(pw_cookies, course_id_str):
         for a in page.query_selector_all("a"):
             href = a.get_attribute("href") or ""
             text = (a.inner_text() or "").strip()
-            if "content_id=_" not in href or not text or len(text) < 3: continue
+            if "content_id=_" not in href or not text or len(text) < 3:
+                continue
             m = re.search(r"content_id=_(\d+)_\s*", href)
             if m and m.group(1) not in seen:
                 seen.add(m.group(1))
