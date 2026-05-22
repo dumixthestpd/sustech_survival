@@ -9,32 +9,42 @@ sys.path.insert(0, str(_SKILL_ROOT / "src"))
 __all__ = ["run"]
 
 
-def _login():
-    from sustech_survival.tis.login import cas_login
-    creds_file = _SKILL_ROOT / "credentials.txt"
-    with open(creds_file) as f:
-        username, password = f.read().strip().split(":", 1)
-    return cas_login(username, password, "https://tis.sustech.edu.cn/cas")
+def _make_session():
+    """Build a requests.Session with valid TIS cookies via SSO auth layer."""
+    import requests
+    from sustech_survival.sso.authorizer import get_auth
+
+    auth = get_auth("tis")
+    ok, msg = auth.check()
+    if not ok:
+        ok = auth.refresh()
+    if not ok:
+        return None
+
+    raw = auth.load()
+    sess = requests.Session()
+    sess.headers["User-Agent"] = (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    )
+    for k, v in raw.items():
+        sess.cookies.set(k, v, domain="tis.sustech.edu.cn")
+    return sess
 
 
-def _get_grades(cookies: dict, semester: str = None):
+def _get_grades(session, semester: str = None):
     """
     Fetch grades from TIS grade API.
     Returns list of grade dicts.
     """
-    import requests
-
-    h = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-        "X-Requested-With": "XMLHttpRequest",
-        "Content-Type": "application/json",
-        "Cookie": f"route={cookies['route']}; JSESSIONID={cookies['JSESSIONID']}"
-    }
-
-    r = requests.post(
+    r = session.post(
         "https://tis.sustech.edu.cn/cjgl/grcjcx/grcjcx",
         json={"xn": None, "xq": None, "kcmc": None, "cxbj": "-1", "pylx": "1", "current": 1, "pageSize": 500},
-        headers=h, timeout=15
+        headers={
+            "X-Requested-With": "XMLHttpRequest",
+            "Content-Type": "application/json",
+        },
+        timeout=15,
     )
     if r.status_code != 200:
         raise RuntimeError(f"TIS grade API returned {r.status_code}: {r.text[:200]}")
@@ -90,7 +100,6 @@ def _calc_gpa(courses, credit_key="xf", grade_key="xscj"):
 
         gpa = _GPA_MAP.get(grade)
         if gpa is None:
-            # Try numeric score
             score_str = str(c.get("zzcj", "")).strip()
             try:
                 score = float(score_str)
@@ -136,13 +145,13 @@ def _format_grade_row(c):
 def run(semester: str = None, export: str = None):
     """See docs/grades.md."""
     print("🔑 CAS login...")
-    cookies = _login()
-    if not cookies:
+    session = _make_session()
+    if not session:
         print("❌ TIS login failed")
         sys.exit(1)
 
     print("📊 Fetching grades...")
-    courses = _get_grades(cookies, semester)
+    courses = _get_grades(session, semester)
 
     if not courses:
         print("❌ No grades found")
@@ -171,6 +180,7 @@ def run(semester: str = None, export: str = None):
 
     if export == "csv":
         import csv
+
         out = _SKILL_ROOT.parent.parent / "workspace" / "sustech" / "grades.csv"
         out.parent.mkdir(parents=True, exist_ok=True)
         fields = ["课程", "学期", "学分", "等级", "分数", "性质"]

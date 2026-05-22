@@ -2,7 +2,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Usage:
 #   from sustech_survival import tis
-#   tis.login()             # CAS login (headless)
+#   tis.login()             # CAS login (headless via SSO auth layer)
 #   tis.grades()            # fetch + display TIS grades + GPA
 #   tis.courses()           # show enrolled courses from TIS (grade API)
 #   from sustech_survival.bb import ddl
@@ -19,16 +19,41 @@ __all__ = ["login", "grades", "courses"]
 
 
 def login(username=None, password=None):
-    """Headless CAS login for TIS. Returns cookies dict or None."""
-    from sustech_survival.tis.login import cas_login as _cas_login
-    if username is None or password is None:
-        creds_file = _SKILL_ROOT / "credentials.txt"
-        with open(creds_file) as f:
-            line = f.read().strip()
-        if ':' not in line:
-            raise ValueError(f"Invalid credentials in {creds_file}")
-        username, password = line.split(':', 1)
-    return _cas_login(username, password, "https://tis.sustech.edu.cn/cas")
+    """
+    Headless CAS login for TIS via SSO auth layer.
+    Returns requests.Session with valid TIS cookies, or None on failure.
+    """
+    import requests
+    from sustech_survival.sso.authorizer import get_auth
+
+    auth = get_auth("tis")
+    ok, msg = auth.check()
+    if ok:
+        # Session valid — load cookies and return a session
+        raw = auth.load()
+        sess = requests.Session()
+        sess.headers["User-Agent"] = (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        )
+        for k, v in raw.items():
+            sess.cookies.set(k, v, domain="tis.sustech.edu.cn")
+        return sess
+
+    # Session invalid/missing — refresh via SSO auth layer (reads credentials.txt)
+    ok = auth.refresh()
+    if not ok:
+        return None
+
+    raw = auth.load()
+    sess = requests.Session()
+    sess.headers["User-Agent"] = (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    )
+    for k, v in raw.items():
+        sess.cookies.set(k, v, domain="tis.sustech.edu.cn")
+    return sess
 
 
 def grades(semester: str = None, export: str = None):

@@ -5,7 +5,7 @@ Fetches + caches all TIS sections, runs the schedule solver.
 Serves Vue 3 SPA at http://localhost:8765
 """
 
-import os, re, json, time
+import os, re, json, time, threading
 from pathlib import Path
 from flask import Flask, send_file, request, jsonify
 import requests
@@ -22,11 +22,100 @@ HEADERS = {
     "X-Requested-With": "XMLHttpRequest",
 }
 
+# ── Playwright fetch (uses existing browser session) ──────────────────────────
+_pw_browser = None
+_pw_lock = threading.Lock()
+
+def _get_playwright():
+    global _pw_browser
+    with _pw_lock:
+        if _pw_browser is None:
+            from playwright.sync_api import sync_playwright
+            _pw_browser = sync_playwright().start().chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage"]
+            )
+        return _pw_browser
+
+def pw_fetch(url, method="POST", data=None, headers=None, timeout=30):
+    """
+    Make an HTTP request via a Playwright-controlled browser.
+    Uses the browser's existing TIS session (already logged in).
+    Returns (status_code, text).
+    """
+    headers = headers or {}
+    headers["X-Requested-With"] = "XMLHttpRequest"
+    headers["User-Agent"] = HEADERS["User-Agent"]
+
+    body = None
+    if data and method == "POST":
+        from urllib.parse import urlencode
+        body = urlencode(data)
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
+
+    script = f"""
+    async () => {{
+        const opts = {{
+            method: '{method}',
+            headers: {json.dumps(dict(headers))},
+        }};
+        if ({json.dumps(body is not None)}) {{
+            opts.body = {json.dumps(body)};
+        }}
+        const resp = await fetch({json.dumps(url)}, opts);
+        const text = await resp.text();
+        return {{ status: resp.status, body: text }};
+    }}
+    """
+
+    browser = _get_playwright()
+    ctx = browser.new_context()
+    page = ctx.new_page()
+    try:
+        result = page.evaluate(script, timeout=timeout * 1000)
+        ctx.close()
+        return result["status"], result["body"]
+    except Exception as e:
+        ctx.close()
+        raise RuntimeError(f"pw_fetch failed: {e}")
+
+def tis_post(endpoint, data, cookies=None, use_pw=True):
+    """POST to TIS API. Falls back to requests.Session if Playwright unavailable."""
+    url = f"{TIS_BASE}{endpoint}"
+    if use_pw:
+        try:
+            status, text = pw_fetch(url, "POST", data, cookies)
+            return type('R', (), {'status_code': status, 'text': text})()
+        except Exception as e:
+            print(f"[WARN] Playwright fetch failed, trying requests: {e}")
+
+    # Fallback: use requests session
+    s = requests.Session()
+    if cookies:
+        s.cookies.update(cookies)
+    r = s.post(url, data=data, headers=HEADERS, timeout=20)
+    return r
+
 # ── TIS Login ────────────────────────────────────────────────────────────────
 def load_session():
-    creds_file = Path(__file__).parent.parent.parent / "credentials.txt"
+    """Check existing session; re-login only if expired."""
+    creds_file = Path(__file__).resolve().parent.parent.parent.parent / "credentials.txt"
     if not creds_file.exists():
         return None
+    # Try existing session first (may still be valid)
+    for cookie_file in ["tis/session.json", Path.home() / ".hermes" / "tis_session.json"]:
+        p = Path(cookie_file)
+        if p.exists():
+            import json as _json
+            try:
+                cookies = _json.loads(p.read_text())
+                r = requests.get(f"{TIS_BASE}/user/me", cookies=cookies, timeout=10)
+                if r.status_code == 200:
+                    return cookies
+            except Exception:
+                pass
+
+    # Re-login via CAS
     creds = creds_file.read_text().strip().split(":")
     if len(creds) != 2:
         return None
@@ -36,7 +125,8 @@ def load_session():
     r = s.get(f"{TIS_BASE}/cas/login?service={TIS_BASE}", headers=HEADERS)
     m = re.search(r'name="execution" value="([^"]+)"', r.text)
     if not m:
-        return None
+        # Already authenticated — use session cookies from this request
+        return dict(s.cookies)
     exec_val = m.group(1)
     rv = s.post(
         f"{TIS_BASE}/cas/login",
@@ -77,11 +167,11 @@ def fetch_all_sections(cookies):
                 "p_gjz": dept,
                 "pageNum": str(p), "pageSize": str(page_size),
             }
-            r = tis_post("/Xsxktz/queryRwxxcxList", data, cookies)
+            r = tis_post("/Xsxktz/queryRwxxcxList", data, cookies, use_pw=True)
             if r.status_code != 200:
                 break
             try:
-                j = r.json()
+                j = json.loads(r.text)
             except Exception:
                 break
             rw_list = j.get("rwList", {})

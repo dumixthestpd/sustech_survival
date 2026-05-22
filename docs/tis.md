@@ -8,15 +8,45 @@
 
 ---
 
-## Login
+## Login (CAS SSO — Python requests, no browser)
 
+**3-step ticket exchange:**
+```python
+import requests, re
+
+CAS  = "https://cas.sustech.edu.cn"
+TIS  = "https://tis.sustech.edu.cn"
+SVC  = f"{TIS}/cas"   # service URL — MUST match exactly
+
+s = requests.Session()
+headers = {"User-Agent": "Mozilla/5.0 ..."}
+
+# 1. GET login page → captures TGC cookie + execution token
+r = s.get(f"{CAS}/cas/login", params={"service": SVC},
+          headers=headers, allow_redirects=False)
+exec_token = re.search(r'name="execution" value="([^"]+)"', r.text).group(1)
+
+# 2. POST credentials → returns Location: .../cas?ticket=ST-...
+r = s.post(f"{CAS}/cas/login",
+           params={"service": SVC},   # CAS needs this on POST too
+           data={"username": SID, "password": PASS,
+                 "execution": exec_token, "_eventId": "submit"},
+           headers={**headers, "Referer": f"{CAS}/cas/login"},
+           allow_redirects=False)
+ticket = re.search(r"ticket=(ST-[^&]+)", r.headers["Location"]).group(1)
+
+# 3. Exchange ticket → sets JSESSIONID + route cookies
+s.get(f"{SVC}?ticket={ticket}", headers=headers, allow_redirects=False)
+
+# Session now has: TGC (step1) + JSESSIONID (step3) + route (step3)
+# TIS API calls work directly:
+s.post(f"{TIS}/Xsxktz/queryRwxxcxList", data={...})
 ```
-POST https://cas.sustech.edu.cn/cas/login?service=https%3A%2F%2Ftis.sustech.edu.cn%2Fcas
-Body: username=<sid>&password=<pass>&execution=<token>&_eventId=submit
-```
-1. GET the login page → extract `execution` token from `name="execution" value="..."`
-2. POST credentials → follow `Location` header (ticket URL)
-3. Final response `Set-Cookie` contains `route=...; JSESSIONID=...`
+
+**Key mistakes that break it:**
+- `allow_redirects=True` (default) — loses the `Set-Cookie` header with `JSESSIONID`
+- Wrong `service=` URL — must be exactly `https://tis.sustech.edu.cn/cas`
+- Omitting `params={"service": SVC}` on the POST — CAS validates it against the ticket
 
 ---
 
