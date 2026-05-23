@@ -133,19 +133,16 @@ _EXTRACT_QUESTIONS_JS = r"""
 
     for (let fi = 0; fi < formItems.length; fi++) {
         const formItem = formItems[fi];
+        let questionText = '';
 
-        // Walk UP: .ivu-form-item → .dft-option-m → .modular-zs-main → .xzt-ms-head h5
-        const dft = formItem.closest('.dft-option-m');
-        if (dft) {
-            const modularZsMain = dft.closest('.modular-zs-main');
-            if (modularZsMain) {
-                const xztHead = modularZsMain.querySelector('.xzt-ms-head h5');
-                if (xztHead) {
-                    questionText = xztHead.innerText.trim();
-                }
-            }
+        // Walk UP to .modular-zs-main → .xzt-ms-head h5 (works for BOTH page 1 and page 2)
+        const modularZsMain = formItem.closest('.modular-zs-main');
+        if (modularZsMain) {
+            const xztHead = modularZsMain.querySelector('.xzt-ms-head h5');
+            if (xztHead) questionText = xztHead.innerText.trim();
         }
 
+        // Collect all .grid options within this form item
         const allGrids = Array.from(formItem.querySelectorAll('.grid'));
         const options = allGrids.map(g => g.innerText.trim()).filter(t => t !== '');
         const qid = formItem.getAttribute('data-wjstid') || String(fi);
