@@ -17,7 +17,17 @@ from pathlib import Path as _Path
 _SKILL_ROOT = _Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(_SKILL_ROOT / "src"))
 
-__all__ = ["grades", "courses", "eval"]
+__all__ = ["grades", "courses", "eval", "Evaluation", "EvaluationSession"]
+
+# Lazy-imported to avoid circular deps
+def __getattr__(name: str):
+    if name == "Evaluation":
+        from sustech_survival.tis.eval import Evaluation
+        return Evaluation
+    if name == "EvaluationSession":
+        from sustech_survival.tis.eval import EvaluationSession
+        return EvaluationSession
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def grades(semester: str = None, export: str = None):
