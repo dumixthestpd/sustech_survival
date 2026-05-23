@@ -29,6 +29,7 @@ Credentials = Authorizer
 # We walk up 3 levels to reach the skill root.
 #   sso → sustch_survival → src → skill_root
 from pathlib import Path as _Path
+import requests as _requests
 
 _SSO_PATH = _Path(__file__).resolve()
 _SKILL_ROOT = _SSO_PATH.parent.parent.parent.parent
@@ -45,6 +46,15 @@ class TISAuth(CASAuthorizer):
     SESSION_SUBDIR = "tis"
     XHR_MODE = True
     SUBMIT_VALUE = ""
+
+    @property
+    def session(self) -> _requests.Session:
+        """A requests.Session with current cookies pre-loaded."""
+        cookies = self.load()
+        sess = _requests.Session()
+        for name, value in cookies.items():
+            sess.cookies.set(name, value)
+        return sess
 
     @property
     def session_file(self):
