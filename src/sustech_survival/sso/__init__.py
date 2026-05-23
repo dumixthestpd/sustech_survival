@@ -49,11 +49,26 @@ class TISAuth(CASAuthorizer):
 
     @property
     def session(self) -> _requests.Session:
-        """A requests.Session with current cookies pre-loaded."""
+        """
+        A requests.Session with current cookies and TIS-required headers.
+
+        Cookie header is set directly (not via cookie jar) because the original
+        Set-Cookie semantics (Secure, HttpOnly, SameSite=None) are lost when
+        cookies are re-set via sess.cookies.set() in a fresh session — causing
+        the server to reject them. Setting the raw Cookie header reproduces the
+        working browser behavior.
+
+        User-Agent MUST match the browser UA used during CAS login (TIS validates
+        that the session's User-Agent is consistent with the one that obtained
+        the cookies — python-requests UA gets 403).
+        """
         cookies = self.load()
+        cookie_header = "; ".join(f"{k}={v}" for k, v in cookies.items())
         sess = _requests.Session()
-        for name, value in cookies.items():
-            sess.cookies.set(name, value)
+        sess.headers["User-Agent"] = UA
+        sess.headers["Cookie"] = cookie_header
+        if self.XHR_MODE:
+            sess.headers["X-Requested-With"] = "XMLHttpRequest"
         return sess
 
     @property
