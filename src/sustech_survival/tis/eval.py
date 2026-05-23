@@ -464,13 +464,14 @@ class TISAuthEval(TISAuth):
         status: str = "all",
     ) -> list[dict]:
         """
-        List evaluation tasks by navigating the Vue SPA with Playwright and scraping
-        the rendered DOM. The REST API (personnelEvaluation/*) consistently returns
-        500 权限不足 from Python — the Vue SPA is the only reliable access path.
+        List evaluation tasks for a semester via REST API.
 
-        Page structure:
-          studentEvaluationTaskPage → 3 category rows (理论类/体育类/实验实践类)
-          Each "去评价" click → studentEvaluationObjectPage with the actual course list
+        API flow (2 steps):
+          1. GET /personnelEvaluation/listObtainPersonnelEvaluationTasks
+             → 3 category tasks (rwid, firstwjid, rwmc)
+          2. For each category: GET /personnelEvaluation/listEcaluationRalationshipEnriry
+             with wjid=<firstwjid> + rwid=<task rwid>
+             → course list (kcmc, kcdm, lsjgzt, etc.)
 
         Args:
             xnxq:   Semester code (e.g. "2025-20262" or "2025-2026-2")
@@ -480,169 +481,77 @@ class TISAuthEval(TISAuth):
             course_name, course_code, teacher, task_type, lsjgzt, status_text,
             wjid, jgwid, xnxq, rwh, questionnaire_uuid, theme_uuid, task_rwid
         """
-        from playwright.sync_api import sync_playwright
+        # Normalise xnxq — backend accepts "2025-20262" as-is
+        xnxq_raw = xnxq  # e.g. "2025-20262"; do NOT strip hyphens
+        sess = self.session
 
-        raw = self.load()
+        # Step 1: get 3 category tasks
+        tasks_resp = sess.get(
+            f"{BASE}/personnelEvaluation/listObtainPersonnelEvaluationTasks",
+            params={"yhdm": "12413021", "rwmc": "", "sfyp": "0",
+                    "pageNum": "1", "pageSize": "20"},
+            timeout=15,
+        )
+        if tasks_resp.status_code != 200:
+            raise RuntimeError(f"Task list API returned {tasks_resp.status_code}")
+        tasks = tasks_resp.json()["result"]["list"]
+
         all_courses: list[dict] = []
 
-        with sync_playwright() as pw:
-            browser = pw.chromium.launch(headless=True, args=["--no-sandbox"])
-            ctx = browser.new_context(viewport={"width": 1280, "height": 900})
-            for name, value in raw.items():
-                ctx.add_cookies([{
-                    "name": name,
-                    "value": value,
-                    "domain": "tis.sustech.edu.cn",
-                    "path": "/",
-                }])
+        # Step 2: per-category course list
+        for task in tasks:
+            rwid = task["rwid"]          # category task rwid
+            firstwjid = task["firstwjid"]  # wjid for course list query
+            rwmc = task["rwmc"]          # e.g. "学生评价（理论类 Theoretical courses）"
 
-            page = ctx.new_page()
-            page.goto(
-                f"{BASE}/studentAssess/studentEvaluationTaskPage",
-                wait_until="domcontentloaded",
-                timeout=60000,
+            # Determine task_type from label
+            if "理论" in rwmc:
+                task_type = "理论类"
+            elif "体育" in rwmc:
+                task_type = "体育类"
+            elif "实验" in rwmc or "实践" in rwmc:
+                task_type = "实验实践类"
+            else:
+                task_type = rwmc
+
+            courses_resp = sess.get(
+                f"{BASE}/personnelEvaluation/listEcaluationRalationshipEnriry",
+                params={
+                    "pjrdm": "12413021",
+                    "wjid": firstwjid,
+                    "bpmc": "", "sfyp": "0", "xnxq": xnxq_raw,
+                    "pageNum": "1", "pageSize": "50",
+                    "zc": "", "xqj": "", "jc": "", "skdd": "",
+                    "kkyxdm": "", "bpssyxdm": "", "kcmc": "", "sfcxqbwj": "0",
+                    "rwid": rwid,
+                    "lsjgzt": "",
+                },
+                timeout=15,
             )
-            page.wait_for_timeout(8000)  # Wait for Vue to render
+            data = courses_resp.json()
+            if data.get("code") != "200":
+                # Skip failed categories (e.g. empty categories)
+                continue
 
-            # Select semester dropdown if needed (page defaults to current semester)
-            # The semester option values: "2025-20262" or similar
-            try:
-                dropdown = page.query_selector(".ivu-select-selection")
-                if dropdown:
-                    dropdown.click()
-                    page.wait_for_timeout(500)
-                    # Find and click the matching semester option
-                    options = page.query_selector_all(".ivu-select-item")
-                    for opt in options:
-                        if xnxq in opt.inner_text() or xnxq.replace("-", "") in opt.inner_text():
-                            opt.click()
-                            page.wait_for_timeout(1000)
-                            break
-                    # Re-query button after dropdown closes
-                    try:
-                        query_btn = page.query_selector("button:has-text('查询')")
-                        if query_btn:
-                            query_btn.click()
-                            page.wait_for_timeout(3000)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-
-            # ── Each category row is on the task page; click "去评价" to enter it ──
-            # Use index-based loop and re-query after each back navigation
-            # (element handles go stale after go_back())
-            row_index = 0
-            max_categories = 10  # safety limit
-            while row_index < max_categories:
-                # Re-query rows each iteration (handles go stale after go_back)
-                category_rows = page.query_selector_all(".ivu-table-tbody tr")
-                if row_index >= len(category_rows):
-                    break
-
-                row = category_rows[row_index]
-                cells = row.query_selector_all("td")
-                if len(cells) < 7:
-                    row_index += 1
-                    continue
-
-                category_label = cells[1].inner_text().strip()
-
-                task_type = ""
-                if "理论" in category_label:
-                    task_type = "理论类"
-                elif "体育" in category_label:
-                    task_type = "体育类"
-                elif "实验" in category_label or "实践" in category_label:
-                    task_type = "实验实践类"
-                else:
-                    task_type = category_label
-
-                btn = row.query_selector(".ivu-btn-primary")
-                if not btn:
-                    row_index += 1
-                    continue
-                btn.click()
-                page.wait_for_timeout(5000)
-
-                # Extract courses from the course list page
-                course_rows = page.query_selector_all(".ivu-table-tbody tr")
-                for course_row in course_rows:
-                    cols = course_row.query_selector_all("td")
-                    if len(cols) < 8:
-                        continue
-                    teacher = cols[1].inner_text().strip()
-                    course_code = cols[2].inner_text().strip()
-                    course_name = cols[3].inner_text().strip()
-                    dept = cols[5].inner_text().strip()
-                    class_info = cols[6].inner_text().strip()
-                    status_text = cols[7].inner_text().strip()
-                    lsjgzt = "3" if "已保存" in status_text else "0"
-
-                    all_courses.append({
-                        "course_name": course_name,
-                        "course_code": course_code,
-                        "teacher": teacher,
-                        "task_type": task_type,
-                        "department": dept,
-                        "class_info": class_info,
-                        "lsjgzt": lsjgzt,
-                        "status_text": status_text,
-                        "xnxq": xnxq,
-                        "wjid": "",
-                        "jgwid": "",
-                        "rwh": "",
-                        "questionnaire_uuid": "",
-                        "theme_uuid": "",
-                        "task_rwid": "",
-                    })
-
-                # ── Pagination: click Next until no more pages ─────────────────
-                while True:
-                    next_btn = page.query_selector("li.ivu-page-next")
-                    if not next_btn:
-                        break
-                    dis = next_btn.get_attribute("class") or ""
-                    if "disabled" in dis:
-                        break
-                    next_btn.click()
-                    page.wait_for_timeout(2000)
-                    course_rows = page.query_selector_all(".ivu-table-tbody tr")
-                    for course_row in course_rows:
-                        cols = course_row.query_selector_all("td")
-                        if len(cols) < 8:
-                            continue
-                        teacher = cols[1].inner_text().strip()
-                        course_code = cols[2].inner_text().strip()
-                        course_name = cols[3].inner_text().strip()
-                        dept = cols[5].inner_text().strip()
-                        class_info = cols[6].inner_text().strip()
-                        status_text = cols[7].inner_text().strip()
-                        lsjgzt = "3" if "已保存" in status_text else "0"
-                        all_courses.append({
-                            "course_name": course_name,
-                            "course_code": course_code,
-                            "teacher": teacher,
-                            "task_type": task_type,
-                            "department": dept,
-                            "class_info": class_info,
-                            "lsjgzt": lsjgzt,
-                            "status_text": status_text,
-                            "xnxq": xnxq,
-                            "wjid": "",
-                            "jgwid": "",
-                            "rwh": "",
-                            "questionnaire_uuid": "",
-                            "theme_uuid": "",
-                            "task_rwid": "",
-                        })
-
-                # Navigate back to task list for next category
-                page.go_back()
-                page.wait_for_timeout(3000)
-                row_index += 1
-
-            browser.close()
+            for c in data["result"]["list"]:
+                status_text = "已保存" if c.get("lsjgzt") == "3" else "未保存"
+                all_courses.append({
+                    "course_name": c.get("kcmc", ""),
+                    "course_code": c.get("kcdm", ""),
+                    "teacher": c.get("bpdm", ""),      # department code = teacher dept
+                    "task_type": task_type,
+                    "department": c.get("yxmc", ""),    # school name
+                    "class_info": c.get("bj", ""),
+                    "lsjgzt": c.get("lsjgzt", "0"),
+                    "status_text": status_text,
+                    "xnxq": xnxq_raw,
+                    "wjid": c.get("wjid", ""),
+                    "jgwid": c.get("jgwid", ""),
+                    "rwh": c.get("rwh", ""),
+                    "questionnaire_uuid": c.get("sxz", ""),  # encrypted form id
+                    "theme_uuid": "",
+                    "task_rwid": rwid,
+                })
 
         # Filter by status
         result: list[dict] = []
