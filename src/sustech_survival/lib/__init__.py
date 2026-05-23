@@ -10,10 +10,13 @@
 
 __all__ = ["login", "check", "refresh", "ensure"]
 
-from sustech_survival.sso.authorizer import get_auth
+from pathlib import Path as _Path
 
-# Use the LibAuth singleton registered by sso.authlib
-_auth = get_auth("lib")
+_SKILL_DIR = str(_Path(__file__).resolve().parent.parent.parent)
+
+from sustech_survival.sso import LibAuth
+
+_auth = LibAuth(skill_dir=_SKILL_DIR)
 
 
 def login(*, headless: bool = False):

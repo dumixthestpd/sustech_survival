@@ -15,10 +15,10 @@ _PKG_ROOT = str(_Path(__file__).resolve().parent.parent.parent)
 if _PKG_ROOT not in _sys.path:
     _sys.path.insert(0, _PKG_ROOT)
 
-from sustech_survival.sso.authorizer import get_auth
+from sustech_survival.sso import LibAuth
 
-# Use the LibAuth singleton registered by sso.authlib
-_auth = get_auth("lib")
+# Use the LibAuth singleton
+_auth = LibAuth(skill_dir=_PKG_ROOT)
 
 
 def main():

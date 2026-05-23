@@ -12,9 +12,9 @@ __all__ = ["run"]
 def _make_session():
     """Build a requests.Session with valid TIS cookies via SSO auth layer."""
     import requests
-    from sustech_survival.sso.authorizer import get_auth
+    from sustech_survival.sso import TISAuth
 
-    auth = get_auth("tis")
+    auth = TISAuth(skill_dir=str(_SKILL_ROOT))
     ok, msg = auth.check()
     if not ok:
         # Try refresh (reads credentials, re-runs CAS ticket exchange)

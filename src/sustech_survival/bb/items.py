@@ -6,7 +6,10 @@ Each item represents a sub-element within a BB content page.
 
 import re
 import urllib.parse
+from pathlib import Path as _Path
 from typing import List, Tuple
+
+BB_DIR = _Path(__file__).resolve()  # items.py is at depth 5 in skill_root
 
 try:
     from .session import BB_BASE
@@ -207,8 +210,8 @@ class HomeworkItem(Item):
             return []
 
         try:
-            from sustech_survival.sso.authorizer import get_auth
-            auth = get_auth("bb")
+            from sustech_survival.sso import BBAuth
+            auth = BBAuth(skill_dir=str(BB_DIR.parent.parent.parent))
             raw = auth.load()
             import requests
             sess = requests.Session()

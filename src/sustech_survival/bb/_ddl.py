@@ -25,9 +25,11 @@ BB_BASE = "https://bb.sustech.edu.cn"
 
 def _session():
     """Return requests.Session with BB CAS cookies from SSO auth layer."""
-    from sustech_survival.sso.authorizer import get_auth
+    from sustech_survival.sso import BBAuth
+    from pathlib import Path as _Path
 
-    auth = get_auth("bb")
+    _SKILL = str(_Path(__file__).resolve().parent.parent.parent.parent)
+    auth = BBAuth(skill_dir=_SKILL)
     raw = auth.load()
     sess = requests.Session()
     for name, value in raw.items():

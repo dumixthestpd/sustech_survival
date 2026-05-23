@@ -35,8 +35,8 @@ _TYPE_ICON = {
 
 def _session():
     """Return requests.Session with BB cookies from SSO auth layer."""
-    from sustech_survival.sso.authorizer import get_auth
-    auth = get_auth("bb")
+    from sustech_survival.sso import BBAuth
+    auth = BBAuth(skill_dir=str(BB_DIR.parent.parent.parent.parent))
     raw = auth.load()
     s = __import__('requests').Session()
     for name, value in raw.items():

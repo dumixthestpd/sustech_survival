@@ -2,7 +2,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Usage:
 #   from sustech_survival.bb import ddl
-#   ddl()        → print upcoming assignment deadlines
+#   ddl()        → print upcoming BB assignment deadlines
 #   ddl(days=7)  → deadlines within N days
 #
 # REST-based modules (no Playwright):

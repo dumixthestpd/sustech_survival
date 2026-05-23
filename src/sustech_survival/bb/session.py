@@ -18,51 +18,55 @@ SESSION_FILE = BB_DIR / "session.json"
 COURSES_FILE = BB_DIR / "courses.json"
 STRUCTURE_FILE = BB_DIR / "structure.json"
 
-# ── Import enhanced BBAuth from authlib ─────────────────────────────────────
-# BBAuth is defined in sso/authlib/__init__.py with session_file override,
-# _reset_cached_data(), and overridden refresh()/login() methods.
-from sustech_survival.sso.authlib import BB as BBAuth
+# ── Import BBAuth from authlib ────────────────────────────────────────────────
+from sustech_survival.sso import BBAuth
 
-# Singleton — use the enhanced BBAuth already registered by authlib
+# Module-level singleton
 _auth = BBAuth(skill_dir=str(SKILL_ROOT))
 
-# ── Convenience wrappers ───────────────────────────────────────────────────
+# ── Convenience wrappers ─────────────────────────────────────────────────────
 
-def load_session():
-    raw = _auth.load()
-    if isinstance(raw, list):
-        return raw, raw
-    pw = [{"name": k, "value": v, "domain": "bb.sustech.edu.cn", "path": "/"}
-          for k, v in raw.items()]
-    return raw, pw
+from sustech_survival.sso.authorizer import Authorizer
+
+Authorizer.username = property(lambda self: _auth.username, lambda self, v: setattr(_auth, 'username', v))
+Authorizer.password = property(lambda self: _auth.password, lambda self, v: setattr(_auth, 'password', v))
 
 
-def check_session():
+def session(*, force: bool = False):
+    """
+    Return a requests.Session with BB cookies attached.
+    Auto-refreshes if the session is expired.
+    """
+    return _auth.session(force=force)
+
+
+def login(*, headless: bool = False):
+    """
+    CAS login via Playwright (headless=True) or requests (headless=False).
+    Returns True on success.
+    """
+    return _auth.login(headless=headless)
+
+
+def check() -> tuple[bool, str]:
+    """
+    Check if current session is valid.
+    Returns (True, "") if valid, (False, reason) if not.
+    """
     return _auth.check()
 
 
-def ensure_session():
-    return _auth.ensure()
-
-
-def refresh():
+def refresh() -> bool:
+    """
+    Force a fresh CAS ticket exchange.
+    Returns True on success.
+    """
     return _auth.refresh()
 
 
-def login():
-    return _auth.login()
-
-
-# ── Slugify ─────────────────────────────────────────────────────────────
-
-import re
-
-
-def slugify(name, keep_extension=True):
-    if keep_extension and '.' in name:
-        p = _Path(name)
-        name_part = p.stem
-        ext = p.suffix
-        safe = re.sub(r'[\\/:*?"<>|\s]', '_', name_part).strip()[:80]
-        return f"{safe}{ext}"
-    return re.sub(r'[\\/:*?"<>|]', '_', name).strip()[:80]
+def ensure() -> tuple[bool, str]:
+    """
+    check() + auto-refresh if expired.
+    Returns (True, "") on success, (False, reason) on failure.
+    """
+    return _auth.ensure()
