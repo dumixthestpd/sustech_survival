@@ -134,38 +134,14 @@ _EXTRACT_QUESTIONS_JS = r"""
     for (let fi = 0; fi < formItems.length; fi++) {
         const formItem = formItems[fi];
 
-        // Find question text: sibling before form-item within .dft-option-m
-        let questionText = '';
+        // Walk UP: .ivu-form-item → .dft-option-m → .modular-zs-main → .xzt-ms-head h5
         const dft = formItem.closest('.dft-option-m');
         if (dft) {
-            const children = Array.from(dft.querySelectorAll(':scope > *'));
-            for (const child of children) {
-                if (child === formItem) break;
-                const txt = child.innerText.trim();
-                if (txt && txt.length > 10 && txt.length < 500) {
-                    questionText = txt;
-                    break;
-                }
-            }
-            if (!questionText) {
-                let prev = formItem.previousElementSibling;
-                for (let d = 0; d < 5 && prev; d++) {
-                    const txt = prev.innerText.trim();
-                    if (txt && txt.length > 10) { questionText = txt; break; }
-                    prev = prev.previousElementSibling;
-                }
-            }
-        }
-        // Fallback: text node child of .ivu-form-item
-        if (!questionText) {
-            for (let cn = 0; cn < formItem.childNodes.length; cn++) {
-                const node = formItem.childNodes[cn];
-                if (node.nodeType === Node.TEXT_NODE) {
-                    const txt = node.textContent.trim();
-                    if (txt && txt.length > 5 && txt.length < 500) {
-                        questionText = txt;
-                        break;
-                    }
+            const modularZsMain = dft.closest('.modular-zs-main');
+            if (modularZsMain) {
+                const xztHead = modularZsMain.querySelector('.xzt-ms-head h5');
+                if (xztHead) {
+                    questionText = xztHead.innerText.trim();
                 }
             }
         }
@@ -342,8 +318,8 @@ class Evaluation:
                     "answered": False,
                 })
 
-            # Multi-page: click 下一页 if present and not disabled
-            next_btn = page.query_selector("button:has-text('下一页')")
+            # Multi-page: click 下一步 if present and not disabled
+            next_btn = page.query_selector("button:has-text('下一步')")
             cls = next_btn.get_attribute("class") if next_btn else ""
             disabled = "is-disabled" in (cls or "")
             if next_btn and not disabled:
