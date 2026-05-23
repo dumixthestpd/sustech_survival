@@ -597,6 +597,46 @@ class TISAuthEval(TISAuth):
                         "task_rwid": "",
                     })
 
+                # ── Pagination: click Next until no more pages ─────────────────
+                while True:
+                    next_btn = page.query_selector("li.ivu-page-next")
+                    if not next_btn:
+                        break
+                    dis = next_btn.get_attribute("class") or ""
+                    if "disabled" in dis:
+                        break
+                    next_btn.click()
+                    page.wait_for_timeout(2000)
+                    course_rows = page.query_selector_all(".ivu-table-tbody tr")
+                    for course_row in course_rows:
+                        cols = course_row.query_selector_all("td")
+                        if len(cols) < 8:
+                            continue
+                        teacher = cols[1].inner_text().strip()
+                        course_code = cols[2].inner_text().strip()
+                        course_name = cols[3].inner_text().strip()
+                        dept = cols[5].inner_text().strip()
+                        class_info = cols[6].inner_text().strip()
+                        status_text = cols[7].inner_text().strip()
+                        lsjgzt = "3" if "已保存" in status_text else "0"
+                        all_courses.append({
+                            "course_name": course_name,
+                            "course_code": course_code,
+                            "teacher": teacher,
+                            "task_type": task_type,
+                            "department": dept,
+                            "class_info": class_info,
+                            "lsjgzt": lsjgzt,
+                            "status_text": status_text,
+                            "xnxq": xnxq,
+                            "wjid": "",
+                            "jgwid": "",
+                            "rwh": "",
+                            "questionnaire_uuid": "",
+                            "theme_uuid": "",
+                            "task_rwid": "",
+                        })
+
                 # Navigate back to task list for next category
                 page.go_back()
                 page.wait_for_timeout(3000)
