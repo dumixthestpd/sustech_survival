@@ -266,9 +266,16 @@ class QuickContext:
         return _is_holiday(self._dt)
 
     @property
+    def time(self) -> float:
+        """Unix timestamp — uses _OVERRIDE_TIME if set, else self._dt.timestamp()."""
+        if _OVERRIDE_TIME is not None:
+            return _OVERRIDE_TIME
+        return self._dt.timestamp()
+
+    @property
     def class_now(self) -> str:
         """Current class name or '' (used as a fast accessor)."""
-        return _get_schedule_reminder().get("now") or ""
+        return _get_schedule_reminder(self.time).get("now") or ""
 
     # ── string callable ───────────────────────────────────────────────────
 
@@ -282,7 +289,7 @@ class QuickContext:
         if self.holiday:
             parts.append(f"Today is 🎉 [{self.holiday}]")
 
-        reminder = _get_schedule_reminder()
+        reminder = _get_schedule_reminder(self.time)
         if reminder.get("now"):
             parts.append(f"📍 Now: [{reminder['now']}]")
         elif reminder.get("next"):
@@ -591,8 +598,8 @@ def _fetch_library_status() -> str:
         return "Unknown"
 
 
-def _get_schedule_reminder() -> dict:
-    """Compute today's schedule reminder.
+def _get_schedule_reminder(ts: float) -> dict:
+    """Compute today's schedule reminder for Unix timestamp ``ts``.
 
     Returns dict:
       {'now': str}           — class happening right now
@@ -603,7 +610,7 @@ def _get_schedule_reminder() -> dict:
     try:
         from sustech_survival.tis.schedule import week_schedule, current_week
 
-        now = _now()
+        now = datetime.fromtimestamp(ts, tz=CHINA_TZ)
         wd = now.weekday()        # 0=Mon
         h, m = now.hour, now.minute
         total_min = h * 60 + m
