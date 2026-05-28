@@ -18,10 +18,10 @@ Usage:
 """
 from __future__ import annotations
 
-import json, re
+import json, re, time as _time_module
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 # ── Shared constants ─────────────────────────────────────────────────────────
 
@@ -194,8 +194,20 @@ class QuickContext:
       temperature, weather_cond, weather_icon, feels_like, humidity, wind, aqi, aqi_level
     """
 
-    def __init__(self, dt: datetime = None):
-        self._dt = dt or datetime.now(CHINA_TZ)
+    def __init__(self, dt: datetime = None, *, time: float = None):
+        """Initialize QuickContext.
+
+        Args:
+            dt:  Override datetime. If omitted, derived from ``time``.
+            time: Unix timestamp (float). Defaults to time.time().
+                  Pass this for testing/predictions/tracebacks.
+        """
+        if dt is not None:
+            self._dt = dt
+        elif time is not None:
+            self._dt = datetime.fromtimestamp(time, tz=CHINA_TZ)
+        else:
+            self._dt = datetime.now(CHINA_TZ)
         self._weather: Optional[dict] = None
         self._aqi: Optional[dict] = None
 
@@ -367,8 +379,8 @@ class DetailedContext(QuickContext):
       next_deadline, next_eval, library_status
     """
 
-    def __init__(self, dt: datetime = None):
-        super().__init__(dt)
+    def __init__(self, dt: datetime = None, *, time: float = None):
+        super().__init__(dt, time=time)
         self._deadline: Optional[dict] = None
         self._next_eval: Optional[dict] = None
         self._library: Optional[str] = None
@@ -434,8 +446,23 @@ class DetailedContext(QuickContext):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Module-level time override (for testing / predictions / tracebacks)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_OVERRIDE_TIME: Union[float, None] = None
+"""If set, all schedule-aware computations use this Unix timestamp instead of now."""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Module-level helpers
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _now() -> datetime:
+    """Return datetime.now(CHINA_TZ), or overridden time if set."""
+    if _OVERRIDE_TIME is not None:
+        return datetime.fromtimestamp(_OVERRIDE_TIME, tz=CHINA_TZ)
+    return datetime.now(CHINA_TZ)
+
 
 def _get_academic_info(dt: datetime):
     """Returns (week_str, phase_str, label)."""
@@ -536,7 +563,7 @@ def _get_current_class() -> str:
     try:
         from sustech_survival.tis.schedule import week_schedule, current_week
 
-        now = datetime.now(CHINA_TZ)
+        now = _now()
         wd = now.weekday()  # 0=Mon
         h, m = now.hour, now.minute
         total_min = h * 60 + m
@@ -617,7 +644,7 @@ def _fetch_next_eval() -> Optional[dict]:
         if r.status_code != 200:
             return None
         data = r.json()
-        now = datetime.now(CHINA_TZ)
+        now = _now()
 
         for item in data.get("data", []) or data.get("list", []):
             if item.get("status") == 0:  # unsubmitted
@@ -639,8 +666,9 @@ def _fetch_next_eval() -> Optional[dict]:
 
 
 def _get_library_status(dt: datetime) -> str:
-    """Return 'Open (HH:MM-HH:MM)' or 'Closed' for SUSTech library."""
-    # SUSTech library hours: Mon-Fri 08:30-22:00, Sat/Sun 08:30-17:00
+    """Return 'Open (HH:MM-HH:MM)' or 'Closed' for SUSTech library.
+    ``dt`` is the datetime to check hours for (uses its weekday).
+    """
     wd = dt.weekday()
     if wd < 5:  # Mon-Fri
         return "Open (08:30–22:00)"
