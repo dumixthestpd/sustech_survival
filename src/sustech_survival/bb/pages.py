@@ -10,10 +10,7 @@ from typing import List, Tuple
 
 from playwright.sync_api import sync_playwright
 
-try:
-    from .session import BB_BASE, ensure_session, load_session
-except ImportError:
-    from session import BB_BASE, ensure_session, load_session
+BB_BASE = "https://bb.sustech.edu.cn"
 
 try:
     from .items import (
@@ -102,9 +99,19 @@ def _classify_page(page, bb_url: str, content_id: str) -> Tuple[List[str], str]:
     return children, bb_url
 
 
+from sustech_survival.sso import BBAuth
+
+_bb = BBAuth()
+
+def _playwright_cookies():
+    """Load BB session in Playwright list format for ctx.add_cookies()."""
+    raw = _bb.load()
+    return [{"name": k, "value": v, "domain": ".bb.sustech.edu.cn", "path": "/"} for k, v in raw.items() if v]
+
+
 def scrape_page(course_id: str, content_id: str,
-                 raw_cookies=None,
-                 course_name: str = "") -> Page:
+                raw_cookies=None,
+                course_name: str = "") -> Page:
     """
     Scrape a single BB content page in real-time (no cache).
 
@@ -119,7 +126,7 @@ def scrape_page(course_id: str, content_id: str,
     """
     if raw_cookies is None:
         ensure_session()
-        raw, raw_cookies = load_session()
+        raw_cookies = _playwright_cookies()
 
     item_url = (
         f"{BB_BASE}/webapps/blackboard/content/listContent.jsp"
@@ -182,7 +189,7 @@ def discover_course_pages(course_id: str):
     Returns list of (content_id, title, section) tuples.
     """
     ensure_session()
-    raw, pw = load_session()
+    cookies = _playwright_cookies()
 
     course_url = (
         f"{BB_BASE}/webapps/blackboard/content/listContent.jsp"
@@ -192,7 +199,7 @@ def discover_course_pages(course_id: str):
     with sync_playwright() as p:
         browser = p.chromium.launch()
         ctx = browser.new_context()
-        ctx.add_cookies(pw)
+        ctx.add_cookies(cookies)
         page = ctx.new_page()
         page.goto(course_url, wait_until="domcontentloaded", timeout=15000)
         page.wait_for_timeout(1500)
@@ -252,7 +259,7 @@ def _fetch_homework_details(upload_url: str, sub_id: str) -> tuple:
         return _HW_CACHE[sub_id]
 
     ensure_session()
-    raw, pw = load_session()
+    cookies = _playwright_cookies()
 
     submission_count = 0
     deadline_str = ""
@@ -261,7 +268,7 @@ def _fetch_homework_details(upload_url: str, sub_id: str) -> tuple:
         with sync_playwright() as p:
             browser = p.chromium.launch()
             ctx = browser.new_context()
-            ctx.add_cookies(pw)
+            ctx.add_cookies(cookies)
             page = ctx.new_page()
 
             full_url = upload_url if upload_url.startswith("http") else BB_BASE + upload_url
@@ -360,12 +367,12 @@ def preview_page(content_id: str, course_id: str = None) -> List[Item]:
         course_id = resolve_course(content_id)
 
     ensure_session()
-    raw, pw = load_session()
+    cookies = _playwright_cookies()
 
     with sync_playwright() as p:
         browser = p.chromium.launch()
         ctx = browser.new_context()
-        ctx.add_cookies(pw)
+        ctx.add_cookies(cookies)
         page = ctx.new_page()
         page.goto(
             f"{BB_BASE}/webapps/blackboard/content/listContent.jsp"
@@ -503,7 +510,7 @@ def scrape_announcements(course_id: str) -> List[Item]:
             print(ann.description)
     """
     ensure_session()
-    raw, pw = load_session()
+    cookies = _playwright_cookies()
 
     ann_url = (
         f"{BB_BASE}/webapps/blackboard/execute/announcement"
@@ -514,7 +521,7 @@ def scrape_announcements(course_id: str) -> List[Item]:
     with sync_playwright() as p:
         browser = p.chromium.launch()
         ctx = browser.new_context()
-        ctx.add_cookies(pw)
+        ctx.add_cookies(cookies)
         page = ctx.new_page()
         page.goto(ann_url, wait_until="domcontentloaded", timeout=15000)
         page.wait_for_timeout(1500)

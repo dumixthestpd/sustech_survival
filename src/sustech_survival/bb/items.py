@@ -1,4 +1,4 @@
-# Items — BB item type hierarchy
+# Items - BB item type hierarchy
 """
 Item classes for all Blackboard content item types.
 Each item represents a sub-element within a BB content page.
@@ -11,10 +11,7 @@ from typing import List, Tuple
 
 BB_DIR = _Path(__file__).resolve()  # items.py is at depth 5 in skill_root
 
-try:
-    from .session import BB_BASE
-except ImportError:
-    from session import BB_BASE
+BB_BASE = "https://bb.sustech.edu.cn"
 
 
 class Item:
@@ -26,15 +23,16 @@ class Item:
       description, description_html
 
     Subclasses:
-      FileItem      — downloadable files (PDF, doc, etc.)
-      VideoItem     — embedded video player (iframe)
-      HomeworkItem  — assignment with uploadAssignment link
-      InlineItem    — inline images embedded in page
-      LinkItem      — external URL references
-      TextItem      — description text only
-      UnknownItem   — could not determine type
+      FileItem      - downloadable files (PDF, doc, etc.)
+      VideoItem     - embedded video player (iframe)
+      HomeworkItem  - assignment with uploadAssignment link
+      InlineItem    - inline images embedded in page
+      LinkItem      - external URL references
+      TextItem      - description text only
+      UnknownItem   - could not determine type
     """
 
+    TYPE = "unknown"
     TYPE = "unknown"
 
     def __init__(self, sub_id: str, title: str, bb_url: str = "",
@@ -188,12 +186,12 @@ class HomeworkItem(Item):
                          if self.deadline else "")
         if self.submission_count > 0:
             lines.append(
-                f"\n**[Homework Submission]** — "
+                f"\n**[Homework Submission]** - "
                 f"{self.submission_count} submission(s) made.{deadline_note}"
             )
         else:
             lines.append(
-                f"\n**[Homework Submission]** — not submitted yet."
+                f"\n**[Homework Submission]** - not submitted yet."
                 f"{deadline_note}"
             )
         return "\n".join(lines)
@@ -392,19 +390,6 @@ class UnknownItem(Item):
                 f"0\t0\t-\t-\t{desc}")
 
 
-# Registry for subclass dispatch by type string
-_ITEM_REGISTRY = {
-    "file": FileItem,
-    "video": VideoItem,
-    "homework": HomeworkItem,
-    "folder": FolderItem,
-    "inline": InlineItem,
-    "link": LinkItem,
-    "text": TextItem,
-    "unknown": UnknownItem,
-}
-
-
 def _classify_item(sub_id: str, title: str, bb_url: str,
                    desc_text: str, desc_html: str,
                    files: list, inline_imgs: list, ext_urls: list,
@@ -414,14 +399,14 @@ def _classify_item(sub_id: str, title: str, bb_url: str,
     Classify an item into the correct Item subclass.
 
     Detection priority:
-      homework  — has uploadAssignment upload_url
-      video     — has iframe video_url
-      file      — has bbcswebdav file links
-      folder    — has content_link to another BB page
-      inline    — has inline images
-      link      — has external URLs
-      text      — has description text
-      unknown   — nothing detectable
+      homework  - has uploadAssignment upload_url
+      video     - has iframe video_url
+      file      - has bbcswebdav file links
+      folder    - has content_link to another BB page
+      inline    - has inline images
+      link      - has external URLs
+      text      - has description text
+      unknown   - nothing detectable
     """
     if upload_url:
         # Parse content_id, course_id, group_id from uploadAssignment URL

@@ -598,13 +598,57 @@ def _fetch_library_status() -> str:
         return "Unknown"
 
 
+def _slot_times(zc: int) -> dict[int, tuple[str, str]]:
+    """Fetch actual 50-min slot start/end times from queryKbjg.
+
+    Returns {slot_num: (kssj, jssj)} e.g. {1: ('08:00', '08:50'), 3: ('10:20', '11:10')}.
+    """
+    try:
+        from sustech_survival.tis.schedule import TISAuth
+        auth = TISAuth()
+        auth.refresh()
+        session = auth.session
+        resp = session.post(
+            'https://tis.sustech.edu.cn/component/queryKbjg',
+            data={'xn': '2025-2026', 'xq': '2', 'zc': str(zc)}
+        )
+        content = resp.json().get('content', [])
+        return {int(e['xj']): (e['kssj'], e['jssj']) for e in content}
+    except Exception:
+        return {}
+
+
+def _entry_time_range(entry: dict, slot_times: dict) -> tuple[int, int] | None:
+    """Return (start_min, end_min) for an entry based on KSJC/JSJC.
+
+    Returns None if KSJC/JSJC not in slot_times.
+    """
+    ks = int(entry.get('KSJC', 0) or 0)
+    js = int(entry.get('JSJC', 0) or 0)
+    if ks <= 0 or js <= 0:
+        return None
+    if ks not in slot_times or js not in slot_times:
+        return None
+    kssj, jssj = slot_times[ks][0], slot_times[js][1]
+    h, m = int(kssj[:2]), int(kssj[3:])
+    start_min = h * 60 + m
+    h, m = int(jssj[:2]), int(jssj[3:])
+    end_min = h * 60 + m
+    return (start_min, end_min)
+
+
+def _entry_name(entry: dict) -> str:
+    return entry.get('SKSJ', '').split('\n')[0] or \
+           entry.get('SKSJ_EN', '').split('\n')[0] or ''
+
+
 def _get_schedule_reminder(ts: float) -> dict:
     """Compute today's schedule reminder for Unix timestamp ``ts``.
 
     Returns dict:
       {'now': str}           — class happening right now
       {'next': str, 'next_detail': str}  — next class today + detail
-      {'tomorrow_morning': str} — tomorrow P1/P2 course (night time only)
+      {'tomorrow_morning': str} — tomorrow morning courses (slots 1-2, 08:00-09:50)
       {}                     — no classes today/tomorrow
     """
     try:
@@ -618,8 +662,9 @@ def _get_schedule_reminder(ts: float) -> dict:
 
         zc = current_week()
         week = week_schedule(zc)
+        slot_times = _slot_times(zc)
 
-        # Collect today's entries sorted by period
+        # Collect today's entries sorted by their start time
         today_entries = []
         for entry in week:
             key = entry.get('KEY', '')
@@ -630,78 +675,63 @@ def _get_schedule_reminder(ts: float) -> dict:
                 continue
             try:
                 day = int(parts[0][2:])
-                period = int(parts[1][2:])
             except (ValueError, IndexError):
                 continue
             if day != wd + 1:
                 continue
-            today_entries.append((period, entry))
+            tr = _entry_time_range(entry, slot_times)
+            today_entries.append((tr, entry))
 
-        today_entries.sort(key=lambda x: x[0])
-
-        PERIODS = {
-            1: (8*60,  9*60+40, "08:00-09:40"),
-            2: (10*60, 11*60+40, "10:00-11:40"),
-            3: (14*60, 15*60+40, "14:00-15:40"),
-            4: (16*60, 17*60+40, "16:00-17:40"),
-            5: (19*60, 20*60+40, "19:00-20:40"),
-            6: (21*60, 22*60+40, "21:00-22:40"),
-        }
-
-        def entry_name(e):
-            return e.get('SKSJ', '').split('\n')[0] or \
-                   e.get('SKSJ_EN', '').split('\n')[0] or ''
+        # Sort by start time (None = at end)
+        today_entries.sort(key=lambda x: (x[0][0] if x[0] else 99999))
 
         # 1. Check if a class is running right now
-        for period, entry in today_entries:
-            if period not in PERIODS:
+        for tr, entry in today_entries:
+            if tr is None:
                 continue
-            start_min, end_min, _ = PERIODS[period]
+            start_min, end_min = tr
             if start_min <= total_min <= end_min:
-                return {"now": entry_name(entry)}
+                return {"now": _entry_name(entry)}
 
-        # 2. Night time — show tomorrow morning courses
+        # 2. Night time — show tomorrow morning courses (slots 1 and 2)
         if is_night:
             try:
-                from sustech_survival.tis.schedule import week_schedule as ws_tomorrow
-                tomorrow_zc = zc  # same week
-                tomorrow_wd = (wd + 1) % 7  # advance weekday
+                tomorrow_wd = (wd + 1) % 7
                 morning = []
-                for entry in week_schedule(tomorrow_zc):
+                for entry in week_schedule(tomorrow_zc if False else zc):
                     key = entry.get('KEY', '')
                     if not key.startswith('xq') or '_jc' not in key:
                         continue
                     parts = key.split('_')
-                    if len(parts) != 2:
-                        continue
                     try:
                         day = int(parts[0][2:])
-                        period = int(parts[1][2:])
-                    except (ValueError, IndexError):
+                    except ValueError:
                         continue
                     if day != tomorrow_wd + 1:
                         continue
-                    if period in (1, 2):  # P1 or P2
-                        morning.append((period, entry_name(entry)))
+                    ks = int(entry.get('KSJC', 0) or 0)
+                    if ks in (1, 2):   # slot 1 or slot 2
+                        morning.append((ks, _entry_name(entry)))
                 if morning:
-                    periods_str = " / ".join(
-                        f"第{period}节" for _, period in sorted(morning)
-                    )
+                    morning.sort()
+                    periods_str = " / ".join(f"第{ks}节" for ks, _ in morning)
                     names = " / ".join(name for _, name in morning)
                     return {"tomorrow_morning": f"{names} ({periods_str})"}
             except Exception:
                 pass
 
         # 3. No class now — find next class today
-        for period, entry in today_entries:
-            if period not in PERIODS:
+        for tr, entry in today_entries:
+            if tr is None:
                 continue
-            start_min, _, time_str = PERIODS[period]
+            start_min, end_min = tr
             if total_min < start_min:
-                return {
-                    "next": entry_name(entry),
-                    "next_detail": f"第{period}节 {time_str}",
-                }
+                ks = int(entry.get('KSJC', 0) or 0)
+                js = int(entry.get('JSJC', 0) or 0)
+                kssj = slot_times.get(ks, ('??', '??'))[0] if ks else '??'
+                jssj = slot_times.get(js, ('??', '??'))[1] if js else '??'
+                detail = f"{kssj}-{jssj}" if kssj != '??' else f"第{ks}-{js}节"
+                return {"next": _entry_name(entry), "next_detail": detail}
 
         return {}
     except Exception:

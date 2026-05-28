@@ -131,6 +131,23 @@ _EXTRACT_QUESTIONS_JS = r"""
     const results = [];
     const formItems = Array.from(document.querySelectorAll('.ivu-form-item'));
 
+    // Get the current page's wjid from window.myVue (set before each page navigation)
+    // Fall back to the first wjlist entry's wjid
+    let page_wjid = null;
+    try {
+        const vm = window.myVue;
+        if (vm && vm.wjlist && vm.wjlist[0]) {
+            // For page 2 (teacher), wjid is in pjjg[1].wjid; for page 1 (course), pjjg[0].wjid
+            const pjjgList = vm.wjlist[0].pjxtPjjgPjjgckb || [];
+            if (pjjgList.length >= 2) {
+                page_wjid = pjjgList[1].wjid;  // teacher wjid (page 2)
+            }
+            if (!page_wjid && pjjgList.length >= 1) {
+                page_wjid = pjjgList[0].wjid;  // course wjid (page 1)
+            }
+        }
+    } catch(e) {}
+
     for (let fi = 0; fi < formItems.length; fi++) {
         const formItem = formItems[fi];
         let questionText = '';
@@ -142,24 +159,49 @@ _EXTRACT_QUESTIONS_JS = r"""
             if (xztHead) questionText = xztHead.innerText.trim();
         }
 
+        // Get the REAL backend wjstid from the Vue component data
+        let qid = String(fi);  // fallback
+        let vue_datas = null;
+        if (modularZsMain && modularZsMain.__vue__) {
+            try {
+                const vueData = modularZsMain.__vue__.$data;
+                if (vueData && vueData.datas) {
+                    vue_datas = vueData.datas;
+                    if (vueData.datas.tmid) qid = String(vueData.datas.tmid);
+                }
+            } catch(e) {}
+        }
+
         // Collect all .grid options within this form item
         const allGrids = Array.from(formItem.querySelectorAll('.grid'));
         const options = allGrids.map(g => g.innerText.trim()).filter(t => t !== '');
-        const qid = formItem.getAttribute('data-wjstid') || String(fi);
+        const isRating = options.length > 0 && options.every(o => /^\d+$/.test(o));
+
+        // Also get the marks map from Vue (maps grid value to answer)
+        let marks = null;
+        if (modularZsMain && modularZsMain.__vue__) {
+            try {
+                const vueData = modularZsMain.__vue__.$data;
+                if (vueData && vueData.marks) marks = vueData.marks;
+            } catch(e) {}
+        }
 
         if (options.length > 0) {
             results.push({
                 qid,
                 text: questionText || ('Question ' + (fi + 1)),
                 options,
-                isRating: options.every(o => /^\d+$/.test(o)),
+                isRating,
                 isText: false,
+                marks,
+                vue_datas,  // pass full datas for save body
+                q_wjid: page_wjid,  // wjid for this page's evaluation layer
             });
         }
 
         for (const ta of Array.from(formItem.querySelectorAll('textarea'))) {
             const qid2 = ta.getAttribute('data-wjstid') || ta.getAttribute('name') || String(results.length + 1000);
-            results.push({ qid: qid2, text: questionText || 'Text Q', options: [], isRating: false, isText: true });
+            results.push({ qid: qid2, text: questionText || 'Text Q', options: [], isRating: false, isText: true, q_wjid: page_wjid });
         }
     }
 
@@ -169,6 +211,7 @@ _EXTRACT_QUESTIONS_JS = r"""
                 qid: ta.getAttribute('data-wjstid') || String(results.length + 2000),
                 text: ta.getAttribute('placeholder') || 'Text',
                 options: [], isRating: false, isText: true,
+                q_wjid: page_wjid,
             });
         }
     }
@@ -226,6 +269,10 @@ class Evaluation:
         self._page: Optional[object] = page
         self._browser: Optional[object] = browser
         self.questions_data: list[dict] = []   # raw dicts from JS
+        self._jsonobj: dict = {}
+        self._pjmap: dict = {}
+        self._wjlist: list = []
+        self._question_blocks: list = []
 
     # ---------------------------------------------------------------------------
     # Public API
@@ -277,24 +324,28 @@ class Evaluation:
     def load(self, timeout: int = 15000) -> Evaluation:
         """
         Extract all questions from the form (handles multi-page).
-
+        Also captures Vue state (headobj, wjlist) for save body construction.
         Sets ``self.questions_data`` with type, text, options for each question.
         Returns self.
         """
         page = self._page
         assert page is not None, "Evaluation not attached to a browser page"
         self.questions_data = []
-        seen_qids: set[str] = set()
+        self._seen_qids: set[str] = set()
 
         while True:
             page.wait_for_timeout(2000)
+
+            # Read Vue state ONCE per page before extracting questions
+            self._read_vue_state(page)
+
             raw: list[dict] = page.evaluate(_EXTRACT_QUESTIONS_JS)
 
             for d in raw:
                 qid = d["qid"]
-                if qid in seen_qids:
+                if qid in self._seen_qids:
                     continue
-                seen_qids.add(qid)
+                self._seen_qids.add(qid)
 
                 opts = d.get("options", [])
                 if d.get("isRating") or (opts and all(o.isdigit() for o in opts)):
@@ -306,6 +357,7 @@ class Evaluation:
                 else:
                     qtype = QuestionType.UNKNOWN
 
+                vue_datas = d.get("vue_datas") or {}
                 self.questions_data.append({
                     "qid": qid,
                     "text": d.get("text", ""),
@@ -313,92 +365,283 @@ class Evaluation:
                     "options": opts,
                     "answer": None,
                     "answered": False,
+                    "_vue_datas": vue_datas,
+                    "_q_wjid": d.get("q_wjid") or None,
                 })
 
-            # Multi-page: click 下一步 if present and not disabled
+            # Multi-page: click 下一步 to advance to next page
+            # Break if: no questions extracted (n=0) OR we have ALL questions for this form
+            # We detect "last page" by checking if the 下一步 button has text "下一步"
+            # (the LAST page has NO 下一步 button — it shows "保存" instead)
             next_btn = page.query_selector("button:has-text('下一步')")
-            cls = next_btn.get_attribute("class") if next_btn else ""
-            disabled = "is-disabled" in (cls or "")
-            if next_btn and not disabled:
-                next_btn.click()
-                page.wait_for_timeout(3000)
-            else:
+            if next_btn is None:
+                break  # last page — no more navigation
+            cls = next_btn.get_attribute("class") or ""
+            if "is-disabled" in cls:
                 break
+            next_btn.click()
+            page.wait_for_timeout(4000)  # wait for page transition + new content
 
         return self
 
+    def _read_vue_state(self, page) -> None:
+        """Read jsonobj, pjmap, wjlist from Vue and cache on self."""
+        result = page.evaluate("""() => {
+            try {
+                const vue = window.myVue;
+                if (!vue) return null;
+                const data = vue.$data;
+                const jsonobj = data.jsonobj;
+                const pjmap = data.pjmap && Object.keys(data.pjmap).length > 0
+                    ? data.pjmap
+                    : data.wjlist?.[0]?.pjmap;
+                const wjlist = data.wjlist;
+                let question_blocks = [];
+                if (wjlist && wjlist[0] && wjlist[0].pjxtWjWjbReturnEntity) {
+                    const wjEntity = wjlist[0].pjxtWjWjbReturnEntity;
+                    question_blocks = (wjEntity.wjzblist || []).map(zb => ({
+                        zmc: zb.zmc,
+                        zxssx: zb.zxssx,
+                        questions: (zb.tklist || []).map(tm => ({
+                            tmid: tm.tmid,
+                            tgmc: tm.tgmc,
+                            tmlx: tm.tmlx,
+                            tmfz: tm.tmfz,
+                            jsonContent: tm.jsonContent,
+                        }))
+                    }));
+                }
+                // Capture per-page wjid from pjjg list (pjjg[0]=course page1, pjjg[1]=teacher page2)
+                const pjjgList = (wjlist && wjlist[0] && wjlist[0].pjxtPjjgPjjgckb) || [];
+                return {
+                    jsonobj: jsonobj ? JSON.parse(JSON.stringify(jsonobj)) : null,
+                    pjmap: pjmap ? JSON.parse(JSON.stringify(pjmap)) : null,
+                    wjlist: wjlist ? JSON.parse(JSON.stringify(wjlist)) : [],
+                    question_blocks,
+                    // Expose per-page wjid for page1 (course) and page2 (teacher)
+                    course_wjid: pjjgList[0]?.wjid || null,
+                    teacher_wjid: pjjgList[1]?.wjid || null,
+                };
+            } catch(e) { return null; }
+        }""")
+        if result:
+            self._jsonobj = result.get("jsonobj") or {}
+            self._pjmap = result.get("pjmap") or {}
+            self._wjlist = result.get("wjlist") or []
+            self._question_blocks = result.get("question_blocks") or []
+            # Store per-page wjid for correct pjlx routing in save
+            self._course_wjid = result.get("course_wjid") or ""
+            self._teacher_wjid = result.get("teacher_wjid") or ""
+        else:
+            self._jsonobj = {}
+            self._pjmap = {}
+            self._wjlist = []
+            self._question_blocks = []
+            self._course_wjid = ""
+            self._teacher_wjid = ""
+
     def save(self) -> Evaluation:
         """
-        Submit all answers to TIS via fetch().
-
-        Returns self.
+        Two-pass save matching the browser's actual flow:
+          Call 1: pjlx=1 (course questions) → server returns a new pjid
+          Call 2: pjlx=2 (teacher/TA questions) → uses Call 1's pjid in pjidlist
         """
-        page = self._page
-        assert page is not None, "Form not loaded"
-        body = self._build_save_body()
-        page.evaluate(
-            f"""
-            fetch('{BASE}/personnelEvaluation/submitSaveEvaluation', {{
-                method: 'POST',
-                headers: {{
-                    'Content-Type': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest'
-                }},
-                body: {self._json_dumps(body)}
-            }}).then(r => r.json()).then(d => {{ window._save_result = d; }})
-            """
+        from sustech_survival.sso import TISAuth
+        auth = TISAuth()
+        auth.refresh()
+        sess = auth.session
+
+        # Pass 1: course questions (pjlx=1)
+        body1 = self._build_save_body(pjlx="1")
+        r1 = sess.post(
+            f"{BASE}/personnelEvaluation/submitSaveEvaluation",
+            json=body1,
+            timeout=15,
         )
-        page.wait_for_timeout(3000)
+        result1 = r1.json()
+        self._last_save_result = result1
+
+        # Extract pjid from result 1 for use in result 2
+        new_pjid = ""
+        if result1.get("code") == 200:
+            # pjid is in pjjglist[0].pjid or at top level
+            new_pjid = (
+                result1.get("result", {}).get("pjjglist", [{}])[0].get("pjid", "")
+                or result1.get("result", {}).get("pjid", "")
+                or ""
+            )
+
+        if not new_pjid:
+            # Fall back: use the id from jsonobj as the new pjid
+            new_pjid = getattr(self, "_jsonobj", {}).get("id", "") or ""
+
+        # Pass 2: teacher/TA questions (pjlx=2) — only if we have pjlx=2 questions
+        body2 = self._build_save_body(pjlx="2", prior_pjid=new_pjid)
+        if body2["pjjglist"][0]["pjxxlist"]:
+            r2 = sess.post(
+                f"{BASE}/personnelEvaluation/submitSaveEvaluation",
+                json=body2,
+                timeout=15,
+            )
+            self._last_save_result = r2.json()
+
         return self
 
     # ---------------------------------------------------------------------------
     # Internal
     # ---------------------------------------------------------------------------
 
-    def _build_save_body(self) -> dict:
+    def _build_save_body(self, pjlx: str = "1", prior_pjid: str = "") -> dict:
+        """
+        Build save body for one pjlx layer.
+
+        pjlx="1": course questions (qid 25868-25878), pjidlist=[], wjid=jsonobj.wjid
+        pjlx="2": teacher/TA questions (qid 25879+), pjidlist=[{prior_pjid}], wjid=from vue_datas
+        """
         answered = [q for q in self.questions_data if q["answered"]]
         if not answered:
             raise ValueError("No questions answered — call autofill() or answer() first")
 
+        jsonobj = getattr(self, "_jsonobj", None) or {}
+        pjmap = getattr(self, "_pjmap", None) or {}
+
+        # pjlx detection: _q_wjid differs from course wjid = pjlx=2; else pjlx=1
+        course_wjid = jsonobj.get("wjid", "") or ""
+        def get_q_pjlx(q: dict) -> str:
+            q_wjid = q.get("_q_wjid") or ""
+            if q_wjid and q_wjid != course_wjid:
+                return "2"
+            return "1"
+
+        layer_answered = [q for q in answered if get_q_pjlx(q) == pjlx]
+        if not layer_answered:
+            layer_answered = []  # empty list — caller checks this
+
+        # wjid for pjjglist: default to course wjid, override from first layer_answered if available
+        wjid = jsonobj.get("wjid", "") or ""
+        if pjlx == "2" and layer_answered:
+            for _q in layer_answered:
+                _qw = _q.get("_q_wjid") or ""
+                if _qw:
+                    wjid = _qw
+                    break
+            # Fallback: use stored teacher_wjid from page 2 vue state
+            if not wjid or wjid == jsonobj.get("wjid", ""):
+                wjid = getattr(self, "_teacher_wjid", "") or wjid
+
         pjxxlist = []
-        for q in answered:
+        for q in layer_answered:
+            qid = str(q["qid"])
+            vue_datas = q.get("_vue_datas") or {}
+
+            # marks are at vue_datas.datas.marks for page 1 components
+            marks = None
+            if vue_datas:
+                marks = vue_datas.get("marks") or vue_datas.get("datas", {}).get("marks") if isinstance(vue_datas, dict) else None
+
+            # xxdalist: send the raw answer value for ratings (0-10 scale)
+            # The marks map (from Vue component's internal state) maps grid positions to
+            # internal values but we should send the actual score the user selected.
+            # E.g. if answer=10 (user selected "10" grid), xxdalist=[10].
             if q["type"] == QuestionType.RATING:
-                xxdalist = [{"dalx": 1, "daz": str(q["answer"])}]
-                dafen = str(q["answer"])
+                xxdalist = [int(q["answer"])]
+                dalx, daz = 1, str(q["answer"])
             elif q["type"] == QuestionType.TEXT:
-                xxdalist = [{"dalx": 2, "daz": str(q["answer"])}]
-                dafen = "0"
-            elif q["type"] == QuestionType.CHOICE:
-                xxdalist = [{"dalx": 3, "daz": str(q["answer"])}]
-                dafen = "0"
+                ans_str = str(q["answer"])
+                xxdalist = [ans_str]
+                dalx, daz = 2, ans_str
             else:
-                xxdalist = [{"dalx": 0, "daz": str(q["answer"])}]
-                dafen = "0"
+                ans_str = str(q["answer"])
+                xxdalist = [ans_str]
+                dalx, daz = 3, ans_str
 
             pjxxlist.append({
-                "wjstid": q["qid"],
-                "wjstmc": q["text"],
+                "sjly": "1",
+                "stlx": "5",
+                "wjid": wjid,
+                "wjssrwid": pjmap.get("RWID", "") or jsonobj.get("rwid", "") or "",
+                "wjstctid": "",
+                "wjstid": qid,
                 "xxdalist": xxdalist,
-                "dafen": dafen,
+                "dalx": dalx,
+                "daz": daz,
             })
 
+        # pjdf = avg of rating answers
+        rating_answers = [q["answer"] for q in layer_answered if q["type"] == QuestionType.RATING]
+        pjdf = sum(rating_answers) / len(rating_answers) if rating_answers else 0
+
+        # bpdm/pjrjsdm: for pjlx=2 use teacher code; for pjlx=1 use course code
+        bpdm_course = jsonobj.get("bpdm", "") or ""
+        pjrdm = jsonobj.get("pjrdm", "") or ""
+        pjsx_val = jsonobj.get("pjsx", 1)
+        if pjlx == "2":
+            bpdm = jsonobj.get("jszgh", "") or jsonobj.get("skzgh", "") or "30000212"  # teacher staff code
+            pjrjsdm = bpdm + pjrdm + str(pjsx_val)
+        else:
+            bpdm = bpdm_course
+            pjrjsdm = bpdm_course + pjrdm + str(pjsx_val)
+
+        pjjgbm = pjmap.get("PJJGBM", "") or ""
+        pjjgxxbm = pjmap.get("PJJGXXBM", "") or ""
+        full_pjmap = {
+            "PJJGBM": pjjgbm,
+            "PJJGXXBM": pjjgxxbm,
+            "RWID": pjmap.get("RWID", "") or jsonobj.get("rwid", "") or "",
+        }
+
+        pjrxm = jsonobj.get("pjrmc", "") or jsonobj.get("pjrxm", "") or ""
+
+        # bprmc / kcmc: for pjlx=2 use teacher name
+        bprmc = jsonobj.get("bpmc", "") or self.course_name or ""
+        kcmc = jsonobj.get("kcmc", "") or self.course_name or ""
+        if pjlx == "2":
+            # Teacher name is in jsonobj.skjsmc
+            bprmc = jsonobj.get("skjsmc", "") or bprmc
+            # bprdm for teacher: try jszgh first (newer API), then skzgh, then fallback
+            bpdm = jsonobj.get("jszgh", "") or jsonobj.get("skzgh", "") or bpdm
+
+        pjidlist = []
+        if pjlx == "2" and prior_pjid:
+            pjidlist = [{
+                "pjid": prior_pjid,
+                "pjbm": pjjgbm or "",
+                "sfnm": "1",
+            }]
+
         return {
-            "xnxq": self.xnxq,
-            "wjid": self.wjid,
-            "jgwid": self.jgwid,
-            "sfyp": "0",
-            "questionniareUuid": self.questionnaire_uuid,
-            "questionnaireThemeUuid": self.theme_uuid,
-            "questions": [{
-                "wjid": self.wjid,
-                "jgwid": self.jgwid,
-                "wjmxid": self.rwh,
-                "pjjglist": [{
-                    "kcmc": self.course_name,
-                    "kcdm": self.course_code,
-                    "pjxxlist": pjxxlist,
-                }],
+            "pjidlist": pjidlist,
+            "pjjglist": [{
+                "bprdm": bpdm,
+                "bprmc": bprmc,
+                "kcdm": jsonobj.get("kcdm", "") or self.course_code or "",
+                "kcmc": kcmc,
+                "pjdf": pjdf,
+                "pjfs": "1",
+                "pjid": jsonobj.get("id", "") or "",
+                "pjlx": pjlx,
+                "pjmap": full_pjmap,
+                "pjrdm": pjrdm,
+                "pjrjsdm": pjrjsdm,
+                "pjrxm": pjrxm,
+                "pjsx": 1,
+                "pjxxlist": pjxxlist,
+                "rwh": jsonobj.get("rwh", "") or "",
+                "stzjid": "xx",
+                "wjid": wjid or jsonobj.get("wjid", "") or "",
+                "wjssrwid": pjmap.get("RWID", "") or jsonobj.get("rwid", "") or "",
+                "wtjjy": None,
+                "xhgs": None,
+                "xnxq": jsonobj.get("xnxq", "") or "",
+                "sfxxpj": "1",
+                "sqzt": None,
+                "yxfz": None,
+                "sdrs": None,
+                "skjc": None,
+                "zsxz": pjrjsdm,
+                "sfnm": "1",
             }],
+            "pjzt": "2",
         }
 
     @staticmethod
@@ -538,13 +781,15 @@ class TISAuthEval(TISAuth):
 
         return result
 
-    def open_evaluation(self, course_name: str, xnxq: str = "2025-2026-2") -> Evaluation:
+    def open_evaluation(self, course_name: str, xnxq: str = "2025-2026-2",
+                        status: str = "pending") -> Evaluation:
         """
         Open the evaluation form for a course by name.
 
         Args:
             course_name: Course name (e.g. "CAD" or "材料力学")
             xnxq: Semester code
+            status: "pending" (default) or "saved" — which evaluation list to search
 
         Returns an Evaluation object. Call ``ev.load()`` then ``ev.save()``.
         """
@@ -557,15 +802,15 @@ class TISAuthEval(TISAuth):
         if not yhdm:
             raise RuntimeError("Could not determine user ID from TIS session")
 
-        # Find the course in pending list
-        pending = self.evaluations(xnxq=xnxq, status="pending")
+        # Find the course in the specified list
+        evals = self.evaluations(xnxq=xnxq, status=status)
         target = None
-        for c in pending:
+        for c in evals:
             if course_name.upper() in c["course_name"].upper():
                 target = c
                 break
         if not target:
-            raise ValueError(f"Course '{course_name}' not found in pending evaluations")
+            raise ValueError(f"Course '{course_name}' not found in {status} evaluations")
 
         # Launch Playwright
         pw = sync_playwright().start()
@@ -725,9 +970,8 @@ class TISAuthEval(TISAuth):
                     }""")
                     if n == 0:
                         break
-                    next_btn = page.query_selector("button:has-text('下一页')")
-                    cls = next_btn.get_attribute("class") if next_btn else ""
-                    if next_btn and "is-disabled" not in (cls or ""):
+                    next_btn = page.query_selector("button:has-text('下一步')")
+                    if next_btn and "is-disabled" not in (next_btn.get_attribute("class") or ""):
                         next_btn.click()
                         page.wait_for_timeout(3000)
                     else:

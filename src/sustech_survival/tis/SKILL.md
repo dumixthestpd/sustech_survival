@@ -26,6 +26,35 @@ Proceed with your task.
 | `check.sh` | Quick status check, returns exit code 0/1 |
 | `courses.py` | Extract enrolled courses to CSV |
 
+## Teaching Evaluation (评教)
+
+### Quick Start
+
+```python
+from sustech_survival.tis.eval import TISAuthEval
+
+auth = TISAuthEval()
+auth.login()
+
+ev = auth.open_evaluation("EAP", xnxq="2025-20262")
+ev.load()        # navigate all pages, collect questions
+ev.autofill()    # fill all questions with rating=10
+ev.save()        # submit both pjlx=1 (course) and pjlx=2 (teacher)
+```
+
+### How it works
+
+TIS evaluations have two layers, each requiring its own save:
+
+- **pjlx=1** — course questions (page 1)
+- **pjlx=2** — teacher questions (page 2, if present)
+
+`load()` uses Playwright to navigate pages via the `下一步` button and extracts questions from the DOM. `save()` builds the API body and submits twice.
+
+### Per-question wjid
+
+Questions on different pages use different wjids — page 1 uses the course wjid, page 2 uses the teacher wjid. Both are read from Vue state during `load()`.
+
 ## What We Have Access To
 
 - **Course Schedule**: from TIS

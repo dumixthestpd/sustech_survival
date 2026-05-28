@@ -1,46 +1,261 @@
 #!/usr/bin/env python3
 """
-⚠️  WARNING: Running this script SUBMITS A REAL FILE TO BLACKBOARD. ⚠️
-It counts as an official submission attempt. Use with extreme caution.
+BB Assignment Submitter
 
-BB Assignment Submitter — submits files to a BB assignment slot.
+CLI subcommands:
+  python3 -m sustech_survival.bb submit <content_id> <file_path> [course_id] [--name NAME]
+  python3 -m sustech_survival.bb check <content_id> [course_id]
+  python3 -m sustech_survival.bb find <keyword>
+  python3 -m sustech_survival.bb list-due [--limit N]
 
-Key insight: BB uses Prototype.js file-change handler that reads input.files
-when processing the change event. We work around this with:
-  1. set_input_files to trigger BB's initial JS setup
-  2. Override input.files to return our File (created from binary in JS)
-  3. Dispatch change event — BB's handler adds the file to the table
-  4. Run checkDupeFile, then form.submit()
-
-Usage:
-  python3 bb_submit.py --course 8328 --content 610812 --files /path/to/file.pdf
-
-IMPORTANT: Always ask the user before running this. Every test/dev run creates
-           a real BB submission and counts as an attempt.
+IMPORTANT: Always ask the user before running this.
 """
 import json, os, re, sys, argparse, base64
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+BB_BASE = "https://bb.sustech.edu.cn"
 try:
-    from .session import BB_BASE, load_session, check_session
+    from .download import discover_attempt_ids, scrape_attempt_details, get_column_id_for_content
 except ImportError:
-    from session import BB_BASE, load_session, check_session
-try:
-    from .download import discover_attempt_ids, scrape_attempt_details
-except ImportError:
-    from download import discover_attempt_ids, scrape_attempt_details
+    from download import discover_attempt_ids, scrape_attempt_details, get_column_id_for_content
 from playwright.sync_api import sync_playwright
 
-SESSION_FILE = Path(__file__).parent / "session.json"
+from sustech_survival.sso import BBAuth
+
+_bb = BBAuth()
+
+
+def num_id(bb_id):
+    """'_8053_1' -> '8053'"""
+    m = re.search(r'_(\d+)_(\d+)$', str(bb_id))
+    return m.group(1) if m else str(bb_id)
+
+
+def clean_filename(name: str) -> str:
+    """Strip OpenClaw UUID suffix for clean BB filename."""
+    return re.sub(
+        r'---[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?=\.)',
+        '', name
+    )
 
 
 def load_cookies():
-    """Load cookies for Playwright (list format)."""
-    return load_session()[1]
+    """Load cookies for Playwright (list format for ctx.add_cookies)."""
+    raw = _bb.load()
+    return [{"name": k, "value": v, "domain": ".bb.sustech.edu.cn", "path": "/"} for k, v in raw.items() if v]
 
 
-def submit_assignment(course_id, content_id, file_paths, skip_dedup=False, text_content=None):
+def _requests_session():
+    """Return a requests.Session with BB cookies attached."""
+    import requests as _requests
+    sess = _requests.Session()
+    cookies = _bb.load()
+    for name, value in cookies.items():
+        if value:
+            sess.cookies.set(name, value, domain=".bb.sustech.edu.cn", path="/")
+    return sess
+
+
+# ─────────────────────────────────────────────────────────────────
+# AI-facing wrappers  (migrated from __main__.py)
+# ─────────────────────────────────────────────────────────────────
+
+def submit(content_id, file_path, course_id=None, submitted_name=None):
+    """
+    Submit a file to a BB assignment.
+    Returns (success: bool, message: str).
+    """
+    from sustech_survival.bb.download import resolve_course
+
+    if course_id is None:
+        course_id = resolve_course(content_id)
+        if not course_id:
+            return False, f"Cannot resolve course_id for content_id={content_id}. Provide --course explicitly."
+
+    course_num = num_id(course_id)
+    cid = num_id(content_id)
+
+    file_path = Path(file_path).expanduser().resolve()
+    if not file_path.exists():
+        return False, f"File not found: {file_path}"
+
+    clean_name = clean_filename(file_path.name)
+    target_name = submitted_name if submitted_name else clean_name
+    if target_name != file_path.name:
+        import shutil, tempfile
+        clean_path = Path(tempfile.gettempdir()) / target_name
+        shutil.copy2(file_path, clean_path)
+        file_to_upload = clean_path
+    else:
+        file_to_upload = file_path
+
+    ok, msg = submit_assignment(course_num, cid, [str(file_to_upload)],
+                                skip_dedup=True, submitted_name=target_name)
+    return ok, msg
+
+
+def check_attempts(content_id, course_id=None):
+    """Return (attempt_count, assignment_name)."""
+    from sustech_survival.bb.download import resolve_course
+    if course_id is None:
+        course_id = resolve_course(content_id)
+    result = get_attempt_info(num_id(course_id), num_id(content_id))
+    return result[0], result[1]
+
+
+def list_upcoming(limit=10):
+    """List all upcoming BB assignments with due dates."""
+    from sustech_survival.bb.courses import load_courses
+    cookies = load_cookies()
+    courses = load_courses()
+
+    def num(bb_id):
+        m = re.search(r'_(\d+)_(\d+)$', str(bb_id))
+        return m.group(1) if m else str(bb_id)
+
+    upcoming = []
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        ctx = browser.new_context()
+        ctx.add_cookies(cookies)
+        for c in courses:
+            course_id = num(c['id'])
+            course_name = c['name']
+            page = ctx.new_page()
+            try:
+                url = f'{BB_BASE}/webapps/blackboard/content/listContent.jsp?course_id={c["id"]}&content_id={c["id"]}&mode=reset'
+                page.goto(url, wait_until='domcontentloaded', timeout=20000)
+                page.wait_for_timeout(2000)
+                for _ in range(3):
+                    d = page.query_selector('[role=dialog]')
+                    if not d: break
+                    b = d.query_selector('button')
+                    if b: b.click()
+                    page.wait_for_timeout(400)
+                lis = page.query_selector_all('li')
+                for li in lis:
+                    li_id = li.get_attribute('id') or ''
+                    if 'contentListItem' not in li_id:
+                        continue
+                    m = re.search(r'contentListItem:_(\d+)_', li_id)
+                    if not m: continue
+                    sub_id = m.group(1)
+                    h3 = li.query_selector('h3')
+                    title = h3.inner_text().strip() if h3 else ''
+                    upload_a = li.query_selector('a[href*=uploadAssignment]')
+                    if not upload_a:
+                        continue
+                    page2 = ctx.new_page()
+                    due_url = f'{BB_BASE}/webapps/assignment/uploadAssignment?action=newAttempt&content_id=_{sub_id}_1&course_id=_{course_id}_1&group_id='
+                    page2.goto(due_url, wait_until='domcontentloaded', timeout=15000)
+                    page2.wait_for_timeout(2000)
+                    for _ in range(3):
+                        d = page2.query_selector('[role=dialog]')
+                        if not d: break
+                        b = d.query_selector('button')
+                        if b: b.click()
+                        page2.wait_for_timeout(400)
+                    body = page2.inner_text('body')
+                    m_due = re.search(r'到期日期\s*\n?\s*(\d{4}年\d{1,2}月\d{1,2}日[^\n]*)', body)
+                    due = m_due.group(1).strip() if m_due else 'unknown'
+                    page2.close()
+                    upcoming.append((course_name, title, sub_id, course_id, due))
+            except Exception:
+                pass
+            page.close()
+        browser.close()
+
+    def due_sort(item):
+        m = re.search(r'(\d{4})年(\d{1,2})月(\d{1,2})日', item[4])
+        if m:
+            return (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        return (9999, 99, 99)
+
+    upcoming.sort(key=due_sort)
+    return upcoming[:limit]
+
+
+def find_assignment(keyword):
+    """Search all BB pages for an assignment by keyword."""
+    from sustech_survival.bb.courses import load_courses
+    from sustech_survival.bb.download import discover_attempt_ids
+    cookies = load_cookies()
+    courses = load_courses()
+
+    def num(bb_id):
+        m = re.search(r'_(\d+)_(\d+)$', str(bb_id))
+        return m.group(1) if m else str(bb_id)
+
+    results = []
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        ctx = browser.new_context()
+        ctx.add_cookies(cookies)
+        for c in courses:
+            course_id = num(c['id'])
+            course_name = c['name']
+            page = ctx.new_page()
+            try:
+                url = f'{BB_BASE}/webapps/blackboard/content/listContent.jsp?course_id={c["id"]}&content_id={c["id"]}&mode=reset'
+                page.goto(url, wait_until='domcontentloaded', timeout=20000)
+                page.wait_for_timeout(2000)
+                for _ in range(3):
+                    d = page.query_selector('[role=dialog]')
+                    if not d: break
+                    b = d.query_selector('button')
+                    if b: b.click()
+                    page.wait_for_timeout(400)
+                lis = page.query_selector_all('li')
+                for li in lis:
+                    li_id = li.get_attribute('id') or ''
+                    if 'contentListItem' not in li_id:
+                        continue
+                    m = re.search(r'contentListItem:_(\d+)_', li_id)
+                    if not m: continue
+                    sub_id = m.group(1)
+                    h3 = li.query_selector('h3')
+                    title = h3.inner_text().strip() if h3 else ''
+                    upload_a = li.query_selector('a[href*=uploadAssignment]')
+                    if not upload_a:
+                        continue
+                    if keyword.lower() in title.lower():
+                        page2 = ctx.new_page()
+                        due_url = f'{BB_BASE}/webapps/assignment/uploadAssignment?action=newAttempt&content_id=_{sub_id}_1&course_id=_{course_id}_1&group_id='
+                        page2.goto(due_url, wait_until='domcontentloaded', timeout=15000)
+                        page2.wait_for_timeout(2000)
+                        for _ in range(3):
+                            d = page2.query_selector('[role=dialog]')
+                            if not d: break
+                            b = d.query_selector('button')
+                            if b: b.click()
+                            page2.wait_for_timeout(400)
+                        body = page2.inner_text('body')
+                        m_due = re.search(r'到期日期\s*\n?\s*(\d{4}年\d{1,2}月\d{1,2}日[^\n]*)', body)
+                        due = m_due.group(1).strip() if m_due else 'unknown'
+                        attempts = discover_attempt_ids(ctx, course_id, sub_id)
+                        submitted = len(attempts) > 0
+                        results.append({
+                            'course': course_name,
+                            'course_id': course_id,
+                            'content_id': sub_id,
+                            'title': title,
+                            'due': due,
+                            'submitted': submitted,
+                            'attempt_count': len(attempts),
+                        })
+                        page2.close()
+            except Exception:
+                pass
+            page.close()
+        browser.close()
+
+    return results
+
+
+def submit_assignment(course_id, content_id, file_paths, skip_dedup=False, text_content=None, name_override=None):
     cookies = load_cookies()
     resolved = []
     for fp in file_paths:
@@ -66,7 +281,7 @@ def submit_assignment(course_id, content_id, file_paths, skip_dedup=False, text_
     with open(primary_file, 'rb') as f:
         file_content = f.read()
     file_b64 = base64.b64encode(file_content).decode()
-    fname = clean_name
+    fname = name_override if name_override else clean_name
 
     # ── Step 0: Deduplication check ─────────────────────────────────────────
     # Compare against prior submissions by filename (UUID suffix + URL decode stripped)
@@ -291,6 +506,7 @@ def main():
     parser.add_argument("--files", required=False, nargs='+', help="File path(s)")
     parser.add_argument("--yes", action="store_true", help="Skip confirmation prompt")
     parser.add_argument("--list", action="store_true", help="List prior attempts only, do not submit")
+    parser.add_argument("--name", help="Override submitted filename (instead of local filename)")
     args = parser.parse_args()
 
     print("BB Assignment Submitter")
@@ -349,7 +565,7 @@ def main():
             print("Not a TTY. Use --yes flag to confirm.")
             sys.exit(1)
 
-    success, msg = submit_assignment(args.course, args.content, args.files)
+    success, msg = submit_assignment(args.course, args.content, args.files, name_override=args.name)
     print()
     if success is None and msg.startswith("DUPLICATE"):
         print(f"⚠️  {msg}")
@@ -364,7 +580,7 @@ def main():
                 print("No terminal input. Use --yes flag.")
                 sys.exit(1)
             # Retry without dedup check (user explicitly chose to submit)
-            success, msg = submit_assignment(args.course, args.content, args.files, skip_dedup=True)
+            success, msg = submit_assignment(args.course, args.content, args.files, skip_dedup=True, name_override=args.name)
             if success is None:
                 print(f"❌ {msg}")
                 sys.exit(1)

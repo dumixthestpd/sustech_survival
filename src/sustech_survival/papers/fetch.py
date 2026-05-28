@@ -3,7 +3,7 @@
 import os
 import re
 import time
-import cloudscraper
+# import cloudscraper  # temporarily disabled
 import requests
 from pathlib import Path
 from typing import Optional

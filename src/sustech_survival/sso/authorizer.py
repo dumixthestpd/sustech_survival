@@ -295,6 +295,15 @@ def register_auth(name: str, auth: Authorizer):
 
 
 def get_auth(name: str) -> Authorizer:
+    import warnings
+    # Map service names to their exported class names
+    _class_map = {"bb": "BBAuth", "tis": "TISAuth", "lib": "LibAuth"}
+    cls_name = _class_map.get(name, name.title() + "Auth")
+    warnings.warn(
+        f"get_auth({name!r}) is deprecated — import {cls_name} directly from sustech_survival.sso instead",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     return _auth_registry.get(name)
 
 

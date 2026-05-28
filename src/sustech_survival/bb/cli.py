@@ -20,7 +20,7 @@ BB_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(BB_DIR))
 
 import click
-from .session import load_session, ensure_session, check_session, refresh, login, slugify
+from sustech_survival.sso import BBAuth
 from .courses import list_courses, find_course, get_course_numeric_id, discover_assignments_for_course, load_courses
 from .download import discover_attempt_ids, scrape_attempt_details, download_file
 from .pages import preview_page
@@ -36,19 +36,24 @@ def em(s):
 
 def ok_s(s):
     return click.style(s, fg="green")
-
 def err_s(s):
     return click.style(s, fg="red")
 
+
+_bb = BBAuth()
+
+
 def load_session_or_exit():
+    """Ensure session is valid and return Playwright-format cookies list."""
     try:
-        ok, reason = ensure_session()
+        ok, reason = _bb.ensure()
         if not ok:
             click.secho(f"\n❌  Session invalid: {reason}", fg="red")
             sys.exit(1)
-        return load_session()
+        raw = _bb.load()
+        return [{"name": k, "value": v, "domain": ".bb.sustech.edu.cn", "path": "/"} for k, v in raw.items() if v]
     except FileNotFoundError:
-        click.secho("\n❌  No session. Run: python3 bb.py login", fg="red")
+        click.secho("\n❌  No session. Run: python3 bb.py session login", fg="red")
         sys.exit(1)
     except Exception as e:
         click.secho(f"\n❌  Session error: {e}", fg="red")
@@ -233,7 +238,7 @@ def session_cmd(cmd):
       bb.py session login   # manual browser login
     """
     if cmd == "check":
-        ok, reason = check_session()
+        ok, reason = _bb.check()
         if ok:
             click.secho("✅ Session valid", fg="green")
         else:
@@ -241,7 +246,7 @@ def session_cmd(cmd):
             sys.exit(1)
     elif cmd == "refresh":
         click.secho("Refreshing session via CAS...", fg="cyan")
-        ok = refresh()
+        ok = _bb.refresh()
         if ok:
             click.secho("✅ Session refreshed", fg="green")
         else:
@@ -249,7 +254,7 @@ def session_cmd(cmd):
             sys.exit(1)
     elif cmd == "login":
         click.secho("Opening browser for manual CAS login...", fg="cyan")
-        login()
+        _bb.login()
         click.secho("✅ Login complete", fg="green")
 
 
@@ -448,7 +453,7 @@ def course_cmd(course_id, sub, content_id, attempt_arg, download_flag, output_di
       bb_cli.py course 8053 assignment 619093 2            # details of attempt 2
       bb_cli.py course 8053 assignment 619093 2 --download # download attempt 2
     """
-    session_cookies, pw_cookies = load_session_or_exit()
+    cookies = load_session_or_exit()
 
     results = find_course(course_id)
     if not results:
@@ -458,16 +463,13 @@ def course_cmd(course_id, sub, content_id, attempt_arg, download_flag, output_di
     numeric_cid = get_course_numeric_id(course_id_str)
     set_last_course(course_id_str)
 
-    # discover_assignments_for_course creates its own browser,
-    # so fetch BEFORE entering our playwright context
-    needs_assignments = (sub == "assignments") or (sub == "assignment")
-    all_assignments = discover_assignments_for_course(pw_cookies, numeric_cid) if needs_assignments else []
+    all_assignments = discover_assignments_for_course(course_id_str) if needs_assignments else []
 
     from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
         browser = p.chromium.launch()
         ctx_b = browser.new_context()
-        ctx_b.add_cookies(pw_cookies)
+        ctx_b.add_cookies(cookies)
         try:
             if sub == "assignments" or sub is None:
                 _list_assignments(ctx_b, numeric_cid, course_name, all_assignments)
@@ -478,7 +480,7 @@ def course_cmd(course_id, sub, content_id, attempt_arg, download_flag, output_di
                 if content_id == "status":
                     _all_status(ctx_b, numeric_cid, course_name, all_assignments)
                 else:
-                    _single_assignment(ctx_b, session_cookies, numeric_cid,
+                    _single_assignment(ctx_b, cookies, numeric_cid,
                                        content_id, attempt_arg, download_flag, output_dir)
             else:
                 click.secho(f"❌  Unknown: {sub}", fg="red")

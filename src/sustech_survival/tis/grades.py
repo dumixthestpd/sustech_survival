@@ -1,25 +1,25 @@
 """See docs/grades.md."""
 
-import sys
 from pathlib import Path as _Path
 
 _SKILL_ROOT = _Path(__file__).resolve().parent.parent.parent.parent
-sys.path.insert(0, str(_SKILL_ROOT / "src"))
 
 __all__ = ["run"]
+
+from sustech_survival.exceptions import NetworkError, SessionExpired
+from sustech_survival.sso import TISAuth
 
 
 def _make_session():
     """Build a requests.Session with valid TIS cookies via SSO auth layer."""
     import requests
-    from sustech_survival.sso import TISAuth
 
     auth = TISAuth(skill_dir=str(_SKILL_ROOT))
     ok, msg = auth.check()
     if not ok:
         ok = auth.refresh()
     if not ok:
-        return None
+        raise SessionExpired(f"TIS auth failed: {msg}")
 
     raw = auth.load()
     sess = requests.Session()
@@ -46,8 +46,10 @@ def _get_grades(session, semester: str = None):
         },
         timeout=15,
     )
+    if r.status_code == 401:
+        raise SessionExpired("TIS session expired. Re-authenticate.")
     if r.status_code != 200:
-        raise RuntimeError(f"TIS grade API returned {r.status_code}: {r.text[:200]}")
+        raise NetworkError(f"TIS grade API returned {r.status_code}: {r.text[:200]}")
 
     data = r.json()
     courses = data.get("content", {}).get("list", [])
@@ -145,17 +147,22 @@ def _format_grade_row(c):
 def run(semester: str = None, export: str = None):
     """See docs/grades.md."""
     print("🔑 CAS login...")
-    session = _make_session()
-    if not session:
-        print("❌ TIS login failed")
-        sys.exit(1)
+    try:
+        session = _make_session()
+    except SessionExpired as e:
+        print(f"❌ {e}")
+        raise
 
     print("📊 Fetching grades...")
-    courses = _get_grades(session, semester)
+    try:
+        courses = _get_grades(session, semester)
+    except (SessionExpired, NetworkError) as e:
+        print(f"❌ {e}")
+        raise
 
     if not courses:
         print("❌ No grades found")
-        sys.exit(1)
+        raise SessionExpired("No grades returned — semester may not be published yet")
 
     # Group by semester
     by_semester = {}

@@ -8,6 +8,7 @@ Uses BB REST API exclusively (no Playwright):
 Due dates come as ISO timestamps directly from BB — no regex parsing needed.
 """
 
+from sustech_survival.exceptions import SessionExpired as _SessionExpired
 import re
 import sys
 from datetime import datetime, timedelta
@@ -44,8 +45,7 @@ def _api(path: str, session=None):
     url = BB_BASE + path
     r = session.get(url, timeout=15)
     if r.status_code == 401:
-        print("❌ BB session expired. Run `bb.py login` to refresh.")
-        sys.exit(1)
+        raise _SessionExpired("BB session expired. Run `bb.py login` to refresh.")
     r.raise_for_status()
     return r.json()
 
@@ -145,7 +145,7 @@ def run(days: int = 7, course_id: str = None):
     courses = _get_courses(session, term_id="_57_1")
     if not courses:
         print("❌ 无法获取课程列表，请重新登录")
-        return
+        raise _SessionExpired("无法获取课程列表，请重新登录")
 
     # 2. Filter
     if course_id:

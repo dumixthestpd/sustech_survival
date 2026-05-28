@@ -16,6 +16,14 @@
 # =============================================================================
 
 import re
+import ssl
+import urllib3.util.ssl_ as _us_ssl
+_orig = _us_ssl.create_urllib3_context
+def _patched(protocol=None):
+    ctx = _orig(protocol)
+    ctx.options |= ssl.OP_LEGACY_SERVER_CONNECT
+    return ctx
+_us_ssl.create_urllib3_context = _patched
 import requests
 from ..authorizer import Authorizer, AuthorizerError, CAS_BASE, UA
 

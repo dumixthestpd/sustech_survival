@@ -36,13 +36,15 @@ def _session():
     return s
 
 
+from sustech_survival.exceptions import SessionExpired as _SessionExpired
+
+
 def _api(path, session=None):
     if session is None:
         session = _session()
     r = session.get(BB_BASE + path, timeout=15)
     if r.status_code == 401:
-        print("❌ BB session expired. Run `bb.py login`.")
-        sys.exit(1)
+        raise _SessionExpired("BB session expired. Run `bb.py login`.")
     r.raise_for_status()
     return r.json()
 
@@ -105,12 +107,23 @@ def resolve_course(content_id):
 
 # ── Content Item Fetcher ─────────────────────────────────────────────────────
 
+def _normalize_bb_id(raw):
+    """Ensure BB-format with single underscore wrapper: _xxx_1.
+
+    Accepts both numeric ('8343') and BB-format ('_8343_1') IDs,
+    returns consistent BB-format string.
+    """
+    if raw.startswith("_"):
+        return raw  # already BB-format, return as-is
+    return f"_{raw}_1"
+
+
 def _get_content_item(course_id, content_id, session=None):
     """Fetch a single content item. Returns dict or None."""
     if session is None:
         session = _session()
-    bid = f"_{course_id}_1"
-    cid = f"_{content_id}_1"
+    bid = _normalize_bb_id(course_id)
+    cid = _normalize_bb_id(content_id)
     try:
         return _api(f"/learn/api/public/v1/courses/{bid}/contents/{cid}", session)
     except Exception:
@@ -236,8 +249,8 @@ def get_assignment_attempts(course_id, column_id):
     Uses gradebook REST API — no Playwright.
     """
     sess = _session()
-    bid = f"_{course_id}_1"
-    col_id = f"_{column_id}_1"
+    bid = course_id if course_id.startswith("_") else f"_{course_id}_1"
+    col_id = column_id if column_id.startswith("_") else f"_{column_id}_1"
     try:
         data = _api(f"/learn/api/public/v1/courses/{bid}/gradebook/columns/{col_id}/attempts", sess)
         results = []
@@ -250,6 +263,80 @@ def get_assignment_attempts(course_id, column_id):
         return results
     except Exception:
         return []
+
+
+def discover_attempt_ids(ctx, numeric_cid, content_id):
+    """
+    Return list of (attempt_id, (attempt_num, created_timestamp)) for a content item.
+    Uses gradebook REST API for speed — no Playwright needed for discovery.
+    ctx is accepted for API compatibility but not used (REST handles it).
+    """
+    column_id = get_column_id_for_content(numeric_cid, content_id)
+    if not column_id:
+        return []
+    return get_assignment_attempts(numeric_cid, column_id)
+
+
+def scrape_attempt_details(ctx, numeric_cid, content_id, attempt_id):
+    """
+    Return dict of attempt details for display.
+    ctx is Playwright context (used to fetch file URLs via browser).
+    Returns: {
+        id, attempt_num, created, graded, score, feedback,
+        files: [(filename, url_or_path)]
+    }
+    """
+    column_id = get_column_id_for_content(numeric_cid, content_id)
+    if not column_id:
+        return {}
+
+    # REST: get attempt metadata
+    sess = _session()
+    bid = f"_{numeric_cid}_1"
+    col_id = f"_{column_id}_1"
+    try:
+        data = _api(f"/learn/api/public/v1/courses/{bid}/gradebook/columns/{col_id}/attempts", sess)
+    except Exception:
+        return {}
+
+    att_data = None
+    att_id_stripped = attempt_id.lstrip("_")
+    for att in data.get("results", []):
+        if att["id"].lstrip("_").rstrip("_1") == att_id_stripped:
+            att_data = att
+            break
+
+    result = {
+        "id": attempt_id,
+        "attempt_num": "?",
+        "created": "",
+        "graded": False,
+        "score": "",
+        "feedback": "",
+        "files": [],
+    }
+    if att_data:
+        result["id"] = att_data["id"]
+        result["created"] = att_data.get("created", "")[:19].replace("T", " ")
+        display_order = data["results"].index(att_data) + 1
+        result["attempt_num"] = str(display_order)
+        score_obj = att_data.get("score", {})
+        if isinstance(score_obj, dict):
+            display_score = score_obj.get("display")
+            if display_score is not None:
+                result["score"] = str(display_score)
+                result["graded"] = True
+        elif score_obj is not None:
+            result["score"] = str(score_obj)
+            result["graded"] = True
+
+    # Playwright: get submitted file URLs (gradebook has no file URLs)
+    ts_str, files = scrape_attempt_files_via_browser(numeric_cid, content_id, attempt_id)
+    if ts_str and not result["created"]:
+        result["created"] = ts_str
+    result["files"] = files
+
+    return result
 
 
 def get_column_id_for_content(course_id, content_id, session=None):
@@ -273,9 +360,9 @@ def scrape_attempt_files_via_browser(course_id, content_id, attempt_id):
     does not expose submitted file URLs.
     """
     from playwright.sync_api import sync_playwright
-    from .session import load_session
+    import sustech_survival.bb.submit as bb_submit  # local to avoid circular
 
-    raw, pw = load_session()
+    cookies = bb_submit.load_cookies()
 
     page_url = (
         f"{BB_BASE}/webapps/assignment/uploadAssignment"
@@ -286,7 +373,7 @@ def scrape_attempt_files_via_browser(course_id, content_id, attempt_id):
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         ctx = browser.new_context()
-        ctx.add_cookies(pw)
+        ctx.add_cookies(cookies)
         page = ctx.new_page()
         page.goto(page_url, wait_until="domcontentloaded", timeout=30000)
         page.wait_for_timeout(2000)

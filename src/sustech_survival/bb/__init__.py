@@ -20,18 +20,12 @@ from pathlib import Path as _Path
 _SKILL_ROOT = _Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(_SKILL_ROOT / "src"))
 
-__all__ = ["ddl", "query", "download"]
+__all__ = ["ddl", "query", "download", "submit", "check_attempts", "find_assignment", "list_upcoming"]
 
-from sustech_survival.bb._ddl import run as _ddl_run
-from sustech_survival.bb import _query as _query_mod
-from sustech_survival.bb import _download as _download_mod
-
+from sustech_survival.bb import query, download
+from sustech_survival.bb.ddl import run as _ddl_run
+from sustech_survival.bb.submit import submit, check_attempts, find_assignment, list_upcoming
 
 def ddl(days: int = 7, course_id: str = None):
     """Print upcoming BB assignment deadlines. See docs/bb.md."""
     _ddl_run(days=days, course_id=course_id)
-
-
-# Expose query module members
-query = _query_mod
-download = _download_mod

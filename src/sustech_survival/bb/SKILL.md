@@ -158,12 +158,12 @@ python3 bb.py submit --course 8328 --content 610812 --files report.pdf
 > Before submission: (1) ask dumix first, (2) confirm no prior submission exists.
 > **Naming format:** `12413021+姓名+作业N` (e.g. `12413021段斯宸作业10.pdf`)
 
-### Python API (via bb_submit_skill.py)
+### Python API (via __main__.py)
 
 ```python
 import sys
 sys.path.insert(0, '/Users/dumix/.openclaw/workspace/skills/sustech_survival/src')
-from sustech_survival.bb.bb_submit_skill import submit, check_attempts, find_assignment, list_upcoming
+from sustech_survival.bb import submit, check_attempts, find_assignment, list_upcoming
 
 # Check attempts (before submitting)
 count, name = check_attempts('623874', '8053')
@@ -188,16 +188,16 @@ for course, title, cid, coid, due, *_ in upcoming:
 
 ```bash
 # Check attempt count
-python3 src/sustech_survival/bb/bb_submit_skill.py check <content_id> [course_id]
+python3 -m sustech_survival.bb check <content_id> [course_id]
 
 # Submit
-python3 src/sustech_survival/bb/bb_submit_skill.py submit <content_id> <file_path> [course_id]
+python3 -m sustech_survival.bb submit <content_id> <file_path> [course_id]
 
 # Find by keyword
-python3 src/sustech_survival/bb/bb_submit_skill.py find "尺规"
+python3 -m sustech_survival.bb find "尺规"
 
 # List upcoming
-python3 src/sustech_survival/bb/bb_submit_skill.py list-due --limit 20
+python3 -m sustech_survival.bb list-due --limit 20
 ```
 
 ### Known Assignment IDs (CAD 2026 Spring)
@@ -221,13 +221,12 @@ python3 src/sustech_survival/bb/bb_submit_skill.py list-due --limit 20
 ```
 bb/
 ├── __init__.py      # Public Python API
-├── cli.py           # CLI implementation (courses, search, types)
+├── cli.py           # CLI — courses, search, types
 ├── items.py         # Item class hierarchy
 ├── pages.py         # Page scraping
 ├── courses.py       # Course loading
 ├── download.py      # Content/attempt download + submit_homework()
-├── submit.py        # Core submission logic (submit_assignment, get_attempt_info)
-├── bb_submit_skill.py  # Skill entry point (submit, check, find, list-due)
+├── submit.py        # Submission logic + submit/check/find/list-upcoming CLI
 └── session.py       # CAS auth
 ```
 

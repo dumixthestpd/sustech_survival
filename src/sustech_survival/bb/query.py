@@ -1,17 +1,12 @@
+from sustech_survival.exceptions import SessionExpired as _SessionExpired
+
 """
 query — BB course/page discovery via REST API (no Playwright).
 
-Key changes from Playwright version:
-  • discover_courses:      /courses?termId=_57_1  (no portal scraping)
-  • discover_pages:       /courses/{id}/contents  (no sidebar scrape)
-  • scrape_page_items:    /contents/{id}?fields=body  (no page navigation)
-  • Course resolution:     walk /courses/{id}/contents tree via REST
+Key entry points:
+  from sustech_survival.bb.courses import load_courses, find_course, discover_assignments_for_course
 
-Playwright still used for:
-  • Submission attempt file URLs (gradebook API has no file URLs)
-  • x-bb-file download URLs (REST gives fileName but no signed download URL)
-
-Cache: 1-hour TTL in bb/cache/ (same as before).
+Use these functions — do NOT call termId-based endpoints directly.
 """
 
 import json, re, sys, time
@@ -50,8 +45,7 @@ def _api(path, session=None):
         session = _session()
     r = session.get(BB_BASE + path, timeout=15)
     if r.status_code == 401:
-        print("❌ BB session expired. Run `bb.py login` to refresh.")
-        sys.exit(1)
+        raise _SessionExpired("BB session expired. Run `bb.py login` to refresh.")
     r.raise_for_status()
     return r.json()
 
@@ -393,6 +387,11 @@ def format_item(u, verbose=False):
         if u.get("files"):
             for fname, fpath in u["files"]:
                 print(f"    File: {fname}  [{fpath[:60]}]")
+
+
+def type_stats_items(*args, **kwargs):
+    """Compute item-type statistics. Alias for discover_all_items."""
+    return discover_all_items(*args, **kwargs)
 
 
 def print_stats(stats, courses=None):

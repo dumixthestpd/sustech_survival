@@ -26,8 +26,11 @@ Credentials = Authorizer
 
 # ── Find skill root for session storage ────────────────────────────────────────
 # sso/__init__.py lives at:  sustch_survival/sso/__init__.py
-# We walk up 3 levels to reach the skill root.
-#   sso → sustch_survival → src → skill_root
+# We walk up 4 levels to reach the skill root:
+#   sso → sustch_survival → src → workspace/skills/sustech_survival
+# _SKILL_ROOT resolves relative to THIS file so it always matches the
+# actual code location, even when authorizer.py's auto-detection picks
+# ~/.openclaw/skills/sustech_survival/ (which has credentials.txt too).
 from pathlib import Path as _Path
 import requests as _requests
 
@@ -120,7 +123,7 @@ class LibAuth(CASAuthorizer):
 
     @property
     def session_file(self):
-        return _SKILL_ROOT / "sso" / "lib" / "session.json"
+        return self.submodule_dir / "session.json"
 
 
 # Register singletons for backwards compatibility with get_auth()

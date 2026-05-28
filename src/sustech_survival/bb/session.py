@@ -11,7 +11,7 @@ if _PKG_ROOT not in _sys.path:
     _sys.path.insert(0, _PKG_ROOT)
 
 BB_DIR = _Path(__file__).resolve().parent
-# Skill root is the parent of src/ (which is the skill dir)
+BB_BASE = "https://bb.sustech.edu.cn"
 SKILL_ROOT = BB_DIR.parent.parent.parent
 
 SESSION_FILE = BB_DIR / "session.json"
@@ -70,3 +70,11 @@ def ensure() -> tuple[bool, str]:
     Returns (True, "") on success, (False, reason) on failure.
     """
     return _auth.ensure()
+
+
+def slugify(name: str) -> str:
+    """Sanitize a string for use as a filename."""
+    import re
+    name = re.sub(r'[^\w\s-]', '', name)
+    name = re.sub(r'[\s_]+', '-', name)
+    return name.strip('-')
