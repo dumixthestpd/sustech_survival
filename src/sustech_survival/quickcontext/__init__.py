@@ -1,20 +1,25 @@
 """
 QuickContext — a student's daily context summary.
 
-QuickContext  — always-fast core fields (sync, no I/O blocking on __str__)
-DetailedContext(QuickContext) — adds slow fields (BB deadlines, TIS evals, library status)
+QuickContext   — always-fast core fields (sync, no I/O on __str__):
+                  date, day, time_24h, week, phase, label, holiday, class_now
+DetailedContext(QuickContext) — adds slow fields fetched from external sources:
+                  weather, aqi (from open-meteo), library_status (from lib.sustech.edu.cn),
+                  next_deadline (Blackboard), next_eval (TIS)
 
 String-callable: str(ctx) → formatted context string.
-Properties: all fields accessible as ctx.temperature, ctx.aqi, etc.
+Properties:     all fields accessible as ctx.week, ctx.class_now, etc.
 
 Usage:
     ctx = QuickContext()
-    print(ctx)                  # full context string
+    print(ctx)                  # core context string (no I/O)
     print(ctx.week)             # "14"
-    print(ctx.weather_cond)     # "Thunderstorm"
+    print(ctx.class_now)         # "材料力学B" or ""
 
     dctx = DetailedContext()
-    print(dctx.next_deadline)   # "MSE306 Lab Report — due in 2 days"
+    print(dctx.weather_cond)    # "Thunderstorm"
+    print(dctx.library_status)  # "一丹: 开放中, 琳恩: 开放中, 涵泳: 开放中"
+    print(dctx.next_deadline)   # {'name': ..., 'due': ..., 'days_left': ...}
 """
 from __future__ import annotations
 
@@ -120,6 +125,14 @@ HOLIDAY_DATA = {
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Module-level time override (for testing / predictions / tracebacks)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_OVERRIDE_TIME: Union[float, None] = None
+"""If set, all schedule-aware computations use this Unix timestamp instead of now."""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Helper utilities (module-level, shared)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -131,6 +144,13 @@ def _fetch_json(url: str, timeout: int = 10) -> Optional[dict]:
             return json.loads(resp.read())
     except Exception:
         return None
+
+
+def _now() -> datetime:
+    """Return datetime.now(CHINA_TZ), or overridden time if set."""
+    if _OVERRIDE_TIME is not None:
+        return datetime.fromtimestamp(_OVERRIDE_TIME, tz=CHINA_TZ)
+    return datetime.now(CHINA_TZ)
 
 
 def _weather_code_map(code: int) -> tuple[str, str]:
@@ -190,8 +210,7 @@ class QuickContext:
     Individual fields accessible as properties.
 
     Always-fast (computed locally, no I/O on __str__):
-      date, day, time, week, phase, holiday, class_now
-      temperature, weather_cond, weather_icon, feels_like, humidity, wind, aqi, aqi_level
+      date, day, time_24h, week, phase, label, holiday, class_now
     """
 
     def __init__(self, dt: datetime = None, *, time: float = None):
@@ -208,8 +227,6 @@ class QuickContext:
             self._dt = datetime.fromtimestamp(time, tz=CHINA_TZ)
         else:
             self._dt = datetime.now(CHINA_TZ)
-        self._weather: Optional[dict] = None
-        self._aqi: Optional[dict] = None
 
     # ── computed properties ────────────────────────────────────────────────
 
@@ -252,6 +269,40 @@ class QuickContext:
     def class_now(self) -> str:
         """Current class name or ''"""
         return _get_current_class()
+
+    # ── string callable ───────────────────────────────────────────────────
+
+    def __str__(self) -> str:
+        parts = [
+            f"Today is [{self.date}], [{self.day}]",
+            f"According to SUSTech academic calendar, this is [{self.label}]",
+            f"Current time is [{self.time_24h}]",
+        ]
+
+        if self.holiday:
+            parts.append(f"Today is 🎉 [{self.holiday}]")
+
+        return "\n".join(parts)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DetailedContext — adds slow external fields
+# ─────────────────────────────────────────────────────────────────────────────
+
+class DetailedContext(QuickContext):
+    """
+    Inherits all QuickContext fields plus slow external fields:
+      weather, aqi (from open-meteo), library_status (from lib.sustech.edu.cn),
+      next_deadline (Blackboard), next_eval (TIS)
+    """
+
+    def __init__(self, dt: datetime = None, *, time: float = None):
+        super().__init__(dt, time=time)
+        self._weather: Optional[dict] = None
+        self._aqi: Optional[dict] = None
+        self._deadline: Optional[dict] = None
+        self._next_eval: Optional[dict] = None
+        self._library: Optional[str] = None
 
     # ── weather lazily fetched ─────────────────────────────────────────────
 
@@ -317,73 +368,7 @@ class QuickContext:
         if self._ensure_aqi(): return self._aqi["pm10"]
         return None
 
-    # ── internal lazy fetchers ─────────────────────────────────────────────
-
-    def _ensure_weather(self) -> bool:
-        if self._weather is not None:
-            return True
-        self._weather = _fetch_weather()
-        return self._weather is not None
-
-    def _ensure_aqi(self) -> bool:
-        if self._aqi is not None:
-            return True
-        self._aqi = _fetch_aqi()
-        return self._aqi is not None
-
-    # ── string callable ───────────────────────────────────────────────────
-
-    def __str__(self) -> str:
-        self._ensure_weather()
-        self._ensure_aqi()
-
-        parts = [
-            f"Today is [{self.date}], [{self.day}]",
-            f"According to SUSTech academic calendar, this is [{self.label}]",
-            f"Current time is [{self.time_24h}]",
-        ]
-
-        if self.holiday:
-            parts.append(f"Today is 🎉 [{self.holiday}]")
-
-        if self._weather:
-            w = self._weather
-            w_parts = [f"{w['condition']} {w['icon']}"]
-            if w["temp_c"] is not None:
-                w_parts.append(f"{w['temp_c']}°C")
-                if w["feels_like"] is not None:
-                    w_parts.append(f"(feels {w['feels_like']}°C)")
-                if w["humidity"] is not None:
-                    w_parts.append(f"💧{w['humidity']}%")
-                if w["wind_kmh"] is not None:
-                    w_parts.append(f"💨{w['wind_kmh']}km/h")
-            parts.append(f"Weather at SUSTech (Shenzhen Nanshan): [{', '.join(w_parts)}]")
-
-        if self._aqi:
-            a = self._aqi
-            if a["aqi"] is not None:
-                parts.append(
-                    f"Air quality: [{a['aqi']} ({a['aqi_level']}) {_aqi_icon(a['aqi'])}]"
-                )
-
-        return "\n".join(parts)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# DetailedContext — adds slow BB/TIS/Lib fields
-# ─────────────────────────────────────────────────────────────────────────────
-
-class DetailedContext(QuickContext):
-    """
-    Inherits all QuickContext fields plus slow fields:
-      next_deadline, next_eval, library_status
-    """
-
-    def __init__(self, dt: datetime = None, *, time: float = None):
-        super().__init__(dt, time=time)
-        self._deadline: Optional[dict] = None
-        self._next_eval: Optional[dict] = None
-        self._library: Optional[str] = None
+    # ── deadline / eval / library ─────────────────────────────────────────
 
     @property
     def next_deadline(self) -> Optional[dict]:
@@ -403,17 +388,57 @@ class DetailedContext(QuickContext):
 
     @property
     def library_status(self) -> str:
-        """'Open' / 'Closed' / 'Unknown' with hours"""
+        """'一丹: 开放中, 琳恩: 开放中, 涵泳: 开放中' or 'Unknown'"""
         if self._library is not None:
             return self._library
-        self._library = _get_library_status(self._dt)
+        self._library = _fetch_library_status()
         return self._library
 
-    def __str__(self) -> str:
-        base = super().__str__()
+    # ── internal lazy fetchers ─────────────────────────────────────────────
 
-        # Append detailed fields
+    def _ensure_weather(self) -> bool:
+        if self._weather is not None:
+            return True
+        self._weather = _fetch_weather()
+        return self._weather is not None
+
+    def _ensure_aqi(self) -> bool:
+        if self._aqi is not None:
+            return True
+        self._aqi = _fetch_aqi()
+        return self._aqi is not None
+
+    # ── string callable ───────────────────────────────────────────────────
+
+    def __str__(self) -> str:
+        base = QuickContext.__str__(self)
         lines = [base]
+
+        self._ensure_weather()
+        self._ensure_aqi()
+
+        if self._weather:
+            w = self._weather
+            w_parts = [f"{w['condition']} {w['icon']}"]
+            if w["temp_c"] is not None:
+                w_parts.append(f"{w['temp_c']}°C")
+                if w["feels_like"] is not None:
+                    w_parts.append(f"(feels {w['feels_like']}°C)")
+                if w["humidity"] is not None:
+                    w_parts.append(f"💧{w['humidity']}%")
+                if w["wind_kmh"] is not None:
+                    w_parts.append(f"💨{w['wind_kmh']}km/h")
+            lines.append(f"Weather at SUSTech (Shenzhen Nanshan): [{', '.join(w_parts)}]")
+
+        if self._aqi:
+            a = self._aqi
+            if a["aqi"] is not None:
+                lines.append(
+                    f"Air quality: [{a['aqi']} ({a['aqi_level']}) {_aqi_icon(a['aqi'])}]"
+                )
+
+        ls = self.library_status
+        lines.append(f"Library: [{ls}]")
 
         nd = self.next_deadline
         if nd:
@@ -439,30 +464,12 @@ class DetailedContext(QuickContext):
                 eval_str = f"Eval due in {days} days"
             lines.append(f"Next TIS eval: [{ne['course']} — {ne['name']}] — {eval_str}")
 
-        ls = self.library_status
-        lines.append(f"Library: [{ls}]")
-
         return "\n".join(lines)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Module-level time override (for testing / predictions / tracebacks)
-# ─────────────────────────────────────────────────────────────────────────────
-
-_OVERRIDE_TIME: Union[float, None] = None
-"""If set, all schedule-aware computations use this Unix timestamp instead of now."""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Module-level helpers
 # ─────────────────────────────────────────────────────────────────────────────
-
-def _now() -> datetime:
-    """Return datetime.now(CHINA_TZ), or overridden time if set."""
-    if _OVERRIDE_TIME is not None:
-        return datetime.fromtimestamp(_OVERRIDE_TIME, tz=CHINA_TZ)
-    return datetime.now(CHINA_TZ)
-
 
 def _get_academic_info(dt: datetime):
     """Returns (week_str, phase_str, label)."""
@@ -494,14 +501,13 @@ def _is_holiday(dt: datetime) -> str:
     """Check against known holiday data. Returns holiday name or ''."""
     year = dt.year
     holidays = HOLIDAY_DATA.get(year, {})
-    holidays.update(HOLIDAY_DATA.get(year - 1, {}))  # also check last year for Jan
+    holidays.update(HOLIDAY_DATA.get(year - 1, {}))
 
     date_str = dt.strftime("%Y-%m-%d")
     if date_str in holidays:
         val = holidays[date_str]
         return "" if val == "adjust" else val
 
-    # Weekend workday check
     if dt.weekday() >= 5:
         return holidays.get(f"adjust:{date_str}", "")
     return ""
@@ -554,6 +560,29 @@ def _fetch_aqi() -> Optional[dict]:
     }
 
 
+def _fetch_library_status() -> str:
+    """Fetch real-time open/closed status from lib.sustech.edu.cn."""
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            "https://lib.sustech.edu.cn/",
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            html = resp.read().decode("utf-8")
+
+        # Parse <li><span class="name">一丹</span><span class="now">开放中</span></li>
+        rooms = re.findall(
+            r'<span class="name">([^<]+)</span><span class="now">([^<]+)</span>',
+            html,
+        )
+        if not rooms:
+            return "Unknown"
+        return ", ".join(f"{name}: {status}" for name, status in rooms)
+    except Exception:
+        return "Unknown"
+
+
 def _get_current_class() -> str:
     """Check today's personal schedule for a currently-running class.
 
@@ -573,14 +602,13 @@ def _get_current_class() -> str:
 
         for entry in week:
             key = entry.get('KEY', '')
-            # KEY format: 'xq{weekday}_jc{period}' e.g. 'xq2_jc3' = Tuesday period 3
             if not key.startswith('xq') or '_jc' not in key:
                 continue
             parts = key.split('_')
             if len(parts) != 2:
                 continue
             try:
-                day = int(parts[0][2:])   # 'xq2' → 2
+                day = int(parts[0][2:])    # 'xq2' → 2
                 period = int(parts[1][2:]) # 'jc3' → 3
             except (ValueError, IndexError):
                 continue
@@ -588,22 +616,21 @@ def _get_current_class() -> str:
             if day != wd + 1:
                 continue
 
-            # Period time ranges
             PERIODS = {
-                1: (8*60, 9*60+40),    # 1-2节 08:00-09:40
-                2: (10*60, 11*60+40),  # 3-4节 10:00-11:40
-                3: (14*60, 15*60+40),  # 5-6节 14:00-15:40
-                4: (16*60, 17*60+40),  # 7-8节 16:00-17:40
-                5: (19*60, 20*60+40),  # 9-10节 19:00-20:40
-                6: (21*60, 22*60+40),  # 11-12节 21:00-22:40
+                1: (8*60,  9*60+40),  # 1-2节  08:00-09:40
+                2: (10*60, 11*60+40), # 3-4节  10:00-11:40
+                3: (14*60, 15*60+40), # 5-6节  14:00-15:40
+                4: (16*60, 17*60+40), # 7-8节  16:00-17:40
+                5: (19*60, 20*60+40), # 9-10节 19:00-20:40
+                6: (21*60, 22*60+40), # 11-12节 21:00-22:40
             }
 
             if period not in PERIODS:
                 continue
             start_min, end_min = PERIODS[period]
             if start_min <= total_min <= end_min:
-                # Return first line of SKSJ (course name)
-                return entry.get('SKSJ', '').split('\n')[0] or entry.get('SKSJ_EN', '').split('\n')[0] or ''
+                return entry.get('SKSJ', '').split('\n')[0] or \
+                       entry.get('SKSJ_EN', '').split('\n')[0] or ''
         return ''
     except Exception:
         return ''
@@ -663,17 +690,6 @@ def _fetch_next_eval() -> Optional[dict]:
         return None
     except Exception:
         return None
-
-
-def _get_library_status(dt: datetime) -> str:
-    """Return 'Open (HH:MM-HH:MM)' or 'Closed' for SUSTech library.
-    ``dt`` is the datetime to check hours for (uses its weekday).
-    """
-    wd = dt.weekday()
-    if wd < 5:  # Mon-Fri
-        return "Open (08:30–22:00)"
-    else:  # Sat/Sun
-        return "Open (08:30–17:00)"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
