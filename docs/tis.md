@@ -92,6 +92,59 @@ python3 src/sustech_survival/tis/grades.py --csv   # export CSV
 
 ---
 
+## Personal Weekly Schedule
+
+**REST API — `xszykb` endpoints (no browser):**
+
+```
+POST https://tis.sustech.edu.cn/xszykb/queryxszykbzhou   # one week
+POST https://tis.sustech.edu.cn/xszykb/queryxszykbzong   # full semester
+GET  https://tis.sustech.edu.cn/component/querydangqianzc  # current week number
+```
+
+| Endpoint | Params | Returns |
+|---|---|---|
+| `/xszykb/queryxszykbzhou` | `xn`, `xq`, `zc` | Personal schedule for week `zc` |
+| `/xszykb/queryxszykbzong` | `xn`, `xq` | Full semester (all weeks), includes `ZC` bitmap |
+| `/component/querydangqianzc` | — | Current week number (int, 1-18) |
+| `/component/querydangqianxnxq` | — | Current semester: `XN`, `XQ`, `XNXQ`, `XNXQ_EN` |
+
+**Key fields in each entry:**
+
+| Field | Meaning |
+|---|---|
+| `SKSJ` | Course + teacher + class + weeks + room + periods (Chinese) |
+| `SKSJ_EN` | Same as above in English |
+| `KEY` | `"xq{weekday}_jc{period}"` e.g. `"xq2_jc3"` = Tuesday period 3 |
+| `KSJC` / `JSJC` | Start / end period number (1-12, 13=evening) |
+| `ZC` | 36-char bitmap — which weeks the course runs (full semester only) |
+| `XB` | Number of periods per week for this entry |
+| `RWH` | Course record ID: `{xn}-{xq}-{kcdm}-{section}` |
+
+**Run via:**
+```bash
+python3 src/sustech_survival/tis/schedule.py              # current week
+python3 src/sustech_survival/tis/schedule.py --zc 10      # week 10
+python3 src/sustech_survival/tis/schedule.py --all         # full semester
+```
+
+**Python API:**
+```python
+from sustech_survival.tis.schedule import (
+    current_semester, current_week, week_schedule,
+    semester_schedule, week_list
+)
+
+sem = current_semester()   # {'XN': '2025-2026', 'XQ': '2', 'XNXQ': '2026春季', ...}
+zc  = current_week()       # 14
+wk  = week_schedule(zc)    # list of course entries for this week
+all = semester_schedule()  # full semester
+```
+
+**⚠️ Why not `kebiaoshow` component:** The `inco.component.kebiaoshow` Vue component renders the schedule grid but does not fetch course data itself — it receives `kbjg` as a prop from a parent. The actual data source is the `xszykb` API.
+
+---
+
 ## Exam Schedule
 
 ```
