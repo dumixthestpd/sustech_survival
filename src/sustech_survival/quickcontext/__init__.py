@@ -267,8 +267,8 @@ class QuickContext:
 
     @property
     def class_now(self) -> str:
-        """Current class name or ''"""
-        return _get_current_class()
+        """Current class name or '' (used as a fast accessor)."""
+        return _get_schedule_reminder().get("now") or ""
 
     # ── string callable ───────────────────────────────────────────────────
 
@@ -281,6 +281,14 @@ class QuickContext:
 
         if self.holiday:
             parts.append(f"Today is 🎉 [{self.holiday}]")
+
+        reminder = _get_schedule_reminder()
+        if reminder.get("now"):
+            parts.append(f"📍 Now: [{reminder['now']}]")
+        elif reminder.get("next"):
+            parts.append(f"📅 Next: [{reminder['next']}] — {reminder['next_detail']}")
+        elif reminder.get("tomorrow_morning"):
+            parts.append(f"🌅 Tomorrow morning: [{reminder['tomorrow_morning']}]")
 
         return "\n".join(parts)
 
@@ -583,23 +591,29 @@ def _fetch_library_status() -> str:
         return "Unknown"
 
 
-def _get_current_class() -> str:
-    """Check today's personal schedule for a currently-running class.
+def _get_schedule_reminder() -> dict:
+    """Compute today's schedule reminder.
 
-    Uses POST /xszykb/queryxszykbzhou (TIS personal weekly schedule API).
-    Returns '' if no class is running right now.
+    Returns dict:
+      {'now': str}           — class happening right now
+      {'next': str, 'next_detail': str}  — next class today + detail
+      {'tomorrow_morning': str} — tomorrow P1/P2 course (night time only)
+      {}                     — no classes today/tomorrow
     """
     try:
         from sustech_survival.tis.schedule import week_schedule, current_week
 
         now = _now()
-        wd = now.weekday()  # 0=Mon
+        wd = now.weekday()        # 0=Mon
         h, m = now.hour, now.minute
         total_min = h * 60 + m
+        is_night = h >= 19 or h < 6
 
         zc = current_week()
         week = week_schedule(zc)
 
+        # Collect today's entries sorted by period
+        today_entries = []
         for entry in week:
             key = entry.get('KEY', '')
             if not key.startswith('xq') or '_jc' not in key:
@@ -608,32 +622,83 @@ def _get_current_class() -> str:
             if len(parts) != 2:
                 continue
             try:
-                day = int(parts[0][2:])    # 'xq2' → 2
-                period = int(parts[1][2:]) # 'jc3' → 3
+                day = int(parts[0][2:])
+                period = int(parts[1][2:])
             except (ValueError, IndexError):
                 continue
-
             if day != wd + 1:
                 continue
+            today_entries.append((period, entry))
 
-            PERIODS = {
-                1: (8*60,  9*60+40),  # 1-2节  08:00-09:40
-                2: (10*60, 11*60+40), # 3-4节  10:00-11:40
-                3: (14*60, 15*60+40), # 5-6节  14:00-15:40
-                4: (16*60, 17*60+40), # 7-8节  16:00-17:40
-                5: (19*60, 20*60+40), # 9-10节 19:00-20:40
-                6: (21*60, 22*60+40), # 11-12节 21:00-22:40
-            }
+        today_entries.sort(key=lambda x: x[0])
 
+        PERIODS = {
+            1: (8*60,  9*60+40, "08:00-09:40"),
+            2: (10*60, 11*60+40, "10:00-11:40"),
+            3: (14*60, 15*60+40, "14:00-15:40"),
+            4: (16*60, 17*60+40, "16:00-17:40"),
+            5: (19*60, 20*60+40, "19:00-20:40"),
+            6: (21*60, 22*60+40, "21:00-22:40"),
+        }
+
+        def entry_name(e):
+            return e.get('SKSJ', '').split('\n')[0] or \
+                   e.get('SKSJ_EN', '').split('\n')[0] or ''
+
+        # 1. Check if a class is running right now
+        for period, entry in today_entries:
             if period not in PERIODS:
                 continue
-            start_min, end_min = PERIODS[period]
+            start_min, end_min, _ = PERIODS[period]
             if start_min <= total_min <= end_min:
-                return entry.get('SKSJ', '').split('\n')[0] or \
-                       entry.get('SKSJ_EN', '').split('\n')[0] or ''
-        return ''
+                return {"now": entry_name(entry)}
+
+        # 2. Night time — show tomorrow morning courses
+        if is_night:
+            try:
+                from sustech_survival.tis.schedule import week_schedule as ws_tomorrow
+                tomorrow_zc = zc  # same week
+                tomorrow_wd = (wd + 1) % 7  # advance weekday
+                morning = []
+                for entry in week_schedule(tomorrow_zc):
+                    key = entry.get('KEY', '')
+                    if not key.startswith('xq') or '_jc' not in key:
+                        continue
+                    parts = key.split('_')
+                    if len(parts) != 2:
+                        continue
+                    try:
+                        day = int(parts[0][2:])
+                        period = int(parts[1][2:])
+                    except (ValueError, IndexError):
+                        continue
+                    if day != tomorrow_wd + 1:
+                        continue
+                    if period in (1, 2):  # P1 or P2
+                        morning.append((period, entry_name(entry)))
+                if morning:
+                    periods_str = " / ".join(
+                        f"第{period}节" for _, period in sorted(morning)
+                    )
+                    names = " / ".join(name for _, name in morning)
+                    return {"tomorrow_morning": f"{names} ({periods_str})"}
+            except Exception:
+                pass
+
+        # 3. No class now — find next class today
+        for period, entry in today_entries:
+            if period not in PERIODS:
+                continue
+            start_min, _, time_str = PERIODS[period]
+            if total_min < start_min:
+                return {
+                    "next": entry_name(entry),
+                    "next_detail": f"第{period}节 {time_str}",
+                }
+
+        return {}
     except Exception:
-        return ''
+        return {}
 
 
 def _fetch_next_deadline() -> Optional[dict]:
