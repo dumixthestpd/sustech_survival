@@ -434,7 +434,11 @@ class DetailedContext(QuickContext):
 
         if self._weather:
             w = self._weather
-            w_parts = [f"{w['condition']} {w['icon']}"]
+            # condition may be None if precip=0 with drizzle/rain codes (station artifact)
+            if w["condition"]:
+                w_parts = [f"{w['condition']}"]
+            else:
+                w_parts = []
             if w["temp_c"] is not None:
                 w_parts.append(f"{w['temp_c']}°C")
                 if w["feels_like"] is not None:
@@ -443,7 +447,8 @@ class DetailedContext(QuickContext):
                     w_parts.append(f"💧{w['humidity']}%")
                 if w["wind_kmh"] is not None:
                     w_parts.append(f"💨{w['wind_kmh']}km/h")
-            lines.append(f"Weather at SUSTech (Shenzhen Nanshan): [{', '.join(w_parts)}]")
+            if w_parts:
+                lines.append(f"Weather at SUSTech (Shenzhen Nanshan): [{', '.join(w_parts)}]")
 
         if self._aqi:
             a = self._aqi
@@ -528,42 +533,33 @@ def _is_holiday(dt: datetime) -> str:
     return ""
 
 
-_SHENZHEN_LAT = 22.5431
-_SHENZHEN_LON = 114.0579
+_SHENZHEN_LAT = 22.600153
+_SHENZHEN_LON = 114.002035
 
 
 def _fetch_weather() -> Optional[dict]:
-    """Fetch current weather from Open-Meteo using explicit Shenzhen coords.
+    """Fetch current weather from wttr.in using GPS coords for SUSTech area.
 
-    Uses explicit lat/lon to avoid IP-based geolocation (Warp routes via HK).
+    Open-Meteo current endpoint returns station observation (nearest automated
+    weather station ~15km away), not actual conditions at this location.
+    wttr.in GPS interpolation is more accurate for ground-truth weather.
     """
     try:
         import urllib.request, json
 
-        url = (
-            f"https://api.open-meteo.com/v1/forecast"
-            f"?latitude={_SHENZHEN_LAT}&longitude={_SHENZHEN_LON}"
-            f"&current=temperature_2m,relative_humidity_2m,apparent_temperature,"
-            f"wind_speed_10m,weather_code,precipitation"
-            f"&wind_speed_unit=kmh"
-            f"&timezone=Asia/Shanghai"
-            f"&forecast_days=1"
-        )
+        url = f"https://wttr.in/{_SHENZHEN_LAT},{_SHENZHEN_LON}?format=j1"
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.load(resp)
 
-        cur = data["current"]
-        code = cur["weather_code"]
-        cond, _ = _weather_code_map(code)  # _ = icon, discarded
-
+        cur = data["current_condition"][0]
         return {
-            "temp_c": cur["temperature_2m"],
-            "feels_like": cur["apparent_temperature"],
-            "humidity": int(cur["relative_humidity_2m"]),
-            "wind_kmh": cur["wind_speed_10m"],
-            "condition": cond,
-            "precipitation_mm": cur.get("precipitation", 0),
+            "temp_c": int(cur["temp_C"]),
+            "feels_like": int(cur["FeelsLikeC"]),
+            "humidity": int(cur["humidity"]),
+            "wind_kmh": int(cur["windspeedKmph"]),
+            "condition": cur["weatherDesc"][0]["value"],
+            "precipitation_mm": float(cur.get("precipMM", 0) or 0),
         }
     except Exception:
         return None
