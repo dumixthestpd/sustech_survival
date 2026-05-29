@@ -153,56 +153,12 @@ def _now() -> datetime:
     return datetime.now(CHINA_TZ)
 
 
-def _weather_code_map(code: int) -> tuple[str, str]:
-    maps = {
-        0: ("Clear", "☀️"),
-        1: ("Mostly Clear", "🌤️"),
-        2: ("Partly Cloudy", "⛅"),
-        3: ("Overcast", "☁️"),
-        45: ("Foggy", "🌫️"),
-        48: ("Icy Fog", "🌫️"),
-        51: ("Light Drizzle", "🌧️"),
-        53: ("Drizzle", "🌧️"),
-        55: ("Heavy Drizzle", "🌧️"),
-        61: ("Light Rain", "🌧️"),
-        63: ("Rain", "🌧️"),
-        65: ("Heavy Rain", "🌧️"),
-        71: ("Light Snow", "🌨️"),
-        73: ("Snow", "🌨️"),
-        75: ("Heavy Snow", "🌨️"),
-        80: ("Showers", "🌦️"),
-        81: ("Rain Showers", "🌦️"),
-        82: ("Heavy Showers", "🌦️"),
-        95: ("Thunderstorm", "⛈️"),
-        96: ("Thunderstorm", "⛈️"),
-        99: ("Thunderstorm", "⛈️"),
-    }
-    return maps.get(code, (f"Code {code}", "🌡️"))
-
-
 def _aqi_level(aqi: int) -> str:
-    if aqi is None: return "Unknown"
-    if aqi <= 50: return "Good"
-    if aqi <= 100: return "Moderate"
-    if aqi <= 150: return "Unhealthy for Sensitive"
-    if aqi <= 200: return "Unhealthy"
-    if aqi <= 300: return "Very Unhealthy"
-    return "Hazardous"
+    return "unavailable"
 
 
 def _aqi_icon(aqi: int) -> str:
-    if aqi is None: return "❓"
-    if aqi <= 50: return "🟢"
-    if aqi <= 100: return "🟡"
-    if aqi <= 150: return "🟠"
-    if aqi <= 200: return "🔴"
-    if aqi <= 300: return "🟣"
-    return "⚫"
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# QuickContext — always-fast fields only
-# ─────────────────────────────────────────────────────────────────────────────
+    return "—"
 
 class QuickContext:
     """
@@ -430,31 +386,11 @@ class DetailedContext(QuickContext):
         lines = [base]
 
         self._ensure_weather()
-        self._ensure_aqi()
 
         if self._weather:
             w = self._weather
             if w["condition"]:
-                w_parts = [f"{w['condition']}"]
-            else:
-                w_parts = []
-            if w["temp_c"] is not None:
-                w_parts.append(f"{w['temp_c']}°C")
-                if w["feels_like"] is not None:
-                    w_parts.append(f"(feels {w['feels_like']}°C)")
-                if w["humidity"] is not None:
-                    w_parts.append(f"💧{w['humidity']}%")
-                if w["wind_kmh"] is not None:
-                    w_parts.append(f"💨{w['wind_kmh']}km/h")
-            if w_parts:
-                lines.append(f"Weather at SUSTech (Shenzhen Nanshan): [{', '.join(w_parts)}]")
-
-        if self._aqi:
-            a = self._aqi
-            if a["aqi"] is not None:
-                lines.append(
-                    f"Air quality: [{a['aqi']} ({a['aqi_level']}) {_aqi_icon(a['aqi'])}]"
-                )
+                lines.append(f"Weather at SUSTech: [{w['condition']}]")
 
         ls = self.library_status
         lines.append(f"Library: [{ls}]")
@@ -537,28 +473,31 @@ _SHENZHEN_LON = 114.002035
 
 
 def _fetch_weather() -> Optional[dict]:
-    """Fetch current weather from wttr.in using GPS coords for SUSTech area.
+    """Fetch current weather from api.sustech.online (SUSTech CRA official API).
 
-    Open-Meteo current endpoint returns station observation (nearest automated
-    weather station ~15km away), not actual conditions at this location.
-    wttr.in GPS interpolation is more accurate for ground-truth weather.
+    Returns pre-formatted Chinese string from the official SUSTech weather service.
+    This is the same data source as sustech.online homepage.
+    API: https://api.sustech.online/weather
+    Response: {"msg": "南科大天气：气温26.8℃，体感29.1℃，近两个小时内无降雨。",
+               "update_time": "2026-05-29T23:20:49.795395+08:00", "code": 602}
     """
     try:
-        import urllib.request, json
+        import urllib.request, json, re
 
-        url = f"https://wttr.in/{_SHENZHEN_LAT},{_SHENZHEN_LON}?format=j1"
+        url = "https://api.sustech.online/weather"
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.load(resp)
 
-        cur = data["current_condition"][0]
+        raw = data.get("msg", "")
+        # Parse: "南科大天气：气温26.8℃，体感29.1℃，近两个小时内无降雨。"
+        temp_match = re.search(r"气温([0-9.]+)℃", raw)
+        feels_match = re.search(r"体感([0-9.]+)℃", raw)
+
         return {
-            "temp_c": int(cur["temp_C"]),
-            "feels_like": int(cur["FeelsLikeC"]),
-            "humidity": int(cur["humidity"]),
-            "wind_kmh": int(cur["windspeedKmph"]),
-            "condition": cur["weatherDesc"][0]["value"],
-            "precipitation_mm": float(cur.get("precipMM", 0) or 0),
+            "temp_c": round(float(temp_match.group(1))) if temp_match else None,
+            "feels_like": round(float(feels_match.group(1))) if feels_match else None,
+            "condition": raw,
         }
     except Exception:
         return None
