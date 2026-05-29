@@ -35,6 +35,16 @@
 
 ## GitHub Student Resources
 
+- **SUSTech-CRA/sustech-online-ng** — SUSTech online manual (VuePress site)
+  - Website: https://sustech.online/ | Stars: 118 | Forks: 86 | Issues: 6
+  - Weather API: `https://api.sustech.online/weather`
+    - Response: `{"msg": "南科大天气：气温26.8℃，体感29.1℃，近两个小时内无降雨。", "update_time": "...", "code": 602}`
+    - Component: `docs/.vuepress/components/weather-span.vue` (`yr.get("https://api.sustech.online/weather")`)
+  - Mirrors: https://mirrors.sustech.edu.cn/site/sustech-online/documents/
+  - Miniapp repo: `SUSTech-CRA/sustech-online-wxapp`
+  - Daily blog: `SUSTech-CRA/sustech-online-daily-blog`
+  - License: CC BY-SA 4.0
+  - Dev: Node.js v24, pnpm (`pnpm install`, `pnpm run docs:dev`)
 - **SUSTech-CRA/sustech-course** — TIS scrape reference, course data model
 - **lethal233/sustech-tis-converter** — TIS API (grade endpoint: `/score/scoreList`)
 - **Fros1er/SUSTechTISHelper** — TIS JS helper (inactive)
