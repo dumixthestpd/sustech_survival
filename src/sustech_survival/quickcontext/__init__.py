@@ -434,7 +434,6 @@ class DetailedContext(QuickContext):
 
         if self._weather:
             w = self._weather
-            # condition may be None if precip=0 with drizzle/rain codes (station artifact)
             if w["condition"]:
                 w_parts = [f"{w['condition']}"]
             else:
