@@ -529,30 +529,32 @@ def _is_holiday(dt: datetime) -> str:
 
 
 def _fetch_weather() -> Optional[dict]:
-    url = (
-        f"https://api.open-meteo.com/v1/forecast"
-        f"?latitude={SUSTECH_LAT}&longitude={SUSTECH_LON}"
-        f"&current=temperature_2m,relative_humidity_2m,apparent_temperature,"
-        f"wind_speed_10m,weather_code,precipitation"
-        f"&wind_speed_unit=kmh"
-        f"&timezone=Asia/Shanghai"
-        f"&forecast_days=1"
-    )
-    data = _fetch_json(url)
-    if not data:
+    """Fetch current weather from wttr.in (no API key, free, returns text + icon)."""
+    try:
+        import urllib.request, json
+
+        url = "https://wttr.in/Shenzhen?format=j1"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.load(resp)
+
+        cur = data["current_condition"][0]
+        desc_list = cur.get("weatherDesc", [])
+        condition = desc_list[0]["value"] if desc_list else "Unknown"
+        icon_url = cur.get("weatherIconUrl", [{}])
+        icon = icon_url[0]["value"] if icon_url else ""
+
+        return {
+            "temp_c": float(cur["temp_C"]),
+            "feels_like": float(cur["FeelsLikeC"]),
+            "humidity": int(cur["humidity"]),
+            "wind_kmh": float(cur["windspeedKmph"]),
+            "condition": condition,
+            "icon": icon,
+            "precipitation_mm": float(cur.get("precipMM", 0)),
+        }
+    except Exception:
         return None
-    cur = data["current"]
-    code = cur["weather_code"]
-    cond, icon = _weather_code_map(code)
-    return {
-        "temp_c": cur["temperature_2m"],
-        "feels_like": cur["apparent_temperature"],
-        "humidity": int(cur["relative_humidity_2m"]),
-        "wind_kmh": cur["wind_speed_10m"],
-        "condition": cond,
-        "icon": icon,
-        "precipitation_mm": cur.get("precipitation", 0),
-    }
 
 
 def _fetch_aqi() -> Optional[dict]:
