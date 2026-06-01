@@ -751,7 +751,24 @@ class TISAuthEval(TISAuth):
                 continue
 
             for c in data["result"]["list"]:
-                status_text = "已保存" if c.get("lsjgzt") == "3" else "未保存"
+                lsjgzt = c.get("lsjgzt", "0")
+                # lsjgzt=2 → submitted (submitted after clicking 提交 button in browser)
+                # lsjgzt=3 → saved-draft (form filled and saved, but not yet submitted)
+                # lsjgzt=0 → not-yet-started
+                if lsjgzt == "0":
+                    status_text = "待评价"
+                elif lsjgzt == "1":
+                    status_text = "已放弃"
+                elif lsjgzt == "2":
+                    status_text = "已评价"
+                elif lsjgzt == "3":
+                    status_text = "已保存"
+                elif lsjgzt == "4":
+                    status_text = "未结课"
+                elif lsjgzt == "5":
+                    status_text = "已评价"
+                else:
+                    status_text = "未知"
                 all_courses.append({
                     "course_name": c.get("kcmc", ""),
                     "course_code": c.get("kcdm", ""),
@@ -777,7 +794,9 @@ class TISAuthEval(TISAuth):
             lsjgzt = c["lsjgzt"]
             if status == "pending" and lsjgzt != "0":
                 continue
-            if status == "saved" and lsjgzt != "3":
+            if status == "draft" and lsjgzt != "3":
+                continue
+            if status == "submitted" and lsjgzt not in ("2", "5"):
                 continue
             result.append(c)
 
@@ -878,32 +897,34 @@ class TISAuthEval(TISAuth):
         courses: Optional[list[str]] = None,
         score: int = 10,
         text: str = "很好",
+        status: str = "pending",
     ) -> dict:
         """
-        Auto-fill (and save) all pending evaluations for a semester.
+        Auto-fill (and save) all evaluations for a semester.
 
         Args:
             xnxq:     Semester code
-            courses:  Optional list of course names to process. All pending if None.
+            courses:  Optional list of course names to process. All matching if None.
             score:    Numeric score for RATING questions (default 10)
             text:     Answer for TEXT questions (default "很好")
-
-        Returns dict: {total, saved, skipped, errors}
+            status:   Which evaluations to fill: "pending" (lsjgzt=0, not-yet-started),
+                      "draft" (lsjgzt=3, saved-draft), "submitted" (lsjgzt=2, submitted),
+                      or "all". Default "pending". Use "submitted" to re-fill submitted evals.
         """
         from playwright.sync_api import sync_playwright
 
-        pending = self.evaluations(xnxq=xnxq, status="pending")
+        target = self.evaluations(xnxq=xnxq, status=status)
         if courses:
-            pending = [
-                c for c in pending
+            target = [
+                c for c in target
                 if c["course_name"].upper() in [x.upper() for x in courses]
                 or c["course_code"].upper() in [x.upper() for x in courses]
             ]
 
-        results = {"total": len(pending), "saved": 0, "skipped": 0, "errors": []}
+        results = {"total": len(target), "saved": 0, "skipped": 0, "errors": []}
 
-        if not pending:
-            results["errors"].append("No pending evaluations found")
+        if not target:
+            results["errors"].append(f"No {status} evaluations found")
             return results
 
         # Get cookies for Playwright
@@ -917,7 +938,7 @@ class TISAuthEval(TISAuth):
                                   "domain": "tis.sustech.edu.cn", "path": "/"}])
             page = ctx.new_page()
 
-            for c in pending:
+            for c in target:
                 kcmc = c["course_name"]
                 kcdm = c["course_code"]
                 wjid = c["wjid"]
@@ -957,15 +978,20 @@ class TISAuthEval(TISAuth):
                 target_btn.click()
                 page.wait_for_timeout(8000)
 
-                # Multi-page fill
+                # Multi-page fill — click 10 for each question's grid-container
+                # Question block: .wjzspg-dt-tit (title) + .grid-container (11 grids 0-10)
+                # Click the last grid (value=10) in each container
                 while True:
                     n = page.evaluate("""() => {
-                        const formItems = Array.from(document.querySelectorAll('.ivu-form-item'));
+                        const containers = Array.from(document.querySelectorAll('.grid-container'));
                         let clicked = 0;
-                        for (const fi of formItems) {
-                            const grids = Array.from(fi.querySelectorAll('.grid'));
-                            for (const g of grids) {
-                                if (g.innerText.trim() === '10') { g.click(); clicked++; break; }
+                        for (const container of containers) {
+                            const grids = Array.from(container.querySelectorAll('.grid'));
+                            // grids are 0-10; click the last one (value 10) if not already active
+                            const ten = grids[grids.length - 1];
+                            if (ten && !ten.classList.contains('active')) {
+                                ten.click();
+                                clicked++;
                             }
                         }
                         return clicked;
@@ -975,7 +1001,7 @@ class TISAuthEval(TISAuth):
                     next_btn = page.query_selector("button:has-text('下一步')")
                     if next_btn and "is-disabled" not in (next_btn.get_attribute("class") or ""):
                         next_btn.click()
-                        page.wait_for_timeout(3000)
+                        page.wait_for_timeout(4000)
                     else:
                         break
 
