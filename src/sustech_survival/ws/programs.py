@@ -9,6 +9,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 from __future__ import annotations
 
+import html
 import json
 import re
 from datetime import datetime
@@ -26,7 +27,7 @@ _AUTH: WSAuth | None = None
 
 
 def _auth() -> WSAuth:
-    global _AUTH
+    global _AUTH, _token_cache
     if _AUTH is None:
         _AUTH = WSAuth()
     try:
@@ -34,6 +35,7 @@ def _auth() -> WSAuth:
     except Exception:
         ok = False
     if not ok:
+        _token_cache = None      # invalidate token cache on re-auth
         _AUTH.login()
     return _AUTH
 
@@ -42,11 +44,17 @@ def _session() -> requests.Session:
     return _auth().session
 
 
+_token_cache: tuple[str, str] | None = None
+
+
 def _user_token() -> tuple[str, str]:
     """
     Extract userToken + ts from the WS menu API.
-    Both are stable for the lifetime of the session.
+    Both are stable for the lifetime of the session — cached after first call.
     """
+    global _token_cache
+    if _token_cache is not None:
+        return _token_cache
     s = _session()
     menu = json.loads(
         s.get(f"{WS_BASE}/Main/GetSmartLeftMenuTData.do", timeout=10).text
@@ -54,7 +62,8 @@ def _user_token() -> tuple[str, str]:
     sample = menu[0]["FunctionList"][0]["Pages"][0]["PageUrl"]
     m = re.search(r"userToken=([A-F0-9]+)", sample)
     ts_m = re.search(r"ts=(\d+)", sample)
-    return m.group(1), ts_m.group(1) if ts_m else "891"
+    _token_cache = m.group(1), ts_m.group(1) if ts_m else "891"
+    return _token_cache
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -76,9 +85,13 @@ def _parse_ms_date(raw: str) -> str | None:
         return None
 
 
-def _decode(s: str) -> str:
-    """Decode numeric HTML entities like &#33258; → text. Does NOT decode &nbsp;."""
-    return re.sub(r"&#(\d+);", lambda m: chr(int(m.group(1))), s)
+def _clean(s: str) -> str:
+    """Strip HTML tags, decode entities, collapse whitespace."""
+    s = re.sub(r"<[^>]+>", "", s)    # remove tags first (includes style="..." content)
+    s = re.sub(r"&[a-z]+;", "", s)  # remove &nbsp; &gt; &lt; etc.
+    s = html.unescape(s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
 
 
 # ── Key fields kept in list response ───────────────────────────────────────────
@@ -168,7 +181,7 @@ def list_programs(
         # Decode HTML entities in strings
         for k, v in list(p.items()):
             if isinstance(v, str):
-                p[k] = _decode(v)
+                p[k] = _clean(v)
         # Parse MS date fields
         for dk in (
             "ApplyBeginDate", "ApplyEndDate",
@@ -287,6 +300,38 @@ def get_program_detail(
         return None
 
     result = _parse_detail_html(r.text)
+    if not result["sections"] and not result["tables"]:
+        # Fallback: extract fields directly from the list item
+        user_token2, ts2 = _user_token()
+        s2 = _session()
+        fallback_code, fallback_token = code, token
+        if not fallback_code or not fallback_token:
+            list_url = f"{WS_BASE}/StudentExchange_2247/GetShortProjectListForStudent.do"
+            for pg in range(1, 4):
+                params = {
+                    "pageSize": 50,
+                    "currentPageIndex": pg,
+                    "ts": ts2,
+                    "userToken": user_token2,
+                }
+                raw = json.loads(s2.get(list_url, params=params, timeout=10).text)
+                for item in raw.get("DataList", []):
+                    if str(item.get("ID")) == str(id):
+                        fallback_code = item.get("Code")
+                        fallback_token = item.get("TokenKey")
+                        break
+                if fallback_code:
+                    break
+
+        if fallback_code:
+            r2 = s2.get(
+                f"{WS_BASE}/StudentExchange_2247/ProjectDetail2247.do",
+                params={"ID": id, "Code": fallback_code, "token": fallback_token, "ts": ts2},
+                timeout=10,
+            )
+            if r2.status_code == 200 and "非授权访问" not in r2.text:
+                result = _parse_detail_html(r2.text)
+
     result["token"] = token or ""
     return result
 
@@ -323,11 +368,11 @@ def _parse_detail_html(html: str) -> dict[str, Any]:
                 if sm:
                     label = re.sub(r"<[^>]+>", "", sm.group(1)).strip()
                     label = re.sub(r"&[a-z]+;", "", label)  # strip &nbsp; etc.
-                    label = _decode(label).rstrip("：").strip()
+                    label = _clean(label).rstrip("：").strip()
                     rest = sm.string[sm.end():]
                     rest_clean = re.sub(r"<[^>]+>", "", rest).strip()
                     rest_clean = re.sub(r"&[a-z]+;", "", rest_clean)
-                    rest_clean = _decode(rest_clean)
+                    rest_clean = _clean(rest_clean)
                     if rest_clean:
                         pairs[label] = rest_clean
                     else:
@@ -335,7 +380,7 @@ def _parse_detail_html(html: str) -> dict[str, Any]:
                 elif pending_key:
                     val = re.sub(r"<[^>]+>", "", raw).strip()
                     val = re.sub(r"&[a-z]+;", "", val)
-                    val = _decode(val)
+                    val = _clean(val)
                     if val:
                         pairs[pending_key] = val
                     pending_key = None
@@ -351,7 +396,7 @@ def _parse_detail_html(html: str) -> dict[str, Any]:
         for row in rows:
             cells = re.findall(r'<td[^>]*>(.*?)</td>', row, re.DOTALL)
             cells = [
-                _decode(re.sub(r"<[^>]+>", "", c).strip())
+                _clean(re.sub(r"<[^>]+>", "", c).strip())
                 for c in cells
             ]
             # Drop laytpl template artefacts
