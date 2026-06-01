@@ -3,6 +3,7 @@
 from .authorizer import Authorizer, AuthorizerError, CAS_BASE, UA, register_auth, get_auth, require_auth
 from .providers.cas import CASAuthorizer
 from .providers.shibboleth import ShibbolethAuthorizer
+from .providers.ws import WSProvider
 
 __all__ = [
     "Authorizer",
@@ -111,6 +112,22 @@ class BBAuth(CASAuthorizer):
             self._reset_cached_data()
         return ok
 
+    @property
+    def session(self) -> _requests.Session:
+        """
+        A requests.Session with current BB cookies and the correct User-Agent.
+
+        Cookies are attached to the .bb.sustech.edu.cn domain, matching the browser
+        behavior that BB expects.
+        """
+        import requests as _requests
+        cookies = self.load()
+        sess = _requests.Session()
+        sess.headers["User-Agent"] = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        for name, value in cookies.items():
+            sess.cookies.set(name, value, domain=".bb.sustech.edu.cn", path="/")
+        return sess
+
 
 # =============================================================================
 # LibAuth — SUSTech Library Primo (CAS)
@@ -125,11 +142,67 @@ class LibAuth(CASAuthorizer):
     def session_file(self):
         return self.submodule_dir / "session.json"
 
+    @property
+    def session(self):
+        """
+        A requests.Session with LegacyAdapter so Primo SSL connections work.
+        Overrides base CASAuthorizer.session to add OP_LEGACY_SERVER_CONNECT.
+        """
+        raw = self.load()
+        import ssl
+        _OP_LEGACY = getattr(ssl, 'OP_LEGACY_SERVER_CONNECT', 0x4)
+        legacy_ctx = ssl.create_default_context()
+        legacy_ctx.options |= _OP_LEGACY
+
+        from requests.adapters import HTTPAdapter
+        from requests.adapters import (
+            _urllib3_request_context, prepend_scheme_if_needed,
+            select_proxy, parse_url
+        )
+
+        class LegacyAdapter(HTTPAdapter):
+            def get_connection_with_tls_context(
+                self, request, verify, proxies=None, cert=None, poolmanager=None
+            ):
+                proxy = select_proxy(request.url, proxies)
+                host_params, pool_kwargs = _urllib3_request_context(
+                    request, verify, cert, self.poolmanager,
+                )
+                pool_kwargs["ssl_context"] = legacy_ctx
+                pool_kwargs["ssl_context"].check_hostname = False
+                if proxy:
+                    proxy = prepend_scheme_if_needed(proxy, "http")
+                    proxy_url = parse_url(proxy)
+                    if not proxy_url.host:
+                        from requests.exceptions import InvalidProxyURL
+                        raise InvalidProxyURL("Malformed proxy URL")
+                    proxy_manager = self.proxy_manager_for(proxy)
+                    return proxy_manager.connection_from_host(**host_params, pool_kwargs=pool_kwargs)
+                return self.poolmanager.connection_from_host(**host_params, pool_kwargs=pool_kwargs)
+
+        sess = _requests.Session()
+        sess.mount("https://", LegacyAdapter())
+        self._apply_cookies(sess, raw)
+        return sess
+
+
+# =============================================================================
+# WSAuth — Student Exchange / Abroad Portal (ws.sustech.edu.cn)
+# =============================================================================
+
+class WSAuth(WSProvider):
+    """
+    Convenience subclass of WSProvider matching the naming convention of
+    TISAuth, BBAuth, LibAuth.  Use ``WSAuth()`` or ``get_auth("ws")``.
+    """
+    pass
+
 
 # Register singletons for backwards compatibility with get_auth()
 register_auth("tis", TISAuth(skill_dir=str(_SKILL_ROOT)))
 register_auth("bb", BBAuth(skill_dir=str(_SKILL_ROOT)))
 register_auth("lib", LibAuth(skill_dir=str(_SKILL_ROOT)))
+register_auth("ws", WSAuth(skill_dir=str(_SKILL_ROOT)))
 
 
 # ── Auto-register external authlib services ───────────────────────────────────

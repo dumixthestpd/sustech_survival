@@ -210,6 +210,10 @@ class HomeworkItem(Item):
         try:
             from sustech_survival.sso import BBAuth
             auth = BBAuth(skill_dir=str(BB_DIR.parent.parent.parent))
+            ok, reason = auth.ensure()
+            if not ok:
+                self._attempts_cached = []
+                return []
             raw = auth.load()
             import requests
             sess = requests.Session()

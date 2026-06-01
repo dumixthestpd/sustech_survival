@@ -16,11 +16,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
 from sustech_survival.sso import TISAuth
 
+# Singleton auth instance to avoid repeated re-auth on every call
+_auth_instance = None
 
 def _session():
-    auth = TISAuth()
-    auth.refresh()
-    return auth.session
+    global _auth_instance
+    if _auth_instance is None:
+        _auth_instance = TISAuth()
+    # ensure() = check() first, only refreshes if expired
+    ok, reason = _auth_instance.ensure()
+    if not ok:
+        raise RuntimeError(f"TIS session error: {reason}")
+    return _auth_instance.session
 
 
 def current_semester() -> dict:

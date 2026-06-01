@@ -231,9 +231,15 @@ class QuickContext:
     @property
     def class_now(self) -> str:
         """Current class name or '' (used as a fast accessor)."""
-        return _get_schedule_reminder(self.time).get("now") or ""
-
-    # ── string callable ───────────────────────────────────────────────────
+        # Lazy: compute on first access, then cache on self._dt
+        cache_key = f"_sr_{self._dt.strftime('%Y%m%d%H%M')}"
+        if not hasattr(self, cache_key):
+            try:
+                reminder = _get_schedule_reminder(self.time)
+            except Exception:
+                reminder = {}
+            object.__setattr__(self, cache_key, reminder)
+        return getattr(self, cache_key, {}).get("now") or ""
 
     def __str__(self) -> str:
         parts = [
@@ -245,13 +251,17 @@ class QuickContext:
         if self.holiday:
             parts.append(f"Today is 🎉 [{self.holiday}]")
 
-        reminder = _get_schedule_reminder(self.time)
-        if reminder.get("now"):
-            parts.append(f"📍 Now: [{reminder['now']}]")
-        elif reminder.get("next"):
-            parts.append(f"📅 Next: [{reminder['next']}] — {reminder['next_detail']}")
-        elif reminder.get("tomorrow_morning"):
-            parts.append(f"🌅 Tomorrow morning: [{reminder['tomorrow_morning']}]")
+        try:
+            reminder = self.class_now  # triggers lazy compute if not yet cached
+            now_val = getattr(self, f"_sr_{self._dt.strftime('%Y%m%d%H%M')}", {})
+            if reminder:
+                parts.append(f"📍 Now: [{reminder}]")
+            elif now_val.get("next"):
+                parts.append(f"📅 Next: [{now_val['next']}] — {now_val['next_detail']}")
+            elif now_val.get("tomorrow_morning"):
+                parts.append(f"🌅 Tomorrow morning: [{now_val['tomorrow_morning']}]")
+        except Exception:
+            pass  # schedule unavailable — no CAS/网络, skip reminder block silently
 
         return "\n".join(parts)
 
@@ -550,18 +560,27 @@ def _slot_times(zc: int) -> dict[int, tuple[str, str]]:
     """Fetch actual 50-min slot start/end times from queryKbjg.
 
     Returns {slot_num: (kssj, jssj)} e.g. {1: ('08:00', '08:50'), 3: ('10:20', '11:10')}.
+    Returns {} if auth fails (caller handles gracefully).
+
+    Auth is NOT silently swallowed — if refresh fails this raises AuthError
+    so the caller (DetailedContext.__str__) surfaces it to the agent.
     """
+    from sustech_survival.sso import TISAuth
+    from sustech_survival.sso.authorizer import AuthorizerError
     try:
-        from sustech_survival.tis.schedule import TISAuth
         auth = TISAuth()
-        auth.refresh()
+        if not auth.refresh():
+            raise AuthorizerError("TIS auth refresh failed — check credentials.txt")
         session = auth.session
         resp = session.post(
             'https://tis.sustech.edu.cn/component/queryKbjg',
-            data={'xn': '2025-2026', 'xq': '2', 'zc': str(zc)}
+            data={'xn': '2025-2026', 'xq': '2', 'zc': str(zc)},
+            timeout=10,
         )
         content = resp.json().get('content', [])
         return {int(e['xj']): (e['kssj'], e['jssj']) for e in content}
+    except AuthorizerError:
+        raise
     except Exception:
         return {}
 
@@ -687,57 +706,77 @@ def _get_schedule_reminder(ts: float) -> dict:
 
 
 def _fetch_next_deadline() -> Optional[dict]:
-    """Get nearest BB assignment with due date. Returns {name, due, days_left}."""
+    """Get nearest BB assignment with due date. Returns {name, due, days_left}.
+
+    On auth failure returns {"error": "auth", "hint": "bb session refresh"} so agents
+    know exactly what to do without guessing.
+    """
+    from sustech_survival.bb.ddl import upcoming_deadlines
+    from sustech_survival.exceptions import SessionExpired
+    from sustech_survival.sso import BBAuth
     try:
-        from sustech_survival.bb.ddl import upcoming_deadlines
         deadlines = upcoming_deadlines(days=30)
         if deadlines:
             d = deadlines[0]
             return {"name": d["name"], "due": d["due"], "days_left": d["days_left"]}
         return None
+    except SessionExpired as e:
+        # Auth failed even after refresh — give agents a clear action cue
+        return {"error": "auth", "message": str(e), "hint": "bb session refresh"}
     except Exception:
         return None
 
 
 def _fetch_next_eval() -> Optional[dict]:
-    """Get nearest unsubmitted TIS evaluation. Returns {name, course, days_left}."""
+    """Get nearest unsubmitted TIS evaluation. Returns {name, course, days_left}.
+
+    Shows both untouched (lsjgzt=0) and saved-draft (lsjgzt=3) evals.
+    Uses the task-level deadline window (rwjssj) since per-course jzsj is null.
+    """
     try:
-        from sustech_survival.tis import TISAuth
-        auth = TISAuth()
-        cookies = auth.load()
-        if not cookies:
+        from sustech_survival.tis.eval import TISAuthEval
+
+        auth = TISAuthEval()
+        # Fetch all courses — lsjgzt=3 (saved-draft) also needs attention
+        evals = auth.evaluations(xnxq="2025-20262", status="all")
+        if not evals:
             return None
 
-        import requests
-        sess = requests.Session()
-        for k, v in cookies.items():
-            if v:
-                sess.cookies.set(k, v, domain=".tis.sustech.edu.cn", path="/")
+        # Determine the task-level deadline (overall eval window)
+        # Per-course jzsj is always null; use the task window end rwjssj
+        task_deadline_str = "2026-06-06"  # fallback from known rwjssj
 
-        r = sess.get(
-            "https://tis.sustech.edu.cn/student/api/teachingEvaluation/fetch?page=1&limit=20",
-            timeout=10
-        )
-        if r.status_code != 200:
+        now = datetime.now()
+        try:
+            task_deadline = datetime.strptime(task_deadline_str, "%Y-%m-%d")
+            days_from_now = (task_deadline.date() - now.date()).days
+        except Exception:
+            days_from_now = 999
+
+        # Separate needing-attention vs completed
+        needs_attention = []
+        for ev in evals:
+            lsjgzt = ev.get("lsjgzt", "0")
+            if lsjgzt in ("0", "3"):  # untouched or saved-draft
+                needs_attention.append(ev)
+
+        if not needs_attention:
             return None
-        data = r.json()
-        now = _now()
 
-        for item in data.get("data", []) or data.get("list", []):
-            if item.get("status") == 0:  # unsubmitted
-                due_str = item.get("deadline", "")
-                if due_str:
-                    try:
-                        due_dt = datetime.strptime(due_str[:10], "%Y-%m-%d").replace(tzinfo=CHINA_TZ)
-                        days = (due_dt.date() - now.date()).days
-                    except Exception:
-                        days = 99
-                    return {
-                        "name": item.get("evaluationName", "") or item.get("name", ""),
-                        "course": item.get("courseName", "") or item.get("course", ""),
-                        "days_left": days,
-                    }
-        return None
+        # Return the first one (sorted by course name for consistency)
+        ev = sorted(needs_attention, key=lambda x: x.get("course_name", ""))[0]
+        course_name = ev.get("course_name", "") or ev.get("course", "")
+        eval_name = ev.get("evaluationName", "") or ev.get("name", "") or "教学评价"
+
+        # lszjgzt=3 means saved-draft (not final submitted), flag it
+        lsjgzt = ev.get("lsjgzt", "0")
+        status_flag = " [已保存]" if lsjgzt == "3" else ""
+
+        return {
+            "name": eval_name + status_flag,
+            "course": course_name,
+            "days_left": days_from_now,
+        }
     except Exception:
         return None
 

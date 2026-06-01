@@ -448,7 +448,8 @@ class Evaluation:
         """
         from sustech_survival.sso import TISAuth
         auth = TISAuth()
-        auth.refresh()
+        if not auth.refresh():
+            raise RuntimeError("TIS auth refresh failed — run: sustech tis session refresh")
         sess = auth.session
 
         # Pass 1: course questions (pjlx=1)
@@ -759,6 +760,7 @@ class TISAuthEval(TISAuth):
                     "department": c.get("yxmc", ""),    # school name
                     "class_info": c.get("bj", ""),
                     "lsjgzt": c.get("lsjgzt", "0"),
+                    "deadline": c.get("jzsj", ""),
                     "status_text": status_text,
                     "xnxq": xnxq_raw,
                     "wjid": c.get("wjid", ""),
@@ -1006,5 +1008,6 @@ def auto_fill(
     Returns dict: {total, saved, skipped, errors}
     """
     auth = TISAuthEval()
-    auth.refresh()
+    if not auth.refresh():
+        return {"error": "auth", "message": "TIS auth refresh failed", "hint": "sustech tis session refresh"}
     return auth.auto_fill(xnxq=xnxq, courses=courses, score=score, text=text)

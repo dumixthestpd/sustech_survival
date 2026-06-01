@@ -19,9 +19,10 @@ import re
 import ssl
 import urllib3.util.ssl_ as _us_ssl
 _orig = _us_ssl.create_urllib3_context
+_OP_LEGACY = getattr(ssl, 'OP_LEGACY_SERVER_CONNECT', 0x4)
 def _patched(protocol=None):
     ctx = _orig(protocol)
-    ctx.options |= ssl.OP_LEGACY_SERVER_CONNECT
+    ctx.options |= _OP_LEGACY
     return ctx
 _us_ssl.create_urllib3_context = _patched
 import requests
@@ -109,11 +110,44 @@ class CASAuthorizer(Authorizer):
         cookies = {c.name: c.value for c in sess.cookies}
         return cookies
 
+    def _build_session(self) -> requests.Session:
+        """Build a requests Session with LegacyAdapter for OP_LEGACY_SERVER_CONNECT."""
+        legacy_ctx = ssl.create_default_context()
+        legacy_ctx.options |= _OP_LEGACY
+
+        from requests.adapters import HTTPAdapter
+        from requests.adapters import (
+            _urllib3_request_context, prepend_scheme_if_needed,
+            select_proxy, parse_url
+        )
+
+        class LegacyAdapter(HTTPAdapter):
+            def get_connection_with_tls_context(self, request, verify, proxies=None, cert=None, poolmanager=None):
+                proxy = select_proxy(request.url, proxies)
+                host_params, pool_kwargs = _urllib3_request_context(
+                    request, verify, cert, self.poolmanager,
+                )
+                pool_kwargs["ssl_context"] = legacy_ctx
+                pool_kwargs["ssl_context"].check_hostname = False
+                if proxy:
+                    proxy = prepend_scheme_if_needed(proxy, "http")
+                    proxy_url = parse_url(proxy)
+                    if not proxy_url.host:
+                        from requests.exceptions import InvalidProxyURL
+                        raise InvalidProxyURL("Malformed proxy URL")
+                    proxy_manager = self.proxy_manager_for(proxy)
+                    return proxy_manager.connection_from_host(**host_params, pool_kwargs=pool_kwargs)
+                return self.poolmanager.connection_from_host(**host_params, pool_kwargs=pool_kwargs)
+
+        sess = requests.Session()
+        sess.mount("https://", LegacyAdapter())
+        return sess
+
     def get_ticket_cookies(self, username: str, password: str) -> dict:
         """
         Full headless CAS flow. Returns cookie dict for save()/cookies_for_requests().
         """
-        sess = requests.Session()
+        sess = self._build_session()
         sess.headers['User-Agent'] = UA
         ticket_url = self._post_cas(sess, username, password)
         cookies = self._exchange_ticket(sess, ticket_url)

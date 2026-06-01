@@ -48,13 +48,22 @@ login_via_carsi(page, wayf_url)
 
 ## Authlib Classes
 
-| Class | Session | Auth Method |
-|-------|---------|-------------|
-| `BBAuth` | `bb/session.json` | CAS tickets (headless) |
-| `LibAuth` | `lib/session.json` | CAS browser |
-| `RSCAuthorizer` | None | Shibboleth/CARSI (browser) |
-| `WoSAuth` | None | Shibboleth/CARSI (browser) |
-| `CNKIAuth` | None | FSSO/Shibboleth (browser) |
+| Class | Session | Auth Method | Status (2026-05-30) |
+|-------|---------|-------------|----------------------|
+| `BBAuth` | `bb/session.json` | CAS tickets (headless) | ✅ Works |
+| `LibAuth` | `lib/session.json` | CAS tickets (headless) | ✅ Fixed — SSL + poolmanager |
+| `RSCAuthorizer` | None | Shibboleth/CARSI (Playwright) | ✅ Works |
+| `WoSAuth` | None | Shibboleth/CARSI (Playwright) | ✅ Works |
+| `CNKIAuth` | None | FSSO/Shibboleth (Playwright) | ✅ Works |
+
+### LibAuth SSL Fix (2026-05-30)
+
+`LibAuth` had two SSL bugs blocking headless access to Primo:
+
+1. **`ssl.OP_LEGACY_SERVER_CONNECT`** — only exists in Python 3.12+. Fix: `getattr(ssl, 'OP_LEGACY_SERVER_CONNECT', 0x4)`.
+2. **`_urllib3_request_context()` signature** — urllib3 2.6+ requires a 4th `poolmanager` arg. Fix: add `poolmanager=None` param and pass `self.poolmanager`.
+
+Both fixes applied to `providers/cas.py` (`_build_session()`), `authorizer.py` (`check()`), and `sso/__init__.py` (`LibAuth.session` override).
 
 All browser-based logins expose `auth.page`, `auth.browser`, `auth.ctx` after `login()` returns `True`. Caller must `browser.close()`.
 

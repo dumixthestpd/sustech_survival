@@ -2,68 +2,110 @@
 bb ddl — Assignment deadlines from Blackboard.
 
 Uses BB REST API exclusively (no Playwright):
-  1. /courses?termId=_57_1  → enrolled courses
-  2. /courses/{id}/gradebook/columns → assignments + ISO due dates + scores
+  1. /users/{uid}/courses?termId=_57_1  → enrolled courses (user's actual enrollments)
+  2. /courses/{id}/gradebook/columns   → assignments + ISO due dates + scores
 
 Due dates come as ISO timestamps directly from BB — no regex parsing needed.
 """
 
 from sustech_survival.exceptions import SessionExpired as _SessionExpired
+from sustech_survival.sso import BBAuth
+from sustech_survival.sso.authorizer import AuthorizerError as _AuthorizerError
 import re
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import requests
 
-# ── session ──────────────────────────────────────────────────────────────────
-
-BB_BASE = "https://bb.sustech.edu.cn"
-SESSION_FILE = None  # resolved at runtime
+# ── auth singleton ─────────────────────────────────────────────────────────────
+# No hardcoded path — BBAuth().skill_root auto-discovers skill root via
+# credentials.txt search, so this works from any install location.
+_auth = BBAuth()
 
 
 def _session():
-    """Return requests.Session with BB CAS cookies."""
-    from pathlib import Path
-    skill_root = Path(__file__).resolve().parent.parent.parent.parent
-    session_file = skill_root / "bb" / "session.json"
+    """Return requests.Session with BB CAS cookies.
 
-    import json
-    with open(session_file) as f:
-        raw = json.load(f)
-
-    sess = requests.Session()
-    # BB expects these cookies on .bb.sustech.edu.cn
-    for name, value in raw.items():
-        sess.cookies.set(name, value, domain=".bb.sustech.edu.cn", path="/")
-    return sess
+    Uses BBAuth.ensure() which auto-refreshes via CAS if the session is expired.
+    Raises _SessionExpired on auth failure (including when refresh fails).
+    """
+    ok, reason = _auth.ensure()
+    if not ok:
+        raise _SessionExpired(f"BB auth failed: {reason}")
+    return _auth.session
 
 
 def _api(path: str, session=None):
     """GET BB REST API endpoint. Returns JSON dict or dies."""
     if session is None:
         session = _session()
-    url = BB_BASE + path
+    url = "https://bb.sustech.edu.cn" + path
     r = session.get(url, timeout=15)
     if r.status_code == 401:
-        raise _SessionExpired("BB session expired. Run `bb.py login` to refresh.")
+        raise _SessionExpired("BB session expired after refresh — run `bb session login` manually")
     r.raise_for_status()
     return r.json()
+
+
+# ── user ID (cached) ──────────────────────────────────────────────────────────
+
+_uid_cache = None
+
+
+def _get_uid(session):
+    """Return current user ID (cached)."""
+    global _uid_cache
+    if _uid_cache:
+        return _uid_cache
+    me = session.get(
+        "https://bb.sustech.edu.cn/learn/api/public/v1/users/me", timeout=10
+    )
+    _uid_cache = me.json()["id"]
+    return _uid_cache
 
 
 # ── course list ──────────────────────────────────────────────────────────────
 
 def _get_courses(session=None, term_id="_57_1"):
-    """Return list of (course_id, course_name) for given termId.
+    """Return list of (course_id, course_name) for the current user's enrollments.
 
-    course_id format: "_8157_1" (with underscores, as BB uses them)
+    Uses /users/{uid}/courses to get ONLY enrolled courses — not all courses
+    in a term. Then fetches course names in parallel for speed.
+
+    course_id format: "_8157_1" (with underscores, as BB uses them).
     """
-    data = _api(f"/learn/api/public/v1/courses?termId={term_id}", session)
-    courses = []
-    for c in data.get("results", []):
-        cid = c["id"]           # already in "_xxx_1" format
-        name = c.get("name", "")
-        if name:
-            courses.append((cid, name))
+    uid = _get_uid(session)
+    data = _api(f"/learn/api/public/v1/users/{uid}/courses?termId={term_id}", session)
+    entries = data.get("results", [])
+    if not entries:
+        return []
+
+    # Fetch course names in parallel via threading
+    import concurrent.futures
+
+    def _fetch_name(entry):
+        cid = entry["courseId"]
+        try:
+            details = session.get(
+                f"https://bb.sustech.edu.cn/learn/api/public/v1/courses/{cid}",
+                timeout=10,
+            )
+            name = details.json().get("name", "?")
+        except Exception:
+            name = "?"
+        return (cid, name)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
+        futures = {ex.submit(_fetch_name, e): e for e in entries}
+        courses = []
+        for fut in concurrent.futures.as_completed(futures):
+            try:
+                cid, name = fut.result()
+                if name and name != "?":
+                    courses.append((cid, name))
+            except Exception:
+                pass
+
     return courses
 
 
@@ -115,12 +157,18 @@ def _get_user_attempts(course_id, column_id, session=None):
 # ── date helpers ─────────────────────────────────────────────────────────────
 
 def _parse_iso(iso: str):
-    """Parse BB ISO timestamp → datetime. Returns None if unparseable."""
+    """Parse BB ISO timestamp → naive local datetime (CST/UTC+8).
+
+    BB returns UTC (Z-suffix). The user is in Shenzhen (UTC+8).
+    We convert to local time so the due date shows the correct wall-clock hour.
+    """
     if not iso:
         return None
     try:
-        # "2026-03-25T15:59:00.000Z"
-        return datetime.fromisoformat(iso.replace("Z", "+00:00")).replace(tzinfo=None)
+        # "2026-03-25T15:59:00.000Z" → aware UTC → convert to CST (+8)
+        dt_utc = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        dt_local = dt_utc.astimezone(timezone(timedelta(hours=8)))
+        return dt_local.replace(tzinfo=None)  # naive for consistent comparison
     except ValueError:
         return None
 
@@ -134,6 +182,58 @@ def _format_due(iso: str):
 
 
 # ── main ────────────────────────────────────────────────────────────────────
+
+def upcoming_deadlines(days: int = 30) -> list[dict]:
+    """Return upcoming BB assignment deadlines within ``days`` as list of dicts.
+
+    Each dict: {name, course, due, due_str, days_left, due_dt}
+    Returns [] if none found. Raises _SessionExpired on auth failure.
+    """
+    session = _session()
+    now = datetime.now()
+    cutoff = now + timedelta(days=days)
+
+    courses = _get_courses(session, term_id="_57_1")
+    if not courses:
+        raise _SessionExpired("无法获取课程列表，请重新登录")
+
+    # Filter to 2026-term courses
+    active_ids = {"_8053_1", "_8157_1", "_8221_1", "_8328_1", "_8343_1"}
+    courses = [
+        (c, n) for c, n in courses
+        if "2026" in n or c in active_ids
+    ]
+    if not courses:
+        courses = _get_courses(session, term_id="_57_1")
+
+    results = []
+    for cid, cname in courses:
+        try:
+            cols = _get_gradebook_columns(cid, session)
+        except Exception:
+            continue
+        for col in cols:
+            if col["scoring_type"] != "Attempts" or not col["name"]:
+                continue
+            due_iso = col["due"]
+            due_dt = _parse_iso(due_iso)
+            if due_dt is None:
+                continue
+            if due_dt < now or due_dt > cutoff:
+                continue
+            days_left = (due_dt - now).days
+            results.append({
+                "name": col["name"],
+                "course": cname,
+                "due": due_iso,
+                "due_str": _format_due(due_iso),
+                "days_left": days_left,
+                "due_dt": due_dt,
+            })
+
+    results.sort(key=lambda x: x["due_dt"])
+    return results
+
 
 def run(days: int = 7, course_id: str = None):
     """See docs/bb.md."""
@@ -193,15 +293,29 @@ def run(days: int = 7, course_id: str = None):
             attempts = _get_user_attempts(cid, col["id"], session)
             score_str = ""
             feedback_str = ""
+            has_score = False
             if attempts:
                 latest = attempts[-1]
                 s = latest.get("score")
-                score_str = f" {s}" if s is not None else " 未评分"
-                fb = latest.get("feedback", "") or ""
-                if fb:
-                    # strip HTML tags
-                    fb_clean = re.sub(r"<[^>]+>", "", fb)
-                    feedback_str = f" 评语: {fb_clean[:50]}"
+                if s is not None:
+                    has_score = True
+                    score_str = f" {s}"
+                    fb = latest.get("feedback", "") or ""
+                    if fb:
+                        fb_clean = re.sub(r"<[^>]+>", "", fb)
+                        feedback_str = f" 评语: {fb_clean[:50]}"
+                else:
+                    score_str = " 未评分"
+
+            # Hide: submitted+graded (has score), OR past-due with no submission
+            # (likely old/irrelevant BB columns — not real pending work),
+            # OR no due date at all (BB placeholder items with no deadline)
+            if has_score:
+                continue
+            if due_dt and due_dt < now:
+                continue
+            if not due_dt:
+                continue
 
             all_items.append({
                 "course": cname,
