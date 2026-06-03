@@ -21,6 +21,7 @@ sys.path.insert(0, str(BB_DIR))
 
 import click
 from sustech_survival.sso import BBAuth
+from sustech_survival.sso.authorizer import AuthorizerError
 from .courses import list_courses, find_course, get_course_numeric_id, discover_assignments_for_course, load_courses
 from .download import discover_attempt_ids, scrape_attempt_details, download_file
 from .pages import preview_page
@@ -50,13 +51,15 @@ def load_session_or_exit():
         if not ok:
             click.secho(f"\n❌  Session invalid: {reason}", fg="red")
             sys.exit(1)
-        raw = _bb.load()
-        return [{"name": k, "value": v, "domain": ".bb.sustech.edu.cn", "path": "/"} for k, v in raw.items() if v]
+        # Get cookies from in-memory cache
+        raw = _bb.cookies
+        return [{"name": k, "value": v, "domain": ".bb.sustech.edu.cn", "path": "/"}
+                for k, v in raw.items() if v]
+    except AuthorizerError as e:
+        click.secho(f"\n❌  Session error: {e}", fg="red")
+        sys.exit(1)
     except FileNotFoundError:
         click.secho("\n❌  No session. Run: python3 bb.py session login", fg="red")
-        sys.exit(1)
-    except Exception as e:
-        click.secho(f"\n❌  Session error: {e}", fg="red")
         sys.exit(1)
 
 

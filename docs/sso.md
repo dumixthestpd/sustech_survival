@@ -4,6 +4,50 @@
 
 **Use for:** When building new integrations with SUSTech systems. Do not use directly — use the auth class for your target system.
 
+---
+
+## Auth Rules (Non-Negotiable for Agents)
+
+### ✅ Always Do
+- Use `@bb_auth.ensured` (or `ensure()` before any sequence of operations) as the **first line of defense**
+- Call `ensure()` before any HTTP request to a protected endpoint
+- For multi-call sequences: call `ensure()` once at the start, then use `auth.requests_session` or `auth.cookies`
+- For CLI tools: login once per session; the in-memory session persists for the process lifetime
+
+### ❌ Never Do
+- **Do not navigate to `cas.sustech.edu.cn` manually in a browser** — it has a hidden reCAPTCHA that blocks automation
+- **Do not use `load()` without calling `ensure()` first** — it returns stale disk cache
+- **Do not store session cookies to disk** — in-memory only, no `session.json` writes
+- **Do not ask the user for credentials in plaintext** — always read from `credentials.txt`
+- **Do not try to automate the CAS login page with Playwright** — the captcha will silently block you
+
+### 🔑 Quick Reference
+
+```python
+# GOOD — @ensured decorator auto-injects session
+from sustech_survival.sso import BBAuth
+bb_auth = BBAuth()
+
+@bb_auth.ensured
+def download_content(content_id, session=None, **kwargs):
+    r = requests.get(url, cookies=session)
+
+# GOOD — explicit ensure + in-memory cookies
+ok, reason = bb_auth.ensure()
+if not ok:
+    raise AuthorizerError(reason)
+r = bb_auth.requests_session.get(url)  # in-memory session, no disk
+
+# GOOD — refresh when needed (headless, no captcha)
+ok = bb_auth.refresh()  # CAS grinding via requests
+
+# BAD — never do this
+cookies = bb_auth.load()  # deprecated, reads stale disk cache
+session = bb_auth.session  # deprecated property
+```
+
+---
+
 ## Credentials
 
 ```python
@@ -24,7 +68,7 @@ auth.ensure()      # (bool, str) — check + auto-refresh
 auth.login()       # headful Playwright browser login
 ```
 
-Session file at `<module>/session.json`.
+Session stored **in-memory only** (as of 2026-06-03). No `session.json` writes. Call `ensure()` first.
 
 ## `CASAuthorizer`
 

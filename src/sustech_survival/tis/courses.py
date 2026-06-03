@@ -12,24 +12,13 @@ from sustech_survival.sso import TISAuth
 
 def _make_session():
     """Build a requests.Session with valid TIS cookies via SSO auth layer."""
-    import requests
-
     auth = TISAuth(skill_dir=str(_SKILL_ROOT))
     ok, msg = auth.check()
     if not ok:
         ok = auth.refresh()
     if not ok:
         raise SessionExpired(f"TIS auth failed: {msg}")
-
-    raw = auth.load()
-    sess = requests.Session()
-    sess.headers["User-Agent"] = (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    )
-    for k, v in raw.items():
-        sess.cookies.set(k, v, domain="tis.sustech.edu.cn")
-    return sess
+    return auth.requests_session
 
 
 def _get_courses(session, semester: str = None):

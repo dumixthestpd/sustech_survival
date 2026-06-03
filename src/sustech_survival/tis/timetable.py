@@ -17,39 +17,22 @@ Flags:
 import sys, re, json, argparse
 from pathlib import Path
 from html import parser as html_parser
+from sustech_survival.sso import TISAuth
 
 _ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
 # ── Login ─────────────────────────────────────────────────────────────────────
-def _login():
-    import requests
+_ta = None  # TISAuth singleton (in-memory session, auto-refresh on expiry)
 
-    creds_file = _ROOT / "credentials.txt"
-    with open(creds_file) as f:
-        username, password = f.read().strip().split(":", 1)
-
-    service_url = "https://tis.sustech.edu.cn/cas"
-    encoded = service_url.replace(":", "%3A").replace("/", "%2F")
-    login_url = f"https://cas.sustech.edu.cn/cas/login?service={encoded}"
-    h = {"User-Agent": "Mozilla/5.0", "X-Requested-With": "XMLHttpRequest"}
-
-    req = requests.get(login_url, headers=h, timeout=15)
-    exec_token = re.search(r'name="execution" value="([^"]+)"', req.text).group(1)
-
-    req2 = requests.post(
-        login_url,
-        data={"username": username, "password": password,
-              "execution": exec_token, "_eventId": "submit"},
-        allow_redirects=False, headers=h, timeout=15
-    )
-    ticket_url = req2.headers.get("Location", "")
-    req3 = requests.get(ticket_url, allow_redirects=False, headers=h, timeout=15)
-    sc = req3.headers.get("Set-Cookie", "")
-    route_m = re.search(r"route=([^;]+)", sc)
-    jsess_m = re.search(r"JSESSIONID=([^;]+)", sc)
-    if not route_m or not jsess_m:
+def _auth():
+    """Return valid cookies from TISAuth, or None if auth fails."""
+    global _ta
+    if _ta is None:
+        _ta = TISAuth(skill_dir=str(_ROOT))
+    ok, reason = _ta.ensure()
+    if not ok:
         return None
-    return {"route": route_m.group(1), "JSESSIONID": jsess_m.group(1)}
+    return _ta.cookies
 
 
 # ── Slot parser (uses pkjgmx_en — English HTML, much cleaner) ─────────────────
@@ -346,8 +329,8 @@ def main():
     parts = args.semester.rsplit("-", 1)
     xn, xq = parts[0], parts[1]
 
-    print(f"🔑 Login...", file=sys.stderr)
-    cookies = _login()
+    print(f"🔑 Checking session...", file=sys.stderr)
+    cookies = _auth()
     if not cookies:
         print("❌ Login failed", file=sys.stderr)
         sys.exit(1)

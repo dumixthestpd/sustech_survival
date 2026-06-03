@@ -6,50 +6,21 @@ _SKILL_ROOT = _Path(__file__).resolve().parent.parent.parent.parent
 
 __all__ = ["run"]
 
-from sustech_survival.exceptions import InvalidCredentials, NetworkError
+from sustech_survival.exceptions import NetworkError
+from sustech_survival.sso import TISAuth
+
+_ta = None  # TISAuth singleton (in-memory session, auto-refresh on expiry)
 
 
-def _login():
-    """CAS login returning cookies dict, or raising an exception."""
-    import re, requests
-
-    creds_file = _SKILL_ROOT / "credentials.txt"
-    if not creds_file.exists():
-        raise InvalidCredentials("credentials.txt not found — run: bb.py login")
-    with open(creds_file) as f:
-        username, password = f.read().strip().split(":", 1)
-    service_url = "https://tis.sustech.edu.cn/cas"
-    encoded_service = service_url.replace(":", "%3A").replace("/", "%2F")
-    login_url = f"https://cas.sustech.edu.cn/cas/login?service={encoded_service}"
-    h = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-         "X-Requested-With": "XMLHttpRequest"}
-    try:
-        req = requests.get(login_url, headers=h, timeout=10)
-        req.raise_for_status()
-    except requests.RequestException as e:
-        raise NetworkError(f"CAS login GET failed: {e}")
-    exec_match = re.search(r'name="execution" value="([^"]+)"', req.text)
-    if not exec_match:
-        raise InvalidCredentials("CAS execution token not found in login page")
-    data = {"username": username, "password": password,
-            "execution": exec_match.group(1), "_eventId": "submit"}
-    try:
-        req = requests.post(login_url, data=data, allow_redirects=False, headers=h, timeout=10)
-    except requests.RequestException as e:
-        raise NetworkError(f"CAS login POST failed: {e}")
-    ticket_url = req.headers.get("Location", "")
-    if not ticket_url:
-        raise InvalidCredentials("CAS login rejected — check username/password in credentials.txt")
-    try:
-        req = requests.get(ticket_url, allow_redirects=False, headers=h, timeout=10)
-    except requests.RequestException as e:
-        raise NetworkError(f"Ticket exchange failed: {e}")
-    set_cookie = req.headers.get("Set-Cookie", "")
-    route = re.search(r"route=([^;]+)", set_cookie)
-    jsess = re.search(r"JSESSIONID=([^;]+)", set_cookie)
-    if not route or not jsess:
-        raise InvalidCredentials("CAS did not set session cookies — service URL may have changed")
-    return {"route": route.group(1), "JSESSIONID": jsess.group(1)}
+def _auth():
+    """Return valid cookies from TISAuth, or raise RuntimeError."""
+    global _ta
+    if _ta is None:
+        _ta = TISAuth(skill_dir=str(_SKILL_ROOT))
+    ok, reason = _ta.ensure()
+    if not ok:
+        raise RuntimeError(f"TIS auth failed: {reason}")
+    return _ta.cookies
 
 
 def _fetch_exams(cookies: dict):
@@ -91,17 +62,17 @@ def run(export: str = None):
     Args:
         export: "csv" to export to ~/.openclaw/workspace/sustech/exams.csv
     """
-    print("🔑 CAS login...")
+    print("🔑 Checking session...")
     try:
-        cookies = _login()
-    except (InvalidCredentials, NetworkError) as e:
+        cookies = _auth()
+    except (NetworkError, RuntimeError) as e:
         print(f"❌ {e}")
         raise
 
     print("📅 Fetching exam schedule...")
     try:
         exams = _fetch_exams(cookies)
-    except (InvalidCredentials, NetworkError) as e:
+    except (NetworkError, RuntimeError) as e:
         print(f"❌ {e}")
         raise
 

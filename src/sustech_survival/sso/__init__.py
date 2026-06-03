@@ -19,6 +19,7 @@ __all__ = [
     "register_auth",
     "get_auth",
     "require_auth",
+    "ensured",
 ]
 
 # Backwards-compat shim: Credentials was merged into Authorizer.
@@ -26,12 +27,6 @@ Credentials = Authorizer
 
 
 # ── Find skill root for session storage ────────────────────────────────────────
-# sso/__init__.py lives at:  sustch_survival/sso/__init__.py
-# We walk up 4 levels to reach the skill root:
-#   sso → sustch_survival → src → workspace/skills/sustech_survival
-# _SKILL_ROOT resolves relative to THIS file so it always matches the
-# actual code location, even when authorizer.py's auto-detection picks
-# ~/.openclaw/skills/sustech_survival/ (which has credentials.txt too).
 from pathlib import Path as _Path
 import requests as _requests
 
@@ -52,9 +47,9 @@ class TISAuth(CASAuthorizer):
     SUBMIT_VALUE = ""
 
     @property
-    def session(self) -> _requests.Session:
+    def requests_session(self) -> _requests.Session:
         """
-        A requests.Session with current cookies and TIS-required headers.
+        A requests.Session with current in-memory cookies and TIS-required headers.
 
         Cookie header is set directly (not via cookie jar) because the original
         Set-Cookie semantics (Secure, HttpOnly, SameSite=None) are lost when
@@ -66,8 +61,7 @@ class TISAuth(CASAuthorizer):
         that the session's User-Agent is consistent with the one that obtained
         the cookies — python-requests UA gets 403).
         """
-        cookies = self.load()
-        cookie_header = "; ".join(f"{k}={v}" for k, v in cookies.items())
+        cookie_header = "; ".join(f"{k}={v}" for k, v in self.cookies.items())
         sess = _requests.Session()
         sess.headers["User-Agent"] = UA
         sess.headers["Cookie"] = cookie_header
@@ -78,6 +72,22 @@ class TISAuth(CASAuthorizer):
     @property
     def session_file(self):
         return _SKILL_ROOT / "sso" / "tis" / "session.json"
+
+    def _probe_session(self) -> bool:
+        """
+        TIS-specific probe: use a lightweight API call instead of root URL.
+        The TIS root URL returns 200 even without auth (redirects to login page).
+        """
+        try:
+            sess = self.requests_session
+            r = sess.get(
+                f"{self.BASE_URL}/personnelEvaluation/listObtainPersonnelEvaluationTasks",
+                params={"yhdm": self.username, "rwmc": "", "sfyp": "0", "pageNum": "1", "pageSize": "1"},
+                timeout=5,
+            )
+            return r.status_code == 200
+        except Exception:
+            return False
 
 
 # =============================================================================
@@ -113,18 +123,16 @@ class BBAuth(CASAuthorizer):
         return ok
 
     @property
-    def session(self) -> _requests.Session:
+    def requests_session(self) -> _requests.Session:
         """
-        A requests.Session with current BB cookies and the correct User-Agent.
+        A requests.Session with current in-memory BB cookies and the correct User-Agent.
 
         Cookies are attached to the .bb.sustech.edu.cn domain, matching the browser
         behavior that BB expects.
         """
-        import requests as _requests
-        cookies = self.load()
         sess = _requests.Session()
         sess.headers["User-Agent"] = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        for name, value in cookies.items():
+        for name, value in self.cookies.items():
             sess.cookies.set(name, value, domain=".bb.sustech.edu.cn", path="/")
         return sess
 
@@ -143,12 +151,10 @@ class LibAuth(CASAuthorizer):
         return self.submodule_dir / "session.json"
 
     @property
-    def session(self):
+    def requests_session(self):
         """
-        A requests.Session with LegacyAdapter so Primo SSL connections work.
-        Overrides base CASAuthorizer.session to add OP_LEGACY_SERVER_CONNECT.
+        A requests.Session with in-memory cookies + LegacyAdapter so Primo SSL works.
         """
-        raw = self.load()
         import ssl
         _OP_LEGACY = getattr(ssl, 'OP_LEGACY_SERVER_CONNECT', 0x4)
         legacy_ctx = ssl.create_default_context()
@@ -182,7 +188,7 @@ class LibAuth(CASAuthorizer):
 
         sess = _requests.Session()
         sess.mount("https://", LegacyAdapter())
-        self._apply_cookies(sess, raw)
+        self._apply_cookies(sess, self.cookies)
         return sess
 
 
@@ -205,6 +211,10 @@ register_auth("lib", LibAuth(skill_dir=str(_SKILL_ROOT)))
 register_auth("ws", WSAuth(skill_dir=str(_SKILL_ROOT)))
 
 
-# ── Auto-register external authlib services ───────────────────────────────────
+# Export ensured from Authorizer
+ensured = Authorizer.ensured
+
+
+# ── Auto-register external authlib services ────────────────────────────────────
 # Importing authlib triggers lazy-loading of external services (wos, rsc, etc.)
 from . import authlib  # noqa: F401

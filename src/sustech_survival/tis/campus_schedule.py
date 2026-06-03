@@ -27,40 +27,20 @@ import sys
 from pathlib import Path as _Path
 
 _SKILL_ROOT = _Path(__file__).resolve().parent.parent.parent.parent
-sys.path.insert(0, str(_SKILL_ROOT))
+from sustech_survival.sso import TISAuth
 
-
-def _login():
-    import re, requests
-    creds_file = _SKILL_ROOT / "credentials.txt"
-    with open(creds_file) as f:
-        username, password = f.read().strip().split(":", 1)
-    service_url = "https://tis.sustech.edu.cn/cas"
-    encoded_service = service_url.replace(":", "%3A").replace("/", "%2F")
-    login_url = f"https://cas.sustech.edu.cn/cas/login?service={encoded_service}"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-        "X-Requested-With": "XMLHttpRequest",
-    }
-    req = requests.get(login_url, headers=headers, timeout=15)
-    execution = re.search(r'name="execution" value="([^"]+)"', req.text).group(1)
-    data = {
-        "username": username,
-        "password": password,
-        "execution": execution,
-        "_eventId": "submit",
-    }
-    req = requests.post(login_url, data=data, allow_redirects=False, headers=headers, timeout=15)
-    ticket_url = req.headers["Location"]
-    req = requests.get(ticket_url, allow_redirects=False, headers=headers, timeout=15)
-    set_cookie = req.headers.get("Set-Cookie", "")
-    route = re.search(r"route=([^;]+)", set_cookie).group(1)
-    jsess = re.search(r"JSESSIONID=([^;]+)", set_cookie).group(1)
-    return {"route": route, "JSESSIONID": jsess}
+_ta = None  # TISAuth singleton (in-memory session, auto-refresh on expiry)
 
 
 def _get_session():
-    return _login()
+    """Return valid cookies from TISAuth, or raise RuntimeError."""
+    global _ta
+    if _ta is None:
+        _ta = TISAuth(skill_dir=str(_SKILL_ROOT))
+    ok, reason = _ta.ensure()
+    if not ok:
+        raise RuntimeError(f"TIS auth failed: {reason}")
+    return _ta.cookies
 
 
 def get_campus_schedule(xn="2025-2026", xq="2", page_size=500, page_num=1, full=False, **kwargs):

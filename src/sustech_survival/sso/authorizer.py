@@ -88,14 +88,48 @@ class Authorizer(ABC):
     SESSION_SUBDIR: str = ""  # subdirectory under skill_root for session files
 
     def __init__(self, *, skill_dir: Optional[str] = None, submodule_dir: Optional[str] = None):
-        self._skill_dir = Path(skill_dir) if skill_dir else None
-        self._submodule_dir = Path(submodule_dir) if submodule_dir else None
+        self._skill_dir = Path(skill_dir) if (skill_dir and isinstance(skill_dir, str)) else skill_dir
+        self._submodule_dir = Path(submodule_dir) if (submodule_dir and isinstance(submodule_dir, str)) else submodule_dir
+        self._session_cache: dict = {}
+        self._session_time: float = 0.0  # time.time() of last successful auth
+        self._SESSION_TTL: int = 25 * 60  # 25 minutes — server-side session limit
+
+    # ── In-memory session (no disk) ─────────────────────────────────────────
+
+    @property
+    def cookies(self) -> dict:
+        """
+        Returns the raw in-memory cookie dict.
+        Call ensure() first to validate — raises AuthorizerError if empty.
+        """
+        if not self._session_cache:
+            raise AuthorizerError(
+                f"[{self.__class__.__name__}] No session — call ensure() first"
+            )
+        return self._session_cache
+
+    def _set_session(self, cookies: dict):
+        """Store cookies in memory + record timestamp. No disk writes."""
+        self._session_cache = cookies
+        import time
+        self._session_time = time.time()
+
+    def _is_session_fresh(self) -> bool:
+        """Check if in-memory session is still within TTL."""
+        import time
+        return (
+            bool(self._session_cache)
+            and (time.time() - self._session_time) < self._SESSION_TTL
+        )
 
     # ── Paths ────────────────────────────────────────────────────────────────
 
     @property
     def skill_root(self) -> Path:
         if self._skill_dir:
+            # Always convert to Path — handles str assignment in tests
+            if isinstance(self._skill_dir, str):
+                self._skill_dir = Path(self._skill_dir)
             return self._skill_dir
         # Search upward from authorizer.py for credentials.txt to find skill root
         # __file__ = .../src/sustech_survival/sso/authorizer.py
@@ -113,6 +147,8 @@ class Authorizer(ABC):
     @property
     def submodule_dir(self) -> Path:
         if self._submodule_dir:
+            if isinstance(self._submodule_dir, str):
+                self._submodule_dir = Path(self._submodule_dir)
             return self._submodule_dir
         if self.SESSION_SUBDIR:
             return self.skill_root / self.SESSION_SUBDIR
@@ -173,13 +209,24 @@ class Authorizer(ABC):
     # ── Session I/O ──────────────────────────────────────────────────────────
 
     def load(self) -> dict:
+        import warnings
+        warnings.warn(
+            "load() is deprecated — session is in-memory only. "
+            "Use ensure() + .session property, or @ensured decorator.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         with open(self.session_file) as f:
             return json.load(f)
 
     def save(self, cookies: dict):
-        self.session_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.session_file, 'w') as f:
-            json.dump(cookies, f)
+        import warnings
+        warnings.warn(
+            "save() is deprecated — session is in-memory only. "
+            "Refresh keeps session in memory; no disk writes.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
     def cookies_for_requests(self, raw: dict) -> dict:
         return {k: v for k, v in raw.items()}
@@ -196,89 +243,94 @@ class Authorizer(ABC):
             "Use login() for browser-based auth."
         )
 
-    # ── Session check ────────────────────────────────────────────────────────
+    # ── Session check (in-memory) ───────────────────────────────────────────
 
     @property
     def session(self) -> requests.Session:
         """
-        A requests.Session pre-loaded with current cookies and default headers.
-
-        Subclasses (TISAuth, BBAuth) may override to set additional headers
-        (e.g. User-Agent, X-Requested-With). The base class provides the
-        generic cookie-loading session that all subclasses inherit.
+        DEPRECATED alias for `requests_session`. Use `requests_session` going forward.
+        Returns a requests.Session pre-loaded with in-memory cookies.
+        Call ensure() first or this will be empty.
         """
-        raw = self.load()
+        import warnings
+        warnings.warn(
+            ".session is deprecated — use .requests_session instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.requests_session
+
+    @property
+    def requests_session(self) -> requests.Session:
+        """
+        A requests.Session pre-loaded with in-memory cookies and default headers.
+        Call ensure() first to populate _session_cache.
+
+        Subclasses (TISAuth, BBAuth) override this to add service-specific headers.
+        """
+        raw = self._session_cache
         sess = requests.Session()
         self._apply_cookies(sess, raw)
         return sess
 
     def check(self) -> tuple[bool, str]:
         """
-        Verify session is valid. Auto-refreshes if expired.
+        Verify in-memory session is valid. Auto-refreshes if expired.
         Returns (True, '') on success, (False, reason) on failure.
         """
-        try:
-            raw = self.load()
-        except FileNotFoundError:
-            if self.refresh():
-                return True, ""
-            return False, f"No session: {self.session_file.name}"
-        except Exception as e:
-            return False, f"Session corrupt: {e}"
-
-        try:
-            # Build SSL context with legacy renegotiation support.
-            # Some CAS servers (e.g. sustc.primo.exlibrisgroup.com.cn) require
-            # OP_LEGACY_SERVER_CONNECT which Python 3.12 blocks by default.
-            import ssl
-            _OP_LEGACY = getattr(ssl, 'OP_LEGACY_SERVER_CONNECT', 0x4)
-            legacy_ctx = ssl.create_default_context()
-            legacy_ctx.options |= _OP_LEGACY
-
-            from requests.adapters import HTTPAdapter
-            from requests.adapters import _urllib3_request_context, prepend_scheme_if_needed, select_proxy, parse_url
-
-            class LegacyAdapter(HTTPAdapter):
-                def get_connection_with_tls_context(self, request, verify, proxies=None, cert=None, poolmanager=None):
-                    proxy = select_proxy(request.url, proxies)
-                    host_params, pool_kwargs = _urllib3_request_context(
-                        request, verify, cert, self.poolmanager,
-                    )
-                    pool_kwargs["ssl_context"] = legacy_ctx
-                    pool_kwargs["ssl_context"].check_hostname = False
-                    if proxy:
-                        proxy = prepend_scheme_if_needed(proxy, "http")
-                        proxy_url = parse_url(proxy)
-                        if not proxy_url.host:
-                            from requests.exceptions import InvalidProxyURL
-                            raise InvalidProxyURL("Malformed proxy URL")
-                        proxy_manager = self.proxy_manager_for(proxy)
-                        return proxy_manager.connection_from_host(**host_params, pool_kwargs=pool_kwargs)
-                    return self.poolmanager.connection_from_host(**host_params, pool_kwargs=pool_kwargs)
-
-            sess = requests.Session()
-            sess.mount("https://", LegacyAdapter())
-            self._apply_cookies(sess, raw)
-            r = sess.get(
-                self.BASE_URL + "/",
-                headers={"Accept": "text/html"},
-                timeout=10,
-                allow_redirects=False,
-            )
-            if r.status_code in self.REDIRECT_STATUS:
-                loc = r.headers.get("Location", "")
-                if "cas.sustech.edu.cn" in loc or "/login" in loc.lower():
-                    if self.refresh():
-                        return True, ""
-                    return False, "Session expired and auto-refresh failed."
+        # TTL check first — fast path for repeated calls within a CLI session
+        if self._is_session_fresh():
             return True, ""
-        except Exception as e:
-            return False, f"Could not reach {self.BASE_URL}: {e}"
+
+        # TTL expired: validate in-memory session with a server probe before
+        # trusting it. This catches the case where CAS ticket expired server-side
+        # before our local TTL.
+        if self._session_cache:
+            ok = self._probe_session()
+            if ok:
+                # Re-record timestamp so next calls use fast path
+                import time
+                self._session_time = time.time()
+                return True, ""
+            # Probe failed — fall through to refresh
+
+        # Fall back to disk cache for backwards compat during transition
+        if self.session_file.exists():
+            try:
+                with open(self.session_file) as f:
+                    raw = json.load(f)
+                self._set_session(raw)
+                # Don't trust disk cache without probing
+                ok = self._probe_session()
+                if ok:
+                    import time
+                    self._session_time = time.time()
+                    return True, ""
+            except Exception:
+                pass
+
+        # No valid session — try headless refresh
+        if self.refresh():
+            return True, ""
+        return False, f"No session for {self.BASE_URL}"
+
+    def _probe_session(self) -> bool:
+        """
+        Lightweight probe to check if current in-memory session is still valid.
+        Subclasses override with a service-specific probe endpoint.
+        Returns True if server accepts the session, False if 401/unauthorized.
+        """
+        try:
+            sess = self.requests_session
+            r = sess.get(f"{self.BASE_URL}/", timeout=5, allow_redirects=False)
+            return r.status_code not in (401, 403)
+        except Exception:
+            return False
 
     def refresh(self) -> bool:
         """
-        Re-authenticate using credentials.txt. Subclasses with headless support
-        override get_ticket_cookies(); this method dispatches to it.
+        Re-authenticate using credentials.txt. Populates _session_cache in memory.
+        Subclasses with headless support override get_ticket_cookies().
         """
         try:
             username, password = self.read_creds()
@@ -288,8 +340,8 @@ class Authorizer(ABC):
 
         try:
             cookies = self.get_ticket_cookies(username, password)
-            self.save(cookies)
-            print(f"✅ {len(cookies)} cookies saved: {list(cookies.keys())}")
+            self._set_session(cookies)
+            print(f"✅ {len(cookies)} cookies cached: {list(cookies.keys())}")
             return True
         except (NotImplementedError, AuthorizerError) as e:
             print(f"❌ Auth refresh not supported: {e}")
@@ -307,7 +359,7 @@ class Authorizer(ABC):
         return False, reason + hint
 
     def login(self, *, headless: bool = False):
-        """Playwright headful login for services without headless support."""
+        """Playwright headful login — stores cookies in memory only."""
         from playwright.sync_api import sync_playwright
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=headless)
@@ -315,6 +367,14 @@ class Authorizer(ABC):
             page = ctx.new_page()
             page.goto(self.cas_url, wait_until="domcontentloaded", timeout=30000)
             page.wait_for_timeout(1000)
+
+            # Detect captcha — tell caller to use refresh() instead
+            captcha = page.query_selector('[id*="captcha"], .g-recaptcha, [src*="captcha"]')
+            if captcha:
+                print("⚠️  Captcha detected at CAS page — use ensure() / refresh() instead")
+                browser.close()
+                return False
+
             print(f"Browser opened — log in via CAS for {self.BASE_URL}")
             print("Waiting for redirect...")
             try:
@@ -323,9 +383,33 @@ class Authorizer(ABC):
                 pass
             page.wait_for_timeout(2000)
             cookies = {c['name']: c['value'] for c in ctx.cookies()}
-            self.save(cookies)
-            print(f"✅ {len(cookies)} cookies saved: {list(cookies.keys())}")
+            self._set_session(cookies)
+            print(f"✅ {len(cookies)} cookies cached: {list(cookies.keys())}")
             return True
+
+    # ── @ensured decorator ───────────────────────────────────────────────────
+
+    def ensured(self, func: Callable) -> Callable:
+        """
+        Decorator: validates session before call AND injects cookies as a kwarg.
+
+        Usage:
+            @bb_auth.ensured
+            def download_content(content_id, session=None, **kwargs):
+                # session is a validated dict — ready to pass to requests
+                r = requests.get(url, cookies=session)
+
+        The decorated function receives 'session=<cookie_dict>' in kwargs,
+        which overwrites any caller-provided 'session' argument.
+        """
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            ok, reason = self.ensure()
+            if not ok:
+                raise AuthorizerError(f"[{self.__class__.__name__}] {reason}")
+            kwargs["session"] = self.cookies
+            return func(*args, **kwargs)
+        return wrapper
 
 
 # ── Auth registry & decorator ─────────────────────────────────────────────────
@@ -339,16 +423,30 @@ def register_auth(name: str, auth: Authorizer):
 
 
 def get_auth(name: str) -> Authorizer:
+    """
+    Get or create an Authorizer by service name.
+
+    DEPRECATED — import the auth class directly instead:
+        from sustech_survival.sso import TISAuth
+
+    This function exists only for backwards compatibility with existing code.
+    """
     import warnings
-    # Map service names to their exported class names
-    _class_map = {"bb": "BBAuth", "tis": "TISAuth", "lib": "LibAuth"}
-    cls_name = _class_map.get(name, name.title() + "Auth")
+    from sustech_survival.sso import TISAuth, BBAuth, LibAuth
+
+    _class_map = {"bb": BBAuth, "tis": TISAuth, "lib": LibAuth}
+    cls = _class_map.get(name)
+    if cls is None:
+        raise AuthorizerError(
+            f"Unknown service {name!r}. Known: {list(_class_map.keys())}. "
+            "Import the auth class directly: from sustech_survival.sso import TISAuth"
+        )
     warnings.warn(
-        f"get_auth({name!r}) is deprecated — import {cls_name} directly from sustech_survival.sso instead",
+        f"get_auth({name!r}) is deprecated — use {cls.__name__}() directly instead",
         DeprecationWarning,
         stacklevel=2,
     )
-    return _auth_registry.get(name)
+    return cls()
 
 
 def require_auth(service: str) -> Callable:
