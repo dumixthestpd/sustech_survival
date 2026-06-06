@@ -151,8 +151,11 @@ class Authorizer(ABC):
                 self._submodule_dir = Path(self._submodule_dir)
             return self._submodule_dir
         if self.SESSION_SUBDIR:
-            return self.skill_root / self.SESSION_SUBDIR
-        return self.skill_root
+            # Hidden under .cache/ so agents don't accidentally read or
+            # commit raw session cookies. Each service gets its own
+            # sub-file inside the shared sso/ dir.
+            return self.skill_root / ".cache" / "sso" / self.SESSION_SUBDIR
+        return self.skill_root / ".cache" / "sso"
 
     @property
     def session_file(self) -> Path:
@@ -277,7 +280,12 @@ class Authorizer(ABC):
         """
         Verify in-memory session is valid. Auto-refreshes if expired.
         Returns (True, '') on success, (False, reason) on failure.
+
+        The reason string is safe to surface to agents — it never
+        includes cookie values, cookie names, session file paths, or
+        raw exception details. Callers should display it verbatim.
         """
+        cls = self.__class__.__name__
         # TTL check first — fast path for repeated calls within a CLI session
         if self._is_session_fresh():
             return True, ""
@@ -312,7 +320,10 @@ class Authorizer(ABC):
         # No valid session — try headless refresh
         if self.refresh():
             return True, ""
-        return False, f"No session for {self.BASE_URL}"
+        return False, (
+            f"{cls} session expired, run {cls}.refresh() "
+            f"(or {cls}.login() if refresh fails)"
+        )
 
     def _probe_session(self) -> bool:
         """
@@ -331,6 +342,9 @@ class Authorizer(ABC):
         """
         Re-authenticate using credentials.txt. Populates _session_cache in memory.
         Subclasses with headless support override get_ticket_cookies().
+
+        Does NOT log cookie names — only the count — to avoid leaking
+        which auth cookies are present.
         """
         try:
             username, password = self.read_creds()
@@ -341,22 +355,25 @@ class Authorizer(ABC):
         try:
             cookies = self.get_ticket_cookies(username, password)
             self._set_session(cookies)
-            print(f"✅ {len(cookies)} cookies cached: {list(cookies.keys())}")
+            cls = self.__class__.__name__
+            print(f"✅ {cls} session refreshed ({len(cookies)} cookies)")
             return True
         except (NotImplementedError, AuthorizerError) as e:
             print(f"❌ Auth refresh not supported: {e}")
             return False
 
     def ensure(self) -> tuple[bool, str]:
-        """Check session, auto-refresh if expired. Returns (True, '') or (False, reason)."""
+        """Check session, auto-refresh if expired. Returns (True, '') or (False, reason).
+
+        The reason string is forwarded verbatim from check() and is safe to
+        surface to agents — no cookie values, no cookie names, no file paths.
+        """
         ok, reason = self.check()
         if ok:
             return True, ""
-        if "credentials" in reason.lower() or "no session" in reason.lower():
-            hint = " Run browser login: sustech <service> session login"
-        else:
-            hint = ""
-        return False, reason + hint
+        # Strip the old 'credentials'/'no session' hint logic: the new check()
+        # message already tells the agent which method to call.
+        return False, reason
 
     def login(self, *, headless: bool = False):
         """Playwright headful login — stores cookies in memory only."""
@@ -384,7 +401,8 @@ class Authorizer(ABC):
             page.wait_for_timeout(2000)
             cookies = {c['name']: c['value'] for c in ctx.cookies()}
             self._set_session(cookies)
-            print(f"✅ {len(cookies)} cookies cached: {list(cookies.keys())}")
+            cls = self.__class__.__name__
+            print(f"✅ {cls} login complete ({len(cookies)} cookies)")
             return True
 
     # ── @ensured decorator ───────────────────────────────────────────────────

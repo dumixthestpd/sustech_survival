@@ -182,7 +182,7 @@ class TestEnsuredDecorator:
             SERVICE_URL = "https://dummy.example.com/cas"
 
         auth = DummyAuth()
-        # Disk cache missing AND no credentials → ensure() fails with hint
+        # Disk cache missing AND no credentials → ensure() fails with action hint
         auth._skill_dir = "/nonexistent"
 
         @auth.ensured
@@ -191,8 +191,11 @@ class TestEnsuredDecorator:
 
         with pytest.raises(AuthorizerError) as exc:
             do_it()
-        # ensure() should have added a hint about browser login
-        assert "Run browser login" in str(exc.value) or "No session" in str(exc.value)
+        # ensure() should name the class + tell the caller to run refresh()/login()
+        msg = str(exc.value)
+        assert "DummyAuth" in msg
+        assert "refresh()" in msg
+        assert "login()" in msg
 
     def test_ensured_preserves_func_metadata(self):
         from sustech_survival.sso import Authorizer
@@ -303,7 +306,7 @@ class TestCaptchaDetection:
 
 
 class TestEnsureAddsHint:
-    """ensure() adds actionable hint on failure."""
+    """ensure() / check() surface a class-named, actionable reason on failure."""
 
     def test_ensure_hint_credentials(self):
         from sustech_survival.sso import Authorizer
@@ -319,9 +322,12 @@ class TestEnsureAddsHint:
 
         ok, reason = auth.ensure()
         assert ok is False
-        assert "Run browser login" in reason
+        # New format: "<Class> session expired, run <Class>.refresh() (or .login() if refresh fails)"
+        assert "DummyAuth session expired" in reason
+        assert "DummyAuth.refresh()" in reason
+        assert "DummyAuth.login()" in reason
 
-    def test_ensure_hint_no_session(self):
+    def test_ensure_no_session(self):
         from sustech_survival.sso import Authorizer, AuthorizerError
 
         class DummyAuth(Authorizer):
@@ -335,6 +341,78 @@ class TestEnsureAddsHint:
 
         ok, reason = auth.ensure()
         assert ok is False
+        # Reason must not leak cookie values, file paths, or stack traces
+        assert "credentials.txt" not in reason
+        assert ".cache" not in reason
+        assert "session.json" not in reason
+        # Must mention the class so an agent knows which auth to refresh
+        assert "DummyAuth" in reason
+
+
+class TestAuthErrorFormat:
+    """check()/ensure() reason strings are safe to surface to agents.
+
+    They must never include cookie values, cookie names, session file paths,
+    or raw exception details — agents read these messages and act on them.
+    """
+
+    def test_check_reason_mentions_class_and_methods(self):
+        from sustech_survival.sso import Authorizer, AuthorizerError
+
+        class DummyAuth(Authorizer):
+            BASE_URL = "https://dummy.example.com"
+            SERVICE_URL = "https://dummy.example.com/cas"
+            def get_ticket_cookies(self, u, p):
+                raise AuthorizerError("no headless support")
+
+        auth = DummyAuth()
+        auth._skill_dir = "/nonexistent"
+
+        ok, reason = auth.check()
+        assert ok is False
+        assert "DummyAuth" in reason
+        assert "refresh()" in reason
+
+    def test_check_reason_does_not_leak_path(self):
+        from sustech_survival.sso import Authorizer, AuthorizerError
+
+        class DummyAuth(Authorizer):
+            BASE_URL = "https://dummy.example.com"
+            SERVICE_URL = "https://dummy.example.com/cas"
+            def get_ticket_cookies(self, u, p):
+                raise AuthorizerError("no headless support")
+
+        auth = DummyAuth()
+        auth._skill_dir = "/nonexistent"
+
+        ok, reason = auth.check()
+        # No session file path components should leak into user-facing reason
+        assert "session.json" not in reason
+        assert ".cache" not in reason
+        # No exception class names — agents shouldn't have to know internal types
+        assert "AuthorizerError" not in reason
+        assert "FileNotFoundError" not in reason
+
+
+class TestSessionFileHidden:
+    """Session files live in a hidden .cache/ dir agents don't usually read."""
+
+    def test_session_file_under_dot_cache(self):
+        from sustech_survival.sso import BBAuth, TISAuth, LibAuth
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bb = BBAuth(skill_dir=tmp)
+            tis = TISAuth(skill_dir=tmp)
+            lib = LibAuth(skill_dir=tmp)
+
+            for auth, name in [(bb, "bb"), (tis, "tis"), (lib, "lib")]:
+                p = auth.session_file
+                rel = p.relative_to(auth.skill_root)
+                # New hidden path: <skill_root>/.cache/sso/<service>/session.json
+                assert rel.parts == (".cache", "sso", name, "session.json"), (
+                    f"{name} session_file not under .cache/sso/{name}/: {p}"
+                )
 
 class TestTTLRefresh:
     """TTL guard auto-refreshes stale sessions."""

@@ -69,10 +69,6 @@ class TISAuth(CASAuthorizer):
             sess.headers["X-Requested-With"] = "XMLHttpRequest"
         return sess
 
-    @property
-    def session_file(self):
-        return _SKILL_ROOT / "sso" / "tis" / "session.json"
-
     def _probe_session(self) -> bool:
         """
         TIS-specific probe: use a lightweight API call instead of root URL.
@@ -98,10 +94,6 @@ class BBAuth(CASAuthorizer):
     BASE_URL = "https://bb.sustech.edu.cn"
     SERVICE_URL = "https://bb.sustech.edu.cn/webapps/bb-sso-BBLEARN/index.jsp"
     SESSION_SUBDIR = "bb"
-
-    @property
-    def session_file(self):
-        return _SKILL_ROOT / "sso" / "bb" / "session.json"
 
     def _reset_cached_data(self):
         """Delete cached course data so it gets refreshed on next access."""
