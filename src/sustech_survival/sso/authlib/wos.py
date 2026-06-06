@@ -45,10 +45,10 @@ class WoSAuth(ShibbolethAuthorizer):
     def session_file(self):
         return self.skill_root / "wos" / "session.json"
 
-    def _find_institution_link(self, page):
+    def find_institution_link(self, page):
         return None
 
-    def _handle_wayf(self, page) -> bool:
+    def handle_wayf(self, page) -> bool:
         """
         Handle Clarivate access portal institution selection.
         Clicks mat-select combobox → selects "CHINA CERNET Federation" →
@@ -112,8 +112,8 @@ class WoSAuth(ShibbolethAuthorizer):
             return False
 
         # Launch browser — store on self so caller can use page after return
-        self._playwright = sync_playwright().start()
-        self.browser = self._playwright.chromium.launch(headless=headless)
+        self.playwright = sync_playwright().start()
+        self.browser = self.playwright.chromium.launch(headless=headless)
         self.ctx = self.browser.new_context()
         self.page = self.ctx.new_page()
         page = self.page
@@ -126,7 +126,7 @@ class WoSAuth(ShibbolethAuthorizer):
             print(f"  → {page.url}")
 
             # ── Step 2: Institution combobox → CARSI WAYF ───────────────────
-            wayf_ok = self._handle_wayf(page)
+            wayf_ok = self.handle_wayf(page)
             if not wayf_ok:
                 print("⚠ Failed to select institution in WoS portal")
                 self.browser.close()

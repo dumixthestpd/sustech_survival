@@ -26,7 +26,7 @@ WS_BASE = "https://ws.sustech.edu.cn"
 _AUTH: WSAuth | None = None
 
 
-def _auth() -> WSAuth:
+def auth() -> WSAuth:
     global _AUTH, _token_cache
     if _AUTH is None:
         _AUTH = WSAuth()
@@ -40,14 +40,14 @@ def _auth() -> WSAuth:
     return _AUTH
 
 
-def _session() -> requests.Session:
-    return _auth().session
+def session() -> requests.Session:
+    return auth().session
 
 
 _token_cache: tuple[str, str] | None = None
 
 
-def _user_token() -> tuple[str, str]:
+def user_token() -> tuple[str, str]:
     """
     Extract userToken + ts from the WS menu API.
     Both are stable for the lifetime of the session — cached after first call.
@@ -55,7 +55,7 @@ def _user_token() -> tuple[str, str]:
     global _token_cache
     if _token_cache is not None:
         return _token_cache
-    s = _session()
+    s = session()
     menu = json.loads(
         s.get(f"{WS_BASE}/Main/GetSmartLeftMenuTData.do", timeout=10).text
     )
@@ -71,7 +71,7 @@ def _user_token() -> tuple[str, str]:
 _MS_DATE_RE = re.compile(r"\\/Date\((-?\d+)\)\\/")
 
 
-def _parse_ms_date(raw: str) -> str | None:
+def parse_ms_date(raw: str) -> str | None:
     """Parse MS JSON date /Date(ms)/ to YYYY-MM-DD string."""
     m = _MS_DATE_RE.match(raw)
     if not m:
@@ -85,7 +85,7 @@ def _parse_ms_date(raw: str) -> str | None:
         return None
 
 
-def _clean(s: str) -> str:
+def clean_str(s: str) -> str:
     """Strip HTML tags, decode entities, collapse whitespace."""
     s = re.sub(r"<[^>]+>", "", s)    # remove tags first (includes style="..." content)
     s = re.sub(r"&[a-z]+;", "", s)  # remove &nbsp; &gt; &lt; etc.
@@ -146,8 +146,8 @@ def list_programs(
     Returns
         record_count, page, page_size, programs (list of cleaned dicts)
     """
-    user_token, ts = _user_token()
-    s = _session()
+    user_token, ts = user_token()
+    s = session()
 
     params: dict[str, Any] = {
         "pageSize": page_size,
@@ -181,7 +181,7 @@ def list_programs(
         # Decode HTML entities in strings
         for k, v in list(p.items()):
             if isinstance(v, str):
-                p[k] = _clean(v)
+                p[k] = clean_str(v)
         # Parse MS date fields
         for dk in (
             "ApplyBeginDate", "ApplyEndDate",
@@ -189,7 +189,7 @@ def list_programs(
             "CreatedDate", "ModifiedDate",
         ):
             if dk in p and isinstance(p[dk], str) and p[dk].startswith("/Date"):
-                p[dk] = _parse_ms_date(p[dk])
+                p[dk] = parse_ms_date(p[dk])
         # Normalise token field
         p["token"] = p.pop("TokenKey", "")
         programs.append(p)
@@ -214,8 +214,8 @@ def get_count(
     keywords: str | None = None,
 ) -> int:
     """Return total count matching filters."""
-    user_token, ts = _user_token()
-    s = _session()
+    user_token, ts = user_token()
+    s = session()
     params: dict[str, Any] = {"ts": ts, "userToken": user_token}
     if year_code:
         params["YearCode"] = year_code
@@ -260,8 +260,8 @@ def get_program_detail(
     """
     # Resolve code+token via list lookup if not supplied
     if not code or not token:
-        user_token, ts = _user_token()
-        s = _session()
+        user_token, ts = user_token()
+        s = session()
         list_url = f"{WS_BASE}/StudentExchange_2247/GetShortProjectListForStudent.do"
         found_code: str | None = None
         found_token: str | None = None
@@ -283,8 +283,8 @@ def get_program_detail(
         code = found_code or code
         token = found_token or token
 
-    user_token, ts = _user_token()
-    s = _session()
+    user_token, ts = user_token()
+    s = session()
     params: dict[str, Any] = {"ID": id, "ts": ts, "userToken": user_token}
     if code:
         params["Code"] = code
@@ -299,11 +299,11 @@ def get_program_detail(
     if r.status_code != 200 or len(r.text) < 500 or "非授权访问" in r.text:
         return None
 
-    result = _parse_detail_html(r.text)
+    result = parse_detail_html(r.text)
     if not result["sections"] and not result["tables"]:
         # Fallback: extract fields directly from the list item
-        user_token2, ts2 = _user_token()
-        s2 = _session()
+        user_token2, ts2 = user_token()
+        s2 = session()
         fallback_code, fallback_token = code, token
         if not fallback_code or not fallback_token:
             list_url = f"{WS_BASE}/StudentExchange_2247/GetShortProjectListForStudent.do"
@@ -330,13 +330,13 @@ def get_program_detail(
                 timeout=10,
             )
             if r2.status_code == 200 and "非授权访问" not in r2.text:
-                result = _parse_detail_html(r2.text)
+                result = parse_detail_html(r2.text)
 
     result["token"] = token or ""
     return result
 
 
-def _parse_detail_html(html: str) -> dict[str, Any]:
+def parse_detail_html(html: str) -> dict[str, Any]:
     """
     Parse ProjectDetail2247.do HTML response into structured sections.
 
@@ -368,11 +368,11 @@ def _parse_detail_html(html: str) -> dict[str, Any]:
                 if sm:
                     label = re.sub(r"<[^>]+>", "", sm.group(1)).strip()
                     label = re.sub(r"&[a-z]+;", "", label)  # strip &nbsp; etc.
-                    label = _clean(label).rstrip("：").strip()
+                    label = clean_str(label).rstrip("：").strip()
                     rest = sm.string[sm.end():]
                     rest_clean = re.sub(r"<[^>]+>", "", rest).strip()
                     rest_clean = re.sub(r"&[a-z]+;", "", rest_clean)
-                    rest_clean = _clean(rest_clean)
+                    rest_clean = clean_str(rest_clean)
                     if rest_clean:
                         pairs[label] = rest_clean
                     else:
@@ -380,7 +380,7 @@ def _parse_detail_html(html: str) -> dict[str, Any]:
                 elif pending_key:
                     val = re.sub(r"<[^>]+>", "", raw).strip()
                     val = re.sub(r"&[a-z]+;", "", val)
-                    val = _clean(val)
+                    val = clean_str(val)
                     if val:
                         pairs[pending_key] = val
                     pending_key = None
@@ -396,7 +396,7 @@ def _parse_detail_html(html: str) -> dict[str, Any]:
         for row in rows:
             cells = re.findall(r'<td[^>]*>(.*?)</td>', row, re.DOTALL)
             cells = [
-                _clean(re.sub(r"<[^>]+>", "", c).strip())
+                clean_str(re.sub(r"<[^>]+>", "", c).strip())
                 for c in cells
             ]
             # Drop laytpl template artefacts

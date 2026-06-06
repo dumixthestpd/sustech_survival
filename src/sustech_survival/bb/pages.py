@@ -101,11 +101,11 @@ def classify_page(page, bb_url: str, content_id: str) -> Tuple[List[str], str]:
 
 from sustech_survival.sso import BBAuth
 
-_bb = BBAuth()
+bb_auth = BBAuth()
 
 def playwright_cookies():
     """Load BB session in Playwright list format for ctx.add_cookies()."""
-    raw = _bb.load()
+    raw = bb_auth.load()
     return [{"name": k, "value": v, "domain": ".bb.sustech.edu.cn", "path": "/"} for k, v in raw.items() if v]
 
 

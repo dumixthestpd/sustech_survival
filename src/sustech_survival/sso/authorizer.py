@@ -88,8 +88,13 @@ class Authorizer(ABC):
     SESSION_SUBDIR: str = ""  # subdirectory under skill_root for session files
 
     def __init__(self, *, skill_dir: Optional[str] = None, submodule_dir: Optional[str] = None):
-        self.skill_dir = skill_dir
-        self.submodule_dir = submodule_dir
+        # Set skill_dir and submodule_dir as plain attributes. Subclasses
+        # (WoSAuth, IEEEAuth, etc.) that override submodule_dir as @property
+        # to use a per-service path get their property-driven value; the
+        # submodule_dir arg is ignored for them.
+        object.__setattr__(self, "skill_dir", skill_dir)
+        if not isinstance(getattr(type(self), "submodule_dir", None), property):
+            object.__setattr__(self, "submodule_dir", submodule_dir)
         self.session_cache: dict = {}
         self.session_time: float = 0.0  # time.time() of last successful auth
         self.SESSION_TTL: int = 25 * 60  # 25 minutes — server-side session limit

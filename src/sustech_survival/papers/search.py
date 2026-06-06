@@ -14,7 +14,7 @@ WANTED_TYPES = {"journal-article", "proceedings-article", "posted-content"}
 SKIP_TYPES = {"journal-review-article", "book", "book-chapter", "proceedings-review"}
 
 
-def _parse_authors(authors_raw: list) -> list[str]:
+def parse_authors(authors_raw: list) -> list[str]:
     """Parse CrossRef author list robustly."""
     authors = []
     for a in authors_raw:
@@ -90,7 +90,7 @@ def crossref_search(
 
         title = (item.get("title") or ["Untitled"])[0]
         journal = (item.get("container-title") or [None])[0]
-        authors = _parse_authors(item.get("author") or [])
+        authors = parse_authors(item.get("author") or [])
         citations = item.get("is-referenced-by-count", 0)
 
         paper = Paper(

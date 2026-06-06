@@ -22,15 +22,15 @@ class ScopusAuth(Authorizer):
 
     def __init__(self, skill_dir: Optional[str] = None):
         super().__init__(skill_dir=skill_dir)
-        self._scraper = cloudscraper.create_scraper(
+        self.scraper = cloudscraper.create_scraper(
             browser={"browser": "chrome", "platform": "windows", "desktop": True}
         )
-        self._scraper.headers.update({
+        self.scraper.headers.update({
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         })
 
     def check(self) -> tuple[bool, str]:
-        r = self._scraper.get(SCOPUS_BASE, timeout=15)
+        r = self.scraper.get(SCOPUS_BASE, timeout=15)
         if r.status_code == 200 and len(r.text) > 5000 and "scopus" in r.text.lower():
             return True, "Scopus accessible via cloudscraper"
         return False, f"Scopus returned {r.status_code}"
@@ -41,13 +41,13 @@ class ScopusAuth(Authorizer):
         cas.SERVICE_URL = SCOPUS_SSO
         if cas.login(username, password):
             for name, value in cas.session_cookies().items():
-                self._scraper.cookies.set(name, value)
+                self.scraper.cookies.set(name, value)
             return True
         return False
 
     def search(self, query: str, max_results: int = 25) -> dict:
         params = {"term": query, "sort": "relevancy"}
-        r = self._scraper.get(f"{SCOPUS_BASE}/search/scopus", params=params, timeout=20)
+        r = self.scraper.get(f"{SCOPUS_BASE}/search/scopus", params=params, timeout=20)
         return {"results": [], "count": 0, "note": "Scopus HTML search not yet parsed"} if r.status_code == 200 else {"error": f"HTTP {r.status_code}", "results": []}
 
     @property

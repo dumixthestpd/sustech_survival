@@ -18,15 +18,15 @@ if _PKG_ROOT not in _sys.path:
 from sustech_survival.sso import LibAuth
 
 # Use the LibAuth singleton
-_auth = LibAuth(skill_dir=_PKG_ROOT)
+auth_singleton = LibAuth(skill_dir=_PKG_ROOT)
 
 
 def main():
     print(f"=== SUSTech Library Login ===")
-    print(f"Session file: {_auth.session_file}")
+    print(f"Session file: {auth_singleton.session_file}")
 
     # Step 1: Check
-    ok, reason = _auth.check()
+    ok, reason = auth_singleton.check()
     if ok:
         print("✓ Already logged in.")
         return
@@ -34,16 +34,16 @@ def main():
 
     # Step 2: Refresh via requests
     print("[2/3] Attempting requests-based refresh...")
-    if _auth.refresh():
+    if auth_singleton.refresh():
         print("✓ Refresh successful!")
         return
 
     # Step 3: Playwright headful login
     print("[3/3] Opening browser for manual CAS login...")
-    _auth.login()
+    auth_singleton.login()
 
     # Verify
-    ok, reason = _auth.check()
+    ok, reason = auth_singleton.check()
     print("✓ Logged in successfully!" if ok else f"⚠ {reason}")
 
 

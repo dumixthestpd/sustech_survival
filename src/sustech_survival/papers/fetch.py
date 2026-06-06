@@ -19,13 +19,13 @@ HEADERS = {"User-Agent": USER_AGENT}
 CLOUDSCRAPER_HOSTS = {"mdpi.com", "wiley.com", "tandf.co.uk", "sagepub.com", "acs.org"}
 
 
-def _get_scraper():
+def get_scraper():
     return cloudscraper.create_scraper(
         browser={"browser": "chrome", "platform": "windows", "desktop": True}
     )
 
 
-def _safe_filename(title: str, year: Optional[int]) -> str:
+def safe_filename(title: str, year: Optional[int]) -> str:
     """Create a safe filename from paper title."""
     unsafe = r'[/\\:*?"<>|]'
     safe = re.sub(unsafe, "-", title)
@@ -34,7 +34,7 @@ def _safe_filename(title: str, year: Optional[int]) -> str:
     return f"{year_str}_{safe}"
 
 
-def _is_pdf_content(r: requests.Response) -> bool:
+def is_pdf_content(r: requests.Response) -> bool:
     """Check if response content is actually a PDF."""
     if r.status_code != 200:
         return False
@@ -73,7 +73,7 @@ def fetch_pdf(paper: Paper, dest_dir: str | Path, timeout: int = DOWNLOAD_TIMEOU
     if not pdf_url:
         return None
 
-    filename = _safe_filename(paper.title, paper.year) + ".pdf"
+    filename = safe_filename(paper.title, paper.year) + ".pdf"
     dest_path = dest_dir / filename
 
     # Don't re-download if already exists
@@ -86,22 +86,22 @@ def fetch_pdf(paper: Paper, dest_dir: str | Path, timeout: int = DOWNLOAD_TIMEOU
 
     try:
         if use_cloudscraper:
-            scraper = _get_scraper()
+            scraper = get_scraper()
             r = scraper.get(pdf_url, timeout=timeout, allow_redirects=True)
         else:
             r = requests.get(pdf_url, headers=HEADERS, timeout=timeout, allow_redirects=True)
 
-        if not _is_pdf_content(r):
+        if not is_pdf_content(r):
             # Try alternate URL patterns for known publishers
-            alt_urls = _alternate_urls(paper)
+            alt_urls = alternate_urls(paper)
             for alt_url in alt_urls:
                 alt_host = alt_url.split("/")[2]
                 if any(h in alt_host for h in CLOUDSCRAPER_HOSTS):
-                    scraper = _get_scraper()
+                    scraper = get_scraper()
                     r2 = scraper.get(alt_url, timeout=timeout, allow_redirects=True)
                 else:
                     r2 = requests.get(alt_url, headers=HEADERS, timeout=timeout, allow_redirects=True)
-                if _is_pdf_content(r2):
+                if is_pdf_content(r2):
                     dest_path.write_bytes(r2.content)
                     return dest_path
             return None
@@ -113,7 +113,7 @@ def fetch_pdf(paper: Paper, dest_dir: str | Path, timeout: int = DOWNLOAD_TIMEOU
         return None
 
 
-def _alternate_urls(paper: Paper) -> list[str]:
+def alternate_urls(paper: Paper) -> list[str]:
     """Generate alternate PDF URLs for a paper based on DOI and known publisher patterns."""
     if not paper.doi:
         return []
@@ -170,7 +170,7 @@ def fetch_batch(papers: list[Paper], dest_dir: str | Path, delay: float = 1.5) -
     for paper in papers:
         if not paper.pdf_url:
             # For non-OA papers, try to construct URL from DOI
-            alt = _alternate_urls(paper)
+            alt = alternate_urls(paper)
             if alt:
                 paper.pdf_url = alt[0]  # use first alternate URL
         path = fetch_pdf(paper, dest_dir)

@@ -64,5 +64,5 @@ class TestLibDirectImport:
     """lib/login.py should import LibAuth directly, not via get_auth()."""
 
     def test_lib_login_uses_lib_auth_directly(self):
-        from sustech_survival.lib.login import _auth
-        assert _auth.__class__.__name__ == "LibAuth"
+        from sustech_survival.lib.login import auth_singleton
+        assert auth_singleton.__class__.__name__ == "LibAuth"

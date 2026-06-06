@@ -128,7 +128,7 @@ HOLIDAY_DATA = {
 # Module-level time override (for testing / predictions / tracebacks)
 # ─────────────────────────────────────────────────────────────────────────────
 
-_OVERRIDE_TIME: Union[float, None] = None
+OVERRIDE_TIME: Union[float, None] = None
 """If set, all schedule-aware computations use this Unix timestamp instead of now."""
 
 
@@ -136,7 +136,7 @@ _OVERRIDE_TIME: Union[float, None] = None
 # Helper utilities (module-level, shared)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _fetch_json(url: str, timeout: int = 10) -> Optional[dict]:
+def fetch_json(url: str, timeout: int = 10) -> Optional[dict]:
     try:
         import urllib.request
         req = urllib.request.Request(url, headers={"User-Agent": "QuickContext/1.0"})
@@ -146,18 +146,18 @@ def _fetch_json(url: str, timeout: int = 10) -> Optional[dict]:
         return None
 
 
-def _now() -> datetime:
+def now_() -> datetime:
     """Return datetime.now(CHINA_TZ), or overridden time if set."""
-    if _OVERRIDE_TIME is not None:
-        return datetime.fromtimestamp(_OVERRIDE_TIME, tz=CHINA_TZ)
+    if OVERRIDE_TIME is not None:
+        return datetime.fromtimestamp(OVERRIDE_TIME, tz=CHINA_TZ)
     return datetime.now(CHINA_TZ)
 
 
-def _aqi_level(aqi: int) -> str:
+def aqi_level(aqi: int) -> str:
     return "unavailable"
 
 
-def _aqi_icon(aqi: int) -> str:
+def aqi_icon(aqi: int) -> str:
     return "—"
 
 class QuickContext:
@@ -178,64 +178,64 @@ class QuickContext:
                   Pass this for testing/predictions/tracebacks.
         """
         if dt is not None:
-            self._dt = dt
+            self.dt = dt
         elif time is not None:
-            self._dt = datetime.fromtimestamp(time, tz=CHINA_TZ)
+            self.dt = datetime.fromtimestamp(time, tz=CHINA_TZ)
         else:
-            self._dt = datetime.now(CHINA_TZ)
+            self.dt = datetime.now(CHINA_TZ)
 
     # ── computed properties ────────────────────────────────────────────────
 
     @property
     def date(self) -> str:
         """YYYY-MM-DD"""
-        return self._dt.strftime("%Y-%m-%d")
+        return self.dt.strftime("%Y-%m-%d")
 
     @property
     def day(self) -> str:
         """Day name, e.g. 'Thursday'"""
-        return self._dt.strftime("%A")
+        return self.dt.strftime("%A")
 
     @property
     def time_24h(self) -> str:
         """HH:MM in 24h"""
-        return self._dt.strftime("%H:%M")
+        return self.dt.strftime("%H:%M")
 
     @property
     def week(self) -> str:
         """Academic week number, e.g. '14' or '—'"""
-        return _get_academic_info(self._dt)[0]
+        return get_academic_info(self.dt)[0]
 
     @property
     def phase(self) -> str:
         """Academic phase, e.g. '2026 Spring semester' or 'Summer Vacation'"""
-        return _get_academic_info(self._dt)[1]
+        return get_academic_info(self.dt)[1]
 
     @property
     def label(self) -> str:
         """Full academic label, e.g. 'Week 14 of 2026 Spring'"""
-        return _get_academic_info(self._dt)[2]
+        return get_academic_info(self.dt)[2]
 
     @property
     def holiday(self) -> str:
         """Holiday name or ''"""
-        return _is_holiday(self._dt)
+        return is_holiday(self.dt)
 
     @property
     def time(self) -> float:
-        """Unix timestamp — uses _OVERRIDE_TIME if set, else self._dt.timestamp()."""
-        if _OVERRIDE_TIME is not None:
-            return _OVERRIDE_TIME
-        return self._dt.timestamp()
+        """Unix timestamp — uses OVERRIDE_TIME if set, else self.dt.timestamp()."""
+        if OVERRIDE_TIME is not None:
+            return OVERRIDE_TIME
+        return self.dt.timestamp()
 
     @property
     def class_now(self) -> str:
         """Current class name or '' (used as a fast accessor)."""
-        # Lazy: compute on first access, then cache on self._dt
-        cache_key = f"_sr_{self._dt.strftime('%Y%m%d%H%M')}"
+        # Lazy: compute on first access, then cache on self.dt
+        cache_key = f"sr_{self.dt.strftime('%Y%m%d%H%M')}"
         if not hasattr(self, cache_key):
             try:
-                reminder = _get_schedule_reminder(self.time)
+                reminder = get_schedule_reminder(self.time)
             except Exception:
                 reminder = {}
             object.__setattr__(self, cache_key, reminder)
@@ -253,7 +253,7 @@ class QuickContext:
 
         try:
             reminder = self.class_now  # triggers lazy compute if not yet cached
-            now_val = getattr(self, f"_sr_{self._dt.strftime('%Y%m%d%H%M')}", {})
+            now_val = getattr(self, f"sr_{self.dt.strftime('%Y%m%d%H%M')}", {})
             if reminder:
                 parts.append(f"📍 Now: [{reminder}]")
             elif now_val.get("next"):
@@ -279,74 +279,74 @@ class DetailedContext(QuickContext):
 
     def __init__(self, dt: datetime = None, *, time: float = None):
         super().__init__(dt, time=time)
-        self._weather: Optional[dict] = None
-        self._aqi: Optional[dict] = None
-        self._deadline: Optional[dict] = None
-        self._next_eval: Optional[dict] = None
-        self._library: Optional[str] = None
+        self.weather: Optional[dict] = None
+        self.aqi: Optional[dict] = None
+        self.deadline: Optional[dict] = None
+        self.next_eval: Optional[dict] = None
+        self.library: Optional[str] = None
 
     # ── weather lazily fetched ─────────────────────────────────────────────
 
     @property
     def weather_cond(self) -> str:
-        if self._ensure_weather(): return self._weather["condition"]
+        if self.ensure_weather(): return self.weather["condition"]
         return "unavailable"
 
     @property
     def weather_icon(self) -> str:
-        if self._ensure_weather(): return self._weather["icon"]
+        if self.ensure_weather(): return self.weather["icon"]
         return "❓"
 
     @property
     def temperature(self) -> Optional[float]:
-        if self._ensure_weather(): return self._weather["temp_c"]
+        if self.ensure_weather(): return self.weather["temp_c"]
         return None
 
     @property
     def feels_like(self) -> Optional[float]:
-        if self._ensure_weather(): return self._weather["feels_like"]
+        if self.ensure_weather(): return self.weather["feels_like"]
         return None
 
     @property
     def humidity(self) -> Optional[int]:
-        if self._ensure_weather(): return self._weather["humidity"]
+        if self.ensure_weather(): return self.weather["humidity"]
         return None
 
     @property
     def wind_kmh(self) -> Optional[float]:
-        if self._ensure_weather(): return self._weather["wind_kmh"]
+        if self.ensure_weather(): return self.weather["wind_kmh"]
         return None
 
     @property
     def precipitation_mm(self) -> Optional[float]:
-        if self._ensure_weather(): return self._weather["precipitation_mm"]
+        if self.ensure_weather(): return self.weather["precipitation_mm"]
         return None
 
     # ── AQI lazily fetched ─────────────────────────────────────────────────
 
     @property
     def aqi(self) -> Optional[int]:
-        if self._ensure_aqi(): return self._aqi["aqi"]
+        if self.ensure_aqi(): return self.aqi["aqi"]
         return None
 
     @property
     def aqi_level(self) -> str:
-        if self._ensure_aqi(): return self._aqi["aqi_level"]
+        if self.ensure_aqi(): return self.aqi["aqi_level"]
         return "unavailable"
 
     @property
     def aqi_icon(self) -> str:
-        if self._ensure_aqi(): return _aqi_icon(self._aqi["aqi"])
+        if self.ensure_aqi(): return aqi_icon(self.aqi["aqi"])
         return "❓"
 
     @property
     def pm25(self) -> Optional[float]:
-        if self._ensure_aqi(): return self._aqi["pm2_5"]
+        if self.ensure_aqi(): return self.aqi["pm2_5"]
         return None
 
     @property
     def pm10(self) -> Optional[float]:
-        if self._ensure_aqi(): return self._aqi["pm10"]
+        if self.ensure_aqi(): return self.aqi["pm10"]
         return None
 
     # ── deadline / eval / library ─────────────────────────────────────────
@@ -354,40 +354,40 @@ class DetailedContext(QuickContext):
     @property
     def next_deadline(self) -> Optional[dict]:
         """{'name': str, 'due': str, 'days_left': int} or None"""
-        if self._deadline is not None:
-            return self._deadline
-        self._deadline = _fetch_next_deadline()
-        return self._deadline
+        if self.deadline is not None:
+            return self.deadline
+        self.deadline = fetch_next_deadline()
+        return self.deadline
 
     @property
     def next_eval(self) -> Optional[dict]:
         """{'name': str, 'course': str, 'days_left': int} or None"""
-        if self._next_eval is not None:
-            return self._next_eval
-        self._next_eval = _fetch_next_eval()
-        return self._next_eval
+        if self.next_eval is not None:
+            return self.next_eval
+        self.next_eval = fetch_next_eval()
+        return self.next_eval
 
     @property
     def library_status(self) -> str:
         """'一丹: 开放中, 琳恩: 开放中, 涵泳: 开放中' or 'Unknown'"""
-        if self._library is not None:
-            return self._library
-        self._library = _fetch_library_status()
-        return self._library
+        if self.library is not None:
+            return self.library
+        self.library = fetch_library_status()
+        return self.library
 
     # ── internal lazy fetchers ─────────────────────────────────────────────
 
-    def _ensure_weather(self) -> bool:
-        if self._weather is not None:
+    def ensure_weather(self) -> bool:
+        if self.weather is not None:
             return True
-        self._weather = _fetch_weather()
-        return self._weather is not None
+        self.weather = fetch_weather()
+        return self.weather is not None
 
-    def _ensure_aqi(self) -> bool:
-        if self._aqi is not None:
+    def ensure_aqi(self) -> bool:
+        if self.aqi is not None:
             return True
-        self._aqi = _fetch_aqi()
-        return self._aqi is not None
+        self.aqi = fetch_aqi()
+        return self.aqi is not None
 
     # ── string callable ───────────────────────────────────────────────────
 
@@ -395,10 +395,10 @@ class DetailedContext(QuickContext):
         base = QuickContext.__str__(self)
         lines = [base]
 
-        self._ensure_weather()
+        self.ensure_weather()
 
-        if self._weather:
-            w = self._weather
+        if self.weather:
+            w = self.weather
             if w["condition"]:
                 lines.append(f"Weather at SUSTech: [{w['condition']}]")
 
@@ -436,7 +436,7 @@ class DetailedContext(QuickContext):
 # Module-level helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _get_academic_info(dt: datetime):
+def get_academic_info(dt: datetime):
     """Returns (week_str, phase_str, label)."""
     today = dt.date()
 
@@ -462,7 +462,7 @@ def _get_academic_info(dt: datetime):
     return "—", "Unknown", "[Unknown semester]"
 
 
-def _is_holiday(dt: datetime) -> str:
+def is_holiday(dt: datetime) -> str:
     """Check against known holiday data. Returns holiday name or ''."""
     year = dt.year
     holidays = HOLIDAY_DATA.get(year, {})
@@ -482,7 +482,7 @@ _SHENZHEN_LAT = 22.600153
 _SHENZHEN_LON = 114.002035
 
 
-def _fetch_weather() -> Optional[dict]:
+def fetch_weather() -> Optional[dict]:
     """Fetch current weather from api.sustech.online (SUSTech CRA official API).
 
     Returns pre-formatted Chinese string from the official SUSTech weather service.
@@ -513,27 +513,27 @@ def _fetch_weather() -> Optional[dict]:
         return None
 
 
-def _fetch_aqi() -> Optional[dict]:
+def fetch_aqi() -> Optional[dict]:
     url = (
         f"https://air-quality-api.open-meteo.com/v1/air-quality"
         f"?latitude={SUSTECH_LAT}&longitude={SUSTECH_LON}"
         f"&current=us_aqi,pm2_5,pm10,ozone"
         f"&timezone=Asia/Shanghai"
     )
-    data = _fetch_json(url)
+    data = fetch_json(url)
     if not data:
         return None
     cur = data["current"]
     aqi = cur["us_aqi"]
     return {
         "aqi": aqi,
-        "aqi_level": _aqi_level(aqi),
+        "aqi_level": aqi_level(aqi),
         "pm2_5": cur.get("pm2_5"),
         "pm10": cur.get("pm10"),
     }
 
 
-def _fetch_library_status() -> str:
+def fetch_library_status() -> str:
     """Fetch real-time open/closed status from lib.sustech.edu.cn."""
     try:
         import urllib.request
@@ -556,7 +556,7 @@ def _fetch_library_status() -> str:
         return "Unknown"
 
 
-def _slot_times(zc: int) -> dict[int, tuple[str, str]]:
+def slot_times(zc: int) -> dict[int, tuple[str, str]]:
     """Fetch actual 50-min slot start/end times from queryKbjg.
 
     Returns {slot_num: (kssj, jssj)} e.g. {1: ('08:00', '08:50'), 3: ('10:20', '11:10')}.
@@ -585,7 +585,7 @@ def _slot_times(zc: int) -> dict[int, tuple[str, str]]:
         return {}
 
 
-def _entry_time_range(entry: dict, slot_times: dict) -> tuple[int, int] | None:
+def entry_time_range(entry: dict, slot_times: dict) -> tuple[int, int] | None:
     """Return (start_min, end_min) for an entry based on KSJC/JSJC.
 
     Returns None if KSJC/JSJC not in slot_times.
@@ -604,12 +604,12 @@ def _entry_time_range(entry: dict, slot_times: dict) -> tuple[int, int] | None:
     return (start_min, end_min)
 
 
-def _entry_name(entry: dict) -> str:
+def entry_name(entry: dict) -> str:
     return entry.get('SKSJ', '').split('\n')[0] or \
            entry.get('SKSJ_EN', '').split('\n')[0] or ''
 
 
-def _get_schedule_reminder(ts: float) -> dict:
+def get_schedule_reminder(ts: float) -> dict:
     """Compute today's schedule reminder for Unix timestamp ``ts``.
 
     Returns dict:
@@ -629,7 +629,7 @@ def _get_schedule_reminder(ts: float) -> dict:
 
         zc = current_week()
         week = week_schedule(zc)
-        slot_times = _slot_times(zc)
+        slot_times = slot_times(zc)
 
         # Collect today's entries sorted by their start time
         today_entries = []
@@ -646,7 +646,7 @@ def _get_schedule_reminder(ts: float) -> dict:
                 continue
             if day != wd + 1:
                 continue
-            tr = _entry_time_range(entry, slot_times)
+            tr = entry_time_range(entry, slot_times)
             today_entries.append((tr, entry))
 
         # Sort by start time (None = at end)
@@ -658,7 +658,7 @@ def _get_schedule_reminder(ts: float) -> dict:
                 continue
             start_min, end_min = tr
             if start_min <= total_min <= end_min:
-                return {"now": _entry_name(entry)}
+                return {"now": entry_name(entry)}
 
         # 2. Night time — show tomorrow morning courses (slots 1 and 2)
         if is_night:
@@ -678,7 +678,7 @@ def _get_schedule_reminder(ts: float) -> dict:
                         continue
                     ks = int(entry.get('KSJC', 0) or 0)
                     if ks in (1, 2):   # slot 1 or slot 2
-                        morning.append((ks, _entry_name(entry)))
+                        morning.append((ks, entry_name(entry)))
                 if morning:
                     morning.sort()
                     periods_str = " / ".join(f"第{ks}节" for ks, _ in morning)
@@ -698,14 +698,14 @@ def _get_schedule_reminder(ts: float) -> dict:
                 kssj = slot_times.get(ks, ('??', '??'))[0] if ks else '??'
                 jssj = slot_times.get(js, ('??', '??'))[1] if js else '??'
                 detail = f"{kssj}-{jssj}" if kssj != '??' else f"第{ks}-{js}节"
-                return {"next": _entry_name(entry), "next_detail": detail}
+                return {"next": entry_name(entry), "next_detail": detail}
 
         return {}
     except Exception:
         return {}
 
 
-def _fetch_next_deadline() -> Optional[dict]:
+def fetch_next_deadline() -> Optional[dict]:
     """Get nearest BB assignment with due date. Returns {name, due, days_left}.
 
     On auth failure returns {"error": "auth", "hint": "bb session refresh"} so agents
@@ -727,7 +727,7 @@ def _fetch_next_deadline() -> Optional[dict]:
         return None
 
 
-def _fetch_next_eval() -> Optional[dict]:
+def fetch_next_eval() -> Optional[dict]:
     """Get nearest unsubmitted TIS evaluation. Returns {name, course, days_left}.
 
     Shows both untouched (lsjgzt=0) and saved-draft (lsjgzt=3) evals.

@@ -67,3 +67,4 @@ workspace/
 # Temp / scratch
 tmp/
 *.tmp
+.cache/

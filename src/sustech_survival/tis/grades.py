@@ -2,7 +2,7 @@
 
 from pathlib import Path as _Path
 
-_SKILL_ROOT = _Path(__file__).resolve().parent.parent.parent.parent
+SKILL_ROOT = _Path(__file__).resolve().parent.parent.parent.parent
 
 __all__ = ["run"]
 
@@ -10,9 +10,9 @@ from sustech_survival.exceptions import NetworkError, SessionExpired
 from sustech_survival.sso import TISAuth
 
 
-def _make_session():
+def make_session():
     """Build a requests.Session with valid TIS cookies via SSO auth layer."""
-    auth = TISAuth(skill_dir=str(_SKILL_ROOT))
+    auth = TISAuth(skill_dir=str(SKILL_ROOT))
     ok, msg = auth.check()
     if not ok:
         ok = auth.refresh()
@@ -21,7 +21,7 @@ def _make_session():
     return auth.requests_session
 
 
-def _get_grades(session, semester: str = None):
+def get_grades(session, semester: str = None):
     """
     Fetch grades from TIS grade API.
     Returns list of grade dicts.
@@ -76,7 +76,7 @@ _NUMERIC_GPA = {
 }
 
 
-def _calc_gpa(courses, credit_key="xf", grade_key="xscj"):
+def calc_gpa(courses, credit_key="xf", grade_key="xscj"):
     """Calculate GPA from TIS grade records."""
     total_pts = 0.0
     total_creds = 0.0
@@ -107,7 +107,7 @@ def _calc_gpa(courses, credit_key="xf", grade_key="xscj"):
     return round(total_pts / total_creds, 3), total_creds
 
 
-def _format_grade_row(c):
+def format_grade_row(c):
     """Format a single grade row for display."""
     name = c.get("kcmc", "")
     name_en = c.get("kcmc_en", "")
@@ -137,14 +137,14 @@ def run(semester: str = None, export: str = None):
     """See docs/grades.md."""
     print("🔑 CAS login...")
     try:
-        session = _make_session()
+        session = makesession()
     except SessionExpired as e:
         print(f"❌ {e}")
         raise
 
     print("📊 Fetching grades...")
     try:
-        courses = _get_grades(session, semester)
+        courses = get_grades(session, semester)
     except (SessionExpired, NetworkError) as e:
         print(f"❌ {e}")
         raise
@@ -160,15 +160,15 @@ def run(semester: str = None, export: str = None):
         by_semester.setdefault(sem, []).append(c)
 
     # Overall GPA
-    gpa, total_creds = _calc_gpa(courses)
+    gpa, total_creds = calc_gpa(courses)
     print(f"\n📈 共 {len(courses)} 门课程 | 总学分 {total_creds:.0f} |  GPA: {gpa:.3f}\n")
 
     for sem, sem_courses in sorted(by_semester.items()):
-        sem_gpa, sem_creds = _calc_gpa(sem_courses)
+        sem_gpa, sem_creds = calc_gpa(sem_courses)
         print(f"  {'─' * 50}")
         print(f"  {sem}  ({len(sem_courses)} 门课, {sem_creds:.0f} 学分, GPA {sem_gpa:.3f})")
         for c in sem_courses:
-            row = _format_grade_row(c)
+            row = format_grade_row(c)
             grade_disp = f"{row['等级']:>4}" if row['等级'] else "  N/A"
             score_disp = f"({row['分数']})" if row['分数'] else ""
             print(f"    {grade_disp} {row['课程'][:35]:<36} {row['学分']}学分")
@@ -184,5 +184,5 @@ def run(semester: str = None, export: str = None):
             w = csv.DictWriter(f, fieldnames=fields)
             w.writeheader()
             for c in courses:
-                w.writerow(_format_grade_row(c))
+                w.writerow(format_grade_row(c))
         print(f"📄 已导出至 {out}")

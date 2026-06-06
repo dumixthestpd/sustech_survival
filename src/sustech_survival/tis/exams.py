@@ -2,28 +2,28 @@
 
 from pathlib import Path as _Path
 
-_SKILL_ROOT = _Path(__file__).resolve().parent.parent.parent.parent
+SKILL_ROOT = _Path(__file__).resolve().parent.parent.parent.parent
 
 __all__ = ["run"]
 
 from sustech_survival.exceptions import NetworkError
 from sustech_survival.sso import TISAuth
 
-_ta = None  # TISAuth singleton (in-memory session, auto-refresh on expiry)
+tis_auth_singleton = None  # TISAuth singleton (in-memory session, auto-refresh on expiry)
 
 
-def _auth():
+def auth():
     """Return valid cookies from TISAuth, or raise RuntimeError."""
-    global _ta
-    if _ta is None:
-        _ta = TISAuth(skill_dir=str(_SKILL_ROOT))
-    ok, reason = _ta.ensure()
+    global tis_auth_singleton
+    if tis_auth_singleton is None:
+        tis_auth_singleton = TISAuth(skill_dir=str(SKILL_ROOT))
+    ok, reason = tis_auth_singleton.ensure()
     if not ok:
         raise RuntimeError(f"TIS auth failed: {reason}")
-    return _ta.cookies
+    return tis_auth_singleton.cookies
 
 
-def _fetch_exams(cookies: dict):
+def fetch_exams(cookies: dict):
     """Fetch exam schedule from TIS student exam endpoint."""
     import requests
 
@@ -71,7 +71,7 @@ def run(export: str = None):
 
     print("📅 Fetching exam schedule...")
     try:
-        exams = _fetch_exams(cookies)
+        exams = fetch_exams(cookies)
     except (NetworkError, RuntimeError) as e:
         print(f"❌ {e}")
         raise

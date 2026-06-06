@@ -9,8 +9,8 @@ class TestSessionModule:
         assert BB_BASE == "https://bb.sustech.edu.cn"
 
     def test_session_has_auth(self):
-        from sustech_survival.bb.session import _auth
-        assert _auth is not None
+        from sustech_survival.bb.session import auth_singleton
+        assert auth_singleton is not None
 
     def test_session_has_slugify(self):
         from sustech_survival.bb.session import slugify
@@ -29,13 +29,13 @@ class TestBBAuthImport:
     """BB modules should import BBAuth directly, not via get_auth()."""
 
     def test_bb_cli_uses_bb(self):
-        from sustech_survival.bb.cli import _bb
-        assert _bb.__class__.__name__ == "BBAuth"
+        from sustech_survival.bb.cli import bb_auth
+        assert bb_auth.__class__.__name__ == "BBAuth"
 
     def test_bb_pages_uses_bb(self):
-        from sustech_survival.bb.pages import _bb
-        assert _bb.__class__.__name__ == "BBAuth"
+        from sustech_survival.bb.pages import bb_auth
+        assert bb_auth.__class__.__name__ == "BBAuth"
 
     def test_bb_submit_uses_bb(self):
-        from sustech_survival.bb.submit import _bb
-        assert _bb.__class__.__name__ == "BBAuth"
+        from sustech_survival.bb.submit import bb_auth
+        assert bb_auth.__class__.__name__ == "BBAuth"

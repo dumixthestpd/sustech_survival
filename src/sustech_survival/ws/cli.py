@@ -22,7 +22,7 @@ from .programs import get_count, get_program_detail, list_programs, search_progr
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
-def _print_program(p: dict) -> None:
+def print_program(p: dict) -> None:
     click.echo(f"  [{p.get('ID', '?')}] {p.get('Name', '?')}  ({p.get('YearCode', '?')})")
     if p.get("RegionName"):
         click.echo(f"         地区: {p['RegionName']}")
@@ -42,7 +42,7 @@ def _print_program(p: dict) -> None:
     click.echo("")
 
 
-def _print_detail(d: dict) -> None:
+def print_detail(d: dict) -> None:
     sections = d.get("sections", {})
     for sec, pairs in sections.items():
         click.secho(f"\n{'─' * 40}", fg="cyan")
@@ -103,7 +103,7 @@ def list_cmd(page, page_size, year_code, project_type, grade_id, output_fmt):
         return
 
     for p in programs:
-        _print_program(p)
+        print_program(p)
 
     total = result["record_count"]
     per = result["page_size"]
@@ -140,7 +140,7 @@ def search_cmd(query, page, page_size, output_fmt):
     click.secho(f"   第 {result['page']} 页\n", fg="white")
 
     for p in result["programs"]:
-        _print_program(p)
+        print_program(p)
 
     total = result["record_count"]
     per = result["page_size"]
@@ -176,7 +176,7 @@ def show_cmd(program_id, code, token, output_fmt):
         click.secho(f"❌  项目 {program_id} 不存在或无法访问", fg="red")
         sys.exit(1)
 
-    _print_detail(d)
+    print_detail(d)
 
 
 # ── count ─────────────────────────────────────────────────────────────────────

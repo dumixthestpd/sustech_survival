@@ -20,7 +20,7 @@ import requests
 # ── auth singleton ─────────────────────────────────────────────────────────────
 # No hardcoded path — BBAuth().skill_root auto-discovers skill root via
 # credentials.txt search, so this works from any install location.
-_auth = BBAuth()
+bb_auth = BBAuth()
 
 
 def session():
@@ -29,10 +29,10 @@ def session():
     Uses BBAuth.ensure() which auto-refreshes via CAS if the session is expired.
     Raises _SessionExpired on auth failure (including when refresh fails).
     """
-    ok, reason = _auth.ensure()
+    ok, reason = bb_auth.ensure()
     if not ok:
         raise _SessionExpired(f"BB auth failed: {reason}")
-    return _auth.session
+    return bb_auth.session
 
 
 def api(path: str, session=None):

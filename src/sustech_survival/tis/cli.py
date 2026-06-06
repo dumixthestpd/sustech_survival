@@ -25,14 +25,14 @@ from sustech_survival.exceptions import SessionExpired, NetworkError
 from sustech_survival.tis.grades import _get_grades, _calc_gpa, _format_grade_row
 
 # Shared auth instance — refreshed once per CLI invocation
-_auth = None
+auth_singleton = None
 
 
-def _auth_or_exit():
+def auth_or_exit():
     global _auth
     if _auth is None:
-        _auth = TISAuth()
-    ok, reason = _auth.ensure()
+        auth_singleton = TISAuth()
+    ok, reason = auth_singleton.ensure()
     if not ok:
         click.secho(f"❌  Session invalid: {reason}", fg="red")
         sys.exit(1)
@@ -107,7 +107,7 @@ def session_cmd(cmd):
 def courses_cmd(semester):
     """List courses from TIS."""
     try:
-        auth = _auth_or_exit()
+        auth = auth_or_exit()
     except AuthorizerError as e:
         click.secho(f"❌  {e}", fg="red")
         sys.exit(1)
@@ -115,7 +115,7 @@ def courses_cmd(semester):
     click.secho("📚 Fetching courses...", fg="cyan")
     try:
         from sustech_survival.tis.courses import _get_courses
-        courses = _get_courses(auth.requests_session, semester=semester)
+        courses = get_courses(auth.requests_session, semester=semester)
     except (SessionExpired, NetworkError) as e:
         click.secho(f"❌  {e}", fg="red")
         sys.exit(1)
@@ -164,14 +164,14 @@ def grades_cmd(semester, export_path):
         semester = semester.replace("-", "")  # 2025-2026-2 → 2025-20262
 
     try:
-        auth = _auth_or_exit()
+        auth = auth_or_exit()
     except AuthorizerError as e:
         click.secho(f"❌  {e}", fg="red")
         sys.exit(1)
 
     click.secho("📊 Fetching grades...", fg="cyan")
     try:
-        grades = _get_grades(auth.requests_session, semester=semester)
+        grades = get_grades(auth.requests_session, semester=semester)
     except (SessionExpired, NetworkError) as e:
         click.secho(f"❌  {e}", fg="red")
         sys.exit(1)
@@ -193,17 +193,17 @@ def grades_cmd(semester, export_path):
             w = csv.DictWriter(f, fieldnames=fields)
             w.writeheader()
             for g in grades:
-                row = _format_grade_row(g)
+                row = format_grade_row(g)
                 w.writerow({k: row.get(k, "") for k in fields})
         click.secho(f"📄  Exported to {export_path}", fg="green")
         return
 
-    gpa, total_creds = _calc_gpa(grades)
+    gpa, total_creds = calc_gpa(grades)
     click.secho(f"\n{'─' * 60}", fg="cyan")
     click.secho(f"  {len(grades)} 门课  |  GPA: {gpa}  |  总学分: {total_creds:.0f}")
     click.secho(f"{'─' * 60}\n")
     for g in grades:
-        row = _format_grade_row(g)
+        row = format_grade_row(g)
         code = row.get("课程代码", "")
         name = row.get("课程名称", "")
         score = row.get("分数", "-")
@@ -231,7 +231,7 @@ def evals_cmd(pending):
       待评价  (0)   = not started
     """
     try:
-        auth = _auth_or_exit()
+        auth = auth_or_exit()
     except AuthorizerError as e:
         click.secho(f"❌  {e}", fg="red")
         sys.exit(1)
@@ -331,7 +331,7 @@ def query_cmd(path, params, method):
       tis.py query /personnelEvaluation/listObtainPersonnelEvaluationTasks yhdm=12413021 sfyp=0
     """
     try:
-        auth = _auth_or_exit()
+        auth = auth_or_exit()
     except AuthorizerError as e:
         click.secho(f"❌  {e}", fg="red")
         sys.exit(1)

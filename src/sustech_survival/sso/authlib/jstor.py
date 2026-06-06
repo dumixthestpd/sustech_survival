@@ -28,15 +28,15 @@ class JSTORAuth(Authorizer):
 
     def __init__(self, skill_dir: Optional[str] = None):
         super().__init__(skill_dir=skill_dir)
-        self._scraper = cloudscraper.create_scraper(
+        self.scraper = cloudscraper.create_scraper(
             browser={"browser": "chrome", "platform": "windows", "desktop": True}
         )
-        self._scraper.headers.update({
+        self.scraper.headers.update({
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         })
 
     def check(self) -> tuple[bool, str]:
-        r = self._scraper.get(JSTOR_BASE, timeout=15)
+        r = self.scraper.get(JSTOR_BASE, timeout=15)
         if r.status_code == 200 and len(r.text) > 5000:
             if "jstor" in r.text.lower():
                 return True, "JSTOR accessible via cloudscraper"
@@ -61,7 +61,7 @@ class JSTORAuth(Authorizer):
         if cas.login(username, password):
             cookies = cas.session_cookies()
             for name, value in cookies.items():
-                self._scraper.cookies.set(name, value)
+                self.scraper.cookies.set(name, value)
             return True
         return False
 
@@ -70,7 +70,7 @@ class JSTORAuth(Authorizer):
         Search JSTOR. Returns articles matching the query.
         """
         params = {"query": query, "Sort": "relevance"}
-        r = self._scraper.get(JSTOR_SEARCH, params=params, timeout=20)
+        r = self.scraper.get(JSTOR_SEARCH, params=params, timeout=20)
         if r.status_code != 200:
             return {"error": f"HTTP {r.status_code}", "results": []}
 

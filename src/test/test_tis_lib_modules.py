@@ -10,8 +10,8 @@ class TestTISGradesDirectImport:
         assert _T is not None
 
     def test_grades_has_make_session(self):
-        from sustech_survival.tis.grades import _make_session
-        assert callable(_make_session)
+        from sustech_survival.tis.grades import make_session
+        assert callable(make_session)
 
     def test_grades_no_get_auth(self):
         with warnings.catch_warnings(record=True) as w:
@@ -29,8 +29,8 @@ class TestTISCoursesDirectImport:
         assert _T is not None
 
     def test_courses_has_make_session(self):
-        from sustech_survival.tis.courses import _make_session
-        assert callable(_make_session)
+        from sustech_survival.tis.courses import make_session
+        assert callable(make_session)
 
     def test_courses_no_get_auth(self):
         with warnings.catch_warnings(record=True) as w:
@@ -157,5 +157,5 @@ class TestLibModuleDirectImport:
             assert len(deprec) == 0, f"get_auth deprecation in lib/login: {deprec}"
 
     def test_lib_login_uses_lib_auth(self):
-        from sustech_survival.lib.login import _auth
-        assert _auth.__class__.__name__ == "LibAuth"
+        from sustech_survival.lib.login import auth_singleton
+        assert auth_singleton.__class__.__name__ == "LibAuth"

@@ -35,15 +35,15 @@ class IEEEAuth(Authorizer):
 
     def __init__(self, skill_dir: Optional[str] = None):
         super().__init__(skill_dir=skill_dir)
-        self._scraper = cloudscraper.create_scraper(
+        self.scraper = cloudscraper.create_scraper(
             browser={"browser": "chrome", "platform": "windows", "desktop": True}
         )
-        self._scraper.headers.update({
+        self.scraper.headers.update({
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         })
 
     def check(self) -> tuple[bool, str]:
-        r = self._scraper.get(IEEE_BASE, timeout=15)
+        r = self.scraper.get(IEEE_BASE, timeout=15)
         if r.status_code == 200 and len(r.text) > 5000:
             return True, "IEEE Xplore accessible via cloudscraper"
         return False, f"IEEE returned {r.status_code}"
@@ -62,7 +62,7 @@ class IEEEAuth(Authorizer):
             # Transfer CAS cookies to cloudscraper session
             session_cookies = cas.session_cookies()
             for name, value in session_cookies.items():
-                self._scraper.cookies.set(name, value)
+                self.scraper.cookies.set(name, value)
             return True
         return False
 
@@ -77,7 +77,7 @@ class IEEEAuth(Authorizer):
             "rowsPerPage": str(min(max_results, 100)),
             "pageNumber": "1",
         }
-        r = self._scraper.get(IEEE_SEARCH, params=params, timeout=20)
+        r = self.scraper.get(IEEE_SEARCH, params=params, timeout=20)
         if r.status_code != 200:
             return {"error": f"HTTP {r.status_code}", "results": []}
 
@@ -102,7 +102,7 @@ class IEEEAuth(Authorizer):
     def fetch_pdf(self, article_id: str, output_path: str) -> bool:
         """Download an article PDF by IEEE article ID."""
         pdf_url = f"{IEEE_BASE}/stampPDF/getPDF?arnumber={article_id}"
-        r = self._scraper.get(pdf_url, timeout=30, stream=True)
+        r = self.scraper.get(pdf_url, timeout=30, stream=True)
         if r.status_code != 200:
             return False
         Path(output_path).write_bytes(r.content)

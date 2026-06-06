@@ -23,7 +23,7 @@ from playwright.sync_api import sync_playwright
 
 from sustech_survival.sso import BBAuth
 
-_bb = BBAuth()
+bb_auth = BBAuth()
 
 
 def num_id(bb_id):
@@ -42,7 +42,7 @@ def clean_filename(name: str) -> str:
 
 def load_cookies():
     """Load cookies for Playwright (list format for ctx.add_cookies)."""
-    raw = _bb.load()
+    raw = bb_auth.load()
     return [{"name": k, "value": v, "domain": ".bb.sustech.edu.cn", "path": "/"} for k, v in raw.items() if v]
 
 
@@ -50,7 +50,7 @@ def requests_session():
     """Return a requests.Session with BB cookies attached."""
     import requests as _requests
     sess = _requests.Session()
-    cookies = _bb.load()
+    cookies = bb_auth.load()
     for name, value in cookies.items():
         if value:
             sess.cookies.set(name, value, domain=".bb.sustech.edu.cn", path="/")

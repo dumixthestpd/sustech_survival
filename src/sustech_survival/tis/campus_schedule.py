@@ -26,21 +26,21 @@ Response: {total: N, pageSize: 500, rwList: {list: [course_items]}}
 import sys
 from pathlib import Path as _Path
 
-_SKILL_ROOT = _Path(__file__).resolve().parent.parent.parent.parent
+SKILL_ROOT = _Path(__file__).resolve().parent.parent.parent.parent
 from sustech_survival.sso import TISAuth
 
-_ta = None  # TISAuth singleton (in-memory session, auto-refresh on expiry)
+tis_auth_singleton = None  # TISAuth singleton (in-memory session, auto-refresh on expiry)
 
 
-def _get_session():
+def get_session():
     """Return valid cookies from TISAuth, or raise RuntimeError."""
-    global _ta
-    if _ta is None:
-        _ta = TISAuth(skill_dir=str(_SKILL_ROOT))
-    ok, reason = _ta.ensure()
+    global tis_auth_singleton
+    if tis_auth_singleton is None:
+        tis_auth_singleton = TISAuth(skill_dir=str(SKILL_ROOT))
+    ok, reason = tis_auth_singleton.ensure()
     if not ok:
         raise RuntimeError(f"TIS auth failed: {reason}")
-    return _ta.cookies
+    return tis_auth_singleton.cookies
 
 
 def get_campus_schedule(xn="2025-2026", xq="2", page_size=500, page_num=1, full=False, **kwargs):
@@ -59,7 +59,7 @@ def get_campus_schedule(xn="2025-2026", xq="2", page_size=500, page_num=1, full=
     Returns:
         dict with keys: total, pageSize, rwList (list of course dicts)
     """
-    cookies = _get_session()
+    cookies = getsession()
     h = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
         "X-Requested-With": "XMLHttpRequest",

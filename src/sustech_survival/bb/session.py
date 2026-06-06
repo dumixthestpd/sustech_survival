@@ -22,14 +22,14 @@ STRUCTURE_FILE = BB_DIR / "structure.json"
 from sustech_survival.sso import BBAuth
 
 # Module-level singleton
-_auth = BBAuth(skill_dir=str(SKILL_ROOT))
+auth_singleton = BBAuth(skill_dir=str(SKILL_ROOT))
 
 # ── Convenience wrappers ─────────────────────────────────────────────────────
 
 from sustech_survival.sso.authorizer import Authorizer
 
-Authorizer.username = property(lambda self: _auth.username, lambda self, v: setattr(_auth, 'username', v))
-Authorizer.password = property(lambda self: _auth.password, lambda self, v: setattr(_auth, 'password', v))
+Authorizer.username = property(lambda self: auth_singleton.username, lambda self, v: setattr(auth_singleton, 'username', v))
+Authorizer.password = property(lambda self: auth_singleton.password, lambda self, v: setattr(auth_singleton, 'password', v))
 
 
 def session(*, force: bool = False):
@@ -37,7 +37,7 @@ def session(*, force: bool = False):
     Return a requests.Session with BB cookies attached.
     Auto-refreshes if the session is expired.
     """
-    return _auth.session(force=force)
+    return auth_singleton.session(force=force)
 
 
 def login(*, headless: bool = False):
@@ -45,7 +45,7 @@ def login(*, headless: bool = False):
     CAS login via Playwright (headless=True) or requests (headless=False).
     Returns True on success.
     """
-    return _auth.login(headless=headless)
+    return auth_singleton.login(headless=headless)
 
 
 def check() -> tuple[bool, str]:
@@ -53,7 +53,7 @@ def check() -> tuple[bool, str]:
     Check if current session is valid.
     Returns (True, "") if valid, (False, reason) if not.
     """
-    return _auth.check()
+    return auth_singleton.check()
 
 
 def refresh() -> bool:
@@ -61,7 +61,7 @@ def refresh() -> bool:
     Force a fresh CAS ticket exchange.
     Returns True on success.
     """
-    return _auth.refresh()
+    return auth_singleton.refresh()
 
 
 def ensure() -> tuple[bool, str]:
@@ -69,7 +69,7 @@ def ensure() -> tuple[bool, str]:
     check() + auto-refresh if expired.
     Returns (True, "") on success, (False, reason) on failure.
     """
-    return _auth.ensure()
+    return auth_singleton.ensure()
 
 
 def slugify(name: str) -> str:

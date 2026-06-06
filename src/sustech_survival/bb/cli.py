@@ -41,18 +41,18 @@ def err_s(s):
     return click.style(s, fg="red")
 
 
-_bb = BBAuth()
+bb_auth = BBAuth()
 
 
 def load_session_or_exit():
     """Ensure session is valid and return Playwright-format cookies list."""
     try:
-        ok, reason = _bb.ensure()
+        ok, reason = bb_auth.ensure()
         if not ok:
             click.secho(f"\n❌  Session invalid: {reason}", fg="red")
             sys.exit(1)
         # Get cookies from in-memory cache
-        raw = _bb.cookies
+        raw = bb_auth.cookies
         return [{"name": k, "value": v, "domain": ".bb.sustech.edu.cn", "path": "/"}
                 for k, v in raw.items() if v]
     except AuthorizerError as e:
@@ -241,7 +241,7 @@ def session_cmd(cmd):
       bb.py session login   # manual browser login
     """
     if cmd == "check":
-        ok, reason = _bb.check()
+        ok, reason = bb_auth.check()
         if ok:
             click.secho("✅ Session valid", fg="green")
         else:
@@ -249,7 +249,7 @@ def session_cmd(cmd):
             sys.exit(1)
     elif cmd == "refresh":
         click.secho("Refreshing session via CAS...", fg="cyan")
-        ok = _bb.refresh()
+        ok = bb_auth.refresh()
         if ok:
             click.secho("✅ Session refreshed", fg="green")
         else:
@@ -257,7 +257,7 @@ def session_cmd(cmd):
             sys.exit(1)
     elif cmd == "login":
         click.secho("Opening browser for manual CAS login...", fg="cyan")
-        _bb.login()
+        bb_auth.login()
         click.secho("✅ Login complete", fg="green")
 
 

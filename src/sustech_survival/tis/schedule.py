@@ -19,7 +19,7 @@ from sustech_survival.sso import TISAuth
 # Singleton auth instance to avoid repeated re-auth on every call
 _auth_instance = None
 
-def _session():
+def session():
     global _auth_instance
     if _auth_instance is None:
         _auth_instance = TISAuth()
@@ -32,14 +32,14 @@ def _session():
 
 def current_semester() -> dict:
     """Return current semester info:XN, XQ, XNXQ, XNXQ_EN."""
-    sess = _session()
+    sess = session()
     return sess.post('https://tis.sustech.edu.cn/component/querydangqianxnxq',
                      data={}).json()
 
 
 def current_week() -> int:
     """Return current week number (1-18)."""
-    sess = _session()
+    sess = session()
     return int(sess.post('https://tis.sustech.edu.cn/component/querydangqianzc',
                           data={}).text)
 
@@ -63,7 +63,7 @@ def week_schedule(zc: int, xn: str | None = None, xq: str | None = None) -> list
         xn = xn or sem['XN']
         xq = xq or sem['XQ']
 
-    sess = _session()
+    sess = session()
     url = 'https://tis.sustech.edu.cn/xszykb/queryxszykbzhou'
     r = sess.post(url, data={'xn': xn, 'xq': xq, 'zc': str(zc)})
     r.raise_for_status()
@@ -80,7 +80,7 @@ def semester_schedule(xn: str | None = None, xq: str | None = None) -> list[dict
         xn = xn or sem['XN']
         xq = xq or sem['XQ']
 
-    sess = _session()
+    sess = session()
     url = 'https://tis.sustech.edu.cn/xszykb/queryxszykbzong'
     r = sess.post(url, data={'xn': xn, 'xq': xq})
     r.raise_for_status()
@@ -89,7 +89,7 @@ def semester_schedule(xn: str | None = None, xq: str | None = None) -> list[dict
 
 def week_list() -> list[int]:
     """Return list of valid week numbers for the current semester."""
-    sess = _session()
+    sess = session()
     r = sess.post('https://tis.sustech.edu.cn/component/queryzclist',
                   data=current_semester())
     return [item['ZC'] for item in r.json()]

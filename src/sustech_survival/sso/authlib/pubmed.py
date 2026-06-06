@@ -38,10 +38,10 @@ class PubMedAuth(Authorizer):
     API_KEY: Optional[str] = None  # Set from credentials or None for anonymous
 
     def __init__(self, api_key: Optional[str] = None, skill_dir: Optional[str] = None):
-        self._api_key = api_key or self.API_KEY
+        self.api_key = api_key or self.API_KEY
         super().__init__(skill_dir=skill_dir)
-        self._session = requests.Session()
-        self._session.headers.update({
+        self.http = requests.Session()
+        self.http.headers.update({
             "User-Agent": "sustech-survival/1.0 (SUSTech student; mailto:dumix@sustech.edu.cn)",
             "Accept": "application/json",
         })
@@ -79,11 +79,11 @@ class PubMedAuth(Authorizer):
             params["mindate"] = mindate
         if maxdate:
             params["maxdate"] = maxdate
-        if self._api_key:
-            params["api_key"] = self._api_key
+        if self.api_key:
+            params["api_key"] = self.api_key
 
         url = f"{ENTREZ_EUTILS}/esearch.fcgi?{urlencode(params)}"
-        r = self._session.get(url, timeout=15)
+        r = self.http.get(url, timeout=15)
         r.raise_for_status()
         data = r.json()
 
@@ -113,14 +113,14 @@ class PubMedAuth(Authorizer):
             "retmode": "xml",
             "rettype": "abstract",
         }
-        if self._api_key:
-            params["api_key"] = self._api_key
+        if self.api_key:
+            params["api_key"] = self.api_key
 
         url = f"{ENTREZ_EUTILS}/efetch.fcgi?{urlencode(params)}"
-        r = self._session.get(url, timeout=30)
+        r = self.http.get(url, timeout=30)
         r.raise_for_status()
 
-        return self._parse_abstracts_xml(r.text)
+        return self.parse_abstracts_xml(r.text)
 
     def fetch_citations(self, pmid: str) -> dict:
         """Fetch a single PMID's full citation record."""
@@ -132,7 +132,7 @@ class PubMedAuth(Authorizer):
 
     # ── Internals ────────────────────────────────────────────────────────────
 
-    def _parse_abstracts_xml(self, xml_text: str) -> list[dict]:
+    def parse_abstracts_xml(self, xml_text: str) -> list[dict]:
         results = []
         try:
             root = ET.fromstring(xml_text)
@@ -186,7 +186,7 @@ class PubMedAuth(Authorizer):
         """NCBI uses API keys, not passwords. Set API_KEY instead."""
         if len(username) > 10 and not password:
             # Assume username is actually an API key
-            self._api_key = username
+            self.api_key = username
             return True
         return False
 

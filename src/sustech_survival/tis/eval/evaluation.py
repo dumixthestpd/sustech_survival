@@ -48,13 +48,13 @@ class Evaluation:
         self.questionnaire_uuid = questionnaire_uuid
         self.theme_uuid = theme_uuid
         self.task_rwid = task_rwid
-        self._page: Optional[object] = page
-        self._browser: Optional[object] = browser
+        self.page: Optional[object] = page
+        self.browser: Optional[object] = browser
         self.questions_data: list[dict] = []   # raw dicts from JS
-        self._jsonobj: dict = {}
-        self._pjmap: dict = {}
-        self._wjlist: list = []
-        self._question_blocks: list = []
+        self.jsonobj: dict = {}
+        self.pjmap: dict = {}
+        self.wjlist: list = []
+        self.question_blocks: list = []
 
     # ---------------------------------------------------------------------------
     # Public API
@@ -110,24 +110,24 @@ class Evaluation:
         Sets ``self.questions_data`` with type, text, options for each question.
         Returns self.
         """
-        page = self._page
+        page = self.page
         assert page is not None, "Evaluation not attached to a browser page"
         self.questions_data = []
-        self._seen_qids: set[str] = set()
+        self.seen_qids: set[str] = set()
 
         while True:
             page.wait_for_timeout(2000)
 
             # Read Vue state ONCE per page before extracting questions
-            self._read_vue_state(page)
+            self.read_vue_state(page)
 
             raw: list[dict] = page.evaluate(_EXTRACT_QUESTIONS_JS)
 
             for d in raw:
                 qid = d["qid"]
-                if qid in self._seen_qids:
+                if qid in self.seen_qids:
                     continue
-                self._seen_qids.add(qid)
+                self.seen_qids.add(qid)
 
                 opts = d.get("options", [])
                 if d.get("isRating") or (opts and all(o.isdigit() for o in opts)):
@@ -166,7 +166,7 @@ class Evaluation:
 
         return self
 
-    def _read_vue_state(self, page) -> None:
+    def read_vue_state(self, page) -> None:
         """Read jsonobj, pjmap, wjlist from Vue and cache on self."""
         result = page.evaluate("""() => {
             try {
@@ -207,20 +207,20 @@ class Evaluation:
             } catch(e) { return null; }
         }""")
         if result:
-            self._jsonobj = result.get("jsonobj") or {}
-            self._pjmap = result.get("pjmap") or {}
-            self._wjlist = result.get("wjlist") or []
-            self._question_blocks = result.get("question_blocks") or []
+            self.jsonobj = result.get("jsonobj") or {}
+            self.pjmap = result.get("pjmap") or {}
+            self.wjlist = result.get("wjlist") or []
+            self.question_blocks = result.get("question_blocks") or []
             # Store per-page wjid for correct pjlx routing in save
-            self._course_wjid = result.get("course_wjid") or ""
-            self._teacher_wjid = result.get("teacher_wjid") or ""
+            self.course_wjid = result.get("course_wjid") or ""
+            self.teacher_wjid = result.get("teacher_wjid") or ""
         else:
-            self._jsonobj = {}
-            self._pjmap = {}
-            self._wjlist = []
-            self._question_blocks = []
-            self._course_wjid = ""
-            self._teacher_wjid = ""
+            self.jsonobj = {}
+            self.pjmap = {}
+            self.wjlist = []
+            self.question_blocks = []
+            self.course_wjid = ""
+            self.teacher_wjid = ""
 
     def save(self) -> Evaluation:
         """
@@ -234,14 +234,14 @@ class Evaluation:
             raise RuntimeError("TIS auth refresh failed — run: sustech tis session refresh")
         sess = auth.session
         BASE = TISAuth.BASE_URL
-        body1 = self._build_save_body(pjlx="1")
+        body1 = self.build_save_body(pjlx="1")
         r1 = sess.post(
             f"{BASE}/personnelEvaluation/submitSaveEvaluation",
             json=body1,
             timeout=15,
         )
         result1 = r1.json()
-        self._last_save_result = result1
+        self.last_save_result = result1
 
         # Extract pjid from result 1 for use in result 2
         new_pjid = ""
@@ -258,14 +258,14 @@ class Evaluation:
             new_pjid = getattr(self, "_jsonobj", {}).get("id", "") or ""
 
         # Pass 2: teacher/TA questions (pjlx=2) — only if we have pjlx=2 questions
-        body2 = self._build_save_body(pjlx="2", prior_pjid=new_pjid)
+        body2 = self.build_save_body(pjlx="2", prior_pjid=new_pjid)
         if body2["pjjglist"][0]["pjxxlist"]:
             r2 = sess.post(
                 f"{BASE}/personnelEvaluation/submitSaveEvaluation",
                 json=body2,
                 timeout=15,
             )
-            self._last_save_result = r2.json()
+            self.last_save_result = r2.json()
 
         return self
 
@@ -273,7 +273,7 @@ class Evaluation:
     # Internal
     # ---------------------------------------------------------------------------
 
-    def _build_save_body(self, pjlx: str = "1", prior_pjid: str = "") -> dict:
+    def build_save_body(self, pjlx: str = "1", prior_pjid: str = "") -> dict:
         """
         Build save body for one pjlx layer.
 
@@ -427,7 +427,7 @@ class Evaluation:
         }
 
     @staticmethod
-    def _json_dumps(obj) -> str:
+    def json_dumps(obj) -> str:
         return _json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
 
     def __repr__(self):

@@ -15,24 +15,24 @@ Flags:
 """
 
 import sys, re, json, argparse
-from pathlib import Path
+from pathlib import Path as _Path
 from html import parser as html_parser
 from sustech_survival.sso import TISAuth
 
-_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+SKILL_ROOT = _Path(__file__).resolve().parent.parent.parent.parent
 
 # ── Login ─────────────────────────────────────────────────────────────────────
-_ta = None  # TISAuth singleton (in-memory session, auto-refresh on expiry)
+tis_auth_singleton = None  # TISAuth singleton (in-memory session, auto-refresh on expiry)
 
-def _auth():
+def auth():
     """Return valid cookies from TISAuth, or None if auth fails."""
-    global _ta
-    if _ta is None:
-        _ta = TISAuth(skill_dir=str(_ROOT))
-    ok, reason = _ta.ensure()
+    global tis_auth_singleton
+    if tis_auth_singleton is None:
+        tis_auth_singleton = TISAuth(skill_dir=str(SKILL_ROOT))
+    ok, reason = tis_auth_singleton.ensure()
     if not ok:
         return None
-    return _ta.cookies
+    return tis_auth_singleton.cookies
 
 
 # ── Slot parser (uses pkjgmx_en — English HTML, much cleaner) ─────────────────
@@ -44,24 +44,24 @@ class _SlotParser(html_parser.HTMLParser):
     def __init__(self):
         super().__init__()
         self.slots = []
-        self._in_p = False
-        self._buf = ""
+        self.in_p = False
+        self.buf = ""
 
     def handle_starttag(self, tag, attrs):
         if tag == "p":
-            self._in_p = True
-            self._buf = ""
+            self.in_p = True
+            self.buf = ""
 
     def handle_endtag(self, tag):
-        if tag == "p" and self._in_p:
-            self._in_p = False
-            text = self._buf.strip()
+        if tag == "p" and self.in_p:
+            self.in_p = False
+            text = self.buf.strip()
             if text:
                 self.slots.append(text)
 
     def handle_data(self, data):
-        if self._in_p:
-            self._buf += data
+        if self.in_p:
+            self.buf += data
 
 
 # English slot format: "1-15单Week,Mon. 5-6 一教321" or "1-9,11,13-15Week,Wed. 5-6"
@@ -73,7 +73,7 @@ _EN_SLOT_RE = re.compile(
 )
 
 
-def _parse_week_list(s: str) -> tuple[set[int], str]:
+def parse_week_list(s: str) -> tuple[set[int], str]:
     """Parse '1-15' or '1-9,11,13-15' into a set of week numbers."""
     weeks: set[int] = set()
     week_type = "all"
@@ -106,7 +106,7 @@ def parse_slots(html: str) -> list[dict]:
         periods_raw = m.group("periods")  # "5-6" or "5"
         room = m.group("room") or ""   # "一教321"
 
-        weeks, week_type = _parse_week_list(weeks_raw)
+        weeks, week_type = parse_week_list(weeks_raw)
 
         if note == "单":
             weeks = {w for w in weeks if w % 2 == 1}

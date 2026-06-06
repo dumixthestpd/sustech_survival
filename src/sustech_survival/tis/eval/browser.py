@@ -193,7 +193,7 @@ class TISAuthEval(TISAuth):
         # Intercept AJAX calls — fix xnxq format so backend understands it.
         # Vue SPA sends hyphenated "2025-2026-2" but the API only accepts compact "2025-20262".
         # Semester(str) parses any TIS code and .tis exports compact form.
-        def _fix_xnxq(route, request):
+        def fix_xnxq(route, request):
             url = request.url
             val = url.partition("xnxq=")[2].partition("&")[0]
             # Normalize: handle both hyphenated (2025-2026-2) and compact (2025-20262)
@@ -330,7 +330,7 @@ class TISAuthEval(TISAuth):
                                   "domain": "tis.sustech.edu.cn", "path": "/"}])
 
             # Route interceptor: normalize xnxq in AJAX calls
-            def _fix_xnxq(route, req):
+            def fix_xnxq(route, req):
                 url = req.url
                 val = url.partition("xnxq=")[2].partition("&")[0]
                 try:
@@ -495,7 +495,7 @@ class TISAuthEval(TISAuth):
                                   "domain": "tis.sustech.edu.cn", "path": "/"}])
 
             # Intercept AJAX calls to fix xnxq format: normalize any variant to TIS compact
-            def _fix_xnxq(route, request):
+            def fix_xnxq(route, request):
                 url = request.url
                 val = url.partition("xnxq=")[2].partition("&")[0]
                 try:

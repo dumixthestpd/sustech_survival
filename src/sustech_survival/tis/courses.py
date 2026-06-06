@@ -2,7 +2,7 @@
 
 from pathlib import Path as _Path
 
-_SKILL_ROOT = _Path(__file__).resolve().parent.parent.parent.parent
+SKILL_ROOT = _Path(__file__).resolve().parent.parent.parent.parent
 
 __all__ = ["run"]
 
@@ -10,9 +10,9 @@ from sustech_survival.exceptions import NetworkError, SessionExpired
 from sustech_survival.sso import TISAuth
 
 
-def _make_session():
+def make_session():
     """Build a requests.Session with valid TIS cookies via SSO auth layer."""
-    auth = TISAuth(skill_dir=str(_SKILL_ROOT))
+    auth = TISAuth(skill_dir=str(SKILL_ROOT))
     ok, msg = auth.check()
     if not ok:
         ok = auth.refresh()
@@ -21,7 +21,7 @@ def _make_session():
     return auth.requests_session
 
 
-def _get_courses(session, semester: str = None):
+def get_courses(session, semester: str = None):
     """Fetch courses from TIS grade API (same endpoint as grades)."""
     r = session.post(
         "https://tis.sustech.edu.cn/cjgl/grcjcx/grcjcx",
@@ -46,14 +46,14 @@ def run(semester: str = None, format: str = "table"):
     """See docs/courses.md."""
     print("🔑 CAS login...")
     try:
-        session = _make_session()
+        session = makesession()
     except SessionExpired as e:
         print(f"❌ {e}")
         raise
 
     print("📚 Fetching courses...")
     try:
-        courses = _get_courses(session, semester)
+        courses = get_courses(session, semester)
     except (SessionExpired, NetworkError) as e:
         print(f"❌ {e}")
         raise

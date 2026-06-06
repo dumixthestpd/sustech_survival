@@ -38,7 +38,7 @@ class CNKIAuth(ShibbolethAuthorizer):
     def submodule_dir(self):
         return self.skill_root / "cnki"
 
-    def _find_institution_link(self, page):
+    def find_institution_link(self, page):
         return None
 
     def login(self, *, headless: bool = False, username: str = None, password: str = None):
@@ -68,8 +68,8 @@ class CNKIAuth(ShibbolethAuthorizer):
         shib_url = f"{CNKI_FSSO}?{urlencode(params)}"
 
         # Launch browser
-        self._playwright = sync_playwright().start()
-        self.browser = self._playwright.chromium.launch(headless=headless)
+        self.playwright = sync_playwright().start()
+        self.browser = self.playwright.chromium.launch(headless=headless)
         self.ctx = self.browser.new_context()
         self.page = self.ctx.new_page()
         page = self.page

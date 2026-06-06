@@ -26,7 +26,7 @@ HEADERS = {
 _pw_browser = None
 _pw_lock = threading.Lock()
 
-def _get_playwright():
+def get_playwright():
     global _pw_browser
     with _pw_lock:
         if _pw_browser is None:
@@ -68,7 +68,7 @@ def pw_fetch(url, method="POST", data=None, headers=None, timeout=30):
     }}
     """
 
-    browser = _get_playwright()
+    browser = get_playwright()
     ctx = browser.new_context()
     page = ctx.new_page()
     try:
@@ -97,7 +97,7 @@ def tis_post(endpoint, data, cookies=None, use_pw=True):
     return r
 
 # ── TIS Login ────────────────────────────────────────────────────────────────
-def load_session():
+def loadsession():
     """Check existing session; re-login only if expired."""
     creds_file = Path(__file__).resolve().parent.parent.parent.parent / "credentials.txt"
     if not creds_file.exists():
@@ -335,7 +335,7 @@ def index():
 
 @app.route("/api/refresh", methods=["POST"])
 def api_refresh():
-    cookies = load_session()
+    cookies = loadsession()
     if not cookies:
         return jsonify({"error": "login failed"}), 401
     sections = fetch_all_sections(cookies)

@@ -56,14 +56,14 @@ class RSCAuthorizer(ShibbolethAuthorizer):
         c = Credentials()
         return c.username, c.password
 
-    def _find_institution_link(self, page):
+    def find_institution_link(self, page):
         """
         RSC has an explicit 'Log in via your home institution' link.
         We bypass it entirely by navigating to the direct Shibboleth check URL.
         """
         return None  # signals base.login() to skip WAYF and go direct
 
-    def _handle_wayf(self, page):
+    def handle_wayf(self, page):
         """
         Since we navigate directly to the Shibboleth check URL (no WAYF),
         this is not called. The base.login() skips it when _find returns None.
@@ -133,7 +133,7 @@ class RSCAuthorizer(ShibbolethAuthorizer):
                 print(f"[4/4] ✅ RSC login succeeded! URL: {page.url}")
                 self.browser = browser
                 self.page = page
-                self._playwright = p
+                self.playwright = p
                 return True
             else:
                 print(f"[4/4] ❌ Not at RSC. URL: {page.url}")
@@ -149,5 +149,5 @@ class RSCAuthorizer(ShibbolethAuthorizer):
 
 
 # Module-level singleton + registration
-_auth = RSCAuthorizer()
+rsc_auth_singleton = RSCAuthorizer()
 register_auth("rsc", _auth)

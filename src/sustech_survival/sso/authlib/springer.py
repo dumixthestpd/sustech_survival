@@ -29,16 +29,16 @@ class SpringerAuth(Authorizer):
 
     def __init__(self, skill_dir: Optional[str] = None):
         super().__init__(skill_dir=skill_dir)
-        self._scraper = cloudscraper.create_scraper(
+        self.scraper = cloudscraper.create_scraper(
             browser={"browser": "chrome", "platform": "windows", "desktop": True}
         )
-        self._scraper.headers.update({
+        self.scraper.headers.update({
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         })
 
     def check(self) -> tuple[bool, str]:
-        r = self._scraper.get(SPRINGER_BASE, timeout=15)
+        r = self.scraper.get(SPRINGER_BASE, timeout=15)
         if r.status_code == 200 and len(r.text) > 5000 and "springer" in r.text.lower():
             return True, "Springer accessible via cloudscraper"
         return False, f"Springer returned {r.status_code}"
@@ -56,7 +56,7 @@ class SpringerAuth(Authorizer):
         cas.SERVICE_URL = SPRINGER_SSO
         if cas.login(username, password):
             for name, value in cas.session_cookies().items():
-                self._scraper.cookies.set(name, value)
+                self.scraper.cookies.set(name, value)
             return True
         return False
 
@@ -66,7 +66,7 @@ class SpringerAuth(Authorizer):
             "q": query,
             "numberOfPages": min(max_results // 20, 10),
         }
-        r = self._scraper.get(f"{SPRINGER_BASE}/search", params=params, timeout=20)
+        r = self.scraper.get(f"{SPRINGER_BASE}/search", params=params, timeout=20)
         if r.status_code != 200:
             return {"error": f"HTTP {r.status_code}", "results": []}
         # Parse JSON-API response

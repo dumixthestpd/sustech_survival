@@ -6,8 +6,8 @@ from playwright.sync_api import sync_playwright
 SESSION_FILE = f"{skill_dir}/bb/wos_session.json"
 
 # Singleton Playwright/browser — keep alive across calls
-_browser = None
-_ctx = None
+browser_singleton = None
+ctx_singleton = None
 
 
 def get_browser():
@@ -75,7 +75,7 @@ def login_to_wos():
     except Exception:
         if "webofknowledge" in page.url or "webofscience" in page.url:
             print("[WoS] → Already authenticated, session active")
-            _save_session(ctx)
+            save_session(ctx)
             return True
         print(f"[WoS] ⚠ Not at CAS: {page.url[:60]}")
         return False
@@ -99,7 +99,7 @@ def login_to_wos():
         page.wait_for_timeout(6000)
 
     print(f"[WoS] ✅ Logged in: {page.url[:70]}")
-    _save_session(ctx)
+    save_session(ctx)
     page.close()
     return True
 
@@ -174,7 +174,7 @@ def get_article_html(doi):
     return html
 
 
-def _save_session(ctx):
+def save_session(ctx):
     cookies = {c['name']: c['value'] for c in ctx.cookies()}
     with open(SESSION_FILE, "w") as f:
         json.dump(cookies, f)
