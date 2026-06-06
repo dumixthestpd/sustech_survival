@@ -13,10 +13,10 @@
 
 import warnings as _warnings
 
-from ._semester import Season, Semester
-from ._questions import QuestionType, Question, RatingQuestion, TextQuestion
-from ._evaluation import Evaluation
-from ._browser import TISAuthEval, auto_fill, lazy_submit
+from .semester import Season, Semester
+from .questions import QuestionType, Question, RatingQuestion, TextQuestion
+from .evaluation import Evaluation
+from .browser import TISAuthEval, auto_fill, lazy_submit
 
 _warnings.warn(
     "sustech_survival.tis.eval is deprecated: the TIS 评教 window closed "

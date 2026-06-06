@@ -4,8 +4,8 @@ import json
 from typing import Optional
 
 from ...sso import TISAuth
-from ._semester import Season, Semester
-from ._evaluation import Evaluation
+from .semester import Season, Semester
+from .evaluation import Evaluation
 
 BASE = TISAuth.BASE_URL
 

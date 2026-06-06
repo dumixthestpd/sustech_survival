@@ -3,8 +3,8 @@ from __future__ import annotations
 import json as _json
 from typing import Optional
 
-from ._semester import Season, Semester
-from ._questions import QuestionType, Question, RatingQuestion, TextQuestion, _EXTRACT_QUESTIONS_JS
+from .semester import Season, Semester
+from .questions import QuestionType, Question, RatingQuestion, TextQuestion, _EXTRACT_QUESTIONS_JS
 
 
 class Evaluation:
