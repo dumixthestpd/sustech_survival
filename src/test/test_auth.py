@@ -414,6 +414,192 @@ class TestSessionFileHidden:
                     f"{name} session_file not under .cache/sso/{name}/: {p}"
                 )
 
+
+class TestLoadMigratesLegacySessions:
+    """load() auto-migrates sessions from legacy visible paths to .cache/sso/.
+
+    Users with existing sessions at <skill_root>/<service>/session.json
+    or <skill_root>/sso/<service>/session.json get them transparently
+    moved to the new hidden path on first load() call.
+    """
+
+    def test_load_uses_new_path_when_present(self):
+        """New path takes priority — legacy is ignored if new is present."""
+        import json
+        import tempfile
+        from sustech_survival.sso import BBAuth
+
+        with tempfile.TemporaryDirectory() as tmp:
+            auth = BBAuth(skill_dir=tmp)
+            # Write to NEW path
+            new_path = auth.session_file
+            new_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(new_path, "w") as f:
+                json.dump({"new": "path"}, f)
+            # And to LEGACY path
+            legacy = auth.skill_root / "bb" / "session.json"
+            legacy.parent.mkdir(parents=True, exist_ok=True)
+            with open(legacy, "w") as f:
+                json.dump({"legacy": "stale"}, f)
+
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                cookies = auth.load()
+            # Should pick the new path, not the legacy
+            assert cookies == {"new": "path"}
+
+    def test_load_migrates_from_legacy_bb_path(self):
+        """Session at <skill_root>/bb/session.json is auto-migrated."""
+        import json
+        import tempfile
+        from sustech_survival.sso import BBAuth
+
+        with tempfile.TemporaryDirectory() as tmp:
+            auth = BBAuth(skill_dir=tmp)
+            # Write ONLY to the legacy <skill_root>/bb/session.json
+            legacy = auth.skill_root / "bb" / "session.json"
+            legacy.parent.mkdir(parents=True, exist_ok=True)
+            with open(legacy, "w") as f:
+                json.dump({"TGC": "old-tgc", "JSESSIONID": "old-js"}, f)
+
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                cookies = auth.load()
+            # Migration returned the legacy cookies
+            assert cookies == {"TGC": "old-tgc", "JSESSIONID": "old-js"}
+            # And copied them to the new path
+            assert auth.session_file.exists()
+            with open(auth.session_file) as f:
+                assert json.load(f) == {"TGC": "old-tgc", "JSESSIONID": "old-js"}
+
+    def test_load_migrates_from_legacy_sso_bb_path(self):
+        """Session at <skill_root>/sso/bb/session.json (old override) is migrated."""
+        import json
+        import tempfile
+        from sustech_survival.sso import BBAuth
+
+        with tempfile.TemporaryDirectory() as tmp:
+            auth = BBAuth(skill_dir=tmp)
+            # Write ONLY to the old override path
+            legacy = auth.skill_root / "sso" / "bb" / "session.json"
+            legacy.parent.mkdir(parents=True, exist_ok=True)
+            with open(legacy, "w") as f:
+                json.dump({"override": "path"}, f)
+
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                cookies = auth.load()
+            assert cookies == {"override": "path"}
+            assert auth.session_file.exists()
+
+    def test_load_migrates_from_legacy_tis_path(self):
+        """TISAuth legacy migration — used to live at sso/tis/."""
+        import json
+        import tempfile
+        from sustech_survival.sso import TISAuth
+
+        with tempfile.TemporaryDirectory() as tmp:
+            auth = TISAuth(skill_dir=tmp)
+            legacy = auth.skill_root / "sso" / "tis" / "session.json"
+            legacy.parent.mkdir(parents=True, exist_ok=True)
+            with open(legacy, "w") as f:
+                json.dump({"TGC": "tis-old"}, f)
+
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                cookies = auth.load()
+            assert cookies == {"TGC": "tis-old"}
+            assert auth.session_file.exists()
+            # New path is under .cache/sso/tis/
+            rel = auth.session_file.relative_to(auth.skill_root)
+            assert rel.parts == (".cache", "sso", "tis", "session.json")
+
+    def test_load_raises_when_no_session_anywhere(self):
+        """If neither new nor legacy paths have a session, raise FileNotFoundError."""
+        import tempfile
+        from sustech_survival.sso import BBAuth
+
+        with tempfile.TemporaryDirectory() as tmp:
+            auth = BBAuth(skill_dir=tmp)
+            with warnings.catch_warnings(record=True):
+                warnings.simplefilter("always")
+                try:
+                    auth.load()
+                except FileNotFoundError as e:
+                    assert "BBAuth" in str(e)
+                    assert "refresh()" in str(e)
+                else:
+                    raise AssertionError("expected FileNotFoundError")
+
+
+class TestBBDirectSessionReadersFixed:
+    """bb/download.py and bb/query.py must go through BBAuth, not raw file IO.
+
+    These two files used to read <skill_root>/bb/session.json directly.
+    After the move to .cache/sso/bb/session.json, raw reads would have
+    silently broken. The fix routes them through BBAuth.load() so the
+    migration logic in load() picks up legacy sessions automatically.
+    """
+
+    def test_bb_download_uses_bbauth(self):
+        """The _session() helper in bb/download.py reads via BBAuth."""
+        import inspect
+        from sustech_survival.bb import download
+        src = inspect.getsource(download._session)
+        # Must NOT have a direct file open at the old visible path
+        assert '"bb" / "session.json"' not in src
+        assert "'bb' / 'session.json'" not in src
+        # Must use BBAuth (which provides migration)
+        assert "BBAuth" in src
+        assert "auth.load()" in src
+
+    def test_bb_query_uses_bbauth(self):
+        """The _session() helper in bb/query.py reads via BBAuth."""
+        import inspect
+        from sustech_survival.bb import query
+        src = inspect.getsource(query._session)
+        assert '"bb" / "session.json"' not in src
+        assert "'bb' / 'session.json'" not in src
+        assert "BBAuth" in src
+        assert "auth.load()" in src
+
+    def test_bb_download_session_end_to_end_with_legacy_session(self):
+        """bb/download._session() returns usable cookies when only legacy
+        session.json exists. Validates the migration wires through to
+        the public API, not just the load() helper."""
+        import json
+        import tempfile
+        from pathlib import Path
+        from sustech_survival.bb import download
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_p = Path(tmp)
+            # Set up a fake skill_root layout that has the legacy
+            # <skill_root>/bb/session.json
+            legacy = tmp_p / "bb" / "session.json"
+            legacy.parent.mkdir(parents=True, exist_ok=True)
+            with open(legacy, "w") as f:
+                json.dump({"TGC": "abc"}, f)
+
+            # Inject the skill_root into BBAuth via _skill_dir
+            from sustech_survival.sso import BBAuth
+            BBAuth._skill_dir = None  # reset any cached value
+            orig_init = BBAuth.__init__
+
+            def patched_init(self, *args, **kwargs):
+                orig_init(self, *args, **kwargs)
+                self._skill_dir = tmp_p  # force all BBAuth() to use tmp
+
+            BBAuth.__init__ = patched_init
+            try:
+                s = download._session()
+                # Cookie should be set, not raise
+                cookies = {c.name: c.value for c in s.cookies}
+                assert cookies.get("TGC") == "abc", f"got {cookies}"
+            finally:
+                BBAuth.__init__ = orig_init
+                BBAuth._skill_dir = None
+
 class TestTTLRefresh:
     """TTL guard auto-refreshes stale sessions."""
 

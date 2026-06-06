@@ -212,6 +212,16 @@ class Authorizer(ABC):
     # ── Session I/O ──────────────────────────────────────────────────────────
 
     def load(self) -> dict:
+        """
+        Load session cookies from disk. DEPRECATED — session is in-memory
+        only. Use ensure() + the cookies / requests_session property, or
+        the @ensured decorator.
+
+        For backwards compat: if the new hidden path is empty but a
+        legacy visible path still has a session, it is auto-migrated
+        to the new path on first access. After migration, callers
+        can stop using load() entirely.
+        """
         import warnings
         warnings.warn(
             "load() is deprecated — session is in-memory only. "
@@ -219,8 +229,45 @@ class Authorizer(ABC):
             DeprecationWarning,
             stacklevel=2,
         )
-        with open(self.session_file) as f:
-            return json.load(f)
+
+        # New hidden path takes priority
+        if self.session_file.exists():
+            with open(self.session_file) as f:
+                return json.load(f)
+
+        # Migration: try legacy visible paths
+        legacy = self._legacy_session_paths()
+        for p in legacy:
+            if p.exists():
+                with open(p) as f:
+                    raw = json.load(f)
+                # Copy to new path so the migration is a one-time event
+                self.session_file.parent.mkdir(parents=True, exist_ok=True)
+                with open(self.session_file, "w") as f:
+                    json.dump(raw, f)
+                return raw
+
+        # Nothing found — raise so the caller can prompt re-login
+        raise FileNotFoundError(
+            f"No session for {self.__class__.__name__} — call {self.__class__.__name__}.refresh() or .login()"
+        )
+
+    def _legacy_session_paths(self) -> list:
+        """
+        Return the legacy visible session paths this auth used to read/write
+        before the move to <skill_root>/.cache/sso/<service>/session.json.
+
+        Ordered: base-class default path first, then the sso/<service>/
+        override path that subclasses used to ship. Callers iterate and
+        pick the first one that exists.
+        """
+        sub = self.SESSION_SUBDIR
+        if not sub:
+            return []
+        return [
+            self.skill_root / sub / "session.json",          # base-class default
+            self.skill_root / "sso" / sub / "session.json", # old override location
+        ]
 
     def save(self, cookies: dict):
         import warnings

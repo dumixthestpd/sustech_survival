@@ -26,10 +26,15 @@ BB_BASE = "https://bb.sustech.edu.cn"
 
 
 def _session():
-    """Return requests.Session with BB cookies."""
-    skill_root = Path(__file__).resolve().parent.parent.parent.parent
-    with open(skill_root / "bb" / "session.json") as f:
-        raw = json.load(f)
+    """Return requests.Session with BB cookies.
+
+    Goes through BBAuth (not raw file IO) so the session lives at
+    <skill_root>/.cache/sso/bb/session.json — auto-migrated from
+    legacy bb/session.json on first access.
+    """
+    from sustech_survival.sso import BBAuth
+    auth = BBAuth()
+    raw = auth.load()  # deprecation warning + migration logic lives here
     s = requests.Session()
     for name, value in raw.items():
         s.cookies.set(name, value, domain=".bb.sustech.edu.cn", path="/")
