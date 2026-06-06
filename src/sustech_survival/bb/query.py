@@ -28,7 +28,7 @@ _TYPE_ICON = {
 
 # ── Session ──────────────────────────────────────────────────────────────────
 
-def _session():
+def session():
     """Return requests.Session with BB cookies.
 
     Goes through BBAuth (not raw file IO) so the session lives at
@@ -44,10 +44,10 @@ def _session():
     return s
 
 
-def _api(path, session=None):
+def api(path, session=None):
     """GET BB REST endpoint. Returns JSON. Dies on auth error."""
     if session is None:
-        session = _session()
+        session = session()
     r = session.get(BB_BASE + path, timeout=15)
     if r.status_code == 401:
         raise _SessionExpired("BB session expired. Run `bb.py login` to refresh.")
@@ -65,7 +65,7 @@ def discover_courses(term_id="_57_1"):
     Falls back to [] if REST fails.
     """
     try:
-        data = _api(f"/learn/api/public/v1/courses?termId={term_id}")
+        data = api(f"/learn/api/public/v1/courses?termId={term_id}")
         return [(c["id"].lstrip("_").rstrip("_1"), c.get("name", ""))
                  for c in data.get("results", []) if c.get("name")]
     except Exception:
@@ -74,7 +74,7 @@ def discover_courses(term_id="_57_1"):
 
 # ── Content Tree Walk ────────────────────────────────────────────────────────
 
-def _walk_contents(course_id, parent_id=None, session=None):
+def walk_contents(course_id, parent_id=None, session=None):
     """
     Recursively walk /courses/{course_id}/contents tree via REST.
     Yields (content_id, title, content_handler, has_children, parent_id).
@@ -86,7 +86,7 @@ def _walk_contents(course_id, parent_id=None, session=None):
         path = f"/learn/api/public/v1/courses/{bid}/contents"
 
     try:
-        data = _api(path, session)
+        data = api(path, session)
     except Exception:
         return
 
@@ -101,7 +101,7 @@ def _walk_contents(course_id, parent_id=None, session=None):
             parent_id,
         )
         if item.get("hasChildren"):
-            yield from _walk_contents(course_id, item["id"], session)
+            yield from walk_contents(course_id, item["id"], session)
 
 
 # ── Page Discovery ───────────────────────────────────────────────────────────
@@ -129,7 +129,7 @@ def discover_pages(course_id, *, refresh=False):
     # Build parent_id → section name map from root-level folders
     section_map = {}  # content_id → section name
     try:
-        root = _api(f"/learn/api/public/v1/courses/{bid}/contents", sess)
+        root = api(f"/learn/api/public/v1/courses/{bid}/contents", sess)
         for item in root.get("results", []):
             if item.get("contentHandler", {}).get("id") == "resource/x-bb-folder":
                 cid = item["id"].lstrip("_").rstrip("_1")
@@ -139,7 +139,7 @@ def discover_pages(course_id, *, refresh=False):
 
     results = []
     seen = set()
-    for cid, title, handler, has_children, parent_id in _walk_contents(course_id, session=sess):
+    for cid, title, handler, has_children, parent_id in walk_contents(course_id, session=sess):
         if cid in seen:
             continue
         seen.add(cid)
@@ -155,7 +155,7 @@ def discover_pages(course_id, *, refresh=False):
 
 # ── Page Items ───────────────────────────────────────────────────────────────
 
-def _classify_item_type(handler: str) -> str:
+def classify_item_type(handler: str) -> str:
     """Map contentHandler ID to item type string."""
     if handler == "resource/x-bb-file":
         return "file"
@@ -168,7 +168,7 @@ def _classify_item_type(handler: str) -> str:
     return "unknown"
 
 
-def _extract_bbcswebdav(text: str) -> list:
+def extract_bbcswebdav(text: str) -> list:
     """Extract bbcswebdav URLs from HTML text."""
     return re.findall(r'bbcswebdav/[^\s"\'<>]+', text)
 
@@ -199,12 +199,12 @@ def scrape_page_items(content_id, course_id, course_name):
     cid = f"_{content_id}_1"
 
     try:
-        item = _api(f"/learn/api/public/v1/courses/{bid}/contents/{cid}?_fields=id,title,body,contentHandler,hasChildren", sess)
+        item = api(f"/learn/api/public/v1/courses/{bid}/contents/{cid}?_fields=id,title,body,contentHandler,hasChildren", sess)
     except Exception:
         return []
 
     handler = item.get("contentHandler", {}).get("id", "")
-    itype = _classify_item_type(handler)
+    itype = classify_item_type(handler)
     title = item.get("title", "")
     body = item.get("body", "") or ""
 
@@ -223,7 +223,7 @@ def scrape_page_items(content_id, course_id, course_name):
 
     # For inline/document items: extract bbcswebdav URLs from body HTML
     if itype == "inline" and body:
-        webdav_urls = _extract_bbcswebdav(body)
+        webdav_urls = extract_bbcswebdav(body)
         for url in webdav_urls:
             row["files"].append((url.split("/")[-1], url))
 

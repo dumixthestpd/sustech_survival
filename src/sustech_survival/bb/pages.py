@@ -15,12 +15,12 @@ BB_BASE = "https://bb.sustech.edu.cn"
 try:
     from .items import (
         Item, FileItem, VideoItem, HomeworkItem, InlineItem, LinkItem,
-        TextItem, FolderItem, UnknownItem, _classify_item, _html_to_text,
+        TextItem, FolderItem, UnknownItem, classify_item, html_to_text,
     )
 except ImportError:
     from items import (
         Item, FileItem, VideoItem, HomeworkItem, InlineItem, LinkItem,
-        TextItem, FolderItem, UnknownItem, _classify_item, _html_to_text,
+        TextItem, FolderItem, UnknownItem, classify_item, html_to_text,
     )
 
 
@@ -69,7 +69,7 @@ class Page:
         return self.to_row()
 
 
-def _classify_page(page, bb_url: str, content_id: str) -> Tuple[List[str], str]:
+def classify_page(page, bb_url: str, content_id: str) -> Tuple[List[str], str]:
     """
     Inspect a content page and return (children, bb_url).
     children = list of content_ids nested under this page.
@@ -103,7 +103,7 @@ from sustech_survival.sso import BBAuth
 
 _bb = BBAuth()
 
-def _playwright_cookies():
+def playwright_cookies():
     """Load BB session in Playwright list format for ctx.add_cookies()."""
     raw = _bb.load()
     return [{"name": k, "value": v, "domain": ".bb.sustech.edu.cn", "path": "/"} for k, v in raw.items() if v]
@@ -126,7 +126,7 @@ def scrape_page(course_id: str, content_id: str,
     """
     if raw_cookies is None:
         ensure_session()
-        raw_cookies = _playwright_cookies()
+        raw_cookies = playwright_cookies()
 
     item_url = (
         f"{BB_BASE}/webapps/blackboard/content/listContent.jsp"
@@ -165,7 +165,7 @@ def scrape_page(course_id: str, content_id: str,
             if not course_name and " – " in page.title():
                 course_name = page.title().split(" – ", 1)[1].strip()
 
-            children, _ = _classify_page(page, item_url, content_id)
+            children, _ = classify_page(page, item_url, content_id)
 
         finally:
             page.close()
@@ -189,7 +189,7 @@ def discover_course_pages(course_id: str):
     Returns list of (content_id, title, section) tuples.
     """
     ensure_session()
-    cookies = _playwright_cookies()
+    cookies = playwright_cookies()
 
     course_url = (
         f"{BB_BASE}/webapps/blackboard/content/listContent.jsp"
@@ -246,7 +246,7 @@ from datetime import datetime
 _HW_CACHE: dict = {}  # sub_id → (submission_count, deadline_str)
 
 
-def _fetch_homework_details(upload_url: str, sub_id: str) -> tuple:
+def fetch_homework_details(upload_url: str, sub_id: str) -> tuple:
     """
     Visit an uploadAssignment page and extract:
     - submission_count: number of attempts already submitted (0 if none)
@@ -259,7 +259,7 @@ def _fetch_homework_details(upload_url: str, sub_id: str) -> tuple:
         return _HW_CACHE[sub_id]
 
     ensure_session()
-    cookies = _playwright_cookies()
+    cookies = playwright_cookies()
 
     submission_count = 0
     deadline_str = ""
@@ -367,7 +367,7 @@ def preview_page(content_id: str, course_id: str = None) -> List[Item]:
         course_id = resolve_course(content_id)
 
     ensure_session()
-    cookies = _playwright_cookies()
+    cookies = playwright_cookies()
 
     with sync_playwright() as p:
         browser = p.chromium.launch()
@@ -478,7 +478,7 @@ def preview_page(content_id: str, course_id: str = None) -> List[Item]:
     # ── Fetch homework details OUTSIDE the Playwright block ──────────
     # Nested playwright launches conflict with parent browser session
     for sub_id, upload_url in homework_uploads.items():
-        _, deadline_str = _fetch_homework_details(upload_url, sub_id)
+        _, deadline_str = fetch_homework_details(upload_url, sub_id)
         for item in items:
             if item.sub_id == sub_id:
                 item.deadline = deadline_str
@@ -510,7 +510,7 @@ def scrape_announcements(course_id: str) -> List[Item]:
             print(ann.description)
     """
     ensure_session()
-    cookies = _playwright_cookies()
+    cookies = playwright_cookies()
 
     ann_url = (
         f"{BB_BASE}/webapps/blackboard/execute/announcement"

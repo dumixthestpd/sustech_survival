@@ -88,11 +88,21 @@ class Authorizer(ABC):
     SESSION_SUBDIR: str = ""  # subdirectory under skill_root for session files
 
     def __init__(self, *, skill_dir: Optional[str] = None, submodule_dir: Optional[str] = None):
-        self._skill_dir = Path(skill_dir) if (skill_dir and isinstance(skill_dir, str)) else skill_dir
-        self._submodule_dir = Path(submodule_dir) if (submodule_dir and isinstance(submodule_dir, str)) else submodule_dir
-        self._session_cache: dict = {}
-        self._session_time: float = 0.0  # time.time() of last successful auth
-        self._SESSION_TTL: int = 25 * 60  # 25 minutes — server-side session limit
+        self.skill_dir = skill_dir
+        self.submodule_dir = submodule_dir
+        self.session_cache: dict = {}
+        self.session_time: float = 0.0  # time.time() of last successful auth
+        self.SESSION_TTL: int = 25 * 60  # 25 minutes — server-side session limit
+
+    def resolve_skill_dir(self) -> Path:
+        """Walk up from authorizer.py looking for credentials.txt to find skill root."""
+        here = Path(__file__).resolve().parent  # sso/
+        for parent in [here, here.parent, here.parent.parent, here.parent.parent.parent]:
+            if (parent / "credentials.txt").exists():
+                return parent
+            if (parent / "sustech_survival").exists() and parent.name == "src":
+                continue
+        return here.parent.parent.parent
 
     # ── In-memory session (no disk) ─────────────────────────────────────────
 
@@ -102,63 +112,55 @@ class Authorizer(ABC):
         Returns the raw in-memory cookie dict.
         Call ensure() first to validate — raises AuthorizerError if empty.
         """
-        if not self._session_cache:
+        if not self.session_cache:
             raise AuthorizerError(
                 f"[{self.__class__.__name__}] No session — call ensure() first"
             )
-        return self._session_cache
+        return self.session_cache
 
-    def _set_session(self, cookies: dict):
+    def set_session(self, cookies: dict):
         """Store cookies in memory + record timestamp. No disk writes."""
-        self._session_cache = cookies
+        self.session_cache = cookies
         import time
-        self._session_time = time.time()
+        self.session_time = time.time()
 
-    def _is_session_fresh(self) -> bool:
+    def is_session_fresh(self) -> bool:
         """Check if in-memory session is still within TTL."""
         import time
         return (
-            bool(self._session_cache)
-            and (time.time() - self._session_time) < self._SESSION_TTL
+            bool(self.session_cache)
+            and (time.time() - self.session_time) < self.SESSION_TTL
         )
 
     # ── Paths ────────────────────────────────────────────────────────────────
 
-    @property
-    def skill_root(self) -> Path:
-        if self._skill_dir:
-            # Always convert to Path — handles str assignment in tests
-            if isinstance(self._skill_dir, str):
-                self._skill_dir = Path(self._skill_dir)
-            return self._skill_dir
-        # Search upward from authorizer.py for credentials.txt to find skill root
-        # __file__ = .../src/sustech_survival/sso/authorizer.py
-        here = Path(__file__).resolve().parent  # sso/
-        for parent in [here, here.parent, here.parent.parent, here.parent.parent.parent]:
-            if (parent / "credentials.txt").exists():
-                self._skill_dir = parent
-                return self._skill_dir
-            if (parent / "sustech_survival").exists() and parent.name == "src":
-                continue
-        # Fallback
-        self._skill_dir = here.parent.parent.parent
-        return self._skill_dir
+    # Note: skill_dir and submodule_dir are plain attributes set in
+    # __init__ via the resolve helpers. They are public because tests
+    # (and the user's _skill_dir / _submodule_dir access patterns from
+    # the old API) need to be able to override them. skill_root is
+    # kept as a property alias for skill_dir (legacy callers expect
+    # the property form).
 
     @property
-    def submodule_dir(self) -> Path:
-        if self._submodule_dir:
-            if isinstance(self._submodule_dir, str):
-                self._submodule_dir = Path(self._submodule_dir)
-            return self._submodule_dir
-        if self.SESSION_SUBDIR:
-            # Hidden under .cache/ so agents don't accidentally read or
-            # commit raw session cookies. Each service gets its own
-            # sub-file inside the shared sso/ dir.
-            return self.skill_root / ".cache" / "sso" / self.SESSION_SUBDIR
-        return self.skill_root / ".cache" / "sso"
+    def skill_root(self) -> Path:
+        # Coerce str→Path; fall back to upward search if unset
+        if self.skill_dir:
+            if isinstance(self.skill_dir, str):
+                self.skill_dir = Path(self.skill_dir)
+            return self.skill_dir
+        self.skill_dir = self.resolve_skill_dir()
+        return self.skill_dir
 
     @property
     def session_file(self) -> Path:
+        # Coerce str→Path; compute from SESSION_SUBDIR if unset
+        if not self.submodule_dir:
+            if self.SESSION_SUBDIR:
+                self.submodule_dir = self.skill_root / ".cache" / "sso" / self.SESSION_SUBDIR
+            else:
+                self.submodule_dir = self.skill_root / ".cache" / "sso"
+        elif isinstance(self.submodule_dir, str):
+            self.submodule_dir = Path(self.submodule_dir)
         return self.submodule_dir / "session.json"
 
     @property
@@ -171,13 +173,13 @@ class Authorizer(ABC):
         return f"{getattr(self, 'IDP_CAS_BASE', CAS_BASE)}?service={encoded}"
 
     @property
-    def _domain(self) -> str:
+    def domain(self) -> str:
         return urlparse(self.BASE_URL).netloc
 
     # ── Headers ──────────────────────────────────────────────────────────────
 
     @property
-    def _headers(self) -> dict:
+    def headers(self) -> dict:
         h = {"User-Agent": UA}
         if self.XHR_MODE:
             h["X-Requested-With"] = "XMLHttpRequest"
@@ -236,7 +238,7 @@ class Authorizer(ABC):
                 return json.load(f)
 
         # Migration: try legacy visible paths
-        legacy = self._legacy_session_paths()
+        legacy = self.legacy_session_paths()
         for p in legacy:
             if p.exists():
                 with open(p) as f:
@@ -252,7 +254,7 @@ class Authorizer(ABC):
             f"No session for {self.__class__.__name__} — call {self.__class__.__name__}.refresh() or .login()"
         )
 
-    def _legacy_session_paths(self) -> list:
+    def legacy_session_paths(self) -> list:
         """
         Return the legacy visible session paths this auth used to read/write
         before the move to <skill_root>/.cache/sso/<service>/session.json.
@@ -281,9 +283,9 @@ class Authorizer(ABC):
     def cookies_for_requests(self, raw: dict) -> dict:
         return {k: v for k, v in raw.items()}
 
-    def _apply_cookies(self, sess: requests.Session, raw: dict):
+    def apply_cookies(self, sess: requests.Session, raw: dict):
         for k, v in raw.items():
-            sess.cookies.set(k, v, domain=self._domain, path="/")
+            sess.cookies.set(k, v, domain=self.domain, path="/")
 
     # ── CAS ticket grinding (CASAuthorizer handles override) ───────────────────
 
@@ -318,9 +320,9 @@ class Authorizer(ABC):
 
         Subclasses (TISAuth, BBAuth) override this to add service-specific headers.
         """
-        raw = self._session_cache
+        raw = self.session_cache
         sess = requests.Session()
-        self._apply_cookies(sess, raw)
+        self.apply_cookies(sess, raw)
         return sess
 
     def check(self) -> tuple[bool, str]:
@@ -334,18 +336,18 @@ class Authorizer(ABC):
         """
         cls = self.__class__.__name__
         # TTL check first — fast path for repeated calls within a CLI session
-        if self._is_session_fresh():
+        if self.is_session_fresh():
             return True, ""
 
         # TTL expired: validate in-memory session with a server probe before
         # trusting it. This catches the case where CAS ticket expired server-side
         # before our local TTL.
-        if self._session_cache:
-            ok = self._probe_session()
+        if self.session_cache:
+            ok = self.probe_session()
             if ok:
                 # Re-record timestamp so next calls use fast path
                 import time
-                self._session_time = time.time()
+                self.session_time = time.time()
                 return True, ""
             # Probe failed — fall through to refresh
 
@@ -354,12 +356,12 @@ class Authorizer(ABC):
             try:
                 with open(self.session_file) as f:
                     raw = json.load(f)
-                self._set_session(raw)
+                self.set_session(raw)
                 # Don't trust disk cache without probing
-                ok = self._probe_session()
+                ok = self.probe_session()
                 if ok:
                     import time
-                    self._session_time = time.time()
+                    self.session_time = time.time()
                     return True, ""
             except Exception:
                 pass
@@ -372,7 +374,7 @@ class Authorizer(ABC):
             f"(or {cls}.login() if refresh fails)"
         )
 
-    def _probe_session(self) -> bool:
+    def probe_session(self) -> bool:
         """
         Lightweight probe to check if current in-memory session is still valid.
         Subclasses override with a service-specific probe endpoint.
@@ -401,7 +403,7 @@ class Authorizer(ABC):
 
         try:
             cookies = self.get_ticket_cookies(username, password)
-            self._set_session(cookies)
+            self.set_session(cookies)
             cls = self.__class__.__name__
             print(f"✅ {cls} session refreshed ({len(cookies)} cookies)")
             return True
@@ -447,7 +449,7 @@ class Authorizer(ABC):
                 pass
             page.wait_for_timeout(2000)
             cookies = {c['name']: c['value'] for c in ctx.cookies()}
-            self._set_session(cookies)
+            self.set_session(cookies)
             cls = self.__class__.__name__
             print(f"✅ {cls} login complete ({len(cookies)} cookies)")
             return True

@@ -23,7 +23,7 @@ import requests
 _auth = BBAuth()
 
 
-def _session():
+def session():
     """Return requests.Session with BB CAS cookies.
 
     Uses BBAuth.ensure() which auto-refreshes via CAS if the session is expired.
@@ -35,10 +35,10 @@ def _session():
     return _auth.session
 
 
-def _api(path: str, session=None):
+def api(path: str, session=None):
     """GET BB REST API endpoint. Returns JSON dict or dies."""
     if session is None:
-        session = _session()
+        session = session()
     url = "https://bb.sustech.edu.cn" + path
     r = session.get(url, timeout=15)
     if r.status_code == 401:
@@ -52,7 +52,7 @@ def _api(path: str, session=None):
 _uid_cache = None
 
 
-def _get_uid(session):
+def get_uid(session):
     """Return current user ID (cached)."""
     global _uid_cache
     if _uid_cache:
@@ -66,7 +66,7 @@ def _get_uid(session):
 
 # ── course list ──────────────────────────────────────────────────────────────
 
-def _get_courses(session=None, term_id="_57_1"):
+def get_courses(session=None, term_id="_57_1"):
     """Return list of (course_id, course_name) for the current user's enrollments.
 
     Uses /users/{uid}/courses to get ONLY enrolled courses — not all courses
@@ -74,8 +74,8 @@ def _get_courses(session=None, term_id="_57_1"):
 
     course_id format: "_8157_1" (with underscores, as BB uses them).
     """
-    uid = _get_uid(session)
-    data = _api(f"/learn/api/public/v1/users/{uid}/courses?termId={term_id}", session)
+    uid = get_uid(session)
+    data = api(f"/learn/api/public/v1/users/{uid}/courses?termId={term_id}", session)
     entries = data.get("results", [])
     if not entries:
         return []
@@ -83,7 +83,7 @@ def _get_courses(session=None, term_id="_57_1"):
     # Fetch course names in parallel via threading
     import concurrent.futures
 
-    def _fetch_name(entry):
+    def fetch_name(entry):
         cid = entry["courseId"]
         try:
             details = session.get(
@@ -111,7 +111,7 @@ def _get_courses(session=None, term_id="_57_1"):
 
 # ── gradebook ────────────────────────────────────────────────────────────────
 
-def _get_gradebook_columns(course_id, session=None):
+def get_gradebook_columns(course_id, session=None):
     """Return list of grade-column dicts for a course.
 
     Each dict:
@@ -122,7 +122,7 @@ def _get_gradebook_columns(course_id, session=None):
       possible     — max score (float)
       scoring_type — "Attempts" / "Calculated"
     """
-    cols = _api(
+    cols = api(
         f"/learn/api/public/v1/courses/{course_id}/gradebook/columns"
         f"?_fields=id,name,contentId,score,grading",
         session,
@@ -142,10 +142,10 @@ def _get_gradebook_columns(course_id, session=None):
     return results
 
 
-def _get_user_attempts(course_id, column_id, session=None):
+def get_user_attempts(course_id, column_id, session=None):
     """Return list of attempt dicts for current user on one column."""
     try:
-        data = _api(
+        data = api(
             f"/learn/api/public/v1/courses/{course_id}/gradebook/columns/{column_id}/attempts",
             session,
         )
@@ -156,7 +156,7 @@ def _get_user_attempts(course_id, column_id, session=None):
 
 # ── date helpers ─────────────────────────────────────────────────────────────
 
-def _parse_iso(iso: str):
+def parse_iso(iso: str):
     """Parse BB ISO timestamp → naive local datetime (CST/UTC+8).
 
     BB returns UTC (Z-suffix). The user is in Shenzhen (UTC+8).
@@ -173,9 +173,9 @@ def _parse_iso(iso: str):
         return None
 
 
-def _format_due(iso: str):
+def format_due(iso: str):
     """Human-readable due date from ISO string."""
-    dt = _parse_iso(iso)
+    dt = parse_iso(iso)
     if not dt:
         return "无截止日"
     return dt.strftime("%m-%d %H:%M")
@@ -189,11 +189,11 @@ def upcoming_deadlines(days: int = 30) -> list[dict]:
     Each dict: {name, course, due, due_str, days_left, due_dt}
     Returns [] if none found. Raises _SessionExpired on auth failure.
     """
-    session = _session()
+    session = session()
     now = datetime.now()
     cutoff = now + timedelta(days=days)
 
-    courses = _get_courses(session, term_id="_57_1")
+    courses = get_courses(session, term_id="_57_1")
     if not courses:
         raise _SessionExpired("无法获取课程列表，请重新登录")
 
@@ -204,19 +204,19 @@ def upcoming_deadlines(days: int = 30) -> list[dict]:
         if "2026" in n or c in active_ids
     ]
     if not courses:
-        courses = _get_courses(session, term_id="_57_1")
+        courses = get_courses(session, term_id="_57_1")
 
     results = []
     for cid, cname in courses:
         try:
-            cols = _get_gradebook_columns(cid, session)
+            cols = get_gradebook_columns(cid, session)
         except Exception:
             continue
         for col in cols:
             if col["scoring_type"] != "Attempts" or not col["name"]:
                 continue
             due_iso = col["due"]
-            due_dt = _parse_iso(due_iso)
+            due_dt = parse_iso(due_iso)
             if due_dt is None:
                 continue
             if due_dt < now or due_dt > cutoff:
@@ -226,7 +226,7 @@ def upcoming_deadlines(days: int = 30) -> list[dict]:
                 "name": col["name"],
                 "course": cname,
                 "due": due_iso,
-                "due_str": _format_due(due_iso),
+                "due_str": format_due(due_iso),
                 "days_left": days_left,
                 "due_dt": due_dt,
             })
@@ -237,12 +237,12 @@ def upcoming_deadlines(days: int = 30) -> list[dict]:
 
 def run(days: int = 7, course_id: str = None):
     """See docs/bb.md."""
-    session = _session()
+    session = session()
     now = datetime.now()
     cutoff = now + timedelta(days=days)
 
     # 1. Get enrolled courses for current term
-    courses = _get_courses(session, term_id="_57_1")
+    courses = get_courses(session, term_id="_57_1")
     if not courses:
         print("❌ 无法获取课程列表，请重新登录")
         raise _SessionExpired("无法获取课程列表，请重新登录")
@@ -257,13 +257,13 @@ def run(days: int = 7, course_id: str = None):
             if "2026" in n or c in active_ids
         ]
         if not courses:
-            courses = _get_courses(session, term_id="_57_1")
+            courses = get_courses(session, term_id="_57_1")
 
     all_items = []  # (course_name, name, due_iso, status, score, feedback)
 
     for cid, cname in courses:
         try:
-            cols = _get_gradebook_columns(cid, session)
+            cols = get_gradebook_columns(cid, session)
         except Exception as e:
             continue
 
@@ -274,8 +274,8 @@ def run(days: int = 7, course_id: str = None):
                 continue
 
             due_iso = col["due"]
-            due_dt = _parse_iso(due_iso)
-            due_str = _format_due(due_iso)
+            due_dt = parse_iso(due_iso)
+            due_str = format_due(due_iso)
 
             # Status relative to now
             if due_dt:
@@ -290,7 +290,7 @@ def run(days: int = 7, course_id: str = None):
                 status = ""
 
             # Attempt info
-            attempts = _get_user_attempts(cid, col["id"], session)
+            attempts = get_user_attempts(cid, col["id"], session)
             score_str = ""
             feedback_str = ""
             has_score = False

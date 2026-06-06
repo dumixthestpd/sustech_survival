@@ -15,8 +15,8 @@ class TestInMemorySession:
             SERVICE_URL = "https://dummy.example.com/cas"
 
         auth = DummyAuth()
-        auth._set_session({"token": "abc123", "sid": "xyz"})
-        assert auth._session_cache == {"token": "abc123", "sid": "xyz"}
+        auth.set_session({"token": "abc123", "sid": "xyz"})
+        assert auth.session_cache == {"token": "abc123", "sid": "xyz"}
 
     def test_set_session_records_timestamp(self):
         from sustech_survival.sso import Authorizer
@@ -26,8 +26,8 @@ class TestInMemorySession:
             SERVICE_URL = "https://dummy.example.com/cas"
 
         auth = DummyAuth()
-        auth._set_session({"k": "v"})
-        assert auth._session_time > 0
+        auth.set_session({"k": "v"})
+        assert auth.session_time > 0
 
     def test_cookies_property_returns_cache(self):
         from sustech_survival.sso import Authorizer
@@ -37,7 +37,7 @@ class TestInMemorySession:
             SERVICE_URL = "https://dummy.example.com/cas"
 
         auth = DummyAuth()
-        auth._set_session({"foo": "bar"})
+        auth.set_session({"foo": "bar"})
         assert auth.cookies == {"foo": "bar"}
 
     def test_cookies_property_raises_when_empty(self):
@@ -60,9 +60,9 @@ class TestInMemorySession:
             SERVICE_URL = "https://dummy.example.com/cas"
 
         auth = DummyAuth()
-        auth._set_session({"k": "v"})
+        auth.set_session({"k": "v"})
         # TTL is 25 minutes — should be fresh immediately
-        assert auth._is_session_fresh() is True
+        assert auth.is_session_fresh() is True
 
     def test_is_session_fresh_false_after_ttl(self):
         from sustech_survival.sso import Authorizer
@@ -72,10 +72,10 @@ class TestInMemorySession:
             SERVICE_URL = "https://dummy.example.com/cas"
 
         auth = DummyAuth()
-        auth._set_session({"k": "v"})
+        auth.set_session({"k": "v"})
         # Backdate session time to force expiry
-        auth._session_time = time.time() - auth._SESSION_TTL - 1
-        assert auth._is_session_fresh() is False
+        auth.session_time = time.time() - auth.SESSION_TTL - 1
+        assert auth.is_session_fresh() is False
 
 
 class TestDeprecatedLoadSave:
@@ -123,7 +123,7 @@ class TestEnsuredDecorator:
             SERVICE_URL = "https://dummy.example.com/cas"
 
         auth = DummyAuth()
-        auth._set_session({"cookie": "value123"})
+        auth.set_session({"cookie": "value123"})
 
         received = {}
 
@@ -146,7 +146,7 @@ class TestEnsuredDecorator:
             SERVICE_URL = "https://dummy.example.com/cas"
 
         auth = DummyAuth()
-        auth._set_session({"fresh": "session"})
+        auth.set_session({"fresh": "session"})
 
         @auth.ensured
         def func(session=None):
@@ -183,7 +183,7 @@ class TestEnsuredDecorator:
 
         auth = DummyAuth()
         # Disk cache missing AND no credentials → ensure() fails with action hint
-        auth._skill_dir = "/nonexistent"
+        auth.skill_dir = "/nonexistent"
 
         @auth.ensured
         def do_it(session=None):
@@ -205,7 +205,7 @@ class TestEnsuredDecorator:
             SERVICE_URL = "https://dummy.example.com/cas"
 
         auth = DummyAuth()
-        auth._set_session({"k": "v"})
+        auth.set_session({"k": "v"})
 
         @auth.ensured
         def my_func():
@@ -229,11 +229,11 @@ class TestCheckUsesInMemoryFirst:
             def get_ticket_cookies(self, u, p):
                 raise AuthorizerError("no headless support")
             # Probe always succeeds — we only want to test TTL fast-path
-            def _probe_session(self):
+            def probe_session(self):
                 return True
 
         auth = DummyAuth()
-        auth._set_session({"mem": "cache"})
+        auth.set_session({"mem": "cache"})
         # Disk cache must NOT exist — only in-memory should be used
         if auth.session_file.exists():
             auth.session_file.unlink()
@@ -250,7 +250,7 @@ class TestCheckUsesInMemoryFirst:
             def get_ticket_cookies(self, u, p):
                 raise AuthorizerError("no headless support")
             # Probe always succeeds — we only want to test disk fallback logic
-            def _probe_session(self):
+            def probe_session(self):
                 return True
 
         auth = DummyAuth()
@@ -263,7 +263,7 @@ class TestCheckUsesInMemoryFirst:
         ok, reason = auth.check()
         assert ok is True
         # Should have populated memory cache from disk
-        assert auth._session_cache == {"disk": "cache"}
+        assert auth.session_cache == {"disk": "cache"}
 
         # Clean up
         auth.session_file.unlink()
@@ -280,7 +280,7 @@ class TestRequestsSessionProperty:
             SERVICE_URL = "https://dummy.example.com/cas"
 
         auth = DummyAuth()
-        auth._set_session({"session": "token123"})
+        auth.set_session({"session": "token123"})
 
         sess = auth.requests_session
         # Should have our cookie set
@@ -318,7 +318,7 @@ class TestEnsureAddsHint:
                 raise AuthorizerError("no headless support")
 
         auth = DummyAuth()
-        auth._skill_dir = "/nonexistent"
+        auth.skill_dir = "/nonexistent"
 
         ok, reason = auth.ensure()
         assert ok is False
@@ -337,7 +337,7 @@ class TestEnsureAddsHint:
                 raise AuthorizerError("no headless support")
 
         auth = DummyAuth()
-        auth._skill_dir = "/nonexistent"
+        auth.skill_dir = "/nonexistent"
 
         ok, reason = auth.ensure()
         assert ok is False
@@ -366,7 +366,7 @@ class TestAuthErrorFormat:
                 raise AuthorizerError("no headless support")
 
         auth = DummyAuth()
-        auth._skill_dir = "/nonexistent"
+        auth.skill_dir = "/nonexistent"
 
         ok, reason = auth.check()
         assert ok is False
@@ -383,7 +383,7 @@ class TestAuthErrorFormat:
                 raise AuthorizerError("no headless support")
 
         auth = DummyAuth()
-        auth._skill_dir = "/nonexistent"
+        auth.skill_dir = "/nonexistent"
 
         ok, reason = auth.check()
         # No session file path components should leak into user-facing reason
@@ -545,7 +545,7 @@ class TestBBDirectSessionReadersFixed:
         """The _session() helper in bb/download.py reads via BBAuth."""
         import inspect
         from sustech_survival.bb import download
-        src = inspect.getsource(download._session)
+        src = inspect.getsource(download.session)
         # Must NOT have a direct file open at the old visible path
         assert '"bb" / "session.json"' not in src
         assert "'bb' / 'session.json'" not in src
@@ -557,14 +557,14 @@ class TestBBDirectSessionReadersFixed:
         """The _session() helper in bb/query.py reads via BBAuth."""
         import inspect
         from sustech_survival.bb import query
-        src = inspect.getsource(query._session)
+        src = inspect.getsource(query.session)
         assert '"bb" / "session.json"' not in src
         assert "'bb' / 'session.json'" not in src
         assert "BBAuth" in src
         assert "auth.load()" in src
 
     def test_bb_download_session_end_to_end_with_legacy_session(self):
-        """bb/download._session() returns usable cookies when only legacy
+        """bb/download.session() returns usable cookies when only legacy
         session.json exists. Validates the migration wires through to
         the public API, not just the load() helper."""
         import json
@@ -588,17 +588,17 @@ class TestBBDirectSessionReadersFixed:
 
             def patched_init(self, *args, **kwargs):
                 orig_init(self, *args, **kwargs)
-                self._skill_dir = tmp_p  # force all BBAuth() to use tmp
+                self.skill_dir = tmp_p  # force all BBAuth() to use tmp
 
             BBAuth.__init__ = patched_init
             try:
-                s = download._session()
+                s = download.session()
                 # Cookie should be set, not raise
                 cookies = {c.name: c.value for c in s.cookies}
                 assert cookies.get("TGC") == "abc", f"got {cookies}"
             finally:
                 BBAuth.__init__ = orig_init
-                BBAuth._skill_dir = None
+                BBAuth.skill_dir = None
 
 class TestTTLRefresh:
     """TTL guard auto-refreshes stale sessions."""
@@ -616,13 +616,13 @@ class TestTTLRefresh:
                 DummyAuth.refreshed = True
                 return {"new": "cookies"}
 
-            def _probe_session(self):
+            def probe_session(self):
                 return True
 
         auth = DummyAuth()
-        auth._set_session({"old": "cookies"})
-        old_time = auth._session_time
-        auth._session_time -= auth._SESSION_TTL + 1
+        auth.set_session({"old": "cookies"})
+        old_time = auth.session_time
+        auth.session_time -= auth.SESSION_TTL + 1
 
         import time
         ok, reason = auth.check()
@@ -630,8 +630,8 @@ class TestTTLRefresh:
         # Probe succeeded → TTL re-recorded, no refresh needed
         assert DummyAuth.refreshed is False
         # Timestamp re-recorded (within 2s)
-        assert auth._session_time > old_time
-        assert auth._session_cache == {"old": "cookies"}
+        assert auth.session_time > old_time
+        assert auth.session_cache == {"old": "cookies"}
 
     def test_probe_failure_triggers_refresh(self):
         from sustech_survival.sso import Authorizer
@@ -644,13 +644,13 @@ class TestTTLRefresh:
                 return {"fresh": "cookies"}
 
         auth = DummyAuth()
-        auth._set_session({"stale": "cookies"})
-        auth._session_time -= auth._SESSION_TTL + 1
+        auth.set_session({"stale": "cookies"})
+        auth.session_time -= auth.SESSION_TTL + 1
 
         def failing_probe():
             return False
-        auth._probe_session = failing_probe
+        auth.probe_session = failing_probe
 
         ok, reason = auth.check()
         assert ok is True
-        assert auth._session_cache == {"fresh": "cookies"}
+        assert auth.session_cache == {"fresh": "cookies"}

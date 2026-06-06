@@ -52,7 +52,7 @@ class Item:
     def is_homework(self) -> bool:
         return self.TYPE == "homework"
 
-    def _fmt_desc(self, max_len=38) -> str:
+    def fmt_desc(self, max_len=38) -> str:
         p = self.description[:max_len].replace("\t", " ").strip()
         return p + ".." if len(self.description) > max_len else p
 
@@ -88,7 +88,7 @@ class FileItem(Item):
         return bool(self.files)
 
     def to_row(self) -> str:
-        desc = self._fmt_desc()
+        desc = self.fmt_desc()
         return (f"{self.sub_id}\t{self.TYPE}\t{self.title[:40]}\t"
                 f"{len(self.files)}\t0\t-\t-\t{desc}")
 
@@ -115,7 +115,7 @@ class VideoItem(Item):
         self.video_url = video_url
 
     def to_row(self) -> str:
-        desc = self._fmt_desc()
+        desc = self.fmt_desc()
         return (f"{self.sub_id}\t{self.TYPE}\t{self.title[:40]}\t"
                 f"0\t0\t-\t-\t{desc}\n"
                 f"           video_url: {self.video_url}")
@@ -167,7 +167,7 @@ class HomeworkItem(Item):
         deadline_str = self.deadline or "-"
         sub_count = str(self.submission_count)
         ids_str = f"{self.course_id}/{self.content_id}" if self.course_id else self.sub_id
-        desc = self._fmt_desc()
+        desc = self.fmt_desc()
         return (f"{ids_str}\t{self.TYPE}\t{self.title[:40]}\t"
                 f"{len(self.files)}\t0\t{sub_count}\t{deadline_str}\t{desc}")
 
@@ -196,15 +196,15 @@ class HomeworkItem(Item):
             )
         return "\n".join(lines)
 
-    def _fetch_attempts(self):
+    def fetch_attempts(self):
         """Fetch attempt details via REST API. Cached on first call."""
-        if hasattr(self, '_attempts_cached'):
-            return self._attempts_cached
+        if hasattr(self, 'attempts_cached'):
+            return self.attempts_cached
 
         course_id = getattr(self, 'course_id', None)
         content_id = getattr(self, 'content_id', None)
         if not (course_id and content_id):
-            self._attempts_cached = []
+            self.attempts_cached = []
             return []
 
         try:
@@ -212,7 +212,7 @@ class HomeworkItem(Item):
             auth = BBAuth(skill_dir=str(BB_DIR.parent.parent.parent))
             ok, reason = auth.ensure()
             if not ok:
-                self._attempts_cached = []
+                self.attempts_cached = []
                 return []
             raw = auth.load()
             import requests
@@ -236,7 +236,7 @@ class HomeworkItem(Item):
                     col_id = col.get("id")
                     break
             if not col_id:
-                self._attempts_cached = []
+                self.attempts_cached = []
                 return []
 
             # 2. Get attempts for this column
@@ -256,10 +256,10 @@ class HomeworkItem(Item):
                     'grade': attempt.get('score'),  # same field in this API
                     'feedback': attempt.get('feedback', ''),
                 })
-            self._attempts_cached = results
+            self.attempts_cached = results
             return results
         except Exception:
-            self._attempts_cached = []
+            self.attempts_cached = []
             return []
 
     def __str__(self) -> str:
@@ -271,7 +271,7 @@ class HomeworkItem(Item):
         if self.files:
             lines.append(f"   attachments: {', '.join(f[0] for f in self.files)}")
 
-        attempts = self._fetch_attempts()
+        attempts = self.fetch_attempts()
         if not attempts:
             lines.append("   status: not submitted")
         else:
@@ -302,7 +302,7 @@ class InlineItem(Item):
         return bool(self.inline_imgs)
 
     def to_row(self) -> str:
-        desc = self._fmt_desc()
+        desc = self.fmt_desc()
         return (f"{self.sub_id}\t{self.TYPE}\t{self.title[:40]}\t"
                 f"0\t{len(self.inline_imgs)}\t-\t-\t{desc}")
 
@@ -326,7 +326,7 @@ class LinkItem(Item):
         self.ext_urls = ext_urls or []
 
     def to_row(self) -> str:
-        desc = self._fmt_desc()
+        desc = self.fmt_desc()
         return (f"{self.sub_id}\t{self.TYPE}\t{self.title[:40]}\t"
                 f"0\t0\t-\t-\t{desc}")
 
@@ -351,7 +351,7 @@ class TextItem(Item):
         super().__init__(sub_id, title, bb_url, description, description_html)
 
     def to_row(self) -> str:
-        desc = self._fmt_desc()
+        desc = self.fmt_desc()
         return (f"{self.sub_id}\t{self.TYPE}\t{self.title[:40]}\t"
                 f"0\t0\t-\t-\t{desc}")
 
@@ -371,7 +371,7 @@ class FolderItem(Item):
         super().__init__(sub_id, title, bb_url, description, description_html)
 
     def to_row(self) -> str:
-        desc = self._fmt_desc()
+        desc = self.fmt_desc()
         return (f"{self.sub_id}\t{self.TYPE}\t{self.title[:40]}\t"
                 f"0\t0\t-\t-\t{desc}")
 
@@ -389,12 +389,12 @@ class UnknownItem(Item):
     TYPE = "unknown"
 
     def to_row(self) -> str:
-        desc = self._fmt_desc()
+        desc = self.fmt_desc()
         return (f"{self.sub_id}\t{self.TYPE}\t{self.title[:40]}\t"
                 f"0\t0\t-\t-\t{desc}")
 
 
-def _classify_item(sub_id: str, title: str, bb_url: str,
+def classify_item(sub_id: str, title: str, bb_url: str,
                    desc_text: str, desc_html: str,
                    files: list, inline_imgs: list, ext_urls: list,
                    upload_url: str, video_url: str,
@@ -441,7 +441,7 @@ def _classify_item(sub_id: str, title: str, bb_url: str,
     return UnknownItem(sub_id, title, bb_url, desc_text, desc_html)
 
 
-def _html_to_text(html: str) -> str:
+def html_to_text(html: str) -> str:
     """Strip HTML tags, decode entities, and clean whitespace."""
     if not html:
         return ""

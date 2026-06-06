@@ -46,7 +46,7 @@ def load_cookies():
     return [{"name": k, "value": v, "domain": ".bb.sustech.edu.cn", "path": "/"} for k, v in raw.items() if v]
 
 
-def _requests_session():
+def requests_session():
     """Return a requests.Session with BB cookies attached."""
     import requests as _requests
     sess = _requests.Session()

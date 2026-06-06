@@ -85,7 +85,7 @@ def set_last_course(cid):
 
 # ── Safe wrappers ──────────────────────────────────────────────────────
 
-def _safe_attempts(ctx, numeric_cid, content_id):
+def safe_attempts(ctx, numeric_cid, content_id):
     try:
         return discover_attempt_ids(ctx, numeric_cid, content_id)
     except Exception:
@@ -94,11 +94,11 @@ def _safe_attempts(ctx, numeric_cid, content_id):
 
 # ── Assignment list command ────────────────────────────────────────────
 
-def _list_assignments(ctx, numeric_cid, course_name, assignments):
+def list_assignments(ctx, numeric_cid, course_name, assignments):
     """List all assignments with attempt counts."""
     click.secho(f"\n📋  Assignments - {course_name}\n", fg="cyan", bold=True)
     for cid, title in assignments:
-        atts = _safe_attempts(ctx, numeric_cid, cid)
+        atts = safe_attempts(ctx, numeric_cid, cid)
         status = f"{len(atts)} attempt(s)" if atts else err_s("not submitted")
         click.secho(f"  [{cid}] {title[:44]}", fg="white")
         click.echo(f"       {status}")
@@ -109,11 +109,11 @@ def _list_assignments(ctx, numeric_cid, course_name, assignments):
 
 # ── All-status command ─────────────────────────────────────────────────
 
-def _all_status(ctx, numeric_cid, course_name, assignments):
+def all_status(ctx, numeric_cid, course_name, assignments):
     """Show submitted/not submitted for all assignments."""
     click.secho(f"\n📋  Submission Status - {course_name}\n", fg="cyan", bold=True)
     for cid, title in assignments:
-        atts = _safe_attempts(ctx, numeric_cid, cid)
+        atts = safe_attempts(ctx, numeric_cid, cid)
         status = ok_s(f"submitted ({len(atts)} attempt(s))") if atts else err_s("not submitted")
         click.secho(f"  [{cid}] {title[:44]}", fg="white")
         click.echo(f"       {status}")
@@ -122,14 +122,14 @@ def _all_status(ctx, numeric_cid, course_name, assignments):
 
 # ── Single assignment command ──────────────────────────────────────────
 
-def _single_assignment(ctx, session_cookies, numeric_cid,
+def single_assignment(ctx, session_cookies, numeric_cid,
                        content_id, attempt_arg, download_flag, output_dir):
     """Handle: assignment <id> [status|attempt|N]"""
     att_keyword = str(attempt_arg).lower() if attempt_arg else None
 
     if att_keyword == "status":
         # Status of one specific assignment
-        atts = _safe_attempts(ctx, numeric_cid, content_id)
+        atts = safe_attempts(ctx, numeric_cid, content_id)
         status = ok_s(f"submitted ({len(atts)} attempt(s))") if atts else err_s("not submitted")
         click.secho(f"\n📋  Assignment {content_id}\n", fg="cyan", bold=True)
         click.echo(f"  Status: {status}")
@@ -141,7 +141,7 @@ def _single_assignment(ctx, session_cookies, numeric_cid,
 
     if att_keyword == "attempts" or attempt_arg is None:
         # All attempts for this assignment
-        atts = _safe_attempts(ctx, numeric_cid, content_id)
+        atts = safe_attempts(ctx, numeric_cid, content_id)
         click.secho(f"\n🔍  Attempts - {content_id}\n", fg="cyan", bold=True)
         if not atts:
             click.secho("  No attempts found.", fg="yellow")
@@ -165,7 +165,7 @@ def _single_assignment(ctx, session_cookies, numeric_cid,
         sys.exit(1)
 
     # Details of specific attempt
-    atts = _safe_attempts(ctx, numeric_cid, content_id)
+    atts = safe_attempts(ctx, numeric_cid, content_id)
     att_map = {a: aid for aid, (a, _) in atts}
     if anum not in att_map:
         click.secho(f"❌  Attempt {anum} not found. Available: {list(att_map.keys())}", fg="red")
@@ -475,15 +475,15 @@ def course_cmd(course_id, sub, content_id, attempt_arg, download_flag, output_di
         ctx_b.add_cookies(cookies)
         try:
             if sub == "assignments" or sub is None:
-                _list_assignments(ctx_b, numeric_cid, course_name, all_assignments)
+                list_assignments(ctx_b, numeric_cid, course_name, all_assignments)
             elif sub == "assignment":
                 if content_id is None:
                     click.secho("❌  assignment needs a content_id or 'status'", fg="red")
                     sys.exit(1)
                 if content_id == "status":
-                    _all_status(ctx_b, numeric_cid, course_name, all_assignments)
+                    all_status(ctx_b, numeric_cid, course_name, all_assignments)
                 else:
-                    _single_assignment(ctx_b, cookies, numeric_cid,
+                    single_assignment(ctx_b, cookies, numeric_cid,
                                        content_id, attempt_arg, download_flag, output_dir)
             else:
                 click.secho(f"❌  Unknown: {sub}", fg="red")

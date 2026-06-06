@@ -30,9 +30,9 @@ Credentials = Authorizer
 from pathlib import Path as _Path
 import requests as _requests
 
-_SSO_PATH = _Path(__file__).resolve()
-_SKILL_ROOT = _SSO_PATH.parent.parent.parent.parent
-del _SSO_PATH
+SSO_PATH = _Path(__file__).resolve()
+SKILL_ROOT = SSO_PATH.parent.parent.parent.parent
+del SSO_PATH
 
 
 # =============================================================================
@@ -69,7 +69,7 @@ class TISAuth(CASAuthorizer):
             sess.headers["X-Requested-With"] = "XMLHttpRequest"
         return sess
 
-    def _probe_session(self) -> bool:
+    def probe_session(self) -> bool:
         """
         TIS-specific probe: use a lightweight API call instead of root URL.
         The TIS root URL returns 200 even without auth (redirects to login page).
@@ -95,9 +95,9 @@ class BBAuth(CASAuthorizer):
     SERVICE_URL = "https://bb.sustech.edu.cn/webapps/bb-sso-BBLEARN/index.jsp"
     SESSION_SUBDIR = "bb"
 
-    def _reset_cached_data(self):
+    def reset_cached_data(self):
         """Delete cached course data so it gets refreshed on next access."""
-        skill_bb = _SKILL_ROOT / "bb"
+        skill_bb = SKILL_ROOT / "bb"
         for f in (skill_bb / "courses.json", skill_bb / "structure.json"):
             if f.exists():
                 f.unlink()
@@ -105,13 +105,13 @@ class BBAuth(CASAuthorizer):
     def refresh(self) -> bool:
         ok = super().refresh()
         if ok:
-            self._reset_cached_data()
+            self.reset_cached_data()
         return ok
 
     def login(self, *, headless: bool = False):
         ok = super().login(headless=headless)
         if ok:
-            self._reset_cached_data()
+            self.reset_cached_data()
         return ok
 
     @property
@@ -137,10 +137,6 @@ class LibAuth(CASAuthorizer):
     BASE_URL = "https://sustc.primo.exlibrisgroup.com.cn"
     SERVICE_URL = "https://sustc.primo.exlibrisgroup.com.cn/infra/casRedirect?ctx=/primaws"
     SESSION_SUBDIR = "lib"
-
-    @property
-    def session_file(self):
-        return self.submodule_dir / "session.json"
 
     @property
     def requests_session(self):
@@ -180,7 +176,7 @@ class LibAuth(CASAuthorizer):
 
         sess = _requests.Session()
         sess.mount("https://", LegacyAdapter())
-        self._apply_cookies(sess, self.cookies)
+        self.apply_cookies(sess, self.cookies)
         return sess
 
 
@@ -197,10 +193,10 @@ class WSAuth(WSProvider):
 
 
 # Register singletons for backwards compatibility with get_auth()
-register_auth("tis", TISAuth(skill_dir=str(_SKILL_ROOT)))
-register_auth("bb", BBAuth(skill_dir=str(_SKILL_ROOT)))
-register_auth("lib", LibAuth(skill_dir=str(_SKILL_ROOT)))
-register_auth("ws", WSAuth(skill_dir=str(_SKILL_ROOT)))
+register_auth("tis", TISAuth(skill_dir=str(SKILL_ROOT)))
+register_auth("bb", BBAuth(skill_dir=str(SKILL_ROOT)))
+register_auth("lib", LibAuth(skill_dir=str(SKILL_ROOT)))
+register_auth("ws", WSAuth(skill_dir=str(SKILL_ROOT)))
 
 
 # Export ensured from Authorizer

@@ -20,11 +20,11 @@ import ssl
 import urllib3.util.ssl_ as _us_ssl
 _orig = _us_ssl.create_urllib3_context
 _OP_LEGACY = getattr(ssl, 'OP_LEGACY_SERVER_CONNECT', 0x4)
-def _patched(protocol=None):
+def patched(protocol=None):
     ctx = _orig(protocol)
     ctx.options |= _OP_LEGACY
     return ctx
-_us_ssl.create_urllib3_context = _patched
+_us_ssl.create_urllib3_context = patched
 import requests
 from ..authorizer import Authorizer, AuthorizerError, CAS_BASE, UA
 
@@ -58,8 +58,8 @@ class CASAuthorizer(Authorizer):
 
     # ── CAS internals ─────────────────────────────────────────────────────────
 
-    def _fetch_execution(self, sess: requests.Session) -> str:
-        r = sess.get(self.cas_url, headers=self._headers, timeout=10)
+    def fetch_execution(self, sess: requests.Session) -> str:
+        r = sess.get(self.cas_url, headers=self.headers, timeout=10)
         m = re.search(r'name="execution" value="([^"]+)"', r.text)
         if not m:
             raise AuthorizerError(
@@ -68,8 +68,8 @@ class CASAuthorizer(Authorizer):
             )
         return m.group(1)
 
-    def _post_cas(self, sess: requests.Session, username: str, password: str) -> str:
-        exec_token = self._fetch_execution(sess)
+    def post_cas(self, sess: requests.Session, username: str, password: str) -> str:
+        exec_token = self.fetch_execution(sess)
         data = {
             "username": username,
             "password": password,
@@ -83,7 +83,7 @@ class CASAuthorizer(Authorizer):
             self.cas_url,
             data=data,
             allow_redirects=False,
-            headers=self._headers,
+            headers=self.headers,
             timeout=10,
         )
         if r.status_code not in self.REDIRECT_STATUS:
@@ -98,7 +98,7 @@ class CASAuthorizer(Authorizer):
             raise AuthorizerError("CAS rejected credentials (wrong username/password).")
         return loc
 
-    def _exchange_ticket(self, sess: requests.Session, ticket_url: str) -> dict:
+    def exchange_ticket(self, sess: requests.Session, ticket_url: str) -> dict:
         """
         Exchange CAS ticket for session cookies.
         Handles both patterns:
@@ -106,11 +106,11 @@ class CASAuthorizer(Authorizer):
           - cookies on the subsequent redirect to SERVICE_URL (BB/Lib pattern)
         Uses allow_redirects=True to follow the full chain and capture all cookies.
         """
-        r = sess.get(ticket_url, allow_redirects=True, headers=self._headers, timeout=10)
+        r = sess.get(ticket_url, allow_redirects=True, headers=self.headers, timeout=10)
         cookies = {c.name: c.value for c in sess.cookies}
         return cookies
 
-    def _build_session(self) -> requests.Session:
+    def build_session(self) -> requests.Session:
         """Build a requests Session with LegacyAdapter for OP_LEGACY_SERVER_CONNECT."""
         legacy_ctx = ssl.create_default_context()
         legacy_ctx.options |= _OP_LEGACY
@@ -147,10 +147,10 @@ class CASAuthorizer(Authorizer):
         """
         Full headless CAS flow. Returns cookie dict for save()/cookies_for_requests().
         """
-        sess = self._build_session()
+        sess = self.build_session()
         sess.headers['User-Agent'] = UA
-        ticket_url = self._post_cas(sess, username, password)
-        cookies = self._exchange_ticket(sess, ticket_url)
+        ticket_url = self.post_cas(sess, username, password)
+        cookies = self.exchange_ticket(sess, ticket_url)
         if not cookies:
             raise AuthorizerError("No cookies received after CAS ticket exchange.")
         return cookies

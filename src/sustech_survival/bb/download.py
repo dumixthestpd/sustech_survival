@@ -25,7 +25,7 @@ import requests
 BB_BASE = "https://bb.sustech.edu.cn"
 
 
-def _session():
+def session():
     """Return requests.Session with BB cookies.
 
     Goes through BBAuth (not raw file IO) so the session lives at
@@ -44,9 +44,9 @@ def _session():
 from sustech_survival.exceptions import SessionExpired as _SessionExpired
 
 
-def _api(path, session=None):
+def api(path, session=None):
     if session is None:
-        session = _session()
+        session = session()
     r = session.get(BB_BASE + path, timeout=15)
     if r.status_code == 401:
         raise _SessionExpired("BB session expired. Run `bb.py login`.")
@@ -112,7 +112,7 @@ def resolve_course(content_id):
 
 # ── Content Item Fetcher ─────────────────────────────────────────────────────
 
-def _normalize_bb_id(raw):
+def normalize_bb_id(raw):
     """Ensure BB-format with single underscore wrapper: _xxx_1.
 
     Accepts both numeric ('8343') and BB-format ('_8343_1') IDs,
@@ -123,21 +123,21 @@ def _normalize_bb_id(raw):
     return f"_{raw}_1"
 
 
-def _get_content_item(course_id, content_id, session=None):
+def get_content_item(course_id, content_id, session=None):
     """Fetch a single content item. Returns dict or None."""
     if session is None:
-        session = _session()
-    bid = _normalize_bb_id(course_id)
-    cid = _normalize_bb_id(content_id)
+        session = session()
+    bid = normalize_bb_id(course_id)
+    cid = normalize_bb_id(content_id)
     try:
-        return _api(f"/learn/api/public/v1/courses/{bid}/contents/{cid}", session)
+        return api(f"/learn/api/public/v1/courses/{bid}/contents/{cid}", session)
     except Exception:
         return None
 
 
 # ── bbcswebdav URL extractor ────────────────────────────────────────────────
 
-def _extract_bbcswebdav_urls(html_body):
+def extract_bbcswebdav_urls(html_body):
     """Extract bbcswebdav download URLs from HTML body content."""
     if not html_body:
         return []
@@ -157,7 +157,7 @@ def scrape_content_files(content_id):
     Raises ValueError if content_id not in any known course.
     """
     course_id = resolve_course(content_id)
-    item = _get_content_item(course_id, content_id)
+    item = get_content_item(course_id, content_id)
     if not item:
         raise ValueError(f"Cannot fetch content {content_id}")
 
@@ -169,7 +169,7 @@ def scrape_content_files(content_id):
 
     if handler == "resource/x-bb-document":
         # Inline content — extract bbcswebdav URLs from HTML body
-        urls = _extract_bbcswebdav_urls(body)
+        urls = extract_bbcswebdav_urls(body)
         for url in urls:
             name = url.split("/")[-1].split("?")[0]
             name = unquote(name)
@@ -183,7 +183,7 @@ def scrape_content_files(content_id):
 
     elif handler == "resource/x-bb-assignment":
         # Assignment — might have inline attachments in body
-        urls = _extract_bbcswebdav_urls(body)
+        urls = extract_bbcswebdav_urls(body)
         for url in urls:
             name = url.split("/")[-1].split("?")[0]
             files.append((unquote(name), url))
@@ -206,7 +206,7 @@ def download_file(out_path, url_or_path, session_cookies):
     return out_path
 
 
-def _slugify(name):
+def slugify(name):
     """Minimal slugify for filenames."""
     name = re.sub(r"[^\w\s.-]", "_", name)
     return re.sub(r"\s+", "_", name).strip("_")[:200]
@@ -231,7 +231,7 @@ def download_content(content_id, out_dir=None):
 
     saved = []
     for name, url_or_path in files:
-        out_path = out_dir / _slugify(name)
+        out_path = out_dir / slugify(name)
         try:
             if url_or_path.startswith("_bbfile:"):
                 print(f"  ⚠ {name}: direct download not available (use Playwright)")
@@ -257,7 +257,7 @@ def get_assignment_attempts(course_id, column_id):
     bid = course_id if course_id.startswith("_") else f"_{course_id}_1"
     col_id = column_id if column_id.startswith("_") else f"_{column_id}_1"
     try:
-        data = _api(f"/learn/api/public/v1/courses/{bid}/gradebook/columns/{col_id}/attempts", sess)
+        data = api(f"/learn/api/public/v1/courses/{bid}/gradebook/columns/{col_id}/attempts", sess)
         results = []
         for i, att in enumerate(data.get("results", [])):
             results.append((
@@ -300,7 +300,7 @@ def scrape_attempt_details(ctx, numeric_cid, content_id, attempt_id):
     bid = f"_{numeric_cid}_1"
     col_id = f"_{column_id}_1"
     try:
-        data = _api(f"/learn/api/public/v1/courses/{bid}/gradebook/columns/{col_id}/attempts", sess)
+        data = api(f"/learn/api/public/v1/courses/{bid}/gradebook/columns/{col_id}/attempts", sess)
     except Exception:
         return {}
 
@@ -347,8 +347,8 @@ def scrape_attempt_details(ctx, numeric_cid, content_id, attempt_id):
 def get_column_id_for_content(course_id, content_id, session=None):
     """Get gradebook column ID for an assignment content item."""
     if session is None:
-        session = _session()
-    item = _get_content_item(course_id, content_id, session)
+        session = session()
+    item = get_content_item(course_id, content_id, session)
     if not item:
         return None
     return item.get("contentHandler", {}).get("gradeColumnId", "").lstrip("_").rstrip("_1")
@@ -413,7 +413,7 @@ def scrape_attempt_files_via_browser(course_id, content_id, attempt_id):
             seen.add(href)
             fname_raw = re.search(r"fileName=([^&]+)", href)
             fname = unquote(fname_raw.group(1)) if fname_raw else "file"
-            files.append((_slugify(fname), href))
+            files.append((slugify(fname), href))
 
         page.close()
     return ts, files

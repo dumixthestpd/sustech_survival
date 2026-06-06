@@ -31,7 +31,7 @@ SKIP_COURSE_NAMES = {
 
 # ── REST-based course discovery ────────────────────────────────────────────────
 
-def _session():
+def session():
     """Return requests.Session with BB cookies from SSO auth layer."""
     from sustech_survival.sso import BBAuth
     auth = BBAuth(skill_dir=str(BB_DIR.parent.parent.parent.parent))
@@ -42,10 +42,10 @@ def _session():
     return sess
 
 
-def _api(path, session=None):
+def api(path, session=None):
     """GET BB REST endpoint. Returns JSON. Dies on auth error."""
     if session is None:
-        session = _session()
+        session = session()
     r = session.get(BB_BASE + path, timeout=15)
     if r.status_code == 401:
         raise _SessionExpired("BB session expired. Run `bb.py login` to refresh.")
@@ -62,10 +62,10 @@ def scrape_enrolled_courses() -> List[Dict[str, str]]:
 
     Returns list of dicts: [{"id": "_8343_1", "name": "Physical Chemistry...", "href": ""}, ...]
     """
-    me = _api("/learn/api/public/v1/users/me")
+    me = api("/learn/api/public/v1/users/me")
     uid = me["id"]
 
-    enrollments = _api(f"/learn/api/public/v1/users/{uid}/courses")
+    enrollments = api(f"/learn/api/public/v1/users/{uid}/courses")
     seen_ids = set()
     courses = []
 
@@ -75,7 +75,7 @@ def scrape_enrolled_courses() -> List[Dict[str, str]]:
             continue
 
         try:
-            course_data = _api(f"/learn/api/public/v1/courses/{course_id}")
+            course_data = api(f"/learn/api/public/v1/courses/{course_id}")
             name = course_data.get("name", "")
         except Exception:
             name = ""
@@ -105,7 +105,7 @@ def refresh_courses_json() -> List[Dict[str, str]]:
 
 # ── Course Data ────────────────────────────────────────────────────────────────
 
-def _refresh_if_stale(max_age_hours=24):
+def refresh_if_stale(max_age_hours=24):
     """Refresh courses.json if it is older than max_age_hours or missing."""
     if COURSES_FILE.exists():
         try:
@@ -124,7 +124,7 @@ def load_courses():
     Load course list from courses.json. Auto-refreshes if stale (>24h).
     Returns list of course dicts.
     """
-    _refresh_if_stale()
+    refresh_if_stale()
     if not COURSES_FILE.exists():
         return []
     with open(COURSES_FILE) as f:
@@ -138,12 +138,12 @@ def get_course_numeric_id(course_id_str):
     return m.group(1) if m else course_id_str
 
 
-def _extract_code(name: str) -> list:
+def extract_code(name: str) -> list:
     """Extract course codes from a name string (e.g. 'MSE202', 'MSE002-003')."""
     return re.findall(r'[A-Z]{2,6}[-_]?\d{3,4}[A-Z]?', name, re.IGNORECASE)
 
 
-def _codes_normalized(codes: list) -> set:
+def codes_normalized(codes: list) -> set:
     """Normalize codes for fuzzy comparison: strip non-alpha prefixes and trailing letter suffixes."""
     normalized = set()
     for code in codes:
@@ -178,15 +178,15 @@ def find_course(query):
 
     # No local match -- try live fetch across all enrolled courses
     try:
-        live = _api("/learn/api/public/v1/users/me")
+        live = api("/learn/api/public/v1/users/me")
         uid = live["id"]
-        enrollments = _api(f"/learn/api/public/v1/users/{uid}/courses")
+        enrollments = api(f"/learn/api/public/v1/users/{uid}/courses")
         for e in enrollments.get("results", []):
             cid = e.get("courseId", "")
             if not cid:
                 continue
             try:
-                cd = _api(f"/learn/api/public/v1/courses/{cid}")
+                cd = api(f"/learn/api/public/v1/courses/{cid}")
                 name = cd.get("name", "")
             except Exception:
                 name = ""
@@ -220,7 +220,7 @@ def discover_assignments_for_course(course_id_str):
 
     bid = f"_{numeric_cid}_1"
     try:
-        cols = _api(
+        cols = api(
             f"/learn/api/public/v1/courses/{bid}/gradebook/columns"
             f"?_fields=id,name,contentId,grading",
         )

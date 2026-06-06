@@ -97,7 +97,7 @@ class ShibbolethAuthorizer(Authorizer):
             page.goto(self.SP_INIT_URL, wait_until="domcontentloaded", timeout=30000)
 
             # ── Step 2: detect institution login link ────────────────────────
-            link_info = self._find_institution_link(page)
+            link_info = self.find_institution_link(page)
             if link_info:
                 print(f"[2/4] Clicking institution login: {link_info['text']}")
                 link_info['handle'].click()
@@ -107,7 +107,7 @@ class ShibbolethAuthorizer(Authorizer):
 
             # ── Step 3: WAYF discovery — search for institution ─────────────
             page.wait_for_timeout(2000)
-            wayf_ok = self._handle_wayf(page)
+            wayf_ok = self.handle_wayf(page)
             if not wayf_ok:
                 print("[3/4] No WAYF page detected — may use embedded IdP picker")
 
@@ -149,7 +149,7 @@ class ShibbolethAuthorizer(Authorizer):
             print(f"   Final URL: {page.url}")
             return True
 
-    def _find_institution_link(self, page) -> typing.Optional[dict]:
+    def find_institution_link(self, page) -> typing.Optional[dict]:
         """
         Find and return a clickable element for "Login via institution" / "SSO".
         Returns dict with 'handle' and 'text' keys, or None.
@@ -186,7 +186,7 @@ class ShibbolethAuthorizer(Authorizer):
 
         return None
 
-    def _handle_wayf(self, page) -> bool:
+    def handle_wayf(self, page) -> bool:
         """
         Handle WAYF/DS discovery page: search for institution, select it, submit.
 

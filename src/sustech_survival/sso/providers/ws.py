@@ -33,7 +33,7 @@ from ..authorizer import Authorizer, AuthorizerError, CAS_BASE, UA
 __all__ = ["WSProvider"]
 
 
-def _build_legacy_adapter():
+def build_legacy_adapter():
     """
     Build a LegacyAdapter class that uses OP_LEGACY_SERVER_CONNECT so TLS
     session resumption works reliably against ws.sustech.edu.cn.
@@ -74,10 +74,10 @@ def _build_legacy_adapter():
     return LegacyAdapter
 
 
-def _sess() -> requests.Session:
+def sess() -> requests.Session:
     """Return a requests.Session with LegacyAdapter mounted."""
     sess = requests.Session()
-    sess.mount("https://", _build_legacy_adapter()())
+    sess.mount("https://", build_legacy_adapter()())
     return sess
 
 
@@ -111,7 +111,7 @@ class WSProvider(Authorizer):
         Perform the full CAS ticket exchange for WS.
         Uses LegacyAdapter throughout to avoid TLS errors.
         """
-        sess = _sess()
+        sess = sess()
         sess.headers["User-Agent"] = UA
 
         # Step 1 — fetch CAS login page → extract execution token
@@ -196,8 +196,8 @@ class WSProvider(Authorizer):
         reliably against ws.sustech.edu.cn.
         """
         raw = self.load()
-        sess = _sess()
-        self._apply_cookies(sess, raw)
+        sess = sess()
+        self.apply_cookies(sess, raw)
         return sess
 
     def check(self) -> tuple[bool, str]:
