@@ -28,6 +28,17 @@ Proceed with your task.
 
 ## Teaching Evaluation (评教)
 
+> **⚠️ DEPRECATED — 2026-06-06 (dormant until next eval window).** The
+> TIS 评教 window for the 2025-2026 spring semester closed on 2026-06-05
+> and the evaluation entrance is no longer accessible, so the `tis.eval`
+> module is kept dormant until the 2026-2027 fall evaluation window —
+> when we can re-observe the eval page and resume development.
+>
+> Importing `sustech_survival.tis.eval` emits a `DeprecationWarning`.
+> No replacement for now — complete evaluations manually in the TIS
+> web UI. The branch `feat/eval-submit` is preserved as the development
+> archive for next semester's revival.
+
 ### Quick Start
 
 ```python
