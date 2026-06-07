@@ -16,7 +16,7 @@
 
 from pathlib import Path
 
-__all__ = ["bb", "tis", "lib", "sso", "papers"]
+__all__ = ["bb", "tis", "lib", "sso", "papers", "Context", "Level"]
 
 _PKG_ROOT = Path(__file__).resolve().parent
 
@@ -34,3 +34,6 @@ from . import sso
 
 # ── papers ─────────────────────────────────────────────────────────────────
 from . import papers
+
+# ── context (replaces old quickcontext) ─────────────────────────────────
+from .context import Context, Level  # noqa: F401
