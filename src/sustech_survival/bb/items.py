@@ -163,6 +163,51 @@ class HomeworkItem(Item):
             f"&course_id=_{self.course_id}_1&group_id={self.group_id or ''}"
         )
 
+    def submit(self, file_path: str, target_name: str | None = None,
+               dry_run: bool = False, skip_dedup: bool = True,
+               headless: bool = True) -> tuple:
+        """High-level submit: hand a file to BB for this assignment.
+
+        Thin wrapper around ``sustech_survival.bb.submit.submit_assignment``.
+        Pre-renames the file to ``target_name`` on disk (via the underlying
+        primitive's staging logic) so BB records the correct basename in
+        ``newFile_table`` — no JS-side rename, no duplicate rows.
+
+        Args:
+            file_path: absolute path to the local PDF
+            target_name: on-disk basename BB should show.
+                Defaults to file_path's basename.
+            dry_run: stop after the file is in the table, do NOT click submit
+            skip_dedup: bypass prior-attempt dedup check
+            headless: Playwright headless flag
+
+        Returns:
+            ``(ok, message)`` — message contains the confirmation UUID on
+            success, or ``"DRY-RUN: rows=N, link_titles=[...]"`` if dry-run.
+
+        Example:
+            >>> hw = HomeworkItem(sub_id="x", title="HW1",
+            ...                   course_id="8221", content_id="626838")
+            >>> ok, msg = hw.submit(
+            ...     file_path="/tmp/hw15.pdf",
+            ...     target_name="第15次作业-段斯宸-12413021.pdf",
+            ...     dry_run=True,
+            ... )
+        """
+        from pathlib import Path
+        target = target_name or Path(file_path).name
+        # Lazy import to avoid circular dependency (items.py → submit.py)
+        from sustech_survival.bb.submit import submit_assignment
+        return submit_assignment(
+            self.course_id,                 # positional
+            self.content_id,                # positional
+            [file_path],                    # positional
+            name_override=target,           # kwarg
+            skip_dedup=skip_dedup,          # kwarg
+            dry_run=dry_run,                # kwarg
+            headless=headless,              # kwarg
+        )
+
     def to_row(self) -> str:
         deadline_str = self.deadline or "-"
         sub_count = str(self.submission_count)
