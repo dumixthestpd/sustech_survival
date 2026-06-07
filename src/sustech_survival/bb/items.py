@@ -3,11 +3,90 @@
 Item classes for all Blackboard content item types.
 Each item represents a sub-element within a BB content page.
 """
-
 import re
 import urllib.parse
+import warnings
+from datetime import datetime, timezone, timedelta
 from pathlib import Path as _Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
+
+# China timezone (UTC+8) for deadline comparisons
+CHINA_TZ = timezone(timedelta(hours=8))
+
+
+def _parse_deadline(s) -> Optional[datetime]:
+    """Parse a deadline string in any of these formats:
+      - ISO 8601: "2026-05-12T23:59:00+08:00" or "2026-05-12T23:59:00"
+      - Chinese full: "2026年5月12日 23:59" or "2026年5月12日23:59"
+      - Chinese date only: "2026年5月12日" (interpreted as end-of-day, 23:59:59)
+
+    Returns:
+        datetime (tz-aware if input had tz, naive if not), or None if unparseable.
+    """
+    if not s or not isinstance(s, str):
+        return None
+    s = s.strip()
+    if not s:
+        return None
+    # Try ISO 8601 first (handles both naive and tz-aware)
+    try:
+        return datetime.fromisoformat(s)
+    except (ValueError, TypeError):
+        pass
+    # Chinese full: "2026年5月12日 23:59" or "2026年5月12日23:59"
+    m = re.match(r"(\d{4})年(\d{1,2})月(\d{1,2})日\s*(\d{1,2}):(\d{2})", s)
+    if m:
+        try:
+            y, mo, d, h, mi = (int(g) for g in m.groups())
+            return datetime(y, mo, d, h, mi, tzinfo=CHINA_TZ)
+        except ValueError:
+            return None
+    # Chinese date only — interpret as end of day
+    m = re.match(r"(\d{4})年(\d{1,2})月(\d{1,2})日", s)
+    if m:
+        try:
+            y, mo, d = (int(g) for g in m.groups())
+            return datetime(y, mo, d, 23, 59, 59, tzinfo=CHINA_TZ)
+        except ValueError:
+            return None
+    return None
+
+
+def _check_late_risk(deadline_str: str, *, force_late: bool = False) -> None:
+    """Emit a UserWarning if `deadline_str` is in the past.
+
+    This is the late-submission guard: when creating a new attempt on an
+    assignment whose deadline has already passed, we want the user to
+    know they're submitting late — past-deadline attempts are typically
+    recorded as LATE in BB and may be penalized by the instructor.
+
+    Pass `force_late=True` to suppress the warning (e.g. when the user
+    has explicitly acknowledged the risk).
+
+    Silently does nothing if:
+      - deadline_str is empty or None (can't determine)
+      - deadline_str is unparseable (don't false-positive)
+    """
+    if force_late:
+        return
+    ddl = _parse_deadline(deadline_str)
+    if ddl is None:
+        return
+    # Normalize to CHINA_TZ for comparison (handle naive datetimes as CST)
+    if ddl.tzinfo is None:
+        ddl = ddl.replace(tzinfo=CHINA_TZ)
+    now = datetime.now(CHINA_TZ)
+    if ddl < now:
+        delta = now - ddl
+        warnings.warn(
+            f"LATE SUBMISSION RISK: deadline {deadline_str!r} ({ddl.isoformat()}) "
+            f"is in the past (now {now.isoformat()}, "
+            f"{delta} after deadline). This will create a new attempt as a LATE "
+            f"submission. Set force_late=True to suppress.",
+            UserWarning,
+            stacklevel=3,
+        )
+
 
 BB_DIR = _Path(__file__).resolve()  # items.py is at depth 5 in skill_root
 
@@ -165,7 +244,8 @@ class HomeworkItem(Item):
 
     def submit(self, file_path: str, target_name: str | None = None,
                dry_run: bool = False, skip_dedup: bool = True,
-               headless: bool = True) -> tuple:
+               headless: bool = True,
+               force_late: bool = False) -> tuple:
         """High-level submit: hand a file to BB for this assignment.
 
         Thin wrapper around ``sustech_survival.bb.submit.submit_assignment``.
@@ -180,14 +260,23 @@ class HomeworkItem(Item):
             dry_run: stop after the file is in the table, do NOT click submit
             skip_dedup: bypass prior-attempt dedup check
             headless: Playwright headless flag
+            force_late: if True, suppress the late-submission warning even when
+                the deadline is in the past. Use when you've explicitly decided
+                a late attempt is acceptable.
 
         Returns:
             ``(ok, message)`` — message contains the confirmation UUID on
             success, or ``"DRY-RUN: rows=N, link_titles=[...]"`` if dry-run.
 
+        Late-submission safety: if ``self.deadline`` is set and in the past,
+        emits a ``UserWarning`` before the actual submit so the user knows
+        they're creating a late attempt. Skipped on dry_run (since no real
+        attempt is made) and on force_late=True.
+
         Example:
             >>> hw = HomeworkItem(sub_id="x", title="HW1",
-            ...                   course_id="8221", content_id="626838")
+            ...                   course_id="8221", content_id="626838",
+            ...                   deadline="2026-05-12T23:59:00+08:00")
             >>> ok, msg = hw.submit(
             ...     file_path="/tmp/hw15.pdf",
             ...     target_name="第15次作业-段斯宸-12413021.pdf",
@@ -196,6 +285,11 @@ class HomeworkItem(Item):
         """
         from pathlib import Path
         target = target_name or Path(file_path).name
+
+        # Late-submission safety check (skip on dry_run, suppress with force_late)
+        if not dry_run and self.deadline:
+            _check_late_risk(self.deadline, force_late=force_late)
+
         # Lazy import to avoid circular dependency (items.py → submit.py)
         from sustech_survival.bb.submit import submit_assignment
         return submit_assignment(
