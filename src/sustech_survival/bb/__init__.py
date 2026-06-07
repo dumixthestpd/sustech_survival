@@ -20,11 +20,18 @@ from pathlib import Path as _Path
 _SKILL_ROOT = _Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(_SKILL_ROOT / "src"))
 
-__all__ = ["ddl", "query", "download", "submit", "check_attempts", "find_assignment", "list_upcoming"]
+__all__ = ["ddl", "query", "download", "submit_file", "submit_assignment", "check_attempts", "find_assignment", "list_upcoming"]
 
 from sustech_survival.bb import query, download
 from sustech_survival.bb.ddl import run as _ddl_run
-from sustech_survival.bb.submit import submit, check_attempts, find_assignment, list_upcoming
+from sustech_survival.bb.submit import submit_file, submit_assignment, check_attempts, find_assignment, list_upcoming
+
+# Note (2026-06-08): we used to do `from .submit import submit, ...` here,
+# but that bound the `submit` function to the `bb` package namespace and
+# shadowed the `sustech_survival.bb.submit` SUBMODULE. Anyone doing
+# `import sustech_survival.bb.submit as m` got the function, not the
+# module, breaking monkeypatching and any code that needed the module.
+# Renamed the function to `submit_file` to break the collision.
 
 def ddl(days: int = 7, course_id: str = None):
     """Print upcoming BB assignment deadlines. See docs/bb.md."""

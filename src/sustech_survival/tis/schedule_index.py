@@ -1,8 +1,19 @@
 """
-sustech_survival.tis.schedule_index — lazy, cached index over the TIS personal schedule.
+sustech_survival.tis.schedule_index — class schedule lookup over the TIS personal schedule.
 
-Builds on top of `sustech_survival.tis.schedule` (raw xszykb API) to answer
-"when was/will X class happen" questions in O(1) after one semester-wide fetch.
+The two main functions:
+
+  class_schedule(course_name)
+      → "When is my class?" — day, period, and weeks
+      → Returns a structured schedule for the named course
+
+  experiment_date(course_name, week=N, as_of=...)
+      → "When was my experiment?" — the actual calendar date of a specific
+        class session, with explicit handling for weeks that have no class
+        (returns nearest past/future with a warning)
+
+Builds on `sustech_survival.tis.schedule` (raw xszykb API). One semester
+fetch, cached per-process.
 
 Quick reference:
     sched = CourseSchedule(semester_label="2026 Spring")
@@ -11,10 +22,6 @@ Quick reference:
     next_occurrence("物化", as_of=date(...))   # next future date
     dates_in_week("物化", week=15)            # all dates in a given week
     dates_in_semester("物化")                  # every date this semester
-
-For LaTeX experiment reports:
-    experiment_dates("物化", week=15, as_of=date(2026, 6, 7))
-    # → {"course": ..., "experiment_date": ..., "submission_date": ..., "week": ...}
 """
 from __future__ import annotations
 
@@ -70,21 +77,37 @@ class CourseEntry:
     def from_tis(cls, raw: dict, *, semester_start: date) -> "CourseEntry":
         """Parse a single TIS API row.
 
-        Required raw fields: KEY (xq{N}_jc{M}), ZC (week bitmap), KCWZSM or SKSJ
+        Required raw fields: KEY (xq{N}_jc{M}), ZC (week bitmap), KCWZSM or SKSJ.
+        Period start/end come from KSJC / JSJC fields (NOT the jc{M} in KEY —
+        KEY's jc is the session UI grouping, KSJC/JSJC are the actual periods).
         """
         # Course name: prefer KCWZSM, fall back to SKSJ's first line
         name = (raw.get("KCWZSM")
                 or raw.get("SKSJ", "").split("\n")[0]
                 or "")
 
-        # Day/period: KEY is "xq2_jc3" = day 2 (Tue), period 3
+        # Day: KEY is "xq2_jc3" = day 2 (Tue)
         key = raw.get("KEY", "")
         m = re.match(r"xq(\d+)_jc(\d+)", key)
         weekday = int(m.group(1)) if m else 0
-        period_start = int(m.group(2)) if m else 0
-        period_end = int(raw.get("JSJC") or period_start)
+        # Periods: use KSJC (start) and JSJC (end) — NOT the jc{M} in KEY
+        ksjc = raw.get("KSJC")
+        jsjc = raw.get("JSJC")
+        try:
+            period_start = int(ksjc) if ksjc else 0
+        except (TypeError, ValueError):
+            period_start = 0
+        try:
+            period_end = int(jsjc) if jsjc else period_start
+        except (TypeError, ValueError):
+            period_end = period_start
 
-        # Weeks: ZC is a 36-char bitmap of 0/1, position i (0-indexed) = week i+1
+        # Fallback: if KSJC/JSJC missing or 0, parse from KEY
+        if period_start == 0:
+            period_start = int(m.group(2)) if m else 0
+            period_end = period_start
+
+        # Weeks: ZC is a bitmap of 0/1, position i (0-indexed) = week i+1
         zc = raw.get("ZC", "") or ""
         weeks = [i + 1 for i, c in enumerate(zc) if c == "1"]
 
@@ -313,134 +336,324 @@ def dates_in_semester(course_name: str, *,
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# experiment_dates — high-level helper for LaTeX experiment reports
+# class_schedule — "When is my class?" (day + period + weeks)
 # ─────────────────────────────────────────────────────────────────────────
 
-def experiment_dates(
+# weekday index → (English, Chinese)
+_WEEKDAY = [
+    (1, "Monday", "星期一"),
+    (2, "Tuesday", "星期二"),
+    (3, "Wednesday", "星期三"),
+    (4, "Thursday", "星期四"),
+    (5, "Friday", "星期五"),
+    (6, "Saturday", "星期六"),
+    (7, "Sunday", "星期日"),
+]
+_WEEKDAY_MAP = {w[0]: (w[1], w[2]) for w in _WEEKDAY}
+
+
+def class_schedule(
+    course_name: str,
+    *,
+    schedule: Optional[CourseSchedule] = None,
+) -> dict:
+    """Return the schedule for a course: which day, which period, which weeks.
+
+    Designed for the common question: "When is my <course> class?"
+
+    Args:
+        course_name: substring or full course name (e.g. "有机", "物化实验",
+            "基础有机化学实验"). Subsequence fallback (e.g. "物化" →
+            "物理化学实验") and experiment-preference both apply — see
+            CourseSchedule.find for the matching rules.
+        schedule: pre-loaded CourseSchedule (default: lazy-load current semester)
+
+    Returns:
+        {
+          "course": str,                # full matched name
+          "course_query": str,          # original query
+          "section": str | None,        # e.g. "01班" if detectable from SKSJ
+          "meetings": [                 # one entry per distinct (day, period) slot
+            {
+              "weekday": "Monday",      # English day name
+              "weekday_zh": "星期一",    # Chinese
+              "weekday_index": 1,       # 1=Mon, 7=Sun (matches TIS KEY)
+              "period_start": 3,        # 1-based, matches TIS KEY jc{M}
+              "period_end": 4,
+              "periods_label": "3-4节",
+              "weeks": [3, 5, 7, ...], # academic weeks this meeting runs
+              "all_dates": [date(...)], # actual calendar dates
+              "location": "慧园2栋...",
+              "teachers": ["王海鸥", ...],
+            },
+            ...
+          ],
+          "warning": str | None,        # e.g. "Multiple sections matched; showing first"
+        }
+
+    Example:
+        >>> class_schedule("有机实验")
+        {
+          "course": "基础有机化学实验",
+          "section": "01班",
+          "meetings": [{
+            "weekday": "Monday", "weekday_zh": "星期一",
+            "period_start": 3, "period_end": 4, "periods_label": "3-4节",
+            "weeks": [3, 5, 7, 9, 11, 13, 15],
+            "all_dates": [date(2026, 3, 9), date(2026, 3, 23), ...],
+            "location": "慧园2栋405A实验室",
+            "teachers": ["王海鸥", "李慧丽", "李艳艳"],
+          }]
+        }
+    """
+    sched = _resolve_schedule(schedule)
+    matches = sched.find(course_name)
+    if not matches:
+        return {
+            "course": None,
+            "course_query": course_name,
+            "section": None,
+            "meetings": [],
+            "warning": f"Course not found: {course_name!r}. "
+                       f"Known: {sched.courses[:5]}...",
+        }
+
+    canonical_name = matches[0].name
+    section = _extract_section(matches[0])
+    warning = None
+
+    # Group by weekday. TIS often returns one entry per period (xq1_jc3,
+    # xq1_jc4) for the same class session — those should be ONE meeting
+    # spanning periods 3-4, not two separate meetings.
+    by_day: dict[int, list[CourseEntry]] = {}
+    for e in matches:
+        by_day.setdefault(e.weekday, []).append(e)
+
+    meetings = []
+    for weekday, entries in sorted(by_day.items()):
+        # The entries for the same day are the same class session. Use the
+        # min period_start and max period_end.
+        period_start = min(e.period_start for e in entries)
+        period_end = max(e.period_end for e in entries)
+        # Combine weeks from all entries (should be identical for the same class)
+        weeks: list[int] = sorted({w for e in entries for w in e.weeks})
+        # Compute actual dates
+        all_dates: list[date] = []
+        for w in weeks:
+            d = entries[0]._week_to_date(w)
+            if d:
+                all_dates.append(d)
+        all_dates.sort()
+
+        wd_en, wd_zh = _WEEKDAY_MAP.get(weekday, ("?", "?"))
+        periods_label = (
+            f"{period_start}-{period_end}节"
+            if period_start != period_end
+            else f"第{period_start}节"
+        )
+
+        # Location + teachers: pick the first entry's, or join uniques
+        location = entries[0].location
+        teachers = sorted({t for e in entries for t in (e.teacher or "").split(",") if t})
+
+        meetings.append({
+            "weekday": wd_en,
+            "weekday_zh": wd_zh,
+            "weekday_index": weekday,
+            "period_start": period_start,
+            "period_end": period_end,
+            "periods_label": periods_label,
+            "weeks": weeks,
+            "all_dates": all_dates,
+            "location": location,
+            "teachers": teachers,
+        })
+
+    if len({e.name for e in matches}) > 1:
+        warning = (f"Multiple courses matched: {[e.name for e in matches]}. "
+                   f"Showing schedule for: {canonical_name!r}")
+
+    return {
+        "course": canonical_name,
+        "course_query": course_name,
+        "section": section,
+        "meetings": meetings,
+        "warning": warning,
+    }
+
+
+def _extract_section(entry: CourseEntry) -> Optional[str]:
+    """Pull the section (e.g. "01班") out of the raw TIS SKSJ, if present."""
+    # The CourseEntry stores name/teacher/location but not the raw SKSJ.
+    # Try the teacher's name (sometimes encodes section) — best-effort.
+    # We can't reliably extract section without the raw SKSJ; return None
+    # for now and let the caller pass the raw row if needed.
+    return None
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# experiment_date — "When was my experiment?" (calendar date for a week)
+# ─────────────────────────────────────────────────────────────────────────
+
+def experiment_date(
     course_name: str,
     *,
     week: Optional[int] = None,
     as_of: Optional[date] = None,
     schedule: Optional[CourseSchedule] = None,
 ) -> dict:
-    """Return experiment date + submission date for a course.
+    """Return the actual calendar date of a class session.
 
     Designed for filling in LaTeX experiment report headers like:
-        实验日期: 2026-05-28
-        报告日期: 2026-06-07
+        实验日期: 2026-05-04
 
     Args:
-        course_name: substring or exact match (e.g. "物化", "有机", "物理化学实验")
-        week: target academic week. If None, uses the most recent past week
-              before as_of. If specified but no class meets in that week,
-              returns the closest actual class date with a warning.
-        as_of: reference date (default: today, China TZ). Submission date = as_of.
-        schedule: pre-loaded CourseSchedule (default: lazy-load current semester)
+        course_name: substring or full course name
+        week: target academic week. If None, uses the most recent past
+              week before as_of. If specified but the course has no class
+              in that week, returns the nearest past + nearest future with
+              an explicit warning (so the caller can pick the right one).
+        as_of: reference date (default: today, China TZ)
+        schedule: pre-loaded CourseSchedule (default: lazy-load)
 
     Returns:
-        dict with keys:
-          course            — matched full course name (or None if not found)
-          course_query      — the original query
-          experiment_date   — date the experiment class met (or None)
-          submission_date   — when the report is being submitted (= as_of)
-          week              — academic week of experiment_date
-          weekday           — English day name (Monday, Tuesday, ...)
-          weekday_zh        — Chinese day name (星期一, ...)
-          warning           — None or a human-readable note (e.g. "W12 has no
-                              gorganic class; using closest: W13")
-          all_dates         — sorted list of all dates this course met this semester
-          all_weeks         — sorted list of all weeks this course runs
+        {
+          "course": str | None,        # matched full name
+          "course_query": str,         # original query
+          "experiment_date": date | None,  # the date, or None if no class at all
+          "submission_date": date,     # = as_of
+          "week": int | None,          # academic week of experiment_date
+          "weekday_zh": str | None,    # "星期一" etc.
+          "warning": str | None,       # human-readable note if requested week
+                                        # has no class — caller should pick
+                                        # nearest_past or nearest_future
+          "nearest_past": {            # populated when the requested week
+                                        # has no class
+            "week": int, "date": date, "weekday_zh": str,
+          } | None,
+          "nearest_future": {...} | None,
+        }
     """
     sched = _resolve_schedule(schedule)
     ref = as_of or now_().date()
+    cs = class_schedule(course_name, schedule=sched)
     matches = sched.find(course_name)
-    all_dates = dates_in_semester(course_name, schedule=sched)
-    all_weeks = sorted({w for e in matches for w in e.weeks})
 
-    if not matches:
+    if not matches or not cs["meetings"]:
         return {
-            "course": None,
+            "course": cs["course"],
             "course_query": course_name,
             "experiment_date": None,
             "submission_date": ref,
             "week": None,
-            "weekday": None,
             "weekday_zh": None,
-            "warning": f"Course not found: {course_name!r}. "
-                       f"Known: {sched.courses[:5]}...",
-            "all_dates": [],
-            "all_weeks": [],
+            "warning": cs.get("warning")
+                       or f"Course not found: {course_name!r}",
+            "nearest_past": None,
+            "nearest_future": None,
         }
 
-    canonical_name = matches[0].name
-    warning = None
+    canonical_name = cs["course"]
+    all_weeks = sorted({w for m in cs["meetings"] for w in m["weeks"]})
+    all_dates = sorted({d for m in cs["meetings"] for d in m["all_dates"]})
 
     if week is None:
-        # Default: most recent past date
+        # Most recent past date
         past = [d for d in all_dates if d <= ref]
         if past:
             exp_date = max(past)
             actual_week = _date_to_week(exp_date, sched.semester_start)
-        else:
-            exp_date = min(all_dates) if all_dates else None
-            actual_week = _date_to_week(exp_date, sched.semester_start) if exp_date else None
-            if exp_date:
-                warning = (f"No past occurrence before {ref.isoformat()}; "
-                           f"using earliest: week {actual_week}")
-    else:
-        # Specific week requested
-        in_week = dates_in_week(course_name, week=week, schedule=sched)
-        if in_week:
-            exp_date = in_week[0]
-            actual_week = week
-        else:
-            # No class in requested week — find closest
-            if week in all_weeks:
-                # (shouldn't happen if dates_in_week is correct, but safety net)
-                exp_date = _week_to_date_for_course(week, matches, sched.semester_start)
-                actual_week = week
-            else:
-                # Find the closest week with a class
-                past_weeks = [w for w in all_weeks if w <= week]
-                future_weeks = [w for w in all_weeks if w > week]
-                if past_weeks:
-                    nearest = max(past_weeks)
-                    direction = "most recent past"
-                elif future_weeks:
-                    nearest = min(future_weeks)
-                    direction = "next future"
-                else:
-                    return {
-                        "course": canonical_name,
-                        "course_query": course_name,
-                        "experiment_date": None,
-                        "submission_date": ref,
-                        "week": None,
-                        "weekday": None,
-                        "weekday_zh": None,
-                        "warning": f"W{week} has no class and no other weeks available",
-                        "all_dates": all_dates,
-                        "all_weeks": all_weeks,
-                    }
-                exp_date = _week_to_date_for_course(nearest, matches, sched.semester_start)
-                actual_week = nearest
-                warning = (f"W{week} has no {course_name!r} class; "
-                           f"using {direction}: W{actual_week}")
+            wd_zh = _WEEKDAY_MAP[exp_date.weekday() + 1][1]
+            return {
+                "course": canonical_name,
+                "course_query": course_name,
+                "experiment_date": exp_date,
+                "submission_date": ref,
+                "week": actual_week,
+                "weekday_zh": wd_zh,
+                "warning": None,
+                "nearest_past": None,
+                "nearest_future": None,
+            }
+        # No past — use earliest
+        if all_dates:
+            exp_date = min(all_dates)
+            return {
+                "course": canonical_name,
+                "course_query": course_name,
+                "experiment_date": exp_date,
+                "submission_date": ref,
+                "week": _date_to_week(exp_date, sched.semester_start),
+                "weekday_zh": _WEEKDAY_MAP[exp_date.weekday() + 1][1],
+                "warning": f"No past occurrence before {ref.isoformat()}; using earliest",
+                "nearest_past": None,
+                "nearest_future": None,
+            }
+        return {
+            "course": canonical_name, "course_query": course_name,
+            "experiment_date": None, "submission_date": ref,
+            "week": None, "weekday_zh": None,
+            "warning": "Course has no class dates this semester",
+            "nearest_past": None, "nearest_future": None,
+        }
 
-    weekday_en = exp_date.strftime("%A") if exp_date else None
-    weekday_cn = _WEEKDAY_ZH[exp_date.weekday()] if exp_date else None
+    # Specific week requested
+    in_week = [d for d in all_dates if _date_to_week(d, sched.semester_start) == week]
+    if in_week:
+        exp_date = in_week[0]
+        wd_zh = _WEEKDAY_MAP[exp_date.weekday() + 1][1]
+        return {
+            "course": canonical_name,
+            "course_query": course_name,
+            "experiment_date": exp_date,
+            "submission_date": ref,
+            "week": week,
+            "weekday_zh": wd_zh,
+            "warning": None,
+            "nearest_past": None,
+            "nearest_future": None,
+        }
+
+    # Requested week has no class — find nearest past + future
+    past_weeks = [w for w in all_weeks if w < week]
+    future_weeks = [w for w in all_weeks if w > week]
+    nearest_past = _nearest_summary(past_weeks, all_dates, "max",
+                                    sched.semester_start) if past_weeks else None
+    nearest_future = _nearest_summary(future_weeks, all_dates, "min",
+                                      sched.semester_start) if future_weeks else None
 
     return {
         "course": canonical_name,
         "course_query": course_name,
-        "experiment_date": exp_date,
+        "experiment_date": None,
         "submission_date": ref,
-        "week": actual_week,
-        "weekday": weekday_en,
-        "weekday_zh": weekday_cn,
-        "warning": warning,
-        "all_dates": all_dates,
-        "all_weeks": all_weeks,
+        "week": week,
+        "weekday_zh": None,
+        "warning": f"W{week} has no {course_name!r} class. "
+                   f"Nearest past: W{past_weeks[-1] if past_weeks else '—'}, "
+                   f"nearest future: W{future_weeks[0] if future_weeks else '—'}",
+        "nearest_past": nearest_past,
+        "nearest_future": nearest_future,
+    }
+
+
+def _nearest_summary(weeks: list[int], all_dates: list[date],
+                     pick: str, semester_start: date) -> Optional[dict]:
+    """Build a {week, date, weekday_zh} summary from a list of weeks."""
+    if not weeks:
+        return None
+    if pick == "max":
+        w = max(weeks)
+    else:
+        w = min(weeks)
+    dates_in_w = [d for d in all_dates if _date_to_week(d, semester_start) == w]
+    if not dates_in_w:
+        return {"week": w, "date": None, "weekday_zh": None}
+    d = dates_in_w[0]
+    return {
+        "week": w,
+        "date": d,
+        "weekday_zh": _WEEKDAY_MAP[d.weekday() + 1][1],
     }
 
 
@@ -485,12 +698,24 @@ def _week_to_date_for_course(week: int, entries: list[CourseEntry],
 __all__ = [
     "CourseEntry",
     "CourseSchedule",
+    "class_schedule",
+    "experiment_date",
     "last_occurrence",
     "next_occurrence",
     "dates_in_week",
     "dates_in_semester",
+    # Backward-compat alias — older callers used experiment_dates (plural)
     "experiment_dates",
 ]
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Backward-compat alias
+# ─────────────────────────────────────────────────────────────────────────
+
+# Older code imported experiment_dates (plural). Keep the alias so existing
+# callers (incl. tests) still work.
+experiment_dates = experiment_date
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -504,22 +729,26 @@ if __name__ == "__main__":
     print()
 
     for name in ["有机", "物化"]:
-        print(f"--- {name} ---")
-        info = experiment_dates(name, as_of=date(2026, 6, 7))
-        print(f"  course:          {info['course']}")
-        print(f"  experiment_date: {info['experiment_date']}")
-        print(f"  submission_date: {info['submission_date']}")
-        print(f"  week:            {info['week']}")
-        print(f"  weekday:         {info['weekday']} ({info['weekday_zh']})")
-        print(f"  all_dates:       {info['all_dates']}")
-        print(f"  all_weeks:       {info['all_weeks']}")
-        if info["warning"]:
-            print(f"  WARNING:         {info['warning']}")
+        print(f"--- class_schedule({name!r}) ---")
+        cs = class_schedule(name)
+        print(f"  course:  {cs['course']}")
+        print(f"  section: {cs.get('section')}")
+        for m in cs["meetings"]:
+            print(f"  {m['weekday_zh']} ({m['weekday']}) periods {m['periods_label']}")
+            print(f"    weeks:  {m['weeks']}")
+            print(f"    dates:  {m['all_dates']}")
+            print(f"    where:  {m['location']}")
+            print(f"    who:    {m['teachers']}")
+        if cs.get("warning"):
+            print(f"  ⚠ {cs['warning']}")
         print()
 
-        # Specific week queries
-        for w in [12, 13, 14, 15]:
-            info_w = experiment_dates(name, week=w, as_of=date(2026, 6, 7))
-            print(f"  W{w}: exp_date={info_w['experiment_date']} week={info_w['week']}"
-                  + (f"  ⚠ {info_w['warning']}" if info_w["warning"] else ""))
+        print(f"--- experiment_date({name!r}, week=12) ---")
+        ed = experiment_date(name, week=12, as_of=date(2026, 6, 7))
+        if ed["experiment_date"]:
+            print(f"  experiment_date: {ed['experiment_date']} ({ed['weekday_zh']})")
+            print(f"  week: {ed['week']}")
+        else:
+            print(f"  W12 has no class. Nearest past: {ed['nearest_past']}")
+            print(f"                   Nearest future: {ed['nearest_future']}")
         print()

@@ -19,8 +19,10 @@ from sustech_survival.context import CHINA_TZ
 from sustech_survival.tis.schedule_index import (
     CourseEntry,
     CourseSchedule,
+    class_schedule,
     dates_in_semester,
     dates_in_week,
+    experiment_date,
     experiment_dates,
     last_occurrence,
     next_occurrence,
@@ -32,19 +34,19 @@ from sustech_survival.tis.schedule_index import (
 # Bitmap ZC is a 36-char string of 0/1 indicating which weeks the course runs.
 
 SAMPLE_SEMESTER = [
-    # gorganic exp: Monday periods 3-4, weeks 3,5,7,9,11,13,15 (odd weeks)
+    # gorganic exp: Monday periods 5-8, weeks 3,5,7,9,11,13,15 (odd weeks)
     {"KCWZSM": "基础有机化学实验", "SKJS": "李艳艳", "SKDD": "慧园2栋",
-     "KEY": "xq1_jc3", "KSJC": 3, "JSJC": 4,
+     "KEY": "xq1_jc3", "KSJC": 5, "JSJC": 8,
      "ZC": "0010101010101010000000000000000000"},
     {"KCWZSM": "基础有机化学实验", "SKJS": "李艳艳", "SKDD": "慧园2栋",
-     "KEY": "xq1_jc4", "KSJC": 4, "JSJC": 4,
+     "KEY": "xq1_jc4", "KSJC": 5, "JSJC": 8,
      "ZC": "0010101010101010000000000000000000"},
-    # phychem exp: Thursday periods 1-2, weeks 2,4,6,8,10,12,14,16 (even weeks)
+    # phychem exp: Thursday periods 1-4, weeks 2,4,6,8,10,12,14,16 (even weeks)
     {"KCWZSM": "物理化学实验", "SKJS": "田雷蕾", "SKDD": "慧园2栋303A",
-     "KEY": "xq4_jc1", "KSJC": 1, "JSJC": 2,
+     "KEY": "xq4_jc1", "KSJC": 1, "JSJC": 4,
      "ZC": "0101010101010101000000000000000000"},
     {"KCWZSM": "物理化学实验", "SKJS": "田雷蕾", "SKDD": "慧园2栋303A",
-     "KEY": "xq4_jc2", "KSJC": 2, "JSJC": 2,
+     "KEY": "xq4_jc2", "KSJC": 1, "JSJC": 4,
      "ZC": "0101010101010101000000000000000000"},
     # 物理化学 lecture: Monday+Wednesday period 2, weeks 2-16
     {"KCWZSM": "物理化学", "SKJS": "田雷蕾", "SKDD": "一教406",
@@ -69,7 +71,9 @@ def test_course_entry_parses_name():
     assert e.teacher == "李艳艳"
     assert e.location == "慧园2栋"
     assert e.weekday == 1  # Monday
-    assert e.period_start == 3
+    # Periods come from KSJC/JSJC, not the jc{M} in KEY
+    assert e.period_start == 5
+    assert e.period_end == 8
 
 
 def test_course_entry_parses_weeks():
@@ -224,19 +228,24 @@ def test_experiment_dates_for_specific_week(monkeypatch):
     assert result["experiment_date"] == date(2026, 5, 18)  # Mon of W13
     assert result["submission_date"] == date(2026, 6, 7)  # as_of
     assert result["week"] == 13
+    assert result["weekday_zh"] == "星期一"
 
 
-def test_experiment_dates_for_nonexistent_week_returns_closest(monkeypatch):
+def test_experiment_dates_for_nonexistent_week_returns_nearest(monkeypatch):
     _patch_semester(monkeypatch)
-    # gorganic W12 — gorganic is odd weeks only, W12 doesn't exist
+    # gorganic W12 — gorganic is odd weeks only, W12 doesn't exist.
+    # New behavior: experiment_date is None, warning + nearest_past/nearest_future.
     result = experiment_dates("有机", week=12, as_of=date(2026, 6, 7))
     assert result["course"] == "基础有机化学实验"
-    # Closest actual class — should be W11 (May 4-10) or W13 (May 18-24)
-    # The function should return the most recent past one before or on W12
-    assert result["experiment_date"] is not None
-    assert result["week"] in (11, 13)
-    assert "W12 has no gorganic class" in result.get("warning", "") or \
-           result["week"] in (11, 13)
+    assert result["experiment_date"] is None
+    assert result["week"] == 12
+    # Nearest past: W11 (Mon 5/4), nearest future: W13 (Mon 5/18)
+    assert result["nearest_past"]["week"] == 11
+    assert result["nearest_past"]["date"] == date(2026, 5, 4)
+    assert result["nearest_past"]["weekday_zh"] == "星期一"
+    assert result["nearest_future"]["week"] == 13
+    assert result["nearest_future"]["date"] == date(2026, 5, 18)
+    assert "W12 has no" in result["warning"]
 
 
 def test_experiment_dates_no_week_returns_most_recent(monkeypatch):
@@ -252,23 +261,24 @@ def test_experiment_dates_phychem_w15_even_weeks(monkeypatch):
     # phychem is even weeks (2,4,6,8,10,12,14,16) — W15 doesn't exist
     result = experiment_dates("物化", week=15, as_of=date(2026, 6, 7))
     assert result["course"] == "物理化学实验"
-    # Should be W14 (Thursday 5/28) or W16 (Thursday 6/11) — but as_of is 6/7 so W16 is future
-    # Most recent past: W14 (Thursday)
-    # W14 starts 2026-02-24 + 13*7 = 2026-05-26 (Tue). Thursday of W14 = 2026-05-28
-    assert result["experiment_date"] == date(2026, 5, 28)  # W14 Thursday
-    assert result["week"] == 14
+    # No class in W15 — nearest past is W14, nearest future is W16
+    assert result["experiment_date"] is None
+    assert result["nearest_past"]["week"] == 14
+    assert result["nearest_past"]["date"] == date(2026, 5, 28)
+    assert result["nearest_future"]["week"] == 16
+    assert result["nearest_future"]["date"] == date(2026, 6, 11)
 
 
 def test_experiment_dates_returns_weekday_info(monkeypatch):
     _patch_semester(monkeypatch)
     result = experiment_dates("有机", week=13, as_of=date(2026, 6, 7))
-    assert result["weekday"] == "Monday"  # gorganic is Monday
+    assert result["weekday_zh"] == "星期一"  # gorganic is Monday
 
 
 def test_experiment_dates_phychem_weekday(monkeypatch):
     _patch_semester(monkeypatch)
     result = experiment_dates("物化", week=14, as_of=date(2026, 6, 7))
-    assert result["weekday"] == "Thursday"  # phychem is Thursday
+    assert result["weekday_zh"] == "星期四"  # phychem is Thursday
 
 
 # ─── Module-level cache invalidation ──────────────────────────────────────
@@ -303,3 +313,102 @@ def test_experiment_dates_for_unknown_course(monkeypatch):
     assert result["experiment_date"] is None
     assert "not found" in result.get("warning", "").lower() or \
            result.get("course") is None
+
+
+# ─── class_schedule — "When is my class?" (day + period + weeks) ──────────
+
+def test_class_schedule_gorganic(monkeypatch):
+    """class_schedule(有机) should return Monday 5-8节, odd weeks 3,5,...,15."""
+    _patch_semester(monkeypatch)
+    cs = class_schedule("有机")
+    assert cs["course"] == "基础有机化学实验"
+    assert len(cs["meetings"]) == 1
+    m = cs["meetings"][0]
+    assert m["weekday"] == "Monday"
+    assert m["weekday_zh"] == "星期一"
+    assert m["weekday_index"] == 1
+    assert m["period_start"] == 5
+    assert m["period_end"] == 8
+    assert m["periods_label"] == "5-8节"
+    assert m["weeks"] == [3, 5, 7, 9, 11, 13, 15]
+    # all_dates should have 7 entries, all Mondays
+    assert len(m["all_dates"]) == 7
+    assert all(d.weekday() == 0 for d in m["all_dates"])
+
+
+def test_class_schedule_phychem(monkeypatch):
+    """class_schedule(物化) should return Thursday 1-4节, even weeks 2,4,...,16."""
+    _patch_semester(monkeypatch)
+    cs = class_schedule("物化")
+    assert cs["course"] == "物理化学实验"
+    m = cs["meetings"][0]
+    assert m["weekday"] == "Thursday"
+    assert m["weekday_zh"] == "星期四"
+    assert m["weekday_index"] == 4
+    assert m["period_start"] == 1
+    assert m["period_end"] == 4
+    assert m["periods_label"] == "1-4节"
+    assert m["weeks"] == [2, 4, 6, 8, 10, 12, 14, 16]
+    assert len(m["all_dates"]) == 8
+    assert all(d.weekday() == 3 for d in m["all_dates"])  # Thursday
+
+
+def test_class_schedule_unknown_course(monkeypatch):
+    _patch_semester(monkeypatch)
+    cs = class_schedule("不存在的课程")
+    assert cs["course"] is None
+    assert cs["meetings"] == []
+    assert "not found" in cs["warning"].lower()
+
+
+def test_class_schedule_substring_prefers_experiment(monkeypatch):
+    """'物化' subsequence-matches both 物理化学 (lecture) and 物理化学实验.
+    The find() rule prefers the experiment."""
+    _patch_semester(monkeypatch)
+    cs = class_schedule("物化")
+    assert cs["course"] == "物理化学实验"
+    # Should not match the lecture
+
+
+def test_class_schedule_full_name(monkeypatch):
+    """Full Chinese name should also work."""
+    _patch_semester(monkeypatch)
+    cs = class_schedule("基础有机化学实验")
+    assert cs["course"] == "基础有机化学实验"
+    assert cs["meetings"][0]["weekday_zh"] == "星期一"
+
+
+def test_class_schedule_includes_teachers_and_location(monkeypatch):
+    _patch_semester(monkeypatch)
+    cs = class_schedule("有机")
+    m = cs["meetings"][0]
+    assert m["location"]  # non-empty
+    assert isinstance(m["teachers"], list)
+    assert len(m["teachers"]) > 0
+
+
+# ─── experiment_date new behavior (vs old experiment_dates) ──────────────
+
+def test_experiment_date_for_w12_gorganic_returns_nearest(monkeypatch):
+    """experiment_date with a week that has no class returns nearest_past
+    and nearest_future explicitly, with experiment_date=None."""
+    _patch_semester(monkeypatch)
+    ed = experiment_date("有机", week=12, as_of=date(2026, 6, 7))
+    assert ed["experiment_date"] is None
+    # W11 (5/4 Mon) is the nearest past, W13 (5/18 Mon) is the nearest future
+    assert ed["nearest_past"]["week"] == 11
+    assert ed["nearest_past"]["date"] == date(2026, 5, 4)
+    assert ed["nearest_future"]["week"] == 13
+    assert ed["nearest_future"]["date"] == date(2026, 5, 18)
+
+
+def test_experiment_date_singular_alias_exists(monkeypatch):
+    """experiment_date (singular) should be the canonical function;
+    experiment_dates (plural) is a backward-compat alias."""
+    _patch_semester(monkeypatch)
+    from sustech_survival.tis.schedule_index import (
+        experiment_date as ed, experiment_dates as eds,
+    )
+    a = ed("有机", week=13, as_of=date(2026, 6, 7))
+    b = eds("有机", week=13, as_of=date(2026, 6, 7))
+    assert a == b
