@@ -102,13 +102,24 @@ def _bb_session_for_discovery():
     a new session so cookies don't collide between separate BB REST calls
     (BB rotates JSESSIONID on every request and the cookiejar would otherwise
     keep BOTH the old and new values).
+
+    Auth model: BBAuth is a per-subclass singleton (see Authorizer.__new__).
+    If the in-memory session is empty (e.g. fresh interpreter, or a script
+    that never called refresh), we refresh() once here so the user doesn't
+    have to remember. If the in-memory session is non-empty, we trust it
+    (it's been validated by check() or populated by an explicit refresh).
     """
     import requests
     from sustech_survival.sso import BBAuth
     auth = BBAuth()
-    ok, reason = auth.ensure()
-    if not ok:
-        raise RuntimeError(f"BB auth failed: {reason}")
+    # Refresh only if the in-memory cache is empty. We don't probe+refresh
+    # on every call — that would do a full CAS login on every from_submission_page
+    # call, which is slow and unnecessary.
+    if not auth.session_cache:
+        if not auth.refresh():
+            raise RuntimeError(
+                "BB auth not initialized and refresh() failed — re-login required"
+            )
     sess = requests.Session()
     sess.headers["User-Agent"] = (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -351,6 +362,9 @@ class HomeworkItem(Item):
                force_late: bool = False) -> tuple:
         """High-level submit: hand a file to BB for this assignment.
 
+        Uses the Playwright-driven path (see ``sustech_survival.bb.submit``).
+        For a no-browser REST path, use ``HomeworkItem.submit_rest()`` instead.
+
         Thin wrapper around ``sustech_survival.bb.submit.submit_assignment``.
         Pre-renames the file to ``target_name`` on disk (via the underlying
         primitive's staging logic) so BB records the correct basename in
@@ -403,6 +417,71 @@ class HomeworkItem(Item):
             skip_dedup=skip_dedup,          # kwarg
             dry_run=dry_run,                # kwarg
             headless=headless,              # kwarg
+        )
+
+    def submit_rest(self, file_path: str, target_name: str | None = None,
+                    dry_run: bool = False, skip_dedup: bool = True,
+                    force_late: bool = False) -> tuple:
+        """High-level submit (REST path, no Playwright). Hand a file to BB.
+
+        This is the no-browser alternative to ``submit()``. Same end-state
+        (a new attempt with the file attached) but uses pure HTTP requests
+        — no headless Chromium launch, no JS handlers, no DOM manipulation.
+
+        How it works:
+          1. GET the upload form (parses hidden fields + CSRF nonce)
+          2. Add BB's file-picker fields (see javascript/ngui/widget.js)
+          3. POST the form as multipart with the file as newFile_LocalFile0
+          4. Parse BB's JSON response for destinationUrl
+
+        Args:
+            file_path: absolute path to the local file
+            target_name: on-disk basename BB should show. Defaults to
+                file_path's basename. The file is staged under this name
+                in $TMPDIR/bb_submits/ so BB records it as the displayed
+                filename in the attempt receipt.
+            dry_run: if True, GET the form + simulate the POST, but don't
+                actually submit. Returns (True, "DRY-RUN: ...").
+            skip_dedup: no-op for the REST path (REST doesn't do a per-
+                attempt dedup like Playwright does). Kept for API parity
+                with ``submit()``.
+            force_late: if True, suppress the late-submission warning even
+                when the deadline is in the past.
+
+        Returns:
+            ``(ok, message)`` — message contains BB's destinationUrl on
+            success, or ``"DRY-RUN: ..."`` if dry-run, or an error string
+            starting with the failure mode (e.g. "File not found:",
+            "Form POST returned 500:").
+
+        Late-submission safety: identical to ``submit()`` — emits a
+        ``UserWarning`` if ``self.deadline`` is in the past. Suppressed
+        with ``force_late=True`` or on dry_run.
+
+        Example:
+            >>> hw = HomeworkItem.from_submission_page("8328", "610821")
+            >>> ok, msg = hw.submit_rest(
+            ...     file_path="/tmp/hw.pdf",
+            ...     target_name="12413021-段斯宸-Experiment 5.pdf",
+            ...     dry_run=True,
+            ... )
+        """
+        from pathlib import Path
+        target = target_name or Path(file_path).name
+
+        # Late-submission safety check (skip on dry_run, suppress with force_late)
+        if not dry_run and self.deadline:
+            _check_late_risk(self.deadline, force_late=force_late)
+
+        # Lazy import to avoid circular dependency (items.py → submit_rest.py)
+        from sustech_survival.bb.submit_rest import submit_assignment_rest
+        return submit_assignment_rest(
+            self.course_id,                 # positional
+            self.content_id,                # positional
+            file_path,                      # positional
+            name_override=target,           # kwarg
+            dry_run=dry_run,                # kwarg
+            skip_dedup=skip_dedup,          # kwarg (no-op for REST)
         )
 
     def to_row(self) -> str:

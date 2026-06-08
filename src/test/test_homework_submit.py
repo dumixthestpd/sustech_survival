@@ -476,5 +476,165 @@ class TestHomeworkItemFromSubmissionPage:
             f"Expected LATE warning from page-extracted past deadline, got: {[str(x.message) for x in w]}"
 
 
+# ─── HomeworkItem.submit_rest — REST path tests ────────────────────────────
+
+class TestHomeworkItemSubmitRest:
+    """The submit_rest() method exists and delegates to submit_rest module."""
+
+    def test_homeworkitem_has_submit_rest_method(self):
+        hw = HomeworkItem(
+            sub_id="x", title="HW1",
+            content_id="626071", course_id="8221",
+        )
+        assert hasattr(hw, "submit_rest"), \
+            "HomeworkItem should expose .submit_rest() method"
+        assert callable(hw.submit_rest)
+
+    def test_submit_rest_signature(self):
+        import inspect
+        sig = inspect.signature(HomeworkItem.submit_rest)
+        # Required: file_path
+        params = sig.parameters
+        assert "file_path" in params
+        # Optional: target_name, dry_run, skip_dedup, force_late
+        assert "target_name" in params
+        assert "dry_run" in params
+        assert "skip_dedup" in params
+        assert "force_late" in params
+
+    def test_submit_rest_delegates_to_submit_assignment_rest(self, monkeypatch, tmp_path):
+        """Verify the right kwargs are passed through."""
+        hw = HomeworkItem(
+            sub_id="x", title="HW1",
+            content_id="626071", course_id="8221",
+        )
+        real_pdf = tmp_path / "real.pdf"
+        real_pdf.write_bytes(b"%PDF-1.4\n")
+
+        from sustech_survival.bb import submit_rest as submit_rest_mod
+        captured = {}
+
+        def fake_submit_assignment_rest(course_id, content_id, file_path,
+                                         *, name_override=None, dry_run=False,
+                                         skip_dedup=False):
+            captured["args"] = (course_id, content_id, file_path)
+            captured["kwargs"] = {
+                "name_override": name_override,
+                "dry_run": dry_run,
+                "skip_dedup": skip_dedup,
+            }
+            return True, "fake-success"
+
+        monkeypatch.setattr(submit_rest_mod, "submit_assignment_rest",
+                            fake_submit_assignment_rest)
+        # Lazy import: re-import items so the patch takes effect
+        from importlib import reload
+        from sustech_survival.bb import items
+        reload(items)
+
+        ok, msg = items.HomeworkItem(
+            sub_id="x", title="HW1",
+            content_id="626071", course_id="8221",
+        ).submit_rest(
+            file_path=str(real_pdf),
+            target_name="HW1-renamed.pdf",
+            dry_run=True,
+        )
+        assert ok is True
+        assert msg == "fake-success"
+        assert captured["args"] == ("8221", "626071", str(real_pdf))
+        assert captured["kwargs"]["name_override"] == "HW1-renamed.pdf"
+        assert captured["kwargs"]["dry_run"] is True
+
+    def test_submit_rest_uses_basename_when_no_target_name(self, monkeypatch, tmp_path):
+        """target_name defaults to file_path's basename."""
+        real_pdf = tmp_path / "my_basename.pdf"
+        real_pdf.write_bytes(b"%PDF-1.4\n")
+
+        from sustech_survival.bb import submit_rest as submit_rest_mod
+        captured = {}
+
+        def fake_submit_assignment_rest(course_id, content_id, file_path,
+                                         *, name_override=None, **kw):
+            captured["kwargs"] = {"name_override": name_override}
+            return True, "ok"
+
+        monkeypatch.setattr(submit_rest_mod, "submit_assignment_rest",
+                            fake_submit_assignment_rest)
+        from importlib import reload
+        from sustech_survival.bb import items
+        reload(items)
+
+        ok, msg = items.HomeworkItem(
+            sub_id="x", title="HW1",
+            content_id="626071", course_id="8221",
+        ).submit_rest(file_path=str(real_pdf))
+        assert captured["kwargs"]["name_override"] == "my_basename.pdf"
+
+    def test_submit_rest_past_deadline_emits_warning(self, monkeypatch, tmp_path):
+        """ISO 8601 deadline in the past → UserWarning."""
+        import warnings
+        hw = HomeworkItem(
+            sub_id="x", title="HW1",
+            course_id="1234", content_id="5678",
+            deadline="2020-01-01T00:00:00+08:00",  # past
+        )
+        pdf = tmp_path / "x.pdf"
+        pdf.write_bytes(b"%PDF-1.4\n")
+
+        from sustech_survival.bb import submit_rest as submit_rest_mod
+        def fake_submit(*a, **kw): return True, "ok"
+        monkeypatch.setattr(submit_rest_mod, "submit_assignment_rest", fake_submit)
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            ok, msg = hw.submit_rest(file_path=str(pdf), dry_run=False, skip_dedup=True)
+        assert ok is True
+        late = [x for x in w if "LATE" in str(x.message)]
+        assert len(late) >= 1
+
+    def test_submit_rest_dry_run_no_warning(self, monkeypatch, tmp_path):
+        """dry_run suppresses the LATE warning (no real attempt made)."""
+        import warnings
+        hw = HomeworkItem(
+            sub_id="x", title="HW1",
+            course_id="1234", content_id="5678",
+            deadline="2020-01-01T00:00:00+08:00",  # past
+        )
+        pdf = tmp_path / "x.pdf"
+        pdf.write_bytes(b"%PDF-1.4\n")
+
+        from sustech_survival.bb import submit_rest as submit_rest_mod
+        def fake_submit(*a, **kw): return True, "DRY-RUN: ok"
+        monkeypatch.setattr(submit_rest_mod, "submit_assignment_rest", fake_submit)
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            ok, msg = hw.submit_rest(file_path=str(pdf), dry_run=True)
+        late = [x for x in w if "LATE" in str(x.message)]
+        assert len(late) == 0
+
+    def test_submit_rest_force_late_suppresses_warning(self, monkeypatch, tmp_path):
+        """force_late=True suppresses the LATE warning."""
+        import warnings
+        hw = HomeworkItem(
+            sub_id="x", title="HW1",
+            course_id="1234", content_id="5678",
+            deadline="2020-01-01T00:00:00+08:00",  # past
+        )
+        pdf = tmp_path / "x.pdf"
+        pdf.write_bytes(b"%PDF-1.4\n")
+
+        from sustech_survival.bb import submit_rest as submit_rest_mod
+        def fake_submit(*a, **kw): return True, "ok"
+        monkeypatch.setattr(submit_rest_mod, "submit_assignment_rest", fake_submit)
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            ok, msg = hw.submit_rest(file_path=str(pdf), force_late=True)
+        late = [x for x in w if "LATE" in str(x.message)]
+        assert len(late) == 0
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

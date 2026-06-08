@@ -87,17 +87,39 @@ class Authorizer(ABC):
     REDIRECT_STATUS: tuple = (302, 303)
     SESSION_SUBDIR: str = ""  # subdirectory under skill_root for session files
 
+    # Per-subclass singleton cache. Each Authorizer subclass (BBAuth, TISAuth,
+    # LibAuth, etc.) gets one shared instance so that ``bb_auth.refresh()`` and
+    # ``bb_auth.cookies`` from any call site see the same in-memory session.
+    # Without this, every ``BBAuth()`` call would create a fresh instance with
+    # empty session_cache, falling back to (potentially stale) disk cache.
+    _instances: dict = {}
+
+    def __new__(cls, *args, **kwargs):
+        if cls not in Authorizer._instances:
+            Authorizer._instances[cls] = super().__new__(cls)
+        return Authorizer._instances[cls]
+
     def __init__(self, *, skill_dir: Optional[str] = None, submodule_dir: Optional[str] = None):
         # Set skill_dir and submodule_dir as plain attributes. Subclasses
         # (WoSAuth, IEEEAuth, etc.) that override submodule_dir as @property
         # to use a per-service path get their property-driven value; the
         # submodule_dir arg is ignored for them.
+        # Re-initialize if the args changed (e.g. a test passes a different
+        # skill_dir). Singleton behavior is preserved when args match.
+        if getattr(self, "_initialized", False):
+            if skill_dir is not None and getattr(self, "skill_dir", None) != skill_dir:
+                # Args differ — re-init. Rare in production (caller always
+                # uses default skill_dir), but tests exercise different dirs.
+                self._initialized = False
+            else:
+                return
         object.__setattr__(self, "skill_dir", skill_dir)
         if not isinstance(getattr(type(self), "submodule_dir", None), property):
             object.__setattr__(self, "submodule_dir", submodule_dir)
         self.session_cache: dict = {}
         self.session_time: float = 0.0  # time.time() of last successful auth
         self.SESSION_TTL: int = 25 * 60  # 25 minutes — server-side session limit
+        self._initialized = True
 
     def resolve_skill_dir(self) -> Path:
         """Walk up from authorizer.py looking for credentials.txt to find skill root."""

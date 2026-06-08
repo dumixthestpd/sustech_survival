@@ -2,29 +2,37 @@
 """
 sustech_survival.bb.submit_rest — REST-based BB assignment submission (no Playwright).
 
-Status (2026-06-08): partial implementation. The pure REST path is blocked by
-BB's JS-driven file upload flow (the uploadAssignment form's file input has
-no `name` attribute; file upload is handled by `widget.FilePicker` uploading
-to `/webapps/cmsmain/execute/resourcePicker`, which is a content-collection
-flow that requires a session-bound "file picker" ID).
+Status (2026-06-08): WORKING. End-to-end REST submission succeeds with file attached.
 
-The form-submit step (POST to `/webapps/assignment/uploadAssignment?action=submit`)
-works via requests. It creates an attempt record on the server, but the file
-isn't actually attached (size=0 in the attempt receipt).
+The two-step flow that BB's JS uses internally:
 
-This module provides:
-  1. _get_upload_form(course_id, content_id)
-       — GET the upload page, extract nonces + hidden fields
-  2. _post_upload_form(course_id, content_id, form_data, file=None)
-       — POST the form via multipart. Returns BB's JSON
-         {"destinationUrl": "..."} on success, or error text
-  3. submit_assignment_rest(course_id, content_id, file_path,
-                            name_override=None, dry_run=False, skip_dedup=False)
-       — end-to-end: GET form, upload file (best-effort), POST form, parse
-         the destinationUrl response, return (ok, message)
+  1. GET /webapps/assignment/uploadAssignment?action=newAttempt&...
+     → returns the upload form HTML, including CSRF nonces and hidden fields
+  2. POST /webapps/assignment/uploadAssignment?action=submit
+     → multipart/form-data POST with ALL hidden fields + the file as
+       the multipart part named `newFile_LocalFile0`
 
-If you need a working submission RIGHT NOW, use `submit.py` (Playwright).
-This module is here for the long-term REST migration.
+The "magic" fields that BB's file picker adds to the form when a file is staged
+(see /javascript/ngui/widget.js → preparePickedFilesForSubmit / getPickedFiles):
+
+  newFile_attachmentType         = 'L'          (LOCAL — file is in the multipart)
+  newFile_fileId                 = 'new'        (placeholder for new file)
+  newFile_artifactFileId         = 'undefined'  (string, not a JS undefined)
+  newFile_artifactType           = 'undefined'
+  newFile_artifactTypeResourceKey= 'undefined'
+  newFile_linkTitle              = <target filename>  (the link title shown in BB)
+  newFile_LocalFile0             = <file binary>      (the actual file)
+  dispatch                       = 'submit'           (set by submitAssignment JS)
+
+For BB's server, the file goes in the multipart envelope (just like the
+Playwright path's form.submit() call) — the file is attached to the attempt
+based on the field name `newFile_LocalFile0`, not on the form's <input id>.
+Without the field name, the file is silently dropped (the existing submit_rest.py
+"works but no file" symptom).
+
+CSRF: the `blackboard.platform.security.NonceUtil.nonce` field must match the
+session-bound nonce. It changes on every GET of the upload page, so we always
+GET a fresh form before POSTing.
 """
 from __future__ import annotations
 
@@ -55,16 +63,25 @@ def _bb_session() -> requests.Session:
     Each call creates a new session so cookies don't collide between
     separate BB REST calls (BB rotates JSESSIONID on every request and
     the cookiejar would otherwise keep BOTH the old and new values).
+
+    Auth model: BBAuth is a per-subclass singleton (see Authorizer.__new__).
+    If the in-memory session is empty (e.g. fresh interpreter, or a script
+    that never called refresh), we refresh() once here so the caller doesn't
+    have to remember.
     """
     auth = BBAuth()
-    ok, reason = auth.ensure()
-    if not ok:
-        raise RuntimeError(f"BB auth failed: {reason}")
+    if not auth.session_cache:
+        if not auth.refresh():
+            raise RuntimeError(
+                "BB auth not initialized and refresh() failed — re-login required"
+            )
 
     sess = requests.Session()
     sess.headers["User-Agent"] = _UA
+    sess.headers["X-Requested-With"] = "XMLHttpRequest"
     for k, v in auth.cookies.items():
-        sess.cookies.set(k, v, domain=".bb.sustech.edu.cn", path="/")
+        if v:
+            sess.cookies.set(k, v, domain=".bb.sustech.edu.cn", path="/")
     return sess
 
 
@@ -85,15 +102,12 @@ def _get_upload_form(course_id: str, content_id: str) -> dict:
 
     Returns:
         {
-          "raw_html": str,            # the full page HTML (for debugging)
-          "form_data": dict[str, str],  # name → value for every <input type=hidden>
-          "file_input_id": str | None, # the id of the file input (no name attr)
-          "form_action": str,          # the form's action URL
+          "raw_html": str,
+          "form_data": dict[str, str],  # name → value for every <input>
+          "file_input_id": str | None,  # the id of the file input
+          "form_action": str,
           "course_id": str, content_id: str,
         }
-
-    Raises:
-        RuntimeError if the page doesn't have a form, or auth is invalid.
     """
     sess = _bb_session()
     url = _bb_form_url(course_id, content_id, action="newAttempt")
@@ -102,13 +116,13 @@ def _get_upload_form(course_id: str, content_id: str) -> dict:
         raise RuntimeError(f"GET {url} returned {r.status_code}")
 
     form_data: dict[str, str] = {}
-    for m in re.finditer(r'<input[^>]*type=["\']hidden["\'][^>]*>', r.text):
+    for m in re.finditer(r'<input[^>]*>', r.text):
         chunk = m.group(0)
         name_m = re.search(r'name=["\']([^"\']+)["\']', chunk)
         val_m = re.search(r'value=["\']([^"\']*)["\']', chunk)
         if name_m and val_m is not None:
             form_data[name_m.group(1)] = val_m.group(1)
-    # ajaxNonceId is also a hidden field (sometimes outside the type=hidden pattern)
+    # ajaxNonceId can also live in a non-hidden input
     for m in re.finditer(r'<input[^>]*id=["\']ajaxNonceId["\'][^>]*>', r.text):
         chunk = m.group(0)
         name_m = re.search(r'name=["\']([^"\']+)["\']', chunk)
@@ -116,7 +130,7 @@ def _get_upload_form(course_id: str, content_id: str) -> dict:
         if name_m and val_m:
             form_data[name_m.group(1)] = val_m.group(1)
 
-    # Find the form's action URL
+    # Form action URL
     form_action_match = re.search(
         r'<form[^>]*action=["\']([^"\']+)["\'][^>]*id=["\']uploadAssignmentFormId',
         r.text,
@@ -129,7 +143,7 @@ def _get_upload_form(course_id: str, content_id: str) -> dict:
     form_action = form_action_match.group(1) if form_action_match else \
         f"/webapps/assignment/uploadAssignment?action=submit"
 
-    # Find the file input's id (no name attribute on BB's form)
+    # File input id
     file_input_match = re.search(
         r'<input[^>]*type=["\']file["\'][^>]*id=["\']([^"\']+)["\']', r.text,
     )
@@ -150,104 +164,23 @@ def _get_upload_form(course_id: str, content_id: str) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# _upload_file_to_resource_picker — pre-stage the file via the content
-# collection upload endpoint. This is needed because BB's uploadAssignment
-# form's file input has no `name` attribute, so the file isn't included
-# in the form's multipart POST. Instead, the file is uploaded separately
-# via widget.FilePicker → /webapps/cmsmain/execute/resourcePicker.
-#
-# Status (2026-06-08): not yet working — the resourcePicker endpoint
-# requires its own form flow (different nonces, different cookies).
+# The "magic" fields BB's file picker adds to the form when a file is staged.
+# See javascript/ngui/widget.js → preparePickedFilesForSubmit, getPickedFiles.
+# Without these, the file is silently dropped (server creates an attempt
+# with size=0 file).
 # ─────────────────────────────────────────────────────────────────────────
 
-def _upload_file_to_resource_picker(
-    file_path: str,
-    course_id: str,
-    target_name: str,
-    sess: Optional[requests.Session] = None,
-) -> Optional[dict]:
-    """Upload `file_path` to BB's content collection, returning a file-picker
-    descriptor that the uploadAssignment form can reference.
-
-    Returns None if not implemented yet.
-    """
-    raise NotImplementedError(
-        "resourcePicker upload not implemented — see module docstring. "
-        "For now, use sustech_survival.bb.submit.submit_assignment (Playwright)."
-    )
+_FILE_PICKER_LOCAL_FIELDS = {
+    "newFile_attachmentType": "L",          # 'L' = LOCAL (file is in the multipart)
+    "newFile_fileId": "new",                # placeholder for new file
+    "newFile_artifactFileId": "undefined",  # string 'undefined', not JS undefined
+    "newFile_artifactType": "undefined",
+    "newFile_artifactTypeResourceKey": "undefined",
+}
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# _post_upload_form — POST the form (multipart). Creates an attempt on
-# the server. The file isn't actually attached (size=0) because the
-# uploadAssignment form's file input has no name. We use this as a
-# stepping-stone toward a full REST path.
-# ─────────────────────────────────────────────────────────────────────────
-
-def _post_upload_form(
-    course_id: str,
-    content_id: str,
-    form_data: dict,
-    file_path: Optional[str] = None,
-) -> dict:
-    """POST the uploadAssignment form with multipart encoding.
-
-    Args:
-        course_id, content_id: BB numeric IDs
-        form_data: hidden fields from _get_upload_form()
-        file_path: optional local file. Sent as a multipart part named
-            'newFile_chooseLocalFile' (the file input's id). BB's server
-            will accept the multipart envelope but won't actually attach
-            the file (the uploadAssignment form's file input has no
-            `name` attribute, so BB's standard form processing doesn't
-            read it). For real file upload, use Playwright OR implement
-            _upload_file_to_resource_picker().
-
-    Returns:
-        {
-          "status_code": int,
-          "json": dict | None,        # parsed response body if Content-Type is JSON
-          "raw_text": str,            # raw response body
-          "content_type": str,
-        }
-    """
-    sess = _bb_session()
-    submit_url = f"{BB_BASE}/webapps/assignment/uploadAssignment?action=submit"
-
-    files = None
-    if file_path:
-        p = Path(file_path)
-        files = {
-            "newFile_chooseLocalFile": (
-                p.name, open(p, "rb"), "application/octet-stream",
-            ),
-        }
-
-    r = sess.post(
-        submit_url,
-        data=form_data,
-        files=files,
-        timeout=30,
-        allow_redirects=True,
-    )
-
-    # BB's webapp returns either JSON ({"destinationUrl": "..."}) or HTML
-    parsed_json: Optional[dict] = None
-    try:
-        parsed_json = r.json()
-    except Exception:
-        parsed_json = None
-
-    return {
-        "status_code": r.status_code,
-        "json": parsed_json,
-        "raw_text": r.text,
-        "content_type": r.headers.get("Content-Type", ""),
-    }
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# submit_assignment_rest — end-to-end REST submission (currently partial)
+# submit_assignment_rest — end-to-end REST submission
 # ─────────────────────────────────────────────────────────────────────────
 
 def submit_assignment_rest(
@@ -259,30 +192,31 @@ def submit_assignment_rest(
     dry_run: bool = False,
     skip_dedup: bool = False,
 ) -> tuple:
-    """REST-based BB submission. Currently a thin wrapper around the
-    form-submit step. File attachment is NOT yet working — the file is
-    sent in the multipart envelope but BB's server doesn't extract it
-    from the unnamed file input.
+    """REST-based BB submission. End-to-end working as of 2026-06-08.
 
     Args:
         course_id: numeric course id (e.g. "8328")
-        content_id: numeric content id (e.g. "610821")
+        content_id: numeric content id (e.g. "612409")
         file_path: absolute path to the file to submit
-        name_override: target basename to use (defaults to file_path's name)
-        dry_run: if True, do GET form + simulate file upload, don't POST submit
-        skip_dedup: bypass any dedup check (no-op for now since dedup isn't
-            implemented for REST path)
+        name_override: target basename (defaults to file_path's name).
+            IMPORTANT: this is the on-disk basename — BB records the staged
+            file's basename as the displayed filename. We stage the file
+            under this name before POSTing.
+        dry_run: if True, GET the form + simulate the POST, but don't actually
+            submit. Returns (True, "DRY-RUN: ...").
+        skip_dedup: no-op for the REST path (REST doesn't do a per-attempt
+            dedup like the Playwright path does). Preserved for API parity
+            with submit.py.
 
     Returns:
-        (ok: bool | None, message: str). ok=None means "duplicate detected"
-        (consistent with submit.py), but for REST path this branch isn't used.
+        (ok: bool | None, message: str). On success, message contains the
+        destinationUrl from BB. ok=None is unused (kept for API parity with
+        submit_assignment).
 
-    Status:
-        - GET form: works
-        - POST form (multipart, no file): works (creates attempt, size=0)
-        - POST form (multipart, with file): the form accepts the request but
-          the file is NOT actually attached (size=0 attempt)
-        - Real file upload via resourcePicker: NOT YET IMPLEMENTED
+    Notes:
+        - Stops at the first sign of trouble with explicit error messages.
+        - File is staged under target_name in $TMPDIR/bb_submits/ (same
+          convention as submit.py) so the BB-side filename matches.
     """
     file_path_p = Path(file_path).expanduser().resolve()
     if not file_path_p.exists():
@@ -292,11 +226,13 @@ def submit_assignment_rest(
 
     target_name = name_override or file_path_p.name
     target_name = Path(target_name).name  # strip any path components
+    if not target_name:
+        return False, f"name_override is not a valid basename: {name_override!r}"
 
     print(f"  REST submit: course={course_id} content={content_id} file={target_name!r}")
 
-    # Stage the file with the target basename (mirrors submit.py behavior).
-    # BB records the staged file's basename as the displayed filename.
+    # Stage the file with the target basename — BB records the staged file's
+    # basename as the displayed filename.
     staged_dir = Path(tempfile.gettempdir()) / "bb_submits"
     staged_dir.mkdir(parents=True, exist_ok=True)
     staged_path = staged_dir / target_name
@@ -306,43 +242,56 @@ def submit_assignment_rest(
     try:
         # Step 1: GET the upload form (cookies, nonces, hidden fields)
         form_info = _get_upload_form(course_id, content_id)
-        form_data = form_info["form_data"]
+        form_data = dict(form_info["form_data"])
         print(f"  Form: {len(form_data)} hidden fields, file_input_id={form_info['file_input_id']!r}")
 
+        # Step 2: add the file-picker fields (mimics what BB's JS does
+        # when the user picks a file in the browser)
+        form_data.update(_FILE_PICKER_LOCAL_FIELDS)
+        form_data["newFile_linkTitle"] = target_name
+        form_data["dispatch"] = "submit"
+
         if dry_run:
-            # Dry-run: report what we would do, do NOT POST
             return True, (
                 f"DRY-RUN: would submit {target_name!r} "
-                f"(file={staged_path}, {len(form_data)} hidden fields). "
-                f"NOTE: REST file attachment not yet implemented; "
-                f"use submit.py for real submission."
+                f"(file={staged_path}, {len(form_data)} form fields, "
+                f"file part=newFile_LocalFile0)"
             )
 
-        # Step 2: POST the form with the file in multipart (best-effort).
-        # BB's server creates an attempt but won't attach the file because
-        # the form's file input has no `name` attribute.
-        result = _post_upload_form(
-            course_id, content_id, form_data,
-            file_path=str(staged_path),
-        )
+        # Step 3: POST the form with the file in the multipart envelope.
+        # Fresh session — CSRF nonce is in the form data (not session-bound),
+        # so any session with valid BB auth will work.
+        sess = _bb_session()
+        submit_url = f"{BB_BASE}/webapps/assignment/uploadAssignment?action=submit"
+        files = {
+            "newFile_LocalFile0": (
+                target_name, open(staged_path, "rb"), "application/octet-stream",
+            ),
+        }
+        resp = sess.post(submit_url, data=form_data, files=files, timeout=60,
+                         allow_redirects=False)
 
-        if result["json"] and "destinationUrl" in result["json"]:
-            dest = result["json"]["destinationUrl"]
+        # BB returns JSON {"destinationUrl": "..."} on success, or HTML on error
+        try:
+            parsed = resp.json()
+        except Exception:
+            parsed = None
+
+        if parsed and "destinationUrl" in parsed:
             return True, (
-                f"Form submitted. destinationUrl: {dest}. "
-                f"NOTE: file size=0 in attempt receipt — REST file upload "
-                f"not yet implemented. Use submit.py for real submission."
+                f"Submitted OK. destinationUrl: {parsed['destinationUrl']} "
+                f"file: {target_name} ({staged_path.stat().st_size} bytes)"
             )
 
-        if result["status_code"] != 200:
+        if resp.status_code == 200 and parsed is None:
+            # Sometimes BB returns 200 with HTML — likely a form validation
+            # error. Surface the response body.
             return False, (
-                f"Form POST returned {result['status_code']}: "
-                f"{result['raw_text'][:200]}"
+                f"Form POST returned 200 with non-JSON body: {resp.text[:300]}"
             )
 
         return False, (
-            f"Form POST returned 200 but no destinationUrl: "
-            f"{result['raw_text'][:200]}"
+            f"Form POST returned {resp.status_code}: {resp.text[:200]}"
         )
 
     except Exception as e:
