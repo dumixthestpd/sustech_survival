@@ -3,6 +3,8 @@
 The submit() method is a thin OO wrapper around the lower-level
 sustech_survival.bb.submit.submit_assignment() primitive.
 """
+from unittest.mock import MagicMock, patch
+
 import pytest
 from sustech_survival.bb.items import HomeworkItem
 
@@ -319,6 +321,159 @@ class TestParseDeadline:
         assert _parse_deadline("not a date") is None
         assert _parse_deadline("12345") is None
         assert _parse_deadline("2026-13-99") is None  # invalid month/day
+
+
+class TestHomeworkItemFromSubmissionPage:
+    """HomeworkItem.from_submission_page() should build an item from the
+    live uploadAssignment page — title and deadline extracted from the
+    raw HTML. No manual construction needed in real scripts.
+    """
+
+    MOCK_PAGE_HTML = """<!DOCTYPE html>
+<html>
+<head><title>Upload Assignment: Report of exp 5</title></head>
+<body>
+  <h1>Upload Assignment: Report of exp 5</h1>
+  <div class="assignmentInfo">
+    <dl>
+      <dt>到期日期</dt>
+      <dd>2026年5月12日 23:59</dd>
+    </dl>
+  </div>
+  <form id="uploadAssignmentFormId" action="/webapps/assignment/uploadAssignment?action=submit">
+    <input type="hidden" name="course_id" value="_8328_1" />
+    <input type="hidden" name="content_id" value="_610821_1" />
+  </form>
+</body>
+</html>
+"""
+
+    # Real BB format: "到期日期" is followed by a newline, then the date on
+    # the next line. The 2026-06-07 real page had:
+    #   到期日期
+    #   2026年6月8日 23:59
+    MOCK_PAGE_HTML_PROD_FORMAT = """<!DOCTYPE html>
+<html>
+<head><title>Upload Assignment: Report of exp 5</title></head>
+<body>
+到期日期
+2026年5月12日 23:59
+<form id="uploadAssignmentFormId"></form>
+</body>
+</html>
+"""
+
+    MOCK_PAGE_HTML_NO_DEADLINE = """<!DOCTYPE html>
+<html>
+<head><title>Upload Assignment: Some Assignment</title></head>
+<body>
+  <h1>Upload Assignment: Some Assignment</h1>
+  <form id="uploadAssignmentFormId"></form>
+</body>
+</html>
+"""
+
+    def test_from_submission_page_returns_class_instance(self, monkeypatch):
+        """Should return a HomeworkItem, not raise."""
+        from sustech_survival.bb.items import HomeworkItem
+        with patch("sustech_survival.bb.items._bb_session_for_discovery") as mock_sess:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.text = self.MOCK_PAGE_HTML
+            mock_sess.return_value.get.return_value = mock_response
+            hw = HomeworkItem.from_submission_page("8328", "610821")
+        assert isinstance(hw, HomeworkItem)
+        assert hw.course_id == "8328"
+        assert hw.content_id == "610821"
+
+    def test_from_submission_page_extracts_title(self, monkeypatch):
+        """Title should come from the page <title> tag, not be hardcoded."""
+        from sustech_survival.bb.items import HomeworkItem
+        with patch("sustech_survival.bb.items._bb_session_for_discovery") as mock_sess:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.text = self.MOCK_PAGE_HTML
+            mock_sess.return_value.get.return_value = mock_response
+            hw = HomeworkItem.from_submission_page("8328", "610821")
+        assert hw.title == "Report of exp 5"
+
+    def test_from_submission_page_extracts_chinese_deadline(self, monkeypatch):
+        """Deadline should come from '到期日期' line in Chinese format.
+
+        Real BB has the date on a separate line after '到期日期':
+            到期日期
+            2026年5月12日 23:59
+        """
+        from sustech_survival.bb.items import HomeworkItem
+        with patch("sustech_survival.bb.items._bb_session_for_discovery") as mock_sess:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.text = self.MOCK_PAGE_HTML_PROD_FORMAT
+            mock_sess.return_value.get.return_value = mock_response
+            hw = HomeworkItem.from_submission_page("8328", "610821")
+        assert hw.deadline == "2026年5月12日 23:59"
+
+    def test_from_submission_page_empty_deadline_when_missing(self, monkeypatch):
+        """If the page has no '到期日期' line, deadline should be '' (not crash)."""
+        from sustech_survival.bb.items import HomeworkItem
+        with patch("sustech_survival.bb.items._bb_session_for_discovery") as mock_sess:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.text = self.MOCK_PAGE_HTML_NO_DEADLINE
+            mock_sess.return_value.get.return_value = mock_response
+            hw = HomeworkItem.from_submission_page("8328", "610821")
+        assert hw.deadline == ""
+        # Title still extracted
+        assert hw.title == "Some Assignment"
+
+    def test_from_submission_page_uses_correct_url(self, monkeypatch):
+        """GET should hit /uploadAssignment with content_id, course_id, group_id."""
+        from sustech_survival.bb.items import HomeworkItem
+        with patch("sustech_survival.bb.items._bb_session_for_discovery") as mock_sess:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.text = self.MOCK_PAGE_HTML
+            mock_sess.return_value.get.return_value = mock_response
+            HomeworkItem.from_submission_page("8328", "610821")
+        called_url = mock_sess.return_value.get.call_args[0][0]
+        assert "content_id=_610821_1" in called_url
+        assert "course_id=_8328_1" in called_url
+        assert "group_id=" in called_url
+        assert "action=newAttempt" in called_url
+
+    def test_from_submission_page_then_submit_warns_late(self, monkeypatch, tmp_path):
+        """End-to-end: extract from page (with past deadline) + submit → warning fires."""
+        import warnings
+        from sustech_survival.bb.items import HomeworkItem
+        # Mock page returns a PAST deadline (prod format: "到期日期\n2020...")
+        past_html = """<html>
+<head><title>Upload Assignment: Old HW</title></head>
+<body>
+到期日期
+2020年1月1日 23:59
+</body>
+</html>"""
+        with patch("sustech_survival.bb.items._bb_session_for_discovery") as mock_sess:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.text = past_html
+            mock_sess.return_value.get.return_value = mock_response
+            hw = HomeworkItem.from_submission_page("1234", "5678")
+
+        # Mock the actual submission
+        def fake_submit_assignment(*args, **kwargs):
+            return (True, "OK")
+        from sustech_survival.bb import submit as submit_mod
+        monkeypatch.setattr(submit_mod, "submit_assignment", fake_submit_assignment)
+
+        pdf = tmp_path / "f.pdf"
+        pdf.write_bytes(b"%PDF-1.4")
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            hw.submit(file_path=str(pdf), dry_run=False, skip_dedup=True)
+        assert any("LATE" in str(x.message) for x in w), \
+            f"Expected LATE warning from page-extracted past deadline, got: {[str(x.message) for x in w]}"
 
 
 if __name__ == "__main__":

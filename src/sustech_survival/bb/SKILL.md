@@ -239,5 +239,39 @@ bb/
 ## BB Quirks
 
 - **DDLs in body text** — deadlines appear in page content, not sidebar labels
+- **DDLs on the uploadAssignment page** — the deadline for a homework item
+  is on the `uploadAssignment` page itself, NOT in the description body
+  (which is the teacher's freeform text). Teachers often leave the body
+  empty and put the deadline only on the submission page. Use
+  `HomeworkItem.from_submission_page(course_id, content_id)` to extract
+  the deadline safely — never set `deadline` manually.
+- **Don't construct HomeworkItem manually** — use
+  `HomeworkItem.from_submission_page(course_id, content_id)` which extracts
+  `title` and `deadline` from the live page. Manual construction is fragile
+  (wrong title, missing deadline).
 - **Image comments** — BB stores picture comments as `<img>` tags in comment HTML
 - **PhysChem schedule** — experimental arrangement page has non-standard structure
+
+## Late-submission safety
+
+`HomeworkItem.submit()` emits a `UserWarning` if `self.deadline` is in the
+past (relative to current China time). This catches the "I think I'm
+resubmitting but it's actually past the deadline" mistake.
+
+Suppress with `hw.submit(..., force_late=True)` if you've explicitly
+decided a late attempt is OK. The warning does NOT fire on `dry_run=True`
+(since no real attempt is made).
+
+```python
+from sustech_survival.bb.items import HomeworkItem
+
+# Safe pattern: extract from the live page
+hw = HomeworkItem.from_submission_page("8328", "610821")
+print(hw.deadline)  # "2026年5月12日 23:59"
+
+# If deadline is past, this warns but still submits:
+ok, msg = hw.submit("/path/to/report.pdf", target_name="...", dry_run=False)
+
+# To suppress the warning when you're sure:
+ok, msg = hw.submit("/path/to/report.pdf", force_late=True)
+```

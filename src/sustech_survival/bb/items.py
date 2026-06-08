@@ -88,6 +88,38 @@ def _check_late_risk(deadline_str: str, *, force_late: bool = False) -> None:
         )
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# BB session helper for live discovery (used by HomeworkItem.from_submission_page)
+# ─────────────────────────────────────────────────────────────────────────
+
+_BB_BASE = "https://bb.sustech.edu.cn"
+
+
+def _bb_session_for_discovery():
+    """Return a fresh requests.Session with current BB cookies.
+
+    Mirrors sustech_survival.bb.submit_rest._bb_session() — each call creates
+    a new session so cookies don't collide between separate BB REST calls
+    (BB rotates JSESSIONID on every request and the cookiejar would otherwise
+    keep BOTH the old and new values).
+    """
+    import requests
+    from sustech_survival.sso import BBAuth
+    auth = BBAuth()
+    ok, reason = auth.ensure()
+    if not ok:
+        raise RuntimeError(f"BB auth failed: {reason}")
+    sess = requests.Session()
+    sess.headers["User-Agent"] = (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    )
+    for k, v in auth.cookies.items():
+        sess.cookies.set(k, v, domain=".bb.sustech.edu.cn", path="/")
+    return sess
+
+
 BB_DIR = _Path(__file__).resolve()  # items.py is at depth 5 in skill_root
 
 BB_BASE = "https://bb.sustech.edu.cn"
@@ -223,6 +255,77 @@ class HomeworkItem(Item):
         self.content_id = content_id  # BB content_id (e.g. "610795")
         self.course_id = course_id    # BB course numeric ID (e.g. "8328")
         self.group_id = group_id      # BB group_id (usually empty string)
+
+    @classmethod
+    def from_submission_page(cls, course_id: str, content_id: str,
+                            group_id: str = "") -> "HomeworkItem":
+        """Build a HomeworkItem from the live BB uploadAssignment page.
+
+        This is the SAFE way to construct a HomeworkItem for real submissions
+        — it extracts the title and deadline from the actual page BB shows
+        to students. Manual construction (e.g. ``HomeworkItem(sub_id=...,
+        title="HW1", deadline="...")``) is fragile: the title can be wrong
+        and the deadline is often only on the submission page, not in the
+        description body.
+
+        Args:
+            course_id: numeric course id (e.g. "8328")
+            content_id: numeric content id (e.g. "610821")
+            group_id: BB group_id (usually empty string; pass through if known)
+
+        Returns:
+            A HomeworkItem with title and deadline populated from the page.
+            deadline is in Chinese format ("2026年5月12日 23:59") that
+            _parse_deadline() handles natively.
+
+        Raises:
+            RuntimeError: if BB auth fails or the page can't be fetched
+
+        Example:
+            >>> hw = HomeworkItem.from_submission_page("8328", "610821")
+            >>> hw.deadline
+            '2026年5月12日 23:59'
+            >>> ok, msg = hw.submit("/path/to/report.pdf", dry_run=True)
+        """
+        sess = _bb_session_for_discovery()
+        url = (
+            f"{_BB_BASE}/webapps/assignment/uploadAssignment"
+            f"?action=newAttempt"
+            f"&content_id=_{content_id}_1"
+            f"&course_id=_{course_id}_1"
+            f"&group_id={group_id}"
+        )
+        r = sess.get(url, timeout=15)
+        if r.status_code != 200:
+            raise RuntimeError(
+                f"GET {url} returned {r.status_code} — "
+                f"check BB session and course/content ids"
+            )
+        html = r.text
+
+        # Title: from <title>Upload Assignment: TITLE</title>
+        title_match = re.search(
+            r'<title>Upload Assignment:\s*(.+?)</title>', html
+        )
+        title = title_match.group(1).strip() if title_match else ""
+
+        # Deadline: from "到期日期\n2026年5月12日 23:59" (Chinese format)
+        # Match the dt/dd pair; the date is what we want.
+        deadline_match = re.search(
+            r'到期日期\s*\n?\s*(\d{4}年\d{1,2}月\d{1,2}日[^\n<]*)',
+            html,
+        )
+        deadline = deadline_match.group(1).strip() if deadline_match else ""
+
+        return cls(
+            sub_id=f"_{content_id}_1",
+            title=title,
+            bb_url=url,
+            content_id=content_id,
+            course_id=course_id,
+            group_id=group_id,
+            deadline=deadline,
+        )
 
     @property
     def has_attachment(self) -> bool:
