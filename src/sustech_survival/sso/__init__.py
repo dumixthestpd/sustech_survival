@@ -15,6 +15,7 @@ __all__ = [
     "TISAuth",
     "BBAuth",
     "LibAuth",
+    "PMSAuth",
     "Credentials",      # backwards compat — redirects to Authorizer.username/password
     "register_auth",
     "get_auth",
@@ -206,3 +207,4 @@ ensured = Authorizer.ensured
 # ── Auto-register external authlib services ────────────────────────────────────
 # Importing authlib triggers lazy-loading of external services (wos, rsc, etc.)
 from . import authlib  # noqa: F401
+from .authlib.pms import PMSAuth as PMSAuth  # noqa: F401  -- registers PMSAuth + re-exports
