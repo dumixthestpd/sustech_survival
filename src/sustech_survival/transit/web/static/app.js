@@ -974,26 +974,27 @@ FEATURE_LAYERS.forEach(id => {
     }
 
     Object.entries(stopsByLine).forEach(([key, stops]) => {
-      stops.sort((a, b) => a.station_id - b.station_id);
+      // Use the API order (which is the bus's natural direction) for
+      // edge direction, NOT the line-geometry projection order. The line
+      // geometry is a single closed loop that both directions share; the
+      // bus traverses it in opposite orders for XYBS1/0 vs XYBS1/1. If
+      // we sorted by projection, we'd accidentally traverse XYBS1/0
+      // backwards, creating edges that don't exist in reality.
+      const stopsOrdered = stops;  // already in API/bus order
 
-      // Find the bus line geometry for this key
+      // For polyline geometry, we still project each stop onto the line
+      // to find where to slice the line geometry between stops.
       const lineCode = key.split("/")[0];
       const dir = parseInt(key.split("/")[1] || "0");
       const lineGeo = state.busLines.find(b => b.properties?.line_code === lineCode && b.properties?.direction === dir);
+      const lineCoords = lineGeo ? (lineGeo.features || []).flatMap(f => f.geometry?.coordinates || []) : [];
 
-      // Project each stop onto the line to find its position
-      let stopsWithPos = stops;
-      if (lineGeo) {
-        const lineCoords = (lineGeo.features || []).flatMap(f => f.geometry?.coordinates || []);
-        if (lineCoords.length > 1) {
-          stopsWithPos = stops.map(s => ({
-            ...s,
-            pos: projectOntoLine(lineCoords, s.lat, s.lng),
-          }));
-          // Sort by position (some bus lines may not be in station_id order along the line)
-          stopsWithPos.sort((a, b) => a.pos - b.pos);
-        }
-      }
+      // Build (stop, position) pairs. If line geometry is available, we
+      // record the position; otherwise pos is undefined and we fall back
+      // to straight-line geometry for the polyline.
+      const stopsWithPos = lineCoords.length > 1
+        ? stopsOrdered.map(s => ({ ...s, pos: projectOntoLine(lineCoords, s.lat, s.lng) }))
+        : stopsOrdered.map(s => ({ ...s, pos: undefined }));
 
       for (let i = 0; i < stopsWithPos.length - 1; i++) {
         const a = stopsWithPos[i], b = stopsWithPos[i + 1];
@@ -1003,42 +1004,27 @@ FEATURE_LAYERS.forEach(id => {
         // transitioning from walk→bus (boarding) so we don't double-count
         // it for multi-segment bus rides.
         const dur = segmentDuration(a.lat, a.lng, b.lat, b.lng, "bus") + 0.5;
-        // Build the polyline geometry for this segment by slicing the
-        // bus line between the two stops' positions on the line.
+        // Build the polyline geometry by slicing the bus line between the
+        // two stops' positions on the line.
         let geometry = [[a.lng, a.lat], [b.lng, b.lat]];  // fallback
-        if (lineGeo && a.pos !== undefined && b.pos !== undefined) {
-          const lineCoords = (lineGeo.features || []).flatMap(f => f.geometry?.coordinates || []);
-          if (lineCoords.length > 1) {
-            const startIdx = Math.floor(a.pos);
-            const endIdx = Math.floor(b.pos);
-            const startFrac = a.pos - startIdx;
-            const endFrac = b.pos - endIdx;
-            geometry = [];
-            // Include first point at fractional offset
-            if (startIdx < lineCoords.length) {
-              const [x1, y1] = lineCoords[startIdx];
-              const [x2, y2] = lineCoords[Math.min(startIdx + 1, lineCoords.length - 1)];
-              geometry.push([
-                x1 + startFrac * (x2 - x1),
-                y1 + startFrac * (y2 - y1),
-              ]);
-            }
-            // Include all intermediate vertices
-            for (let j = startIdx + 1; j <= endIdx && j < lineCoords.length; j++) {
-              geometry.push(lineCoords[j]);
-            }
-            // Include last point at fractional offset
-            if (endIdx < lineCoords.length) {
-              const [x1, y1] = lineCoords[endIdx];
-              const [x2, y2] = lineCoords[Math.min(endIdx + 1, lineCoords.length - 1)];
-              geometry.push([
-                x1 + endFrac * (x2 - x1),
-                y1 + endFrac * (y2 - y1),
-              ]);
-            }
-            // If slicing produced weird results, fall back
-            if (geometry.length < 2) geometry = [[a.lng, a.lat], [b.lng, b.lat]];
+        if (lineCoords.length > 1 && a.pos !== undefined && b.pos !== undefined) {
+          const ai = Math.floor(a.pos), bi = Math.floor(b.pos);
+          const aFrac = a.pos - ai, bFrac = b.pos - bi;
+          geometry = [];
+          if (ai < lineCoords.length) {
+            const [x1, y1] = lineCoords[ai];
+            const [x2, y2] = lineCoords[Math.min(ai + 1, lineCoords.length - 1)];
+            geometry.push([x1 + aFrac * (x2 - x1), y1 + aFrac * (y2 - y1)]);
           }
+          for (let j = ai + 1; j <= bi && j < lineCoords.length; j++) {
+            geometry.push(lineCoords[j]);
+          }
+          if (bi < lineCoords.length) {
+            const [x1, y1] = lineCoords[bi];
+            const [x2, y2] = lineCoords[Math.min(bi + 1, lineCoords.length - 1)];
+            geometry.push([x1 + bFrac * (x2 - x1), y1 + bFrac * (y2 - y1)]);
+          }
+          if (geometry.length < 2) geometry = [[a.lng, a.lat], [b.lng, b.lat]];
         }
         busEdges.push({
           a: a.id, b: b.id, mode: "bus",
@@ -1046,6 +1032,7 @@ FEATURE_LAYERS.forEach(id => {
           geometry,
           details: `${key}: ${a.name} → ${b.name}`,
         });
+        // Reverse direction (bus line is bidirectional)
         busEdges.push({
           a: b.id, b: a.id, mode: "bus",
           dur_min: dur, dist_m: d,
