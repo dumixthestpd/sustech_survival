@@ -43,15 +43,13 @@
 
   // Fetch the style JSON and inject our custom sources + layers
   fetch(styleUrl).then(r => r.json()).then(style => {
-  // Add our custom sources to the style
+  // Add our custom sources to the style. Note: live_buses, bus_stops,
+  // and facilities ARE used by the layers below; footways and
+  // bus_lines are populated by the data loader so the JS code can use
+  // them for routing / bus line styling.
   style.sources.facilities = { type: "geojson", data: "/data/facilities.geojson" };
   style.sources.bus_stops = { type: "geojson", data: "/data/bus_stops.geojson" };
-  style.sources.live_buses = { type: "geojson", data: "/data/live_buses.geojson" };
   style.sources.route = {
-    type: "geojson",
-    data: { type: "FeatureCollection", features: [] },
-  };
-  style.sources.footways = {
     type: "geojson",
     data: { type: "FeatureCollection", features: [] },
   };
@@ -157,43 +155,12 @@ style.layers.push({
     "circle-opacity": OPACITY_EXPR,
   },
 });
-style.layers.push({
-  id: "transit-live-buses",
-  type: "circle",
-  source: "live_buses",
-  minzoom: 13,
-  // Body dot — colored by line, slightly grows on hover. The direction
-  // arrow is a separate HTML marker (see renderLiveBusMarkers) that we
-  // render on top of this circle for proper rotation.
-  paint: {
-    "circle-radius": [
-      "interpolate", ["linear"], ["zoom"],
-      13, ["case", ["==", ["feature-state", "hover"], true], 9, 7],
-      16, ["case", ["==", ["feature-state", "hover"], true], 12, 9],
-      18, ["case", ["==", ["feature-state", "hover"], true], 14, 11],
-    ],
-    // Color by line: NKDH1 = orange (Line 1), NKDH2 = blue (Line 2),
-    // SEV / unknown = gray. Matches sustech.online's color scheme.
-    "circle-color": [
-      "match", ["get", "route_code"],
-      "NKDH1", "#f7911d",
-      "NKDH2", "#29abe2",
-      "SEV",   "#888888",
-      /* default */ "#00ab5b",
-    ],
-    "circle-stroke-color": [
-      "case",
-      ["==", ["feature-state", "hover"], true], "#ffffff",
-      "rgba(255,255,255,0.7)",
-    ],
-    "circle-stroke-width": [
-      "case",
-      ["==", ["feature-state", "hover"], true], 3,
-      1.5,
-    ],
-    "circle-opacity": 1.0,  // live buses are the most time-sensitive — always visible
-  },
-});
+// Live bus markers are rendered as HTML elements (see renderLiveBusMarkers
+// below) — a single rotating SVG per bus with the body and the
+// direction chevron in one shape. We do NOT also draw a MapLibre
+// circle layer underneath, because the two would visibly separate
+// during panning (one is GPU-rendered, the other is JS-positioned) and
+// produce the "two dots for a single bus" effect.
 // Bus line polylines — drawn on the basemap so the user can see the
 // route shape. Kept very subtle (thin + low opacity) so they don't
 // compete with the planned-route polyline or with the campus basemap.
@@ -228,10 +195,18 @@ style.layers.push({
   source: "route",
   layout: { "line-cap": "round", "line-join": "round" },
   paint: {
+    // Solid (no dashes) — dashes at 5px line-width looked like scattered
+    // dots when the route had only a few segments. Opacity bumped to
+    // 0.9 so the planned route reads as the primary feature over
+    // the subtle bus-line polylines behind it.
     "line-color": "#0066ff",
-    "line-width": 5,
-    "line-opacity": 0.75,
-    "line-dasharray": [2, 1.5],
+    "line-width": [
+      "interpolate", ["linear"], ["zoom"],
+      13, 4,
+      16, 6,
+      18, 8,
+    ],
+    "line-opacity": 0.9,
   },
 });
 
@@ -265,7 +240,8 @@ document.getElementById("map").appendChild(legend);
 map.on("click", "transit-buildings", popupFromFeature);
 map.on("click", "transit-gates", popupFromFeature);
 map.on("click", "transit-bus-stops", popupFromFeature);
-map.on("click", "transit-live-buses", popupFromFeature);
+// (Live buses use HTML markers — click → popup is wired in
+//  renderLiveBusMarkers, no MapLibre click handler needed.)
 
 // ── Proximity-based dot visibility ──────────────────────────────────────
 // Dots default to invisible. They appear when:
@@ -561,11 +537,11 @@ FEATURE_LAYERS.forEach(id => {
         }
       });
 
-      // Push to map layers
+      // Push to map layers (live_buses & footways are JS-only — HTML
+      // markers + Dijkstra routing use them, no MapLibre layer).
       const map = window._map;
       if (map && map.getSource("facilities")) map.getSource("facilities").setData(fac);
       if (map && map.getSource("bus_stops")) map.getSource("bus_stops").setData(stops);
-      if (map && map.getSource("live_buses")) map.getSource("live_buses").setData(live);
 
       renderSchedule();
       renderLiveList();
