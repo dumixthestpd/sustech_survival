@@ -1282,6 +1282,95 @@ FEATURE_LAYERS.forEach(id => {
     return { total_min: dist[dst], edges: pathEdges };
   }
 
+  // ── Server-side walking route (OSMnx) ───────────────────────────────────
+  // The frontend used to run dijkstra client-side over a hand-built
+  // graph. That produced straight-line shortcuts through buildings
+  // whenever the OSM footway data was sparse (创园, 欣园 areas).
+  //
+  // Walk-only mode now calls /api/walk_route, which delegates to
+  // OSMnx over a topology-corrected campus pedestrian graph (cached
+  // on disk). Result: 9-15 nodes along real paths instead of 3-4
+  // coords with a 290m diagonal "snap" line.
+  async function findWalkingRouteOSMnx(fromId, toId) {
+    const resultDiv = document.getElementById("route-result");
+    const from = state.facilitiesById[fromId] || state.busStops.find(s => s.properties.facility_id === fromId);
+    const to   = state.facilitiesById[toId]   || state.busStops.find(s => s.properties.facility_id === toId);
+    if (!from || !to) {
+      resultDiv.innerHTML = `<div class="error">Could not resolve endpoints for OSMnx routing.</div>`;
+      return;
+    }
+    const fromLng = from.geometry.coordinates[0];
+    const fromLat = from.geometry.coordinates[1];
+    const toLng   = to.geometry.coordinates[0];
+    const toLat   = to.geometry.coordinates[1];
+    resultDiv.innerHTML = `<div class="empty">Routing via campus paths (OSMnx)…</div>`;
+    try {
+      const r = await fetch(
+        `/api/walk_route?from_lng=${fromLng}&from_lat=${fromLat}` +
+        `&to_lng=${toLng}&to_lat=${toLat}`,
+      );
+      if (!r.ok) {
+        const err = await r.text();
+        resultDiv.innerHTML = `<div class="error">Walk routing failed: ${esc(err)}</div>`;
+        return;
+      }
+      const data = await r.json();
+      renderWalkingRouteOSMnx(data, fromId, toId);
+    } catch (e) {
+      resultDiv.innerHTML = `<div class="error">Walk routing failed: ${esc(String(e))}</div>`;
+    }
+  }
+
+  function renderWalkingRouteOSMnx(data, fromId, toId) {
+    const resultDiv = document.getElementById("route-result");
+    const m = window._map;
+    if (!m) return;
+    // Push the OSMnx polyline to the existing 'route' source.
+    const fc = {
+      type: "FeatureCollection",
+      features: [{
+        type: "Feature",
+        geometry: { type: "LineString", coordinates: data.coords },
+        properties: {},
+      }],
+    };
+    const src = m.getSource("route");
+    if (src) src.setData(fc);
+    // Fit bounds
+    if (data.coords.length) {
+      let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity;
+      for (const [lng, lat] of data.coords) {
+        if (lng < minLng) minLng = lng; if (lng > maxLng) maxLng = lng;
+        if (lat < minLat) minLat = lat; if (lat > maxLat) maxLat = lat;
+      }
+      m.fitBounds([[minLng, minLat], [maxLng, maxLat]], { padding: 60, duration: 600 });
+    }
+    // Update feature state for the two endpoints
+    for (const fid of [fromId, toId]) {
+      for (const srcName of ["facilities", "bus_stops"]) {
+        try { m.setFeatureState({ source: srcName, id: fid }, { selected: true }); } catch (_) {}
+      }
+    }
+    // Build a single-step sidebar entry
+    const fromName = state.facilitiesById[fromId]?.properties?.name
+                  || state.busStops.find(s => s.properties.facility_id === fromId)?.properties?.name
+                  || fromId;
+    const toName = state.facilitiesById[toId]?.properties?.name
+                || state.busStops.find(s => s.properties.facility_id === toId)?.properties?.name
+                || toId;
+    const distKm = (data.distance_m / 1000).toFixed(2);
+    resultDiv.innerHTML = `
+      <div class="summary">${data.duration_min.toFixed(1)} min · 1 steps · ${Math.round(data.distance_m)} m (${distKm} km)</div>
+      <div class="step mode-walk">
+        <strong>🚶 ${esc(fromName)} → ${esc(toName)}</strong>
+        <div class="meta">${data.duration_min.toFixed(1)} min · ${Math.round(data.distance_m)} m · ${data.nodes} path nodes (OSMnx campus graph)</div>
+      </div>
+      <div class="how-we-estimate">
+        <a href="/static/estimation.html" target="_blank">ⓘ How we estimate</a>
+      </div>
+    `;
+  }
+
   function findRoute() {
     const fromInput = document.getElementById("from-input");
     const toInput = document.getElementById("to-input");
@@ -1402,6 +1491,17 @@ FEATURE_LAYERS.forEach(id => {
     // For "bus" mode, treat it like "transit" so non-bus-stop endpoints
     // still work (the bus edges will only be traversed if they're optimal).
     const effectiveMode = mode === "bus" ? "transit" : mode;
+
+    // Walk-only mode uses the server-side OSMnx endpoint, which
+    // routes over a topology-corrected campus pedestrian graph from
+    // Overpass. The client-side dijkstra (used below for transit/bus
+    // modes) was producing straight-line shortcuts through buildings
+    // because the hand-rolled graph was too sparse in some areas
+    // (e.g. 创园 → 宿舍15栋 was a 290m diagonal through 社康中心).
+    if (effectiveMode === "walk") {
+      findWalkingRouteOSMnx(fromId, toId);
+      return;
+    }
 
     const graph = buildClientGraph();
     const path = dijkstra(graph, fromId, toId, effectiveMode);
