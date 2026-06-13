@@ -228,6 +228,27 @@ sustech_survival/transit/
   our headless test browser has CSP/timeout issues with the live tile
   servers. Curl tests confirm the server returns correct data.
 
+## app.js IIFE scoping gotcha
+
+The whole script is `(function() { "use strict"; ... })()`. Inside, there's
+a big `fetch(styleUrl).then(r => r.json()).then(style => { ... })` block
+that runs from line ~45 to ~419. This splits the IIFE into two scopes:
+
+- **Inside the .then() callback** (L45–L419): `map`, `setSelectedFeatureState`,
+  `onFacilityClick`, `clearAllNear`, `popupFromFeature`, all the
+  `map.on(...)` wiring, and the `loadAll()` trigger.
+- **Outside the .then() callback** (L420+): `loadAll`, `refreshLive`,
+  `attachSuggestion`, `findRoute`, `buildClientGraph`, `dijkstra`,
+  `aliasesFor`, `resolveFacilityId`, `renderSchedule`, etc.
+
+Function declarations are hoisted *within* their containing function, so
+a name defined in the inner .then() scope is NOT visible to a function
+defined in the outer IIFE scope (and vice versa). If you need to call
+something defined in the other half from inside `findRoute` (or any
+function on the outer side), use `window._map.setFeatureState(...)`
+directly — `window._map` is exposed at L67, which mirrors what
+`setSelectedFeatureState` does internally.
+
 ## Testing
 
 ```bash
