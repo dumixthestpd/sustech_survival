@@ -255,49 +255,24 @@ button:disabled { background: #999; cursor: not-allowed; }
 }
 #route-result .how-we-estimate a:hover { text-decoration: underline; }
 
-/* ── Live bus HTML markers (colored body + CSS triangle) ─────────────── */
+/* ── Live bus HTML markers (single rotating SVG, body + chevron) ─────── */
 .live-bus-marker {
-  position: relative;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   cursor: pointer;
-  /* Pointer area is wider than the body so the user can hit it easily. */
+  transition: transform 0.12s ease-out;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.25));
 }
-.live-bus-marker .live-bus-body {
-  position: absolute;
-  top: 50%; left: 50%;
-  width: 14px; height: 14px;
-  margin: -7px 0 0 -7px;
-  background: var(--bus-color, #00ab5b);
-  border: 1.5px solid rgba(255, 255, 255, 0.85);
-  border-radius: 50%;
-  box-shadow: 0 0 0 1px rgba(0,0,0,0.15);
-  transition: transform 0.1s, box-shadow 0.1s;
+.live-bus-marker svg {
+  display: block;
+  /* The polygon (chevron) is inside the SVG, so rotating the whole
+     SVG rotates the body AND the chevron together — no detached arrow. */
+  transform-origin: 12px 12px;
 }
-.live-bus-marker.hovered .live-bus-body,
-.live-bus-marker:hover .live-bus-body {
+.live-bus-marker.hovered,
+.live-bus-marker:hover {
   transform: scale(1.35);
-  box-shadow: 0 0 0 2px var(--bus-color, #00ab5b), 0 0 8px rgba(0,0,0,0.25);
-  border-color: #fff;
-}
-.live-bus-marker .live-bus-arrow {
-  position: absolute;
-  top: 50%; left: 50%;
-  width: 0; height: 0;
-  margin-top: -16px;     /* sit above the body */
-  margin-left: -5px;
-  border-left: 5px solid transparent;
-  border-right: 5px solid transparent;
-  border-bottom: 7px solid var(--bus-color, #00ab5b);
-  /* rotate by the bus's `course` (bearing) — set inline via JS */
-  transform-origin: 5px 16px;  /* pivot at the body center */
-  filter: drop-shadow(0 0 1px rgba(0,0,0,0.35));
-  pointer-events: none;  /* arrow is decorative — body handles hover */
-}
-.live-bus-marker.hovered .live-bus-arrow,
-.live-bus-marker:hover .live-bus-arrow {
-  border-bottom-color: #fff;
-  filter: drop-shadow(0 0 2px rgba(0,0,0,0.55));
+  filter: drop-shadow(0 0 6px rgba(0,0,0,0.35));
 }
 
 /* ── Live bus popup (richer than building/stop popups) ───────────────── */
@@ -394,30 +369,22 @@ button:disabled { background: #999; cursor: not-allowed; }
 .map-legend .legend-bus {
   display: inline-block;
   position: relative;
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
   flex-shrink: 0;
 }
 .map-legend .legend-bus::before {
+  /* Mini version of the rotating SVG marker — circle body + chevron. */
   content: "";
   position: absolute;
   top: 50%; left: 50%;
-  width: 8px; height: 8px;
-  margin: -4px 0 0 -4px;
+  width: 12px; height: 12px;
+  margin: -6px 0 0 -6px;
   background: var(--c, #00ab5b);
-  border: 1px solid #fff;
+  border: 1.5px solid #fff;
   border-radius: 50%;
   box-shadow: 0 0 0 1px rgba(0,0,0,0.2);
-}
-.map-legend .legend-bus::after {
-  content: "";
-  position: absolute;
-  top: 50%; left: 50%;
-  width: 0; height: 0;
-  margin: -10px 0 0 -3px;
-  border-left: 3px solid transparent;
-  border-right: 3px solid transparent;
-  border-bottom: 4px solid var(--c, #00ab5b);
+  clip-path: polygon(0 0, 65% 0, 65% 25%, 100% 50%, 65% 75%, 65% 100%, 0 100%);
 }
 
 #map {

@@ -195,8 +195,8 @@ style.layers.push({
   },
 });
 // Bus line polylines — drawn on the basemap so the user can see the
-// route shape and direction (clockwise vs counter-clockwise). Color
-// matches the live-bus dot color for visual consistency.
+// route shape. Kept very subtle (thin + low opacity) so they don't
+// compete with the planned-route polyline or with the campus basemap.
 style.sources.bus_lines_layer = {
   type: "geojson",
   data: { type: "FeatureCollection", features: [] },
@@ -205,7 +205,7 @@ style.layers.push({
   id: "transit-bus-lines",
   type: "line",
   source: "bus_lines_layer",
-  minzoom: 13,
+  minzoom: 14,
   layout: { "line-cap": "round", "line-join": "round" },
   paint: {
     "line-color": [
@@ -216,14 +216,10 @@ style.layers.push({
     ],
     "line-width": [
       "interpolate", ["linear"], ["zoom"],
-      13, 2,
-      16, 4,
-      18, 5,
+      14, 1,
+      18, 2.5,
     ],
-    "line-opacity": 0.55,
-    // Animate the dash so the bus "flows" along the line in the
-    // direction the bus is travelling. direction=1 reverses the flow.
-    "line-dasharray": [3, 2],
+    "line-opacity": 0.28,
   },
 });
 style.layers.push({
@@ -728,12 +724,12 @@ FEATURE_LAYERS.forEach(id => {
     return "#00ab5b";
   }
 
-  // ── Live bus markers (HTML, with directional arrow) ─────────────────────
-  // Each live bus is rendered as an HTML marker on top of the
-  // transit-live-buses circle layer. The marker is a colored body + a
-  // CSS triangle that rotates to match the bus's `course` (bearing).
-  // This gives the user the same directional cue sustech.online has,
-  // without needing a sprite image.
+  // ── Live bus markers (single rotating SVG, body + chevron) ──────────────
+  // Each live bus is a single MapLibre Marker whose element is an SVG
+  // shaped like a teardrop / map-pin: a colored circle body with a
+  // white triangle embedded on the right side, pointing in the bus's
+  // direction of travel. The whole SVG rotates together so the body
+  // and the direction indicator stay visually attached.
   let liveBusMarkers = [];
   function renderLiveBusMarkers() {
     const map = window._map;
@@ -747,16 +743,24 @@ FEATURE_LAYERS.forEach(id => {
       const course = Number(p.course) || 0;
       const color = liveBusColor(p.route_code);
 
+      // SVG teardrop / play-button shape: a 22×22 circle with an
+      // integrated white triangle "tail" at the right side, all
+      // rotated as one unit. The triangle is large enough to read
+      // direction at a glance but small enough not to overpower the
+      // body. anchor:"center" puts the SVG center on the bus
+      // coordinate, so rotation pivots correctly.
       const el = document.createElement("div");
       el.className = "live-bus-marker";
       el.style.setProperty("--bus-color", color);
       el.innerHTML = `
-        <div class="live-bus-body"></div>
-        <div class="live-bus-arrow" style="transform: rotate(${course}deg)"></div>
+        <svg viewBox="0 0 24 24" width="24" height="24" style="transform: rotate(${course}deg)">
+          <circle cx="10" cy="12" r="7" fill="${color}" stroke="#fff" stroke-width="1.8"/>
+          <polygon points="14,7 19,12 14,17" fill="#fff"/>
+        </svg>
       `;
 
-      // Hover effect — change color via feature-state on the layer + a class
-      // on the HTML element for the arrow tint.
+      // Hover: scale the whole marker. Feature-state is propagated
+      // to the underlying circle layer so it also enlarges.
       el.addEventListener("mouseenter", () => {
         el.classList.add("hovered");
         try { map.setFeatureState({ source: "live_buses", id: p.bus_id }, { hover: true }); } catch (_) {}
@@ -766,10 +770,10 @@ FEATURE_LAYERS.forEach(id => {
         try { map.setFeatureState({ source: "live_buses", id: p.bus_id }, { hover: false }); } catch (_) {}
       });
 
-      // Click — open a popup with bus details.
+      // Click → popup.
       el.addEventListener("click", (e) => {
         e.stopPropagation();
-        new maplibregl.Popup({ closeButton: true, offset: 16, className: "bus-popup" })
+        new maplibregl.Popup({ closeButton: true, offset: 14, className: "bus-popup" })
           .setLngLat([lng, lat])
           .setHTML(busPopupHTML(p))
           .addTo(map);
