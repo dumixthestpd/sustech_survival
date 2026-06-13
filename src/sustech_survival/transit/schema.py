@@ -387,6 +387,9 @@ class LiveBus:
                 "route_code": self.route_code,
                 "next_station": self.next_station,
                 "speed_kmh": self.speed_kmh,
+                "course": self.course,           # bearing 0-360 (0=N, 90=E) — used for arrow rotation
+                "is_operating": self.is_operating,
+                "timestamp": self.timestamp,
             },
         }
 

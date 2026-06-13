@@ -162,11 +162,68 @@ style.layers.push({
   type: "circle",
   source: "live_buses",
   minzoom: 13,
+  // Body dot — colored by line, slightly grows on hover. The direction
+  // arrow is a separate HTML marker (see renderLiveBusMarkers) that we
+  // render on top of this circle for proper rotation.
   paint: {
-    "circle-radius": 7,
-    "circle-color": "#00ab5b",
-    "circle-stroke-color": "#fff",
-    "circle-stroke-width": 2,
+    "circle-radius": [
+      "interpolate", ["linear"], ["zoom"],
+      13, ["case", ["==", ["feature-state", "hover"], true], 9, 7],
+      16, ["case", ["==", ["feature-state", "hover"], true], 12, 9],
+      18, ["case", ["==", ["feature-state", "hover"], true], 14, 11],
+    ],
+    // Color by line: NKDH1 = orange (Line 1), NKDH2 = blue (Line 2),
+    // SEV / unknown = gray. Matches sustech.online's color scheme.
+    "circle-color": [
+      "match", ["get", "route_code"],
+      "NKDH1", "#f7911d",
+      "NKDH2", "#29abe2",
+      "SEV",   "#888888",
+      /* default */ "#00ab5b",
+    ],
+    "circle-stroke-color": [
+      "case",
+      ["==", ["feature-state", "hover"], true], "#ffffff",
+      "rgba(255,255,255,0.7)",
+    ],
+    "circle-stroke-width": [
+      "case",
+      ["==", ["feature-state", "hover"], true], 3,
+      1.5,
+    ],
+    "circle-opacity": 1.0,  // live buses are the most time-sensitive — always visible
+  },
+});
+// Bus line polylines — drawn on the basemap so the user can see the
+// route shape and direction (clockwise vs counter-clockwise). Color
+// matches the live-bus dot color for visual consistency.
+style.sources.bus_lines_layer = {
+  type: "geojson",
+  data: { type: "FeatureCollection", features: [] },
+};
+style.layers.push({
+  id: "transit-bus-lines",
+  type: "line",
+  source: "bus_lines_layer",
+  minzoom: 13,
+  layout: { "line-cap": "round", "line-join": "round" },
+  paint: {
+    "line-color": [
+      "match", ["get", "line_code"],
+      "XYBS1", "#f7911d",   // Line 1 = orange
+      "XYBS2", "#29abe2",   // Line 2 = blue
+      "#888888",
+    ],
+    "line-width": [
+      "interpolate", ["linear"], ["zoom"],
+      13, 2,
+      16, 4,
+      18, 5,
+    ],
+    "line-opacity": 0.55,
+    // Animate the dash so the bus "flows" along the line in the
+    // direction the bus is travelling. direction=1 reverses the flow.
+    "line-dasharray": [3, 2],
   },
 });
 style.layers.push({
@@ -185,16 +242,25 @@ style.layers.push({
 map.addControl(new maplibregl.NavigationControl(), "top-right");
 
 // ── Legend (bottom-right) ──────────────────────────────────────────────
-// Most dots render as small gray circles; their kind-specific color
-// appears only on hover. Legend reminds you what each color means.
+// Color-coded by line so the user knows which is which. Buildings /
+// gates / bus stops render gray on the map until you hover near them,
+// so the legend explains what each color means when revealed.
 const legend = document.createElement("div");
 legend.className = "maplibregl-ctrl map-legend";
 legend.innerHTML = `
-  <div class="legend-item"><span class="legend-dot" style="background:#888"></span> Idle dot</div>
+  <div class="legend-item"><span class="legend-dot" style="background:#888"></span> Idle dot (hover to reveal)</div>
   <div class="legend-item"><span class="legend-dot" style="background:#3388ff"></span> Building</div>
   <div class="legend-item"><span class="legend-dot" style="background:#ff8c00"></span> Gate</div>
   <div class="legend-item"><span class="legend-dot" style="background:#e91e63"></span> Bus stop</div>
-  <div class="legend-item"><span class="legend-dot" style="background:#00ab5b"></span> Live bus</div>
+  <div class="legend-item" style="border-top:1px solid #ccc;margin-top:4px;padding-top:4px">
+    <span class="legend-line" style="background:#f7911d"></span> Line 1 (内环 CW)
+  </div>
+  <div class="legend-item">
+    <span class="legend-line" style="background:#29abe2"></span> Line 2 (外环 CCW)
+  </div>
+  <div class="legend-item">
+    <span class="legend-bus" style="--c:#f7911d"></span> Live bus (dot + arrow = bearing)
+  </div>
   <div class="legend-item" style="border-top:1px solid #ccc;margin-top:4px;padding-top:4px">━ Planned route</div>
 `;
 document.getElementById("map").appendChild(legend);
@@ -455,13 +521,33 @@ FEATURE_LAYERS.forEach(id => {
       );
       state.busLines = lineFetches
         .filter(x => x !== null)
-        .map(x => ({
-          ...x.g,
-          properties: {
-            line_code: x.key.split("_")[0],
-            direction: parseInt(x.key.split("_")[1]),
-          },
-        }));
+        .map(x => {
+          // The bus_lines/*.geojson files are each a FeatureCollection
+          // wrapping a single LineString Feature. Unwrap so each item
+          // is a real GeoJSON Feature we can push to the bus_lines_layer
+          // source for rendering.
+          const feat = (x.g.features && x.g.features[0]) || x.g;
+          return {
+            ...feat,
+            properties: {
+              ...(feat.properties || {}),
+              line_code: x.key.split("_")[0],
+              direction: parseInt(x.key.split("_")[1]),
+            },
+          };
+        });
+
+      // Push bus line polylines to the bus_lines_layer source so they
+      // render on the basemap (with a colored line per route, animated
+      // dashes that "flow" in the bus's direction of travel).
+      const busLinesFC = {
+        type: "FeatureCollection",
+        features: state.busLines,
+      };
+      const m = window._map;
+      if (m && m.getSource("bus_lines_layer")) {
+        m.getSource("bus_lines_layer").setData(busLinesFC);
+      }
 
       // Index facilities
       state.facilitiesById = {};
@@ -616,12 +702,104 @@ FEATURE_LAYERS.forEach(id => {
     }
     target.innerHTML = state.liveBuses.map(f => {
       const p = f.properties;
+      const lineBadge = p.route_code
+        ? `<span class="live-line-badge" style="background:${liveBusColor(p.route_code)}">${esc(p.route_code)}</span>`
+        : `<span class="live-line-badge" style="background:#888">—</span>`;
+      const next = (p.next_station && p.next_station !== "--")
+        ? esc(p.next_station) : "—";
+      const speed = p.speed_kmh != null ? `${p.speed_kmh} km/h` : "";
       return `<div class="live-bus">
-        <span class="route">${esc(p.route_code)}</span>
-        <span>→</span>
-        <span class="next-station">${esc(p.next_station || "?")}</span>
+        ${lineBadge}
+        <span class="next-station">${next}</span>
+        <span class="live-speed">${speed}</span>
       </div>`;
     }).join("");
+    // Also render the bus markers on the map.
+    renderLiveBusMarkers();
+  }
+
+  // Live-bus color by route_code (mirrors the MapLibre `match` expression
+  // in the transit-live-buses layer so the sidebar badge and the map dot
+  // are always the same color).
+  function liveBusColor(routeCode) {
+    if (routeCode === "NKDH1") return "#f7911d";
+    if (routeCode === "NKDH2") return "#29abe2";
+    if (routeCode === "SEV")   return "#888888";
+    return "#00ab5b";
+  }
+
+  // ── Live bus markers (HTML, with directional arrow) ─────────────────────
+  // Each live bus is rendered as an HTML marker on top of the
+  // transit-live-buses circle layer. The marker is a colored body + a
+  // CSS triangle that rotates to match the bus's `course` (bearing).
+  // This gives the user the same directional cue sustech.online has,
+  // without needing a sprite image.
+  let liveBusMarkers = [];
+  function renderLiveBusMarkers() {
+    const map = window._map;
+    if (!map) return;
+    // Drop any existing markers — we recreate them each refresh.
+    liveBusMarkers.forEach(m => m.remove());
+    liveBusMarkers = [];
+    state.liveBuses.forEach(f => {
+      const p = f.properties;
+      const [lng, lat] = f.geometry.coordinates;
+      const course = Number(p.course) || 0;
+      const color = liveBusColor(p.route_code);
+
+      const el = document.createElement("div");
+      el.className = "live-bus-marker";
+      el.style.setProperty("--bus-color", color);
+      el.innerHTML = `
+        <div class="live-bus-body"></div>
+        <div class="live-bus-arrow" style="transform: rotate(${course}deg)"></div>
+      `;
+
+      // Hover effect — change color via feature-state on the layer + a class
+      // on the HTML element for the arrow tint.
+      el.addEventListener("mouseenter", () => {
+        el.classList.add("hovered");
+        try { map.setFeatureState({ source: "live_buses", id: p.bus_id }, { hover: true }); } catch (_) {}
+      });
+      el.addEventListener("mouseleave", () => {
+        el.classList.remove("hovered");
+        try { map.setFeatureState({ source: "live_buses", id: p.bus_id }, { hover: false }); } catch (_) {}
+      });
+
+      // Click — open a popup with bus details.
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        new maplibregl.Popup({ closeButton: true, offset: 16, className: "bus-popup" })
+          .setLngLat([lng, lat])
+          .setHTML(busPopupHTML(p))
+          .addTo(map);
+      });
+
+      const marker = new maplibregl.Marker({ element: el, anchor: "center" })
+        .setLngLat([lng, lat])
+        .addTo(map);
+      liveBusMarkers.push(marker);
+    });
+  }
+
+  // Build the HTML for a bus popup. We don't reuse popupHTML() because
+  // live buses have totally different fields (route_code, next_station,
+  // speed_kmh, course, bus_id) than buildings/stops (name, name_en,
+  // routes, facility_id).
+  function busPopupHTML(p) {
+    const lineBadge = p.route_code
+      ? `<span class="bus-popup-line" style="background:${liveBusColor(p.route_code)}">${esc(p.route_code)}</span>`
+      : "";
+    const plate = p.bus_id ? `粤B${esc(p.bus_id.slice(2))}` : "";
+    const speed = p.speed_kmh != null ? `<div class="bus-popup-row">${p.speed_kmh} km/h</div>` : "";
+    const next = (p.next_station && p.next_station !== "--")
+      ? `<div class="bus-popup-row"><span class="bus-popup-label">下站 Next stop</span><b>${esc(p.next_station)}</b></div>` : "";
+    const course = (p.course != null && p.course !== 0)
+      ? `<div class="bus-popup-row"><span class="bus-popup-label">航向 Heading</span>${Math.round(p.course)}°</div>` : "";
+    return `<div class="bus-popup-inner">
+      <div class="bus-popup-header">${lineBadge} ${esc(plate)}</div>
+      ${speed}${next}${course}
+    </div>`;
   }
 
   // ── Suggestion / search ──────────────────────────────────────────────────

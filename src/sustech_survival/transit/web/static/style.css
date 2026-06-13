@@ -254,6 +254,172 @@ button:disabled { background: #999; cursor: not-allowed; }
   text-decoration: none;
 }
 #route-result .how-we-estimate a:hover { text-decoration: underline; }
+
+/* ── Live bus HTML markers (colored body + CSS triangle) ─────────────── */
+.live-bus-marker {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  cursor: pointer;
+  /* Pointer area is wider than the body so the user can hit it easily. */
+}
+.live-bus-marker .live-bus-body {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 14px; height: 14px;
+  margin: -7px 0 0 -7px;
+  background: var(--bus-color, #00ab5b);
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.15);
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+.live-bus-marker.hovered .live-bus-body,
+.live-bus-marker:hover .live-bus-body {
+  transform: scale(1.35);
+  box-shadow: 0 0 0 2px var(--bus-color, #00ab5b), 0 0 8px rgba(0,0,0,0.25);
+  border-color: #fff;
+}
+.live-bus-marker .live-bus-arrow {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 0; height: 0;
+  margin-top: -16px;     /* sit above the body */
+  margin-left: -5px;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 7px solid var(--bus-color, #00ab5b);
+  /* rotate by the bus's `course` (bearing) — set inline via JS */
+  transform-origin: 5px 16px;  /* pivot at the body center */
+  filter: drop-shadow(0 0 1px rgba(0,0,0,0.35));
+  pointer-events: none;  /* arrow is decorative — body handles hover */
+}
+.live-bus-marker.hovered .live-bus-arrow,
+.live-bus-marker:hover .live-bus-arrow {
+  border-bottom-color: #fff;
+  filter: drop-shadow(0 0 2px rgba(0,0,0,0.55));
+}
+
+/* ── Live bus popup (richer than building/stop popups) ───────────────── */
+.bus-popup .maplibregl-popup-content {
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  min-width: 140px;
+}
+.bus-popup-inner { font-family: inherit; }
+.bus-popup-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.bus-popup-line {
+  color: white;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+.bus-popup-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.bus-popup-row b { color: var(--text); }
+.bus-popup-label {
+  display: inline-block;
+  min-width: 60px;
+  font-weight: 500;
+}
+
+/* ── Sidebar live bus list (with line badge) ──────────────────────────── */
+.live-bus {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  border-bottom: 1px dashed var(--border);
+  font-size: 12px;
+}
+.live-bus:last-child { border-bottom: none; }
+.live-line-badge {
+  color: white;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  min-width: 50px;
+  text-align: center;
+}
+.live-bus .next-station { flex: 1; }
+.live-bus .live-speed { color: var(--text-dim); font-size: 11px; }
+
+/* ── Legend (bottom-right) ──────────────────────────────────────────── */
+.map-legend {
+  background: rgba(255, 255, 255, 0.96);
+  padding: 8px 10px;
+  border-radius: 4px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  font-size: 11px;
+  font-family: inherit;
+  line-height: 1.4;
+  max-width: 200px;
+}
+.map-legend .legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0;
+}
+.map-legend .legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.map-legend .legend-line {
+  display: inline-block;
+  width: 18px;
+  height: 3px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.map-legend .legend-bus {
+  display: inline-block;
+  position: relative;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+.map-legend .legend-bus::before {
+  content: "";
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 8px; height: 8px;
+  margin: -4px 0 0 -4px;
+  background: var(--c, #00ab5b);
+  border: 1px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.2);
+}
+.map-legend .legend-bus::after {
+  content: "";
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 0; height: 0;
+  margin: -10px 0 0 -3px;
+  border-left: 3px solid transparent;
+  border-right: 3px solid transparent;
+  border-bottom: 4px solid var(--c, #00ab5b);
+}
+
 #map {
   flex: 1;
   height: 100%;
