@@ -9,7 +9,7 @@
   const state = {
     facilities: [],
     busStops: [],
-    busLines: {},
+    busLines: [],   // populated async from /data/bus_lines/*.geojson
     footways: { features: [] },   // OSM pedestrian network
     elevation: {},               // "lat,lng" → meters
     liveBuses: [],
@@ -440,6 +440,26 @@ FEATURE_LAYERS.forEach(id => {
       state.footways = footways || { features: [] };
       state.elevation = elevation || {};
 
+      // Load bus line geometries in parallel (used for polyline drawing
+      // when the bus segment of a route is traversed).
+      const lineKeys = ["XYBS1_0", "XYBS1_1", "XYBS2_0", "XYBS2_1"];
+      const lineFetches = await Promise.all(
+        lineKeys.map(k =>
+          loadJSON(`/data/bus_lines/${k}.geojson`)
+            .then(g => ({ key: k, g }))
+            .catch(() => null)
+        )
+      );
+      state.busLines = lineFetches
+        .filter(x => x !== null)
+        .map(x => ({
+          ...x.g,
+          properties: {
+            line_code: x.key.split("_")[0],
+            direction: parseInt(x.key.split("_")[1]),
+          },
+        }));
+
       // Index facilities
       state.facilitiesById = {};
       state.facilitiesByName = {};
@@ -765,24 +785,23 @@ FEATURE_LAYERS.forEach(id => {
       meta[p.facility_id] = p;
     });
 
-    // 2) Footway path network — every vertex becomes a node.
-    //    Footway edges are within a way (consecutive vertices).
-    //    Footway ↔ facility access edges connect nearest vertex to each
-    //    facility within 80 m. (We don't yet snap to the nearest 2 vertices
-    //    for path-finding "real" walking distance; this is a future todo.)
+    // 2) Walk/bike network — every footway vertex becomes a node.
+    //    Edges are within a way (consecutive vertices). Each edge stores
+    //    its full polyline geometry (just the two endpoints for the simple
+    //    case, but could be more for curved ways — we keep it simple here).
     const footwayNodeKeys = new Set();
-    const facilityEdges = [];  // [{a, b, mode: "walk", dur_min, dist_m, details}]
-    const footwayEdges = [];
+    const walkEdges = [];  // walk + bike use these
+    const facilityEdges = [];  // facility ↔ footway access + cross-campus
 
     if (state.footways.features && state.footways.features.length) {
-      // First, assign each (lat,lng) → nodeKey for dedup
       const keyOf = (lat, lng) => `${lat.toFixed(5)},${lng.toFixed(5)}`;
-      // Walk every way, create edges between consecutive vertices
       for (const feat of state.footways.features) {
         const coords = feat.geometry.coordinates; // [[lng,lat], ...]
         if (!coords || coords.length < 2) continue;
+        const hw = feat.properties?.highway || "footway";
         let prevKey = null;
-        for (const [lng, lat] of coords) {
+        for (let i = 0; i < coords.length; i++) {
+          const [lng, lat] = coords[i];
           const k = keyOf(lat, lng);
           if (!nodes[k]) {
             nodes[k] = { id: k, lat, lng, kind: "footway" };
@@ -790,90 +809,129 @@ FEATURE_LAYERS.forEach(id => {
           }
           if (prevKey) {
             const d = haversine(nodes[prevKey], nodes[k]);
-            const dur = segmentDuration(
+            const durWalk = segmentDuration(
               nodes[prevKey].lat, nodes[prevKey].lng,
               nodes[k].lat, nodes[k].lng, "walk"
             );
-            footwayEdges.push({ a: prevKey, b: k, mode: "walk",
-                                dur_min: dur, dist_m: d,
-                                details: `${Math.round(d)} m path` });
+            const durBike = segmentDuration(
+              nodes[prevKey].lat, nodes[prevKey].lng,
+              nodes[k].lat, nodes[k].lng, "bike"
+            );
+            walkEdges.push({
+              a: prevKey, b: k, mode: "walk",
+              dur_min: durWalk,
+              bike_dur_min: durBike,
+              dist_m: d,
+              geometry: [  // for polyline drawing
+                [nodes[prevKey].lng, nodes[prevKey].lat],
+                [nodes[k].lng, nodes[k].lat],
+              ],
+              details: `${Math.round(d)} m ${hw}`,
+            });
           }
           prevKey = k;
         }
       }
-      // Snap each facility to its nearest footway vertex (within 150 m).
-      // The PMTiles + OSM footway data doesn't cover every corner of campus
-      // (e.g. 欣园2栋 is 526 m from the nearest OSM footway), so we ALSO add
-      // a fallback "cross-campus walk" edge to every other facility within
-      // 200 m. This guarantees the graph stays connected even where OSM is
-      // sparse. The footway-based edges will still dominate routing.
-      const FACILITY_WALK_RADIUS_M = 200;
+      // Snap each facility to its nearest footway vertex (up to 250 m).
+      // Bumped from 150 m to cover isolated buildings like 欣园2栋.
       for (const f of all) {
         const p = f.properties;
         const fp = nodes[p.facility_id];
-        let best = null, bestD = 150;
+        let best = null, bestD = 250;
         for (const k of footwayNodeKeys) {
           const fn = nodes[k];
           const d = haversine(fp, fn);
           if (d < bestD) { bestD = d; best = k; }
         }
         if (best) {
-          const dur = segmentDuration(fp.lat, fp.lng,
-                                       nodes[best].lat, nodes[best].lng, "walk");
+          const durWalk = segmentDuration(fp.lat, fp.lng,
+                                           nodes[best].lat, nodes[best].lng, "walk");
+          const durBike = segmentDuration(fp.lat, fp.lng,
+                                           nodes[best].lat, nodes[best].lng, "bike");
+          // Bidirectional access edges. Geometry is just the two endpoints
+          // because there isn't a real path between them.
           facilityEdges.push({
             a: p.facility_id, b: best, mode: "walk",
-            dur_min: dur, dist_m: bestD,
+            dur_min: durWalk, bike_dur_min: durBike, dist_m: bestD,
+            geometry: [
+              [fp.lng, fp.lat],
+              [nodes[best].lng, nodes[best].lat],
+            ],
             details: `${Math.round(bestD)} m to path`,
           });
           facilityEdges.push({
             a: best, b: p.facility_id, mode: "walk",
-            dur_min: dur, dist_m: bestD,
+            dur_min: durWalk, bike_dur_min: durBike, dist_m: bestD,
+            geometry: [
+              [nodes[best].lng, nodes[best].lat],
+              [fp.lng, fp.lat],
+            ],
             details: `${Math.round(bestD)} m from path`,
           });
         }
         // Cross-campus walking fallback: direct facility ↔ facility edges
-        // within FACILITY_WALK_RADIUS_M. These are slower than real footways
-        // because they don't follow actual paths, but they keep the graph
-        // connected across OSM-sparse regions (like 欣园 area).
+        // within 300 m. Keeps the graph connected across OSM-sparse regions.
+        // Geometry is the straight line between the two facilities.
         for (const g of all) {
           if (g === f) continue;
           const gp = g.properties;
           if (nodes[gp.facility_id] === undefined) continue;
           const d = haversine(fp, nodes[gp.facility_id]);
-          if (d > 0 && d <= FACILITY_WALK_RADIUS_M) {
-            const dur = segmentDuration(fp.lat, fp.lng,
-                                         nodes[gp.facility_id].lat,
-                                         nodes[gp.facility_id].lng, "walk");
+          if (d > 0 && d <= 300) {
+            const durWalk = segmentDuration(fp.lat, fp.lng,
+                                             nodes[gp.facility_id].lat,
+                                             nodes[gp.facility_id].lng, "walk");
+            const durBike = segmentDuration(fp.lat, fp.lng,
+                                             nodes[gp.facility_id].lat,
+                                             nodes[gp.facility_id].lng, "bike");
+            // Cross-campus walks are penalized 3× so the real footway
+            // network is preferred when both options exist. The penalty
+            // reflects "you can't actually cut straight through buildings
+            // and lawns" — these edges are last-resort fallbacks.
             facilityEdges.push({
               a: p.facility_id, b: gp.facility_id, mode: "walk",
-              dur_min: dur, dist_m: d,
+              dur_min: durWalk * 3, bike_dur_min: durBike * 3, dist_m: d,
+              geometry: [
+                [fp.lng, fp.lat],
+                [nodes[gp.facility_id].lng, nodes[gp.facility_id].lat],
+              ],
               details: `${Math.round(d)} m cross-campus walk`,
             });
           }
         }
       }
     } else {
-      // No footways at all: fall back to direct facility↔facility edges
-      // within 250 m so routing still works on a flat plane.
+      // No footways: fall back to direct facility↔facility edges.
       const ids = Object.keys(nodes);
       for (let i = 0; i < ids.length; i++) {
         for (let j = i + 1; j < ids.length; j++) {
           const a = nodes[ids[i]], b = nodes[ids[j]];
           const d = haversine(a, b);
-          if (d <= 250) {
+          if (d <= 300) {
             const dur = segmentDuration(a.lat, a.lng, b.lat, b.lng, "walk");
-            facilityEdges.push({ a: a.id, b: b.id, mode: "walk",
-                                 dur_min: dur, dist_m: d,
-                                 details: `${Math.round(d)} m walk` });
-            facilityEdges.push({ a: b.id, b: a.id, mode: "walk",
-                                 dur_min: dur, dist_m: d,
-                                 details: `${Math.round(d)} m walk` });
+            facilityEdges.push({
+              a: a.id, b: b.id, mode: "walk",
+              dur_min: dur, dist_m: d,
+              geometry: [[a.lng, a.lat], [b.lng, b.lat]],
+              details: `${Math.round(d)} m walk`,
+            });
+            facilityEdges.push({
+              a: b.id, b: a.id, mode: "walk",
+              dur_min: dur, dist_m: d,
+              geometry: [[b.lng, b.lat], [a.lng, a.lat]],
+              details: `${Math.round(d)} m walk`,
+            });
           }
         }
       }
     }
 
-    // 3) Bus edges — consecutive stops on each line/direction
+    // 3) Bus edges — each consecutive pair of stops on a line gets an
+    //    edge with the actual bus line geometry as the polyline.
+    //    To do this, we project the bus line onto its ordered stops by
+    //    walking along the line and finding the nearest segment to each
+    //    stop. The slice between consecutive stop positions becomes the
+    //    edge's geometry.
     const busEdges = [];
     const stopsByLine = {};
     state.busStops.forEach(f => {
@@ -890,26 +948,114 @@ FEATURE_LAYERS.forEach(id => {
         });
       });
     });
+
+    // Helper: find the index along a polyline (as [lng,lat][]) that is
+    // closest to (lat, lng). Returns {i, t} where t in [0,1] is the
+    // fractional position along segment i.
+    function projectOntoLine(lineCoords, lat, lng) {
+      let bestI = 0, bestT = 0, bestD = Infinity;
+      for (let i = 0; i < lineCoords.length - 1; i++) {
+        const [x1, y1] = lineCoords[i];
+        const [x2, y2] = lineCoords[i + 1];
+        const dx = x2 - x1, dy = y2 - y1;
+        const len2 = dx * dx + dy * dy;
+        if (len2 === 0) continue;
+        const t = Math.max(0, Math.min(1, ((lng - x1) * dx + (lat - y1) * dy) / len2));
+        const px = x1 + t * dx, py = y1 + t * dy;
+        // Project lat/lng to "distance" using a small approximation
+        // (good enough for ordering along the line; we just need monotonic
+        // positions to slice between)
+        const d = (px - lng) * (px - lng) + (py - lat) * (py - lat);
+        if (d < bestD) { bestD = d; bestI = i; bestT = t; }
+      }
+      // Convert (i, t) to a single position index along the line, with
+      // sub-segment offset encoded as a fraction.
+      return bestI + bestT;
+    }
+
     Object.entries(stopsByLine).forEach(([key, stops]) => {
       stops.sort((a, b) => a.station_id - b.station_id);
-      for (let i = 0; i < stops.length - 1; i++) {
-        const a = stops[i], b = stops[i + 1];
+
+      // Find the bus line geometry for this key
+      const lineCode = key.split("/")[0];
+      const dir = parseInt(key.split("/")[1] || "0");
+      const lineGeo = state.busLines.find(b => b.properties?.line_code === lineCode && b.properties?.direction === dir);
+
+      // Project each stop onto the line to find its position
+      let stopsWithPos = stops;
+      if (lineGeo) {
+        const lineCoords = (lineGeo.features || []).flatMap(f => f.geometry?.coordinates || []);
+        if (lineCoords.length > 1) {
+          stopsWithPos = stops.map(s => ({
+            ...s,
+            pos: projectOntoLine(lineCoords, s.lat, s.lng),
+          }));
+          // Sort by position (some bus lines may not be in station_id order along the line)
+          stopsWithPos.sort((a, b) => a.pos - b.pos);
+        }
+      }
+
+      for (let i = 0; i < stopsWithPos.length - 1; i++) {
+        const a = stopsWithPos[i], b = stopsWithPos[i + 1];
         const d = haversine(a, b);
         const dur = segmentDuration(a.lat, a.lng, b.lat, b.lng, "bus")
                   + state.PARAMS.transferPenaltyMin / 2;
-        busEdges.push({ a: a.id, b: b.id, mode: "bus",
-                        dur_min: dur, dist_m: d,
-                        details: `${key}: ${a.name} → ${b.name}` });
-        busEdges.push({ a: b.id, b: a.id, mode: "bus",
-                        dur_min: dur, dist_m: d,
-                        details: `${key}: ${b.name} → ${a.name}` });
+        // Build the polyline geometry for this segment by slicing the
+        // bus line between the two stops' positions on the line.
+        let geometry = [[a.lng, a.lat], [b.lng, b.lat]];  // fallback
+        if (lineGeo && a.pos !== undefined && b.pos !== undefined) {
+          const lineCoords = (lineGeo.features || []).flatMap(f => f.geometry?.coordinates || []);
+          if (lineCoords.length > 1) {
+            const startIdx = Math.floor(a.pos);
+            const endIdx = Math.floor(b.pos);
+            const startFrac = a.pos - startIdx;
+            const endFrac = b.pos - endIdx;
+            geometry = [];
+            // Include first point at fractional offset
+            if (startIdx < lineCoords.length) {
+              const [x1, y1] = lineCoords[startIdx];
+              const [x2, y2] = lineCoords[Math.min(startIdx + 1, lineCoords.length - 1)];
+              geometry.push([
+                x1 + startFrac * (x2 - x1),
+                y1 + startFrac * (y2 - y1),
+              ]);
+            }
+            // Include all intermediate vertices
+            for (let j = startIdx + 1; j <= endIdx && j < lineCoords.length; j++) {
+              geometry.push(lineCoords[j]);
+            }
+            // Include last point at fractional offset
+            if (endIdx < lineCoords.length) {
+              const [x1, y1] = lineCoords[endIdx];
+              const [x2, y2] = lineCoords[Math.min(endIdx + 1, lineCoords.length - 1)];
+              geometry.push([
+                x1 + endFrac * (x2 - x1),
+                y1 + endFrac * (y2 - y1),
+              ]);
+            }
+            // If slicing produced weird results, fall back
+            if (geometry.length < 2) geometry = [[a.lng, a.lat], [b.lng, b.lat]];
+          }
+        }
+        busEdges.push({
+          a: a.id, b: b.id, mode: "bus",
+          dur_min: dur, dist_m: d,
+          geometry,
+          details: `${key}: ${a.name} → ${b.name}`,
+        });
+        busEdges.push({
+          a: b.id, b: a.id, mode: "bus",
+          dur_min: dur, dist_m: d,
+          geometry: [...geometry].reverse(),
+          details: `${key}: ${b.name} → ${a.name}`,
+        });
       }
     });
 
     return {
       nodes,
       meta,
-      edges: [...facilityEdges, ...footwayEdges, ...busEdges],
+      edges: [...facilityEdges, ...walkEdges, ...busEdges],
     };
   }
 
@@ -927,15 +1073,16 @@ FEATURE_LAYERS.forEach(id => {
       if (u === dst) break;
       graph.edges.forEach(e => {
         if (e.a !== u) return;
-        // Mode filter:
-        //   walk:  only walk edges
-        //   bike:  walk edges (cyclist on path), footway access edges allowed
-        //   bus:   only bus edges
-        //   transit: any walk/bus edge
+        // Mode filter: walk/bike use walk edges, bus uses bus edges,
+        // transit allows any.
         if (mode === "walk" && e.mode !== "walk") return;
         if (mode === "bike" && e.mode !== "walk") return;
         if (mode === "bus" && e.mode !== "bus") return;
-        const nd = d + e.dur_min;
+        // Use the mode-specific duration
+        const edgeDur = mode === "bike" && e.bike_dur_min !== undefined
+          ? e.bike_dur_min
+          : e.dur_min;
+        const nd = d + edgeDur;
         if (nd < dist[e.b]) {
           dist[e.b] = nd;
           prev[e.b] = e;
@@ -982,26 +1129,46 @@ FEATURE_LAYERS.forEach(id => {
       return;
     }
 
+    // For "bus" mode, treat it like "transit" so non-bus-stop endpoints
+    // still work (the bus edges will only be traversed if they're optimal).
+    const effectiveMode = mode === "bus" ? "transit" : mode;
+
     const graph = buildClientGraph();
-    const path = dijkstra(graph, fromId, toId, mode);
+    const path = dijkstra(graph, fromId, toId, effectiveMode);
     if (!path) {
-      resultDiv.innerHTML = `<div class="error">No route found (mode=${mode}). Try mode=transit or larger walk radius.</div>`;
+      resultDiv.innerHTML = `<div class="error">No route found (mode=${mode}). Try a different mode.</div>`;
       return;
     }
 
-    // Render polyline on the MapLibre map
+    // Build polyline from edge geometry. Each edge contributes its
+    // geometry, and we dedup consecutive duplicate points.
     const map = window._map;
+    const allCoords = [];
+    let totalM = 0;
+    path.edges.forEach((e, idx) => {
+      if (!e.geometry || e.geometry.length < 2) return;
+      if (idx === 0) {
+        // First edge: include its first point
+        allCoords.push(e.geometry[0]);
+      }
+      // For subsequent points, only add if not the same as the last
+      for (let i = 1; i < e.geometry.length; i++) {
+        const pt = e.geometry[i];
+        const last = allCoords[allCoords.length - 1];
+        if (!last || Math.abs(last[0] - pt[0]) > 1e-7 || Math.abs(last[1] - pt[1]) > 1e-7) {
+          allCoords.push(pt);
+        }
+      }
+      totalM += e.dist_m;
+    });
+
     if (map) {
-      const lineCoords = path.edges.map(e => {
-        const n = graph.nodes[e.b];
-        return [n.lng, n.lat];
-      });
-      const start = graph.nodes[fromId];
+      // Build a single LineString from all edge geometries (deduped)
       const fc = {
         type: "FeatureCollection",
         features: [{
           type: "Feature",
-          geometry: { type: "LineString", coordinates: [[start.lng, start.lat], ...lineCoords] },
+          geometry: { type: "LineString", coordinates: allCoords },
           properties: {},
         }],
       };
@@ -1009,24 +1176,58 @@ FEATURE_LAYERS.forEach(id => {
       if (src) src.setData(fc);
 
       // Fit bounds to the route
-      const allCoords = [[start.lng, start.lat], ...lineCoords];
-      let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity;
-      allCoords.forEach(([lng, lat]) => {
-        minLng = Math.min(minLng, lng); maxLng = Math.max(maxLng, lng);
-        minLat = Math.min(minLat, lat); maxLat = Math.max(maxLat, lat);
-      });
-      map.fitBounds([[minLng, minLat], [maxLng, maxLat]], { padding: 60, duration: 600 });
+      if (allCoords.length > 0) {
+        let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity;
+        allCoords.forEach(([lng, lat]) => {
+          minLng = Math.min(minLng, lng); maxLng = Math.max(maxLng, lng);
+          minLat = Math.min(minLat, lat); maxLat = Math.max(maxLat, lat);
+        });
+        map.fitBounds([[minLng, minLat], [maxLng, maxLat]], { padding: 60, duration: 600 });
+      }
     }
 
     // Render step list
-    let html = `<div class="summary">${path.total_min.toFixed(1)} min · ${path.edges.length} steps</div>`;
-    path.edges.forEach(e => {
-      const fromName = graph.meta[e.a].name || e.a;
-      const toName = graph.meta[e.b].name || e.b;
-      const icon = e.mode === "walk" ? "🚶" : e.mode === "bike" ? "🚴" : "🚌";
+    let html = `<div class="summary">${path.total_min.toFixed(1)} min · ${path.edges.length} steps · ${Math.round(totalM)} m</div>`;
+    // Collapse consecutive footway edges between anonymous vertices into
+    // a single step so the user sees a readable list, not 30 steps of
+    // "node A → node B → node C". Only the first/last edge of a run gets
+    // the step entry; we show the cumulative distance/duration.
+    let collapsed = [];
+    for (const e of path.edges) {
+      const fromName = graph.meta[e.a]?.name;
+      const toName = graph.meta[e.b]?.name;
+      const fromIsFacility = !!fromName;
+      const toIsFacility = !!toName;
+      // Same mode + same direction (a→b vs b→a), neither end is a facility
+      const last = collapsed[collapsed.length - 1];
+      if (last && last.e.mode === e.mode && !fromIsFacility) {
+        // Continue the previous run
+        last.e = e;  // extend to current edge
+        last.totalDur += e.dur_min;
+        last.totalDist += e.dist_m;
+        last.toName = toName || last.toName;
+        last.edgeCount++;
+      } else {
+        collapsed.push({
+          e, fromName, toName, fromIsFacility, toIsFacility,
+          totalDur: e.dur_min, totalDist: e.dist_m, edgeCount: 1,
+        });
+      }
+    }
+    collapsed.forEach(c => {
+      const e = c.e;
+      // Use the actual route mode (not edge mode, since walk/bike share
+      // the same edge graph). The edge mode only differentiates walk/bus.
+      const icon = e.mode === "bus" ? "🚌" : (mode === "bike" ? "🚴" : "🚶");
+      // Label the from/to. For footway vertices, show "via path" or omit.
+      const fromLabel = c.fromName || (c.edgeCount > 1 ? "via path" : "path");
+      const toLabel = c.toName || (c.edgeCount > 1 ? "via path" : "path");
+      const detailsExtra = c.edgeCount > 1
+        ? ` · ${c.edgeCount} segments along the path`
+        : "";
       html += `<div class="step mode-${e.mode}">
-        <strong>${icon} ${fromName} → ${toName}</strong>
-        <div class="meta">${e.dur_min.toFixed(1)} min · ${Math.round(e.dist_m)} m · ${esc(e.details)}</div>
+        <strong>${icon} ${fromLabel} → ${toLabel}</strong>
+        <div class="meta">${c.totalDur.toFixed(1)} min · ${Math.round(c.totalDist)} m · ${esc(e.details)}${detailsExtra}</div>
       </div>`;
     });
     html += `<div class="how-we-estimate"><a href="/static/estimation.html" target="_blank">ⓘ How we estimate</a></div>`;
@@ -1086,11 +1287,8 @@ FEATURE_LAYERS.forEach(id => {
   }, 1000);
 
   // ── Load bus line geometries (best-effort) ──────────────────────────────
-  ["XYBS1_0", "XYBS1_1", "XYBS2_0", "XYBS2_1"].forEach(key => {
-    loadJSON(`/data/bus_lines/${key}.geojson`)
-      .then(g => state.busLines.push({ ...g, properties: { line_code: key.split("_")[0], direction: parseInt(key.split("_")[1]) } }))
-      .catch(() => {});
-  });
+  // Loaded inside loadAll() so findRoute can await the geometries for
+  // the polyline drawing.
 
   // ── Wiring ──────────────────────────────────────────────────────────────
   attachSuggestion("from-input", "from-suggestions", (id) => {

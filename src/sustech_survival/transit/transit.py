@@ -483,12 +483,18 @@ class TransitClient:
             or an empty FeatureCollection on failure.
         """
         south, west, north, east = bbox
+        # Pedestrian-priority ways: footways, paths, pedestrian streets,
+        # plus service/living_street/residential where bikes can go.
+        # residential is also commonly walkable on campus.
         q = (
             f'[out:json][timeout:30];('
             f'way["highway"="footway"]({south},{west},{north},{east});'
             f'way["highway"="path"]({south},{west},{north},{east});'
             f'way["highway"="pedestrian"]({south},{west},{north},{east});'
             f'way["highway"="living_street"]({south},{west},{north},{east});'
+            f'way["highway"="service"]({south},{west},{north},{east});'
+            f'way["highway"="residential"]({south},{west},{north},{east});'
+            f'way["highway"="unclassified"]({south},{west},{north},{east});'
             f');out body;>;out skel qt;'
         )
         try:
