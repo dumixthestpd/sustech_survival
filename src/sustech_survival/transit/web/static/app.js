@@ -1005,23 +1005,33 @@ FEATURE_LAYERS.forEach(id => {
         // it for multi-segment bus rides.
         const dur = segmentDuration(a.lat, a.lng, b.lat, b.lng, "bus") + 0.5;
         // Build the polyline geometry by slicing the bus line between the
-        // two stops' positions on the line.
+        // two stops' positions on the line. The bus can go in either
+        // direction along the line (CW or CCW), so the position diff
+        // can be negative — we handle both cases.
         let geometry = [[a.lng, a.lat], [b.lng, b.lat]];  // fallback
         if (lineCoords.length > 1 && a.pos !== undefined && b.pos !== undefined) {
-          const ai = Math.floor(a.pos), bi = Math.floor(b.pos);
-          const aFrac = a.pos - ai, bFrac = b.pos - bi;
+          const ai = a.pos, bi = b.pos;
+          const aIdx = Math.floor(ai), bIdx = Math.floor(bi);
+          const aFrac = ai - aIdx, bFrac = bi - bIdx;
+          const goingForward = bi >= ai;  // moving CW along the line
           geometry = [];
-          if (ai < lineCoords.length) {
-            const [x1, y1] = lineCoords[ai];
-            const [x2, y2] = lineCoords[Math.min(ai + 1, lineCoords.length - 1)];
+          if (aIdx >= 0 && aIdx < lineCoords.length) {
+            const [x1, y1] = lineCoords[aIdx];
+            const [x2, y2] = lineCoords[Math.min(aIdx + 1, lineCoords.length - 1)];
             geometry.push([x1 + aFrac * (x2 - x1), y1 + aFrac * (y2 - y1)]);
           }
-          for (let j = ai + 1; j <= bi && j < lineCoords.length; j++) {
-            geometry.push(lineCoords[j]);
+          if (goingForward) {
+            for (let j = aIdx + 1; j <= bIdx && j < lineCoords.length; j++) {
+              geometry.push(lineCoords[j]);
+            }
+          } else {
+            for (let j = aIdx - 1; j >= bIdx && j >= 0; j--) {
+              geometry.push(lineCoords[j]);
+            }
           }
-          if (bi < lineCoords.length) {
-            const [x1, y1] = lineCoords[bi];
-            const [x2, y2] = lineCoords[Math.min(bi + 1, lineCoords.length - 1)];
+          if (bIdx >= 0 && bIdx < lineCoords.length) {
+            const [x1, y1] = lineCoords[bIdx];
+            const [x2, y2] = lineCoords[Math.min(bIdx + 1, lineCoords.length - 1)];
             geometry.push([x1 + bFrac * (x2 - x1), y1 + bFrac * (y2 - y1)]);
           }
           if (geometry.length < 2) geometry = [[a.lng, a.lat], [b.lng, b.lat]];
