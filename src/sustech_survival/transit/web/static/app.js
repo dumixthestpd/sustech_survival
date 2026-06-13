@@ -993,12 +993,20 @@ FEATURE_LAYERS.forEach(id => {
           prevKey = k;
         }
       }
-      // Snap each facility to its nearest footway vertex (up to 250 m).
-      // Bumped from 150 m to cover isolated buildings like 欣园2栋.
+      // Snap each facility to its nearest footway vertex (up to 100 m).
+      // Lowered from 250 m in 2026-06-13 review: a 250 m snap was creating
+      // huge diagonal "snap-in" lines from the facility to a far-away
+      // footway vertex (e.g. 人文社科学院 → 宿舍15栋 was snapping to a
+      // vertex 264 m south-east of the building, making the route LOOK
+      // like it cut through 社康中心 even though it was actually using
+      // a footway vertex 4 m from that bus stop). 100 m keeps the snap
+      // short and the resulting path reads as "leaving the building on
+      // a path, walking along paths, arriving on a path" instead of
+      // "diagonal line to a far point, then path".
       for (const f of all) {
         const p = f.properties;
         const fp = nodes[p.facility_id];
-        let best = null, bestD = 250;
+        let best = null, bestD = 100;
         for (const k of footwayNodeKeys) {
           const fn = nodes[k];
           const d = haversine(fp, fn);
@@ -1033,6 +1041,13 @@ FEATURE_LAYERS.forEach(id => {
         // Cross-campus walking fallback: direct facility ↔ facility edges
         // within 300 m. Keeps the graph connected across OSM-sparse regions.
         // Geometry is the straight line between the two facilities.
+        // Penalty 3×: in 2026-06-13 review, the 2× penalty was letting
+        // 人文社科学院 → 宿舍15栋 take a 290m cross edge through 社康中心
+        // (footway route was 14 min via snap+walk+snap, but 2× on the
+        // 290m direct was only 13.6 min). At 3× the footway path wins
+        // for that case while all the long-distance routes still find a
+        // path. 1× wouldn't penalize the shortcut at all; 4×+ would
+        // make 创园1栋 → 专家公寓 38 min. 3× is the sweet spot.
         for (const g of all) {
           if (g === f) continue;
           const gp = g.properties;
@@ -1045,13 +1060,11 @@ FEATURE_LAYERS.forEach(id => {
             const durBike = segmentDuration(fp.lat, fp.lng,
                                              nodes[gp.facility_id].lat,
                                              nodes[gp.facility_id].lng, "bike");
-            // Cross-campus walks are penalized 2× so the real footway
-            // network is preferred when both options exist. The penalty
-            // reflects "you can't actually cut straight through buildings
-            // and lawns" — these edges are last-resort fallbacks.
+            // Cross-campus walks are penalized 3× so the real footway
+            // network is strongly preferred when both options exist.
             facilityEdges.push({
               a: p.facility_id, b: gp.facility_id, mode: "walk",
-              dur_min: durWalk * 2, bike_dur_min: durBike * 2, dist_m: d,
+              dur_min: durWalk * 3, bike_dur_min: durBike * 3, dist_m: d,
               geometry: [
                 [fp.lng, fp.lat],
                 [nodes[gp.facility_id].lng, nodes[gp.facility_id].lat],
