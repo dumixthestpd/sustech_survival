@@ -142,8 +142,8 @@ class TestLiveAPI:
 
     def test_shortest_path_transit(self):
         c = TransitClient()
-        # gate:一号门 → building:欣园, should use bus
-        path = c.shortest_path("gate:一号门", "building:欣园",
+        # gate:一号门 → 欣园 (Joy Highland 1), should use bus
+        path = c.shortest_path("gate:一号门", "building:欣园1栋",
                                mode="transit", walk_radius_m=250)
         assert path.total_minutes > 0
         # Should have at least one walk + possibly a bus

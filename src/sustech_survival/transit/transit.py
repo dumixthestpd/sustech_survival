@@ -102,16 +102,21 @@ class TransitClient:
 
         scored = []
         for f in candidates:
-            name = f.name.lower()
-            en = f.name_en.lower()
+            aliases = [a.lower() for a in f.search_aliases()]
             score = None
-            if q in name:
-                # exact substring — rank by name length
-                score = len(name) - len(q) * 2  # shorter match + q-length bonus
-            elif en and q in en:
-                score = len(en) - len(q) * 2 + 10  # english matches slightly lower
-            elif name.startswith(q):
-                score = len(name)
+            # Exact alias match → top score
+            if q in aliases:
+                score = -10  # highest priority (negative sorts first)
+            # Substring match in any alias
+            else:
+                for a in aliases:
+                    if q in a:
+                        # shorter match + q-length bonus = more specific
+                        score = len(a) - len(q) * 2
+                        break
+            # facility_id match
+            if score is None and q in f.facility_id.lower():
+                score = len(f.facility_id) - len(q) * 2
             if score is not None:
                 scored.append((score, f))
 
@@ -436,7 +441,90 @@ class TransitClient:
 
     # ── GeoJSON export (for the website) ────────────────────────────────────
 
-    def export_geojson(self, out_dir: Path) -> Dict[str, str]:
+    def fetch_elevation(self, points: List[tuple]) -> dict:
+        """Batch-fetch elevation (m) from Open-Elevation API.
+
+        Args:
+            points: list of (lat, lng) tuples
+
+        Returns:
+            dict mapping "lat,lng" (rounded to 5 decimals) → elevation in meters.
+            Returns {} if the API is unavailable; callers should treat missing
+            elevations as flat ground.
+        """
+        if not points:
+            return {}
+        # Open-Elevation accepts up to ~100 points per request
+        out = {}
+        url = "https://api.open-elevation.com/api/v1/lookup"
+        try:
+            for i in range(0, len(points), 100):
+                batch = points[i:i + 100]
+                locations = [{"latitude": lat, "longitude": lng}
+                             for lat, lng in batch]
+                r = self.session.post(url, json={"locations": locations}, timeout=30)
+                r.raise_for_status()
+                for result in r.json().get("results", []):
+                    key = f"{round(result['latitude'], 5)},{round(result['longitude'], 5)}"
+                    out[key] = result.get("elevation")
+        except requests.RequestException as e:
+            print(f"[transit] elevation fetch failed: {e}", file=__import__("sys").stderr)
+        return out
+
+    def fetch_footways(self, bbox: tuple = (22.595, 113.985, 22.615, 114.005)) -> dict:
+        """Fetch OSM pedestrian paths via Overpass API as a GeoJSON FeatureCollection.
+
+        Args:
+            bbox: (south_lat, west_lon, north_lat, east_lon) in degrees.
+                  Default covers SUSTech.
+
+        Returns:
+            GeoJSON FeatureCollection of LineString features (highway=footway/path/etc.)
+            or an empty FeatureCollection on failure.
+        """
+        south, west, north, east = bbox
+        q = (
+            f'[out:json][timeout:30];('
+            f'way["highway"="footway"]({south},{west},{north},{east});'
+            f'way["highway"="path"]({south},{west},{north},{east});'
+            f'way["highway"="pedestrian"]({south},{west},{north},{east});'
+            f'way["highway"="living_street"]({south},{west},{north},{east});'
+            f');out body;>;out skel qt;'
+        )
+        try:
+            r = self.session.post(
+                "https://overpass-api.de/api/interpreter",
+                data={"data": q},
+                headers={"Accept": "application/json", "User-Agent": "sustech_survival/1.0"},
+                timeout=60,
+            )
+            r.raise_for_status()
+        except requests.RequestException as e:
+            print(f"[transit] Overpass fetch failed: {e}", file=__import__("sys").stderr)
+            return {"type": "FeatureCollection", "features": []}
+        data = r.json()
+        # Build node lookup, then attach coords to ways
+        nodes = {n["id"]: (n["lat"], n["lon"]) for n in data["elements"]
+                 if n.get("type") == "node"}
+        features = []
+        for w in data["elements"]:
+            if w.get("type") != "way":
+                continue
+            nd_ids = w.get("nodes", [])
+            coords = [nodes[nid] for nid in nd_ids if nid in nodes]
+            if len(coords) < 2:
+                continue
+            t = w.get("tags", {})
+            features.append({
+                "type": "Feature",
+                "geometry": {"type": "LineString",
+                             "coordinates": [[c[1], c[0]] for c in coords]},
+                "properties": {"highway": t.get("highway", "footway"),
+                               "name": t.get("name", "")},
+            })
+        return {"type": "FeatureCollection", "features": features}
+
+    def export_geojson(self, out_dir: Path, *, with_elevation: bool = True) -> Dict[str, str]:
         """Bundle all facilities + bus lines + route paths to GeoJSON files.
 
         Writes:
@@ -519,6 +607,48 @@ class TransitClient:
         p = out_dir / "schedules.json"
         p.write_text(json.dumps(schedules, ensure_ascii=False, indent=2))
         written["schedules"] = str(p)
+
+        # Pedestrian path network (OpenStreetMap via Overpass API). The web UI
+        # uses this to draw real walking paths (not straight lines) and to run
+        # Dijkstra over the actual footway network.
+        try:
+            fw = self.fetch_footways()
+            if fw.get("features"):
+                p = out_dir / "footways.json"
+                p.write_text(json.dumps(fw, ensure_ascii=False, indent=2))
+                written["footways"] = str(p)
+        except Exception as e:
+            print(f"[transit] footways fetch failed: {e}", file=__import__("sys").stderr)
+
+        # Elevation (m) for every facility + bus stop, plus path network nodes.
+        # Used by the web UI's Dijkstra to compute walk/bike time via Tobler's
+        # hiking function (climb-aware). Fetched from Open-Elevation API;
+        # skip if --no-elevation or the API is unavailable (graph falls back
+        # to flat-ground estimates).
+        if with_elevation:
+            points: List[tuple] = []
+            for f in facs:
+                points.append((f.lat, f.lng))
+            for f in bus_stops_by_id.values():
+                points.append((f.lat, f.lng))
+            # Also include path network nodes from the OSM-derived footway
+            # graph (fetched separately, not the live OSM API). This is a
+            # no-op if footways.json doesn't exist.
+            footways_path = out_dir / "footways.json"
+            if footways_path.exists():
+                try:
+                    fw = json.loads(footways_path.read_text())
+                    for feat in fw.get("features", []):
+                        for lng, lat in feat["geometry"]["coordinates"]:
+                            points.append((lat, lng))
+                except Exception:
+                    pass
+            if points:
+                elev = self.fetch_elevation(points)
+                if elev:
+                    p = out_dir / "elevation.json"
+                    p.write_text(json.dumps(elev, ensure_ascii=False, indent=2))
+                    written["elevation"] = str(p)
 
         return written
 

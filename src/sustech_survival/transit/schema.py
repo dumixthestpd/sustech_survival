@@ -12,9 +12,10 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from dataclasses import dataclass, field
+from datetime import datetime, date
 from typing import List, Optional
-
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
@@ -76,10 +77,16 @@ class Facility:
     def from_bldg(cls, raw: dict) -> "Facility":
         """Parse from bus.sustcra.com/geojson/sustech_bldg.json."""
         name_raw = raw["properties"]["name"]
-        name_zh, name_en = _split_bilingual(name_raw)
+        name_zh_raw, name_en = _split_bilingual(name_raw)
+        # Synthesize a unique Chinese name when the raw name is generic
+        # (e.g. 17 dorm buildings all share the Chinese name "宿舍").
+        name_zh = _synthesize_unique_name(name_zh_raw, name_en)
+        # Build a unique slug from the synthesized name (so dorms get
+        # "building:宿舍13栋" not the colliding "building:宿舍").
+        slug = _slug_from_name(name_zh, name_en)
         coords = raw["geometry"]["coordinates"]
         return cls(
-            facility_id=f"{KIND_BUILDING}:{name_zh}",
+            facility_id=f"{KIND_BUILDING}:{slug}",
             name=name_zh,
             name_en=name_en,
             kind=KIND_BUILDING,
@@ -126,6 +133,47 @@ class Facility:
             return f"{self.name} / {self.name_en}"
         return self.name
 
+    def search_aliases(self) -> List[str]:
+        """Other strings this facility should match in fuzzy search.
+
+        For example, "Dorm Block 13" → ["Dorm 13", "dorm 13", "宿舍楼13"]
+        so users can find a dorm by typing "dorm 13" without "Block".
+        """
+        aliases: List[str] = []
+        if self.name_en:
+            aliases.append(self.name_en)
+            # "Dorm Block 13" → "Dorm 13" / "dorm 13"
+            stripped = re.sub(r"\bBlock\b", "", self.name_en, flags=re.I).strip()
+            if stripped != self.name_en:
+                aliases.append(stripped)
+                aliases.append(stripped.lower())
+            # "Apartment 2" → "Apt 2" / "apt 2"
+            apt = re.sub(r"\bApartment\b", "Apt", self.name_en)
+            if apt != self.name_en:
+                aliases.append(apt.lower())
+            # "Bldg" → "Building" alias
+            bldg = re.sub(r"\bBldg\.?\b", "Building", self.name_en)
+            if bldg != self.name_en:
+                aliases.append(bldg.lower())
+            aliases.append(self.name_en.lower())
+        if self.name:
+            aliases.append(self.name)
+        # Common Chinese aliases
+        if "宿舍" in self.name and any(c.isdigit() for c in self.name):
+            # 宿舍13栋 → 宿舍楼13, dorm 13 (pinyin-ish)
+            n_match = re.search(r"(\d+)", self.name)
+            if n_match:
+                n = n_match.group(1)
+                aliases.extend([f"宿舍楼{n}", f"宿舍{n}号", f"dorm {n}", f"dorm{n}"])
+        if self.name_en and "Hall" in self.name_en:
+            # Lecture Hall 1 → Hall 1, hall 1
+            stripped = re.sub(r"\bLecture\s+Hall\b", "Hall", self.name_en)
+            if stripped != self.name_en:
+                aliases.append(stripped.lower())
+        if self.name_en and "Stadium" in self.name_en:
+            aliases.append(self.name_en.replace("Stadium", "场").lower())
+        return list(dict.fromkeys(aliases))  # dedup preserving order
+
     def distance_to(self, other: "Facility") -> float:
         return haversine_m(self.lng, self.lat, other.lng, other.lat)
 
@@ -158,6 +206,50 @@ def _split_bilingual(name_raw: str) -> tuple[str, str]:
     if any(ord(c) > 127 for c in parts[0]) and len(parts) > 1:
         return parts[0], parts[1].strip()
     return name_raw, ""
+
+
+# Building names whose Chinese part is generic (no distinguishing number).
+# When we see one of these with a numbered English suffix like "Dorm Block 13",
+# we synthesize a unique Chinese name like "宿舍13栋" so the user can
+# distinguish them. The English name's trailing number is the disambiguator.
+_GENERIC_ZH_NAMES = {"宿舍", "教师公寓", "创园", "荔园", "慧园", "欣园", "荔园南站"}
+
+
+def _synthesize_unique_name(name_zh: str, name_en: str) -> str:
+    """If name_zh is generic and name_en has a distinguishing number,
+    synthesize a unique Chinese name by appending the English number.
+
+    Example: ('宿舍', 'Dorm Block 13') → '宿舍13栋'
+             ('创园', 'ChuangYuan 5')    → '创园5栋'
+             ('台州楼', 'Taizhou Hall')   → '台州楼' (no change)
+    """
+    if name_zh not in _GENERIC_ZH_NAMES or not name_en:
+        return name_zh
+    # Pull the trailing integer from the English name
+    m = re.search(r"(\d+)\s*$", name_en)
+    if not m:
+        return name_zh
+    n = m.group(1)
+    return f"{name_zh}{n}栋"
+
+
+def _slug_from_name(name_zh: str, name_en: str) -> str:
+    """Build a unique facility_id slug from Chinese + English names.
+
+    If the Chinese name was synthesized to include a number (because the
+    original was generic), the slug will include that number and be unique.
+    Otherwise we fall back to a slug derived from name_zh + a counter.
+    """
+    # Prefer the synthesized Chinese name if it has a number
+    if name_zh and any(c.isdigit() for c in name_zh):
+        return name_zh
+    # Generic Chinese + numbered English → use "name_zh{N}"
+    if name_zh in _GENERIC_ZH_NAMES and name_en:
+        m = re.search(r"(\d+)\s*$", name_en)
+        if m:
+            return f"{name_zh}{m.group(1)}"
+    # Otherwise just use the Chinese name; uniqueness is the caller's job
+    return name_zh or name_en or "unknown"
 
 
 # ── Bus route / line ────────────────────────────────────────────────────────

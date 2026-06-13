@@ -4,8 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>SUSTech Transit — Campus Map &amp; Bus</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
@@ -34,6 +33,7 @@
           <legend>Mode</legend>
           <label><input type="radio" name="mode" value="transit" checked /> 🚶+🚌 Transit</label>
           <label><input type="radio" name="mode" value="walk" /> 🚶 Walk only</label>
+          <label><input type="radio" name="mode" value="bike" /> 🚴 Bike only</label>
           <label><input type="radio" name="mode" value="bus" /> 🚌 Bus only</label>
         </fieldset>
         <button id="route-btn">Find route</button>
@@ -58,8 +58,9 @@
     <div id="map"></div>
   </main>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <!-- MapLibre GL JS + Protomaps pmtiles (handles HTTP-range reads of the 130GB PMTiles file) -->
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/pmtiles@3.2.0/dist/pmtiles.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

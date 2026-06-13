@@ -242,7 +242,7 @@ def cmd_export(args) -> int:
     out_dir = Path(args.out_dir)
     if not args.json:
         print(f"# Exporting to {out_dir} …")
-    written = c.export_geojson(out_dir)
+    written = c.export_geojson(out_dir, with_elevation=not args.no_elevation)
     if args.json:
         print(json.dumps(written, ensure_ascii=False))
     else:
@@ -268,7 +268,7 @@ def cmd_serve(args) -> int:
     # Optionally re-export fresh data
     if args.refresh:
         c = _client(args)
-        c.export_geojson(out_dir)
+        c.export_geojson(out_dir, with_elevation=not args.no_elevation)
 
     web_dir = Path(__file__).parent / "web"
     if not (web_dir / "index.html").exists():
@@ -287,6 +287,54 @@ def cmd_serve(args) -> int:
                 rel = path[len("/data/"):]
                 return str(out_dir / rel)
             return super().translate_path(path)
+
+        def end_headers(self):
+            # Enable CORS for everything (we're local, this is harmless)
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Headers", "Range")
+            self.send_header("Cache-Control", "no-store")
+            super().end_headers()
+
+        def do_OPTIONS(self):
+            # CORS preflight — needed for PMTiles byte-range requests
+            self.send_response(204)
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Range")
+            self.send_header("Access-Control-Max-Age", "86400")
+            self.end_headers()
+
+        def do_GET(self):
+            # CORS proxy for the SUSTech PMTiles basemap. The mirror
+            # mirrors.sustech.edu.cn doesn't respond to OPTIONS preflight
+            # (returns 405), so the browser blocks byte-range fetches.
+            # We proxy the GET (with Range) and re-add CORS headers.
+            if self.path.startswith("/pmtiles-proxy/"):
+                upstream = "https://" + self.path[len("/pmtiles-proxy/"):]
+                headers = {}
+                if "Range" in self.headers:
+                    headers["Range"] = self.headers["Range"]
+                try:
+                    import requests
+                    r = requests.get(upstream, headers=headers, timeout=30, stream=True)
+                    self.send_response(r.status_code)
+                    passthrough = ("Content-Type", "Content-Length", "Content-Range",
+                                   "Accept-Ranges", "ETag", "Last-Modified")
+                    for h in passthrough:
+                        if h in r.headers:
+                            self.send_header(h, r.headers[h])
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    for chunk in r.iter_content(chunk_size=64 * 1024):
+                        if chunk:
+                            try:
+                                self.wfile.write(chunk)
+                            except (BrokenPipeError, ConnectionResetError):
+                                break
+                except Exception as e:
+                    self.send_error(502, str(e))
+                return
+            super().do_GET()
 
         def log_message(self, format, *args):  # noqa: A002
             if args and isinstance(args[0], str) and "404" in args[0]:
@@ -374,6 +422,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     s_export = sub.add_parser("export", help="bundle GeoJSON + JSON for the web UI")
     s_export.add_argument("out_dir", help="output directory (created if missing)")
+    s_export.add_argument("--no-elevation", action="store_true",
+                         help="skip Open-Elevation API fetch (faster export)")
     s_export.set_defaults(func=cmd_export)
 
     s_serve = sub.add_parser("serve", help="start web UI on a port")
@@ -382,6 +432,8 @@ def build_parser() -> argparse.ArgumentParser:
                          help="directory of exported GeoJSON (must exist or use --refresh)")
     s_serve.add_argument("--refresh", action="store_true",
                          help="re-fetch live data before serving")
+    s_serve.add_argument("--no-elevation", action="store_true",
+                         help="skip elevation refresh on --refresh")
     s_serve.add_argument("--browser", action="store_true",
                          help="auto-open browser after starting")
     s_serve.set_defaults(func=cmd_serve)
