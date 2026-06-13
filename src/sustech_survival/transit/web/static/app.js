@@ -25,8 +25,8 @@
       toblerAscentCoef: 3.5,       // Tobler v = 6·exp(-k·|slope + 0.05|) k
       toblerMaxKmh: 6.0,           // peak Tobler speed (at -5% downhill)
       bikeClimbCoef: 10.0,         // bike multiplier for climb fraction
-      transferPenaltyMin: 5,       // minutes added per bus transfer
-      waitHeadwayMin: 10,          // typical bus headway — used for wait estimate
+      transferPenaltyMin: 3,       // wait-for-the-bus minutes per boarding
+      waitHeadwayMin: 10,          // typical bus headway (used for info)
     },
   };
 
@@ -884,13 +884,13 @@ FEATURE_LAYERS.forEach(id => {
             const durBike = segmentDuration(fp.lat, fp.lng,
                                              nodes[gp.facility_id].lat,
                                              nodes[gp.facility_id].lng, "bike");
-            // Cross-campus walks are penalized 3× so the real footway
+            // Cross-campus walks are penalized 2× so the real footway
             // network is preferred when both options exist. The penalty
             // reflects "you can't actually cut straight through buildings
             // and lawns" — these edges are last-resort fallbacks.
             facilityEdges.push({
               a: p.facility_id, b: gp.facility_id, mode: "walk",
-              dur_min: durWalk * 3, bike_dur_min: durBike * 3, dist_m: d,
+              dur_min: durWalk * 2, bike_dur_min: durBike * 2, dist_m: d,
               geometry: [
                 [fp.lng, fp.lat],
                 [nodes[gp.facility_id].lng, nodes[gp.facility_id].lat],
@@ -998,8 +998,11 @@ FEATURE_LAYERS.forEach(id => {
       for (let i = 0; i < stopsWithPos.length - 1; i++) {
         const a = stopsWithPos[i], b = stopsWithPos[i + 1];
         const d = haversine(a, b);
-        const dur = segmentDuration(a.lat, a.lng, b.lat, b.lng, "bus")
-                  + state.PARAMS.transferPenaltyMin / 2;
+        // Per-segment cost: 0.5 min stop dwell + 2.5 min/km ride. The
+        // transfer/wait penalty is applied separately in dijkstra when
+        // transitioning from walk→bus (boarding) so we don't double-count
+        // it for multi-segment bus rides.
+        const dur = segmentDuration(a.lat, a.lng, b.lat, b.lng, "bus") + 0.5;
         // Build the polyline geometry for this segment by slicing the
         // bus line between the two stops' positions on the line.
         let geometry = [[a.lng, a.lat], [b.lng, b.lat]];  // fallback
@@ -1061,8 +1064,9 @@ FEATURE_LAYERS.forEach(id => {
 
   function dijkstra(graph, src, dst, mode) {
     const dist = {}, prev = {};
+    const lastMode = {};  // per-node: what mode edge was used to reach it
     Object.keys(graph.nodes).forEach(id => {
-      dist[id] = Infinity; prev[id] = null;
+      dist[id] = Infinity; prev[id] = null; lastMode[id] = null;
     });
     dist[src] = 0;
     const pq = [[0, src]];
@@ -1073,19 +1077,23 @@ FEATURE_LAYERS.forEach(id => {
       if (u === dst) break;
       graph.edges.forEach(e => {
         if (e.a !== u) return;
-        // Mode filter: walk/bike use walk edges, bus uses bus edges,
-        // transit allows any.
         if (mode === "walk" && e.mode !== "walk") return;
         if (mode === "bike" && e.mode !== "walk") return;
         if (mode === "bus" && e.mode !== "bus") return;
-        // Use the mode-specific duration
         const edgeDur = mode === "bike" && e.bike_dur_min !== undefined
           ? e.bike_dur_min
           : e.dur_min;
-        const nd = d + edgeDur;
+        let nd = d + edgeDur;
+        // Boarding penalty: when transitioning from walk to bus, add the
+        // wait-for-the-bus time. Without this, dijkstra would happily chain
+        // hundreds of bus segments without paying for the wait.
+        if (e.mode === "bus" && lastMode[u] !== "bus") {
+          nd += state.PARAMS.transferPenaltyMin;
+        }
         if (nd < dist[e.b]) {
           dist[e.b] = nd;
           prev[e.b] = e;
+          lastMode[e.b] = e.mode;
           pq.push([nd, e.b]);
         }
       });
@@ -1187,52 +1195,110 @@ FEATURE_LAYERS.forEach(id => {
     }
 
     // Render step list
-    let html = `<div class="summary">${path.total_min.toFixed(1)} min · ${path.edges.length} steps · ${Math.round(totalM)} m</div>`;
-    // Collapse consecutive footway edges between anonymous vertices into
-    // a single step so the user sees a readable list, not 30 steps of
-    // "node A → node B → node C". Only the first/last edge of a run gets
-    // the step entry; we show the cumulative distance/duration.
-    let collapsed = [];
+    // First split the path into segments by mode. Each "walk run" between
+    // two bus segments (or between start/end and a bus segment) becomes a
+    // single step. Each bus segment is a single step. This is what makes
+    // a 100-footway-vertex path show up as 3 steps: walk → bus → walk.
+    const segments = [];
+    let current = null;
+    const flush = () => { if (current) segments.push(current); current = null; };
     for (const e of path.edges) {
-      const fromName = graph.meta[e.a]?.name;
-      const toName = graph.meta[e.b]?.name;
-      const fromIsFacility = !!fromName;
-      const toIsFacility = !!toName;
-      // Same mode + same direction (a→b vs b→a), neither end is a facility
-      const last = collapsed[collapsed.length - 1];
-      if (last && last.e.mode === e.mode && !fromIsFacility) {
-        // Continue the previous run
-        last.e = e;  // extend to current edge
-        last.totalDur += e.dur_min;
-        last.totalDist += e.dist_m;
-        last.toName = toName || last.toName;
-        last.edgeCount++;
+      if (e.mode === "bus") {
+        flush();
+        // Either start a new bus segment or extend the current one
+        if (segments.length && segments[segments.length - 1].mode === "bus") {
+          const last = segments[segments.length - 1];
+          last.endName = graph.meta[e.b]?.name || e.b;
+          last.totalDur += e.dur_min;
+          last.totalDist += e.dist_m;
+          last.endCoords = nodesLookup(e.b);
+          last.details.push(e.details);
+        } else {
+          segments.push({
+            mode: "bus",
+            startName: graph.meta[e.a]?.name || e.a,
+            endName: graph.meta[e.b]?.name || e.b,
+            totalDur: e.dur_min,
+            totalDist: e.dist_m,
+            details: [e.details],
+          });
+        }
       } else {
-        collapsed.push({
-          e, fromName, toName, fromIsFacility, toIsFacility,
-          totalDur: e.dur_min, totalDist: e.dist_m, edgeCount: 1,
-        });
+        // walk edge
+        if (current === null) {
+          current = {
+            mode: "walk",
+            startName: graph.meta[e.a]?.name || e.a,
+            endName: graph.meta[e.b]?.name || null,
+            totalDur: e.dur_min,
+            totalDist: e.dist_m,
+            viaPath: !graph.meta[e.a]?.name,
+          };
+        } else {
+          current.endName = graph.meta[e.b]?.name || null;
+          if (graph.meta[e.b]?.name) current.viaPath = false;
+          current.totalDur += e.dur_min;
+          current.totalDist += e.dist_m;
+        }
       }
     }
-    collapsed.forEach(c => {
-      const e = c.e;
-      // Use the actual route mode (not edge mode, since walk/bike share
-      // the same edge graph). The edge mode only differentiates walk/bus.
-      const icon = e.mode === "bus" ? "🚌" : (mode === "bike" ? "🚴" : "🚶");
-      // Label the from/to. For footway vertices, show "via path" or omit.
-      const fromLabel = c.fromName || (c.edgeCount > 1 ? "via path" : "path");
-      const toLabel = c.toName || (c.edgeCount > 1 ? "via path" : "path");
-      const detailsExtra = c.edgeCount > 1
-        ? ` · ${c.edgeCount} segments along the path`
-        : "";
-      html += `<div class="step mode-${e.mode}">
-        <strong>${icon} ${fromLabel} → ${toLabel}</strong>
-        <div class="meta">${c.totalDur.toFixed(1)} min · ${Math.round(c.totalDist)} m · ${esc(e.details)}${detailsExtra}</div>
+    flush();
+
+    // Build per-bus-segment details: collapse all edges on the same line
+    // into a single description like "XYBS1: 荔园南站 → 慧园 → 欣园".
+    // Detail strings are like "XYBS1/0: 荔园南站 → 慧园" — we parse out
+    // the line code, then the start/end stop of each sub-segment.
+    const lineName = (s) => {
+      if (s.mode !== "bus" || !s.details.length) return "";
+      const m = s.details[0].match(/^([A-Z]+\d+)/);
+      return m ? m[1] : "";
+    };
+    const busStops = (s) => {
+      if (s.mode !== "bus" || !s.startName) return "";
+      const stops = [s.startName];
+      for (const d of s.details) {
+        // "XYBS1/0: 荔园南站 → 慧园" → ["XYBS1", "荔园南站", "慧园"]
+        const m = d.match(/^[A-Z]+\d+(?:\/\d+)?:\s*(.+?)\s*→\s*(.+?)$/);
+        if (m) stops.push(m[2]);
+      }
+      // Dedup consecutive duplicates (e.g. segment 1 ends at A,
+      // segment 2 starts at A — keep A only once).
+      const out = [];
+      for (const st of stops) {
+        if (out.length === 0 || out[out.length - 1] !== st) out.push(st);
+      }
+      return out.join(" → ");
+    };
+    const label = (s) => {
+      if (s.startName && s.endName) return `${s.startName} → ${s.endName}`;
+      if (s.startName) return `from ${s.startName} via path`;
+      if (s.endName) return `via path → ${s.endName}`;
+      return "along the path";
+    };
+    let html = `<div class="summary">${path.total_min.toFixed(1)} min · ${segments.length} steps · ${Math.round(totalM)} m</div>`;
+    segments.forEach(s => {
+      const icon = s.mode === "bus" ? "🚌" : (mode === "bike" ? "🚴" : "🚶");
+      let detailStr;
+      if (s.mode === "bus") {
+        const ln = lineName(s);
+        const stops = busStops(s);
+        detailStr = `${ln}: ${stops}`;
+      } else if (s.viaPath) {
+        detailStr = `${Math.round(s.totalDist)} m along the path`;
+      } else {
+        detailStr = `${Math.round(s.totalDist)} m walk`;
+      }
+      html += `<div class="step mode-${s.mode}">
+        <strong>${icon} ${label(s)}</strong>
+        <div class="meta">${s.totalDur.toFixed(1)} min · ${Math.round(s.totalDist)} m · ${esc(detailStr)}</div>
       </div>`;
     });
     html += `<div class="how-we-estimate"><a href="/static/estimation.html" target="_blank">ⓘ How we estimate</a></div>`;
     resultDiv.innerHTML = html;
   }
+
+  // Helper used by the segment-collapse code above
+  function nodesLookup(id) { return null; }
 
   // ── Utilities ────────────────────────────────────────────────────────────
   function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
