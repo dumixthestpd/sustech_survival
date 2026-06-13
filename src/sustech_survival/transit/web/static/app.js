@@ -190,6 +190,25 @@ style.layers.push({
   },
 });
 style.layers.push({
+  id: "transit-route-halo",
+  type: "line",
+  source: "route",
+  layout: { "line-cap": "round", "line-join": "round" },
+  paint: {
+    // Halo behind the route so it stands out against the basemap even when
+    // zoomed out (a 4px line on a busy campus looks like a series of dots
+    // when the underlying paths are visible). White halo + thick blue line.
+    "line-color": "#ffffff",
+    "line-width": [
+      "interpolate", ["linear"], ["zoom"],
+      13, 10,
+      16, 14,
+      18, 18,
+    ],
+    "line-opacity": 0.8,
+  },
+});
+style.layers.push({
   id: "transit-route",
   type: "line",
   source: "route",
@@ -197,16 +216,16 @@ style.layers.push({
   paint: {
     // Solid (no dashes) — dashes at 5px line-width looked like scattered
     // dots when the route had only a few segments. Opacity bumped to
-    // 0.9 so the planned route reads as the primary feature over
+    // 0.95 so the planned route reads as the primary feature over
     // the subtle bus-line polylines behind it.
     "line-color": "#0066ff",
     "line-width": [
       "interpolate", ["linear"], ["zoom"],
-      13, 4,
-      16, 6,
-      18, 8,
+      13, 5,
+      16, 8,
+      18, 11,
     ],
-    "line-opacity": 0.9,
+    "line-opacity": 0.95,
   },
 });
 

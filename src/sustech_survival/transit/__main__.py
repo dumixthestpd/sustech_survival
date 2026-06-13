@@ -271,6 +271,34 @@ def cmd_serve(args) -> int:
     if args.refresh:
         transit_client.export_geojson(out_dir, with_elevation=not args.no_elevation)
 
+    # Background live-bus refresher. The frontend polls /data/live_buses.geojson
+    # every 30s, but the file was only written once at server startup — so after
+    # midnight (when no buses are running) the page would keep showing the last
+    # stale set of buses. A 30s background refresh re-polls the live API and
+    # rewrites the file, so when the last bus of the day signs off, the
+    # frontend's next poll sees an empty FeatureCollection and clears the map.
+    #   (User feedback 2026-06-13: "stale buses on the map but it is already
+    #    past 00:00 and there is no bus".)
+    import threading
+    import time as _time
+    def _refresh_live_buses_loop():
+        while True:
+            try:
+                live = transit_client.get_live_positions(include_shuttles=True)
+                live_fc = {
+                    "type": "FeatureCollection",
+                    "features": [b.to_geojson_feature() for b in live],
+                }
+                (out_dir / "live_buses.geojson").write_text(
+                    json.dumps(live_fc, ensure_ascii=False, indent=2)
+                )
+            except Exception as e:
+                # Don't crash the thread on a single transient failure; the
+                # frontend will see stale data until the next tick succeeds.
+                print(f"[live-refresh] {e}", file=sys.stderr)
+            _time.sleep(30)
+    threading.Thread(target=_refresh_live_buses_loop, daemon=True, name="live-bus-refresh").start()
+
     web_dir = Path(__file__).parent / "web"
     if not (web_dir / "index.html").exists():
         print(f"❌ web UI files not found in {web_dir}", file=sys.stderr)
