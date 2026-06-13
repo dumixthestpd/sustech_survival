@@ -321,6 +321,9 @@ function onFacilityClick(e) {
   } else if (fid !== state.selectedFrom && !state.selectedTo) {
     state.selectedTo = fid;
     setSelectedFeatureState(fid, true);
+    // Re-highlight the from endpoint — the clear at the top of this
+    // handler wiped its "selected" state.
+    setSelectedFeatureState(state.selectedFrom, true);
     syncInputFromState();
   } else {
     // Third click on either endpoint — reset both
@@ -1111,13 +1114,104 @@ FEATURE_LAYERS.forEach(id => {
   function findRoute() {
     const fromInput = document.getElementById("from-input");
     const toInput = document.getElementById("to-input");
-    const fromId = resolveFacilityId(fromInput.value.trim());
-    const toId = resolveFacilityId(toInput.value.trim());
+    const fromText = fromInput.value.trim();
+    const toText = toInput.value.trim();
+    const fromId = resolveFacilityId(fromText);
+    const toId = resolveFacilityId(toText);
     const resultDiv = document.getElementById("route-result");
     const mode = document.querySelector('input[name=mode]:checked').value;
 
     if (!fromId || !toId) {
-      resultDiv.innerHTML = `<div class="error">Pick both endpoints (or type names that match facilities).</div>`;
+      // Build a helpful error: explain what failed and show the closest
+      // matches so the user can pick from a dropdown / correct a typo.
+      const suggest = (text) => {
+        if (!text) return `<div class="hint">Empty — type a facility name or pick from the map.</div>`;
+        // Score each candidate by: exact > substring > reverse-substring
+        // > character overlap (for typo tolerance). Capped to 4.
+        const t = text.toLowerCase();
+        const all = [...state.facilities, ...state.busStops];
+        const tChars = new Set(t);
+        const scored = [];
+        for (const f of all) {
+          const aliases = aliasesFor(f).map(a => a.toLowerCase());
+          let bestScore = null;
+          if (aliases.includes(t)) { bestScore = -200; }
+          else {
+            for (const a of aliases) {
+              if (a.includes(t)) { bestScore = a.length - t.length * 2; break; }
+              if (t.includes(a)) { bestScore = a.length * 0.5; break; }
+              // Longest common substring — much more semantically
+              // meaningful for Chinese than pure character overlap.
+              // e.g. "专家公离" vs "专家公寓" share "专家公" (3 chars).
+              const lcs = longestCommonSubstring(a, t);
+              if (lcs >= Math.max(2, t.length * 0.6)) {
+                bestScore = a.length + 50 - lcs * 2; break;
+              }
+              // Fallback: character overlap (handles transposed chars).
+              const aChars = new Set(a);
+              let overlap = 0;
+              for (const c of tChars) if (aChars.has(c)) overlap++;
+              const ratio = overlap / Math.max(t.length, 1);
+              if (ratio >= 0.7) { bestScore = a.length + 100 - ratio * 50; break; }
+            }
+          }
+          if (bestScore !== null) scored.push({ score: bestScore, f });
+        }
+        scored.sort((x, y) => x.score - y.score);
+        const top = scored.slice(0, 4);
+        if (!top.length) return `<div class="hint">No facilities match "<strong>${esc(text)}</strong>".</div>`;
+        const items = top.map(s => {
+          const p = s.f.properties;
+          return `<li class="pick-suggestion" data-id="${esc(p.facility_id)}">${esc(p.name)}${p.name_en ? ` <span style="color:#888">/ ${esc(p.name_en)}</span>` : ""}</li>`;
+        }).join("");
+        return `<div class="hint">Did you mean:</div><ul class="pick-list" data-target="${!fromId ? 'from' : 'to'}">${items}</ul>`;
+      };
+      // Label each error block with which side it pertains to.
+      const fromBlock = !fromId
+        ? `<div class="err-block"><strong>From</strong> "${esc(fromText || "")}" — ${suggest(fromText).replace(/^<div class="hint">/, '').replace(/<\/div>$/, '')}</div>`
+        : "";
+      const toBlock = !toId
+        ? `<div class="err-block"><strong>To</strong> "${esc(toText || "")}" — ${suggest(toText).replace(/^<div class="hint">/, '').replace(/<\/div>$/, '')}</div>`
+        : "";
+      resultDiv.innerHTML = `<div class="error">Couldn't match both endpoints.${fromBlock}${toBlock}</div>`;
+      // Wire up click-to-pick on the suggestions
+      resultDiv.querySelectorAll(".pick-suggestion").forEach(li => {
+        li.addEventListener("click", () => {
+          const target = li.parentElement.dataset.target;
+          const fid = li.dataset.id;
+          const name = state.facilitiesById[fid]?.properties?.name || fid;
+          const inp = target === "from" ? fromInput : toInput;
+          inp.value = name;
+          inp.focus();
+          // Set feature state for visual feedback. The IIFE scoping
+          // is a little weird here — findRoute sits outside the
+          // .then() callback where setSelectedFeatureState was
+          // defined, so we hit `window._map` directly.
+          const m = window._map;
+          if (m) {
+            for (const src of ["facilities", "bus_stops"]) {
+              try { m.setFeatureState({ source: src, id: fid }, { selected: true }); } catch (_) {}
+            }
+            if (target === "from" && state.selectedTo) {
+              for (const src of ["facilities", "bus_stops"]) {
+                try { m.setFeatureState({ source: src, id: state.selectedTo }, { selected: false }); } catch (_) {}
+              }
+            }
+          }
+          // Update the click-state machine
+          if (target === "from") {
+            state.selectedFrom = fid;
+            state.selectedTo = null;
+          } else {
+            state.selectedTo = fid;
+          }
+          // Always re-run findRoute so the error message updates to
+          // reflect the new state (e.g. if the other side is also
+          // broken, the user should see only the remaining error,
+          // not the old both-sides-broken message).
+          findRoute();
+        });
+      });
       return;
     }
     if (fromId === toId) {
@@ -1299,6 +1393,25 @@ FEATURE_LAYERS.forEach(id => {
 
   // ── Utilities ────────────────────────────────────────────────────────────
   function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+  // Longest common substring length between two strings. O(n*m), used
+  // for typo-tolerant facility matching in Chinese names.
+  function longestCommonSubstring(a, b) {
+    if (!a || !b) return 0;
+    let best = 0;
+    const m = a.length, n = b.length;
+    // Use two rolling rows to keep memory at O(n) instead of O(n*m).
+    let prev = new Array(n + 1).fill(0);
+    let curr = new Array(n + 1).fill(0);
+    for (let i = 1; i <= m; i++) {
+      for (let j = 1; j <= n; j++) {
+        curr[j] = a[i - 1] === b[j - 1] ? prev[j - 1] + 1 : 0;
+        if (curr[j] > best) best = curr[j];
+      }
+      [prev, curr] = [curr, prev];
+      curr.fill(0);
+    }
+    return best;
+  }
   function popupHTML(props) {
     const nameZh = props.name || "";
     const nameEn = props.name_en ? `<div class="name-en">${esc(props.name_en)}</div>` : "";

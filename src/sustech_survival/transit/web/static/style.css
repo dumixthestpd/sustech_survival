@@ -225,6 +225,23 @@ button:disabled { background: #999; cursor: not-allowed; }
 #route-result .mode-bus::before { content: "🚌 "; }
 #route-result .step .meta { color: var(--text-dim); font-size: 11px; }
 #route-result .error { color: #c0392b; }
+#route-result .err-block { margin: 6px 0; font-size: 12px; }
+#route-result .hint { color: var(--text-dim); margin: 4px 0 2px; font-size: 11px; }
+#route-result .pick-list { list-style: none; padding: 0; margin: 4px 0 8px; }
+#route-result .pick-suggestion {
+  padding: 4px 8px;
+  margin: 2px 0;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.1s;
+}
+#route-result .pick-suggestion:hover {
+  background: #e0eaff;
+  border-color: var(--primary);
+}
 #route-result .empty { color: var(--text-dim); }
 #route-result .how-we-estimate {
   margin-top: 10px;
