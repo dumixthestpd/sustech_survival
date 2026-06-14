@@ -10,7 +10,7 @@
 <body>
   <header>
     <h1>🚌 SUSTech Transit</h1>
-    <div class="subtitle">Campus navigation &amp; live bus positions</div>
+    <div class="subtitle">Campus map &amp; live bus positions</div>
     <div class="header-actions">
       <button id="refresh-btn" title="Reload live data">↻ Refresh</button>
       <span id="last-update"></span>
@@ -19,27 +19,6 @@
 
   <main>
     <aside id="sidebar">
-      <section class="panel">
-        <h2>🚏 Route</h2>
-        <label>From
-          <input id="from-input" type="text" placeholder="search name or facility_id…" autocomplete="off" />
-          <ul id="from-suggestions" class="suggestions"></ul>
-        </label>
-        <label>To
-          <input id="to-input" type="text" placeholder="search name or facility_id…" autocomplete="off" />
-          <ul id="to-suggestions" class="suggestions"></ul>
-        </label>
-        <fieldset>
-          <legend>Mode</legend>
-          <label><input type="radio" name="mode" value="transit" checked /> 🚶+🚌 Transit</label>
-          <label><input type="radio" name="mode" value="walk" /> 🚶 Walk only</label>
-          <label><input type="radio" name="mode" value="bike" /> 🚴 Bike only</label>
-          <label><input type="radio" name="mode" value="bus" /> 🚌 Bus only</label>
-        </fieldset>
-        <button id="route-btn">Find route</button>
-        <div id="route-result"></div>
-      </section>
-
       <section class="panel">
         <h2>🕐 Bus schedule</h2>
         <div class="day-toggle">
@@ -52,6 +31,11 @@
       <section class="panel">
         <h2>📍 Live buses</h2>
         <div id="live-content">Loading…</div>
+      </section>
+
+      <section class="panel" id="hover-info" style="display:none">
+        <h2>📌 Hover a dot</h2>
+        <div id="hover-content"></div>
       </section>
     </aside>
 

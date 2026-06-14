@@ -6,11 +6,3 @@ click>=8.1.0
 playwright>=1.40.0
 cloudscraper>=1.3.0
 urllib3>=2.0.0
-
-# Pedestrian routing via OSMnx (gboeing/osmnx). Lazily imported in
-# TransitClient.find_walking_path — the import is heavy (~3s) and
-# only needed when the user actually opens the route planner. The
-# campus walking graph is built once from Overpass and cached on
-# disk at /tmp/transit_data/campus_walk_graph.graphml.
-osmnx>=2.0.0
-networkx>=3.0

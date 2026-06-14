@@ -530,133 +530,23 @@ class TransitClient:
             })
         return {"type": "FeatureCollection", "features": features}
 
-    # ── Pedestrian routing (OSMnx) ──────────────────────────────────────────
-    # SUSTech campus routing was originally a hand-rolled Dijkstra over
-    # an Overpass-snap of footways. The hand-rolled code:
-    #   - picked far-away footway vertices (250 m snap → 290 m diagonal
-    #     "snap" lines that LOOKED like the path crossed buildings)
-    #   - used a 2×-penalized direct facility↔facility cross edge that
-    #     often beat the real footway route, especially in the sparse
-    #     创园/欣园 areas
-    #   - had no topology correction, so 创园1栋 → 宿舍15栋 ended up
-    #     with only 4 coords and a 290 m straight line through 社康中心
-    #
-    # Replaced with OSMnx (https://github.com/gboeing/osmnx), a 5k+-star
-    # Python library for OSM street-network routing. It:
-    #   - fetches a fresh walking graph from Overpass with proper bbox
-    #     + network_type="walk" (pedestrian-tagged ways only)
-    #   - does topology correction (merges intersections, removes
-    #     dead-ends) so the dijkstra actually sees the connected
-    #     pedestrian network
-    #   - gives edge lengths from OSM, not just haversine guesses
-    #
-    # The graph is cached on disk in /tmp so we don't hit Overpass
-    # on every route request.
-    _WALK_GRAPH_CACHE: Optional[object] = None
-    _WALK_GRAPH_BBOX: Tuple[float, float, float, float] = (
-        113.985, 22.594, 114.005, 22.612  # west, south, east, north — covers SUSTech
-    )
-
-    def _get_walk_graph(self, cache_path: str = "/tmp/transit_data/campus_walk_graph.graphml"):
-        """Lazily build + cache the campus walking graph from Overpass.
-
-        OSMnx 2.x API. We try the cache first; if missing or stale,
-        rebuild from Overpass and save.
-        """
-        if TransitClient._WALK_GRAPH_CACHE is not None:
-            return TransitClient._WALK_GRAPH_CACHE
-        # Lazy import: osmnx is heavy (~3s import time) and only used
-        # when a walking route is actually requested.
-        import osmnx as ox  # type: ignore[import-unresolved]
-        import os
-        if os.path.exists(cache_path):
-            try:
-                G = ox.load_graphml(cache_path)
-                TransitClient._WALK_GRAPH_CACHE = G
-                return G
-            except Exception:
-                pass  # corrupted cache, rebuild
-        # Build fresh
-        G = ox.graph_from_bbox(
-            TransitClient._WALK_GRAPH_BBOX,
-            network_type="walk",
-            simplify=True,
-        )
-        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-        ox.save_graphml(G, cache_path)
-        TransitClient._WALK_GRAPH_CACHE = G
-        return G
-
-    def find_walking_path(
-        self,
-        from_lng: float, from_lat: float,
+    # ── Routing (removed 2026-06-13) ────────────────────────────────────────
+    # The OSMnx-based walking route was a series of half-fixes that kept
+    # degrading into worse UX (edgey/pointy polylines, scattered-dots
+    # look, straight-line shortcuts through buildings). Per user request
+    # ("delete the nav system entirely"), find_walking_path() and the
+    # campus walk graph cache are removed. The basemap + building/gate/
+    # bus-stop dots + live buses + bus schedule remain — those work.
+    def find_walking_path(  # pragma: no cover — kept as a stub so legacy
+        self,                       # callers don't AttributeError. Will
+        from_lng: float, from_lat: float,  # be removed in a follow-up.
         to_lng: float, to_lat: float,
     ) -> Dict:
-        """Shortest walking path between two (lng, lat) points on campus.
+        raise TransitError("Routing is disabled in this build. Use the bus stop / building dot click to inspect locations.")
 
-        Uses OSMnx to route over the campus's pedestrian graph (which
-        we cache on first call). Returns:
+    def _get_walk_graph(self, cache_path: str = "/tmp/transit_data/campus_walk_graph.graphml"):  # pragma: no cover
+        return None
 
-            {
-              "coords": [[lng, lat], ...],   # full polyline (including
-                                            # edge geometries — curves,
-                                            # not just node-to-node lines)
-              "distance_m": 856.3,           # sum of edge lengths
-              "duration_min": 10.7,          # at 80 m/min
-              "nodes": 14,                   # number of graph nodes in path
-            }
-
-        Raises TransitError if the points are outside the cached graph.
-        """
-        from .schema import TransitError
-        import osmnx as ox  # type: ignore[import-unresolved]
-        G = self._get_walk_graph()  # type: ignore[has-type]
-        # Snap the request coordinates to the nearest graph nodes
-        orig = ox.distance.nearest_nodes(G, from_lng, from_lat)
-        dest = ox.distance.nearest_nodes(G, to_lng, to_lat)
-        route_nodes = ox.shortest_path(G, orig, dest, weight="length")
-        # Build the polyline by stitching edge geometries (NOT just node
-        # coords). This is the key fix: each footway edge in OSM has
-        # a `geometry` property with the actual OSM-Way coordinates,
-        # which include curves and corners. Returning only the node
-        # coords makes the polyline look like a series of straight
-        # segments between graph intersections — visually that's the
-        # "scattered dots" / zig-zag the user reported, even though
-        # it's technically the correct shortest path.
-        coords: list = []
-        total_m = 0.0
-        for u, v in zip(route_nodes[:-1], route_nodes[1:]):
-            # MultiDiGraph: shortest_path returned node ids; pick the
-            # parallel edge with the smallest 'length' attribute.
-            edges = G.get_edge_data(u, v)
-            if not edges:
-                continue
-            best_edge = min(edges.values(), key=lambda e: e.get("length", float("inf")))
-            total_m += best_edge.get("length", 0)
-            seg = best_edge.get("geometry")
-            if seg is not None:
-                seg_coords = [(c[0], c[1]) for c in seg.coords]
-            else:
-                seg_coords = [
-                    (G.nodes[u]["x"], G.nodes[u]["y"]),
-                    (G.nodes[v]["x"], G.nodes[v]["y"]),
-                ]
-            if not coords:
-                coords.extend(seg_coords)
-            elif seg_coords[0] == coords[-1]:
-                coords.extend(seg_coords[1:])
-            else:
-                # Edges aren't perfectly continuous (e.g. after a graph
-                # simplification step). Drop a tiny bridging segment so
-                # the polyline doesn't show a visible jump.
-                coords.extend(seg_coords)
-        coords = [[c[0], c[1]] for c in coords]
-        return {
-            "coords": coords,
-            "distance_m": total_m,
-            "duration_min": total_m / 80.0,  # 80 m/min walking pace
-            "nodes": len(route_nodes),
-        }
 
     def export_geojson(self, out_dir: Path, *, with_elevation: bool = True) -> Dict[str, str]:
         """Bundle all facilities + bus lines + route paths to GeoJSON files.

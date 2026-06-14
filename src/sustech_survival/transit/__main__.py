@@ -364,39 +364,6 @@ def cmd_serve(args) -> int:
                     self.send_error(502, str(e))
                 return
 
-            # Server-side walking routing via OSMnx. The frontend calls
-            # this with two (lng, lat) endpoints; we return the
-            # shortest-pedestrian-path polyline computed by OSMnx over
-            # a cached campus walking graph (built from Overpass).
-            # Replaces the client-side hand-rolled dijkstra that kept
-            # producing straight-line shortcuts through buildings.
-            if self.path.startswith("/api/walk_route"):
-                from urllib.parse import urlparse, parse_qs
-                qs = parse_qs(urlparse(self.path).query)
-                try:
-                    from_lng = float(qs.get("from_lng", [0])[0])
-                    from_lat = float(qs.get("from_lat", [0])[0])
-                    to_lng   = float(qs.get("to_lng",   [0])[0])
-                    to_lat   = float(qs.get("to_lat",   [0])[0])
-                except (KeyError, ValueError) as e:
-                    self.send_error(400, f"missing or bad coords: {e}")
-                    return
-                try:
-                    path = transit_client.find_walking_path(
-                        from_lng, from_lat, to_lng, to_lat,
-                    )
-                except Exception as e:
-                    self.send_error(500, f"routing error: {e}")
-                    return
-                body = json.dumps(path, ensure_ascii=False).encode("utf-8")
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.send_header("Content-Length", str(len(body)))
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.end_headers()
-                self.wfile.write(body)
-                return
-
             super().do_GET()
 
         def log_message(self, format, *args):  # noqa: A002
