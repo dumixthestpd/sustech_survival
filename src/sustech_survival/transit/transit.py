@@ -598,7 +598,9 @@ class TransitClient:
         we cache on first call). Returns:
 
             {
-              "coords": [[lng, lat], ...],   # full polyline
+              "coords": [[lng, lat], ...],   # full polyline (including
+                                            # edge geometries — curves,
+                                            # not just node-to-node lines)
               "distance_m": 856.3,           # sum of edge lengths
               "duration_min": 10.7,          # at 80 m/min
               "nodes": 14,                   # number of graph nodes in path
@@ -613,16 +615,42 @@ class TransitClient:
         orig = ox.distance.nearest_nodes(G, from_lng, from_lat)
         dest = ox.distance.nearest_nodes(G, to_lng, to_lat)
         route_nodes = ox.shortest_path(G, orig, dest, weight="length")
-        # Build polyline from node coordinates
-        coords = [[G.nodes[n]["x"], G.nodes[n]["y"]] for n in route_nodes]
-        # Sum edge lengths for total distance
+        # Build the polyline by stitching edge geometries (NOT just node
+        # coords). This is the key fix: each footway edge in OSM has
+        # a `geometry` property with the actual OSM-Way coordinates,
+        # which include curves and corners. Returning only the node
+        # coords makes the polyline look like a series of straight
+        # segments between graph intersections — visually that's the
+        # "scattered dots" / zig-zag the user reported, even though
+        # it's technically the correct shortest path.
+        coords: list = []
         total_m = 0.0
         for u, v in zip(route_nodes[:-1], route_nodes[1:]):
+            # MultiDiGraph: shortest_path returned node ids; pick the
+            # parallel edge with the smallest 'length' attribute.
             edges = G.get_edge_data(u, v)
-            if edges:
-                # MultiDiGraph: take first (shortest) parallel edge
-                edge = list(edges.values())[0]
-                total_m += edge.get("length", 0)
+            if not edges:
+                continue
+            best_edge = min(edges.values(), key=lambda e: e.get("length", float("inf")))
+            total_m += best_edge.get("length", 0)
+            seg = best_edge.get("geometry")
+            if seg is not None:
+                seg_coords = [(c[0], c[1]) for c in seg.coords]
+            else:
+                seg_coords = [
+                    (G.nodes[u]["x"], G.nodes[u]["y"]),
+                    (G.nodes[v]["x"], G.nodes[v]["y"]),
+                ]
+            if not coords:
+                coords.extend(seg_coords)
+            elif seg_coords[0] == coords[-1]:
+                coords.extend(seg_coords[1:])
+            else:
+                # Edges aren't perfectly continuous (e.g. after a graph
+                # simplification step). Drop a tiny bridging segment so
+                # the polyline doesn't show a visible jump.
+                coords.extend(seg_coords)
+        coords = [[c[0], c[1]] for c in coords]
         return {
             "coords": coords,
             "distance_m": total_m,
