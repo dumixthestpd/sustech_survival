@@ -40,6 +40,25 @@
   style.sources.facilities = { type: "geojson", data: "/data/facilities.geojson" };
   style.sources.bus_stops  = { type: "geojson", data: "/data/bus_stops.geojson" };
 
+  // pmtiles:// requires an absolute URL (scheme+host+path), but the
+  // upstream PMTiles lives on the SAME host as the page (served via
+  // our /pmtiles-proxy/ reverse proxy). So we patch the URL to be
+  // absolute against window.location.origin, regardless of what port
+  // the server happens to be running on. The style file ships with
+  // pmtiles:///pmtiles-proxy/... (relative) so it doesn't bake in a
+  // port number — a hardcoded localhost:61019 was the cause of the
+  // "basemap gone" bug when we moved the server to 61020.
+  const origin = window.location.origin;
+  if (style.sources.protomaps && style.sources.protomaps.url) {
+    const u = style.sources.protomaps.url;
+    if (u.startsWith("pmtiles:///")) {
+      style.sources.protomaps.url = "pmtiles://" + origin + u.slice("pmtiles://".length);
+    }
+  }
+  if (style.glyphs && style.glyphs.startsWith("/")) {
+    style.glyphs = origin + style.glyphs;
+  }
+
   // Create map
   const map = new maplibregl.Map({
     container: "map",
@@ -437,14 +456,24 @@
     }
   }
 
+  // Pulls both live buses AND schedule. Both can change minute-to-minute
+  // (especially around the work day start, lunch, evening, and weekend
+  // transitions), so we re-fetch them together every 30s. The schedule
+  // used to be loaded only by loadAll() and required a manual Refresh
+  // click to refresh; the user reported this as a bug.
   async function refreshLive() {
     try {
-      const live = await loadJSON("/data/live_buses.geojson");
+      const [live, schedules] = await Promise.all([
+        loadJSON("/data/live_buses.geojson"),
+        loadJSON("/data/schedules.json"),
+      ]);
       state.liveBuses = live.features || [];
+      state.schedules = schedules;
       const map = window._map;
       if (map && map.getSource("live_buses")) {
         map.getSource("live_buses").setData(live);
       }
+      renderSchedule();
       renderLiveList();
       setLastUpdate(new Date().toLocaleTimeString());
     } catch (_) {}
