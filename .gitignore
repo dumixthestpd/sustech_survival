@@ -70,3 +70,4 @@ tmp/
 .cache/
 booking/token.json
 booking/session.json
+classroom/cache/
