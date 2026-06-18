@@ -68,3 +68,5 @@ workspace/
 tmp/
 *.tmp
 .cache/
+booking/token.json
+booking/session.json
