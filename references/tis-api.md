@@ -244,6 +244,76 @@ grep -A 30 'addXuanke.*function\|tuike.*function' xsxk.js
 Result: 18 endpoints total, 4 wrapped (add/drop + cart add/remove), 7
 discovered but not wrapped, 1 conflict-check helper observed.
 
+## Selection rounds (轮次) — how 预选/补选/退选/跨学期 map to TIS
+
+**These are NOT TIS technical terms.** They're policy terms from the
+教务部 (Academic Affairs Office). TIS implements them through runtime
+configuration — multiple "rounds" per semester, each with its own flags.
+
+The TIS UI at `/Xsxk/query/1` has tabs (top right):
+```
+Tab 0: 已选 (yixuan)         — courses selected
+Tab 1: 购物车 (gouwuche)     — shopping cart (only if p_sfsyxkgwc=='1')
+Tab 2+: <one tab per round>  — labeled with xkgzszOne.xkfsmc / xkfsmc_en
+```
+
+Each round (`xkgzszOne`, populated from `xkgzszList`) carries:
+| Field         | Meaning                                              |
+|---------------|------------------------------------------------------|
+| `xkfsdm`      | Round code (the `xkfsdm` value to POST in `p_xkfsdm`)|
+| `xkfsmc`      | Round name in Chinese (e.g. "第一轮预选")             |
+| `xkfsmc_en`   | Round name in English (e.g. "Round 1 Pre-selection") |
+| `lcmc`        | 轮次名称 (displayed in the green banner as "轮次:{name}") |
+| `xkms`        | 选课模式 — `'1'` = 先到先得 (first-come-first-served) |
+| `cqms`        | 重修模式 (re-selection mode)                          |
+| `sfkx`        | 是否可选 — `'1'` = addXuanke allowed, `'0'` = locked |
+| `sfkt`        | 是否可退 — `'1'` = tuike allowed, `'0'` = locked     |
+| `sfxzrl`      | 是否限制容量 (capacity-limited?)                      |
+| `ksrq`/`jsrq` | 开始日期 / 结束日期 — round active window              |
+| `xkqzsj`      | 选课起止时间 (full period text)                       |
+
+### Concrete mapping
+
+| Policy term | TIS mechanism |
+|-------------|---------------|
+| **预选 (pre-selection)** | One `xkgzszList` entry whose `lcmc` says "第一轮预选" or similar. Set `p_xkfsdm` to its `xkfsdm` and call `Xsxk/addXuanke`. |
+| **补选 (make-up)**       | Another `xkgzszList` entry — registrar adds it after 预选 ends. Same `Xsxk/addXuanke` endpoint, different `xkfsdm`. |
+| **退选 (drop)**          | Not a separate "round." The current round's `sfkt` flag controls whether `Xsxk/tuike` is allowed. When the round's window passes or `sfkt='0'`, tuike rejects. |
+| **跨学期 (cross-semester)** | Not a separate endpoint. Set `p_kkxnxq` (开课学年学期) to a future xn/xq in the queryform. Same `addXuanke` endpoint, different term. |
+
+### What I confirmed vs what I'm inferring
+
+**Confirmed in the page source** (`/Xsxk/query/1` HTML, ~128KB):
+- Tab structure (已选 / 购物车 / dynamic rounds)
+- Field names: `xkfsdm`, `xkfsmc`, `xkfsmc_en`, `lcmc`, `xkms`, `sfkx`, `sfkt`, `sfxzrl`, `ksrq`, `jsrq`, `xkqzsj`
+- The green banner shows "轮次:{lcmc}"
+- `sfkt=='1' ? '可退/' : sfkt=='0' ? '不可退/' : ''` — UI renders this directly
+
+**Inferred (not directly seen):**
+- The exact strings `预选`, `补选` are not in the bundle. They likely come from the `messages/xkgl` i18n properties file (loaded by `jquery.i18n.properties`) or from the registrar's configured `lcmc` value.
+- The actual `xkfsdm` codes are configured per-semester by the registrar — they're not hardcoded.
+
+**Still unknown** (need login + UI screenshot to verify):
+- The actual list of `xkfsdm` codes for the current semester (depends on what the registrar configured)
+- Whether `跨学期` is enabled for your account (depends on `xkgzszOne.sfkx` for the cross-term round)
+
+### How to find your current round
+
+```bash
+# (Requires live login — not yet wrapped in offline tests.)
+# When logged in, the page renders the active round in the green banner:
+#   轮次:{xkgzszOne.lcmc}    可选/不可选    可退/不可退
+#   选课起止时间:{ksrq}~{jsrq}
+#
+# Programmatic: GET /Xsxk/query/1 with session cookies, parse
+# `xkgzszOne.lcmc` from the HTML.
+```
+
+This is documented separately because the mechanism (rounds + flags) is
+how TIS supports **any** selection policy the school wants — 预选, 补选,
+抽签 (lottery), 重修 (re-take), 跨学期 (cross-term), etc. — without code
+changes. The school configures `xkgzszList` each semester.
+
 ## Open questions
 
 1. **`Xsxk/queryKxrw` vs `Xsxktz/queryRwxxcxList`.** Both return the
