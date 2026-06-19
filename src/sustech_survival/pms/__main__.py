@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Optional
 
 from . import pms as pms_singleton_factory
+from .pms import PMSError
 from .schema import (
     REPORT_TYPE_PRINT, REPORT_TYPE_SCAN, REPORT_TYPE_COPY,
 )
@@ -340,7 +341,16 @@ def main(argv: Optional[list] = None) -> int:
     # Make --json propagate to subcommand namespace
     if not hasattr(args, "json"):
         args.json = False
-    return args.func(args)
+    try:
+        return args.func(args)
+    except PMSError as e:
+        # PMS API / server errors — render as a one-line message instead of
+        # a Python traceback. The off-campus hint fires from here too.
+        if getattr(args, "json", False):
+            print(json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False))
+        else:
+            print(f"❌ {e}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

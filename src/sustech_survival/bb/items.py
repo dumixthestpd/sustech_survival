@@ -13,12 +13,26 @@ from typing import List, Optional, Tuple
 # China timezone (UTC+8) for deadline comparisons
 CHINA_TZ = timezone(timedelta(hours=8))
 
+_MONTH_ABBR = {
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+    "jul": 7, "aug": 8, "sep": 9, "sept": 9, "oct": 10, "nov": 11, "dec": 12,
+}
+
 
 def _parse_deadline(s) -> Optional[datetime]:
-    """Parse a deadline string in any of these formats:
+    """
+    Parse a deadline string in any of these formats:
       - ISO 8601: "2026-05-12T23:59:00+08:00" or "2026-05-12T23:59:00"
       - Chinese full: "2026年5月12日 23:59" or "2026年5月12日23:59"
       - Chinese date only: "2026年5月12日" (interpreted as end-of-day, 23:59:59)
+      - English: "11:59pm, Jun.10th, Wed., Week 16"
+      - English (date-only-ish): "Jun.10th, 11:59pm"
+      - English with year: "Jun.10th, 2026 11:59pm" or "Jun.10 2026 11:59 PM"
+      - Optional "Due date:" / "Due:" / "Deadline:" prefix is ignored
+
+    If the year is not present in the string, defaults to the current year;
+    if the parsed date is more than 6 months in the past, assumes next year.
+    (Catches January deadlines that are actually next-year.)
 
     Returns:
         datetime (tz-aware if input had tz, naive if not), or None if unparseable.
@@ -48,6 +62,56 @@ def _parse_deadline(s) -> Optional[datetime]:
             y, mo, d = (int(g) for g in m.groups())
             return datetime(y, mo, d, 23, 59, 59, tzinfo=CHINA_TZ)
         except ValueError:
+            return None
+    # English: "11:59pm, Jun.10th, Wed., Week 16" or "Jun.10 11:59 PM"
+    # Strip optional leading label.
+    s2 = re.sub(
+        r"^\s*(?:due\s*date|deadline|due|closes?|closes\s*on|open\s*until)\s*[:\-]?\s*",
+        "",
+        s,
+        flags=re.IGNORECASE,
+    )
+    # Find time HH:MM with optional am/pm
+    tm = re.search(r"(\d{1,2}):(\d{2})\s*(am|pm|a\.m\.|p\.m\.)?", s2, re.IGNORECASE)
+    # Find month + day (with optional ordinal suffix and optional year).
+    # Handles: "Jun.10th", "Jun 10", "Jun 10th", "Sept. 1, 2026"
+    dm = re.search(
+        r"\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\.?\s*"
+        r"(\d{1,2})(?:st|nd|rd|th)?"
+        r"(?:[,\s]+(\d{4}))?",
+        s2,
+        re.IGNORECASE,
+    )
+    if tm and dm:
+        try:
+            h = int(tm.group(1))
+            mi = int(tm.group(2))
+            ampm = (tm.group(3) or "").lower().rstrip(".")
+            mon = _MONTH_ABBR[dm.group(1).lower()]
+            d = int(dm.group(2))
+            year_explicit = dm.group(3)
+            # 12-hour → 24-hour
+            if ampm == "pm" and h < 12:
+                h += 12
+            elif ampm == "am" and h == 12:
+                h = 0
+            elif not ampm:
+                # No am/pm — assume 24h if hour <= 23, else leave as-is.
+                pass
+            # Year: explicit > current > next year if more than 6mo in past
+            now = datetime.now(CHINA_TZ)
+            if year_explicit:
+                y = int(year_explicit)
+            else:
+                y = now.year
+                try:
+                    candidate = datetime(y, mon, d, h, mi, tzinfo=CHINA_TZ)
+                    if (now - candidate).days > 180:
+                        y += 1
+                except ValueError:
+                    pass
+            return datetime(y, mon, d, h, mi, tzinfo=CHINA_TZ)
+        except (ValueError, KeyError):
             return None
     return None
 
@@ -321,12 +385,36 @@ class HomeworkItem(Item):
         title = title_match.group(1).strip() if title_match else ""
 
         # Deadline: from "到期日期\n2026年5月12日 23:59" (Chinese format)
-        # Match the dt/dd pair; the date is what we want.
-        deadline_match = re.search(
+        # OR from English "Due date: 11:59pm, Jun.10th, Wed., Week 16"
+        # OR from "due on Jun. 10th" in the title fragment.
+        deadline = ""
+        cn_match = re.search(
             r'到期日期\s*\n?\s*(\d{4}年\d{1,2}月\d{1,2}日[^\n<]*)',
             html,
         )
-        deadline = deadline_match.group(1).strip() if deadline_match else ""
+        if cn_match:
+            deadline = cn_match.group(1).strip()
+        else:
+            # Try "Due date: ..." label
+            en_match = re.search(
+                r'(?:Due\s*date|Deadline)\s*:\s*'
+                r'(\d{1,2}:\d{2}\s*(?:am|pm|a\.m\.|p\.m\.)?'
+                r'[^\n<]*?\d{1,2}(?:st|nd|rd|th)?[^\n<]*)',
+                html,
+                re.IGNORECASE,
+            )
+            if en_match:
+                deadline = en_match.group(1).strip()
+            else:
+                # Last resort: "due on Mon. Dth" from title fragment
+                title_due = re.search(
+                    r'due\s+on\s+'
+                    r'((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\.?\s*\d{1,2}(?:st|nd|rd|th)?)',
+                    html,
+                    re.IGNORECASE,
+                )
+                if title_due:
+                    deadline = "23:59, " + title_due.group(1).strip()
 
         return cls(
             sub_id=f"_{content_id}_1",

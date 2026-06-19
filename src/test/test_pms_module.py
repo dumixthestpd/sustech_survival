@@ -21,6 +21,7 @@ from sustech_survival.pms import (
 )
 from sustech_survival.pms.pms import (
     _coerce_color, _coerce_paper, _coerce_duplex,
+    _looks_off_campus, OFF_CAMPUS_BODY, OFF_CAMPUS_HINT,
     PMSClient as _PMSClient,
 )
 
@@ -198,3 +199,114 @@ class TestFmtDate:
     def test_invalid_type_raises(self):
         with pytest.raises(TypeError):
             _PMSClient._fmt_date(12345)
+
+
+# ── Off-campus (HTTP 403) detection ─────────────────────────────────────────
+
+class TestOffCampus:
+    """PMS sits behind SUSTech's campus firewall. Off-campus requests get a
+    403 with body "Access forbidden, please contact administrator." and the
+    module must surface that as an actionable error, not a JSON decode crash.
+    """
+
+    def _make_response(self, status_code: int, body: str):
+        import requests
+        r = requests.Response()
+        r.status_code = status_code
+        r._content = body.encode("utf-8")
+        return r
+
+    def test_body_constant_matches_server(self):
+        assert OFF_CAMPUS_BODY == "Access forbidden, please contact administrator."
+
+    def test_hint_mentions_campus_network(self):
+        assert "SUSTech" in OFF_CAMPUS_HINT
+        assert "campus network" in OFF_CAMPUS_HINT.lower() or "campus" in OFF_CAMPUS_HINT.lower()
+
+    def test_detects_off_campus_403(self):
+        r = self._make_response(403, "Access forbidden, please contact administrator.")
+        assert _looks_off_campus(r) is True
+
+    def test_ignores_403_with_different_body(self):
+        # Some other 403 (auth, maintenance, etc.) — must not trigger hint.
+        r = self._make_response(403, "Forbidden")
+        assert _looks_off_campus(r) is False
+
+    def test_ignores_200_with_offcampus_body(self):
+        # Defensive: matching body but wrong status — must not trigger.
+        r = self._make_response(200, "Access forbidden, please contact administrator.")
+        assert _looks_off_campus(r) is False
+
+    def test_ignores_500_with_offcampus_body(self):
+        r = self._make_response(500, "Access forbidden, please contact administrator.")
+        assert _looks_off_campus(r) is False
+
+    def test_unwrap_raises_pmserror_with_hint_on_off_campus(self):
+        r = self._make_response(403, "Access forbidden, please contact administrator.")
+        with pytest.raises(PMSError) as exc:
+            _PMSClient._unwrap(r)
+        assert "NOT on the SUSTech campus network" in str(exc.value)
+
+    def test_unwrap_falls_back_to_generic_on_other_non_json(self):
+        # Non-JSON body that ISN'T the off-campus signal — generic hint.
+        r = self._make_response(502, "<html>Bad Gateway</html>")
+        with pytest.raises(PMSError) as exc:
+            _PMSClient._unwrap(r)
+        msg = str(exc.value)
+        assert "Non-JSON response" in msg
+        assert "NOT on the SUSTech" not in msg
+
+    def test_unwrap_passes_through_valid_json(self):
+        r = self._make_response(200, '{"code": 0, "message": "ok", "result": [1, 2]}')
+        assert _PMSClient._unwrap(r) == [1, 2]
+
+    def test_unwrap_raises_on_error_code(self):
+        r = self._make_response(200, '{"code": 401, "message": "Not authenticated"}')
+        with pytest.raises(PMSError) as exc:
+            _PMSClient._unwrap(r)
+        assert "Not authenticated" in str(exc.value)
+
+
+# ── Off-campus wiring on history / delete_* ─────────────────────────────────
+# These methods call r.json() directly (not via _unwrap) — confirm the
+# off-campus check is wired into each path independently.
+
+class TestOffCampusWiring:
+    def _make_response(self, status_code: int, body: str):
+        import requests
+        r = requests.Response()
+        r.status_code = status_code
+        r._content = body.encode("utf-8")
+        return r
+
+    def _fake_session(self, r):
+        import requests
+        sess = requests.Session()
+        # Replace the methods we want to stub
+        def fake_post(*a, **kw): return r
+        def fake_get(*a, **kw): return r
+        sess.post = fake_post
+        sess.get = fake_get
+        return sess
+
+    def test_history_raises_offcampus(self):
+        import requests
+        r = self._make_response(403, "Access forbidden, please contact administrator.")
+        c = _PMSClient(session=self._fake_session(r))
+        with pytest.raises(PMSError) as exc:
+            c.history(begin="20260601", end="20260614", type=1)
+        assert "NOT on the SUSTech campus network" in str(exc.value)
+
+    def test_delete_print_job_raises_offcampus(self):
+        r = self._make_response(403, "Access forbidden, please contact administrator.")
+        c = _PMSClient(session=self._fake_session(r))
+        with pytest.raises(PMSError) as exc:
+            c.delete_print_job(12345)
+        assert "NOT on the SUSTech campus network" in str(exc.value)
+
+    def test_delete_scan_job_raises_offcampus(self):
+        r = self._make_response(403, "Access forbidden, please contact administrator.")
+        c = _PMSClient(session=self._fake_session(r))
+        with pytest.raises(PMSError) as exc:
+            c.delete_scan_job(67890)
+        assert "NOT on the SUSTech campus network" in str(exc.value)
