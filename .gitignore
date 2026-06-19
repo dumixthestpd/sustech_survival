@@ -72,3 +72,9 @@ booking/token.json
 booking/session.json
 classroom/cache/
 selectcourse/cache/
+
+# UI verification artifacts (contain real session cookies + personal data)
+docs/ui-verification/cookies.json
+docs/ui-verification/*/cookies.json
+docs/ui-verification/*/*.html
+docs/ui-verification/*/live-data.json

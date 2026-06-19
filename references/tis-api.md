@@ -281,6 +281,33 @@ Each round (`xkgzszOne`, populated from `xkgzszList`) carries:
 | **退选 (drop)**          | Not a separate "round." The current round's `sfkt` flag controls whether `Xsxk/tuike` is allowed. When the round's window passes or `sfkt='0'`, tuike rejects. |
 | **跨学期 (cross-semester)** | Not a separate endpoint. Set `p_kkxnxq` (开课学年学期) to a future xn/xq in the queryform. Same `addXuanke` endpoint, different term. |
 
+### Live-verified data (2026-06-19, user 12413021, summer 2026)
+
+Captured by `docs/ui-verification/verify_xsxk_ui.py` (login + Playwright +
+read Vue `__vue__` data). The actual configured rounds for this user:
+
+| `xkfsdm` | `xkfsmc` | `xkfsmc_en` | `xkms` | `sfkx` | `sfkt` | `ksrq` | `jsrq` |
+|---|---|---|---|---|---|---|---|
+| `bxxk` | 通识必修选课 | General Education Required | 1=直选 | 1 | 1 | 2026-06-22 13:00 | 2026-07-03 17:30 |
+| `xxxk` | 通识选修选课 | General Education Elective | 1=直选 | 1 | 1 | 2026-06-22 13:00 | 2026-07-03 17:30 |
+| `kzyxk` | 培养方案内课程 | Program Required | 1=直选 | 1 | 1 | 2026-06-22 13:00 | 2026-07-03 17:30 |
+| `zynknjxk` | 非培养方案内课程 | Outside-Curriculum Accredited | 1=直选 | 1 | 1 | 2026-06-22 13:00 | 2026-07-03 17:30 |
+| `cxxk` | 重修选课 | Retake Courses | 1=直选 | 1 | 1 | 2026-06-22 13:00 | 2026-07-03 17:30 |
+
+**Findings:**
+- All 5 rounds are `xkms='1'` = 直选 (first-come-first-served, direct selection).
+- No "预选" / "补选" / "跨学期" round exists as separate `xkfsdm` codes — those
+  are implemented by the registrar opening different time windows (`ksrq`/`jsrq`).
+- Selection window opens **3 days from now** (2026-06-22) and closes **2026-07-03 17:30**.
+- All rounds `sfkx=1` (selectable) and `sfkt=1` (droppable) once active.
+- All `sfxzrl=1` = capacity-limited (zrl / yxrs visible in 容量/已选 column).
+- The Chinese 政策 names (通识必修 vs 培养方案内 etc.) are **academic categories**,
+  not selection rounds. Each one has its own `xkfsdm` and its own time window.
+
+**The `xkgzszOne` was empty when captured** — because the user hadn't clicked
+a round tab yet (defaults to 已选). Once a user clicks e.g. "通识必修选课", the
+`xkgzszOne` populates with that round's config and the banner shows the live state.
+
 ### What I confirmed vs what I'm inferring
 
 **Confirmed in the page source** (`/Xsxk/query/1` HTML, ~128KB):
