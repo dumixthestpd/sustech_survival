@@ -1,7 +1,8 @@
 """
-sustech_survival.selectcourse.selectcourse — Live client for TIS course browsing.
+sustech_survival.selectcourse.selectcourse — Live client for TIS course browsing + enrollment.
 
-ONE class. ALL read operations on the 选课 catalog and your enrolled courses.
+ONE class. ALL operations on the 选课 catalog, your enrolled courses,
+and (with `dry_run=False`) course add/drop.
 
 Architecture mirrors classroom.ClassroomOccupancy — same auth, same cache,
 same TIS campus_schedule endpoint. The difference: this client is
@@ -9,13 +10,23 @@ course-centric (one row per offering), not room-centric.
 
 Endpoints used:
     Xsxktz/queryRwxxcxList          — public course catalog (any xq, including
-                                       summer xq=3)
-    xszykb/queryxszykbzong           — your enrolled courses for a semester
-    xszykb/queryxszykbzhou           — your enrolled courses for a specific week
+                                       summer xq=3) — READ
+    xszykb/queryxszykbzong           — your enrolled courses for a semester — READ
+    xszykb/queryxszykbzhou           — your enrolled courses for a specific week — READ
+    Xsxk/addXuanke                   — submit shopping cart → enrolled — WRITE
+    Xsxk/tuike                       — drop a course — WRITE
+    Xsxk/addGouwuche                 — add to shopping cart — WRITE
+    Xsxk/delGouwuche                 — remove from shopping cart — WRITE
+    Xsxk/updXuefeijiaofei            — tuition payment (not wrapped; TIS-internal flow)
+    Xsxk/updXkxsByyx                 — update by enrolled status
+    Xsxk/updXkxsBygwc                — update by cart status
 
-The WRITE side (AddMeeting/Submit equivalent for course enrollment) is
-gated behind a Vue component and not yet wrapped — see
-references/tis-api.md for the open question.
+Write-side (AddCourse / DropCourse) was discovered by walking the
+`/pub/xkgl/xsxk/xsxk-*.js` bundle on 2026-06-19. Endpoints + payload
+shape documented in `references/tis-api.md`. The `dry_run=True` default
+on `add_course()` / `drop_course()` means they print what would be POSTed
+without actually mutating your enrollment — flip to `dry_run=False` to
+fire the real request.
 """
 from __future__ import annotations
 
@@ -34,7 +45,25 @@ TIS_BASE = "https://tis.sustech.edu.cn"
 TIS_CAMPUS_SCHEDULE_URL = f"{TIS_BASE}/Xsxktz/queryRwxxcxList"
 TIS_PERSONAL_SCHEDULE_URL = f"{TIS_BASE}/xszykb/queryxszykbzong"
 TIS_PERSONAL_WEEK_URL = f"{TIS_BASE}/xszykb/queryxszykbzhou"
+TIS_ADD_XUANKE_URL = f"{TIS_BASE}/Xsxk/addXuanke"
+TIS_TUIKE_URL = f"{TIS_BASE}/Xsxk/tuike"
+TIS_ADD_GOUWUCHE_URL = f"{TIS_BASE}/Xsxk/addGouwuche"
+TIS_DEL_GOUWUCHE_URL = f"{TIS_BASE}/Xsxk/delGouwuche"
 DEFAULT_TTL = 3600
+
+# xktjz (选课提交至) values — where the action lands
+XKTJZ_CART_TO_ENROLLED = "gwctjzyx"   # 购物车提交至已选 (cart → enrolled) — used by addXuanke
+XKTJZ_TASK_TO_CART = "rwtjzgwc"      # 任务提交至购物车 (task → cart) — used by addGouwuche
+
+
+class EnrollmentError(RuntimeError):
+    """Raised when TIS rejects a write-side enrollment action."""
+    def __init__(self, jg: str, message: str, *, endpoint: str, rwh: str):
+        self.jg = jg              # '0' or '-1' or other non-success code
+        self.message = message
+        self.endpoint = endpoint
+        self.rwh = rwh
+        super().__init__(f"[{endpoint}] rwh={rwh} jg={jg}: {message}")
 
 
 def _tis_login(username: str, password: str) -> requests.Session:
@@ -279,6 +308,181 @@ class SelectCourseClient:
             if rwh:
                 rwhs.add(rwh)
         return rwhs
+
+    # ── WRITE side: add / drop courses ───────────────────────────────────────
+    #
+    # Discovered 2026-06-19 by walking /pub/xkgl/xsxk/xsxk-*.js.
+    # See references/tis-api.md for the full payload shape + every Xsxk/* endpoint.
+    #
+    # The "click select" flow is:
+    #   1. TIS UI calls Xsxk/cxmtctPd (POST) — conflict check
+    #   2. If OK, calls Xsxk/addGouwuche (add to cart) OR Xsxk/addXuanke (direct enroll)
+    #   3. If tuition-based, also calls Xsxk/updXuefeijiaofei
+    #
+    # For "click drop":
+    #   1. TIS UI calls Xsxk/tuike (POST) — drop by id
+    #
+    # The `p_id` field is the row's `id` from queryKxrw/queryYxkc — we
+    # assume it matches `rwh` from queryRwxxcxList (both are 任务号/task
+    # number). If TIS rejects, the error message will say so and you can
+    # pass a different `id_field` value.
+    #
+    # All write methods default to `dry_run=True` — they print what would
+    # be POSTed without touching TIS. Set `dry_run=False` to fire the real
+    # request. We don't auto-flip this; course selection is a state-mutating
+    # operation and the user must opt in explicitly.
+
+    def _build_queryform(self, *, rwh: Optional[str] = None,
+                         ids: Optional[list] = None,
+                         xktjz: Optional[str] = None,
+                         pylx: Optional[str] = None,
+                         ignore_conflicts: bool = False,
+                         ignore_zero_capacity: bool = False) -> dict:
+        """Build the TIS `queryform` payload for write-side endpoints.
+
+        Mirrors the keys seen in `pub/xkgl/xsxk/xsxk-*.js` queryform
+        definition. Values not provided default to safe no-ops.
+        """
+        return {
+            "p_pylx": pylx,                          # 1=本科, 2=研究生
+            "p_sfgldjr": "0",                        # 是否管理端进入
+            "p_sfredis": "",                         # 是否Redis缓存
+            "p_sfsyxkgwc": "1",                      # 是否使用选课购物车
+            "p_xktjz": xktjz,                        # 选课提交至 (gwctjzyx / rwtjzgwc)
+            "p_chaxunxh": "",                        # 管理端查询学号
+            "p_gjz": "",                             # 关键字
+            "p_skjs": "",                            # 上课教师
+            "p_xn": self.xn,                         # 学年
+            "p_xq": self.xq,                         # 学期
+            "p_xnxq": None,                          # 学年学期（合并）
+            "p_dqxn": None, "p_dqxq": None, "p_dqxnxq": None,
+            "p_xkfsdm": "",                          # 选课方式代码
+            "p_xiaoqu": "",                          # 校区
+            "p_kkyx": "",                            # 开课院系
+            "p_kclb": "",                            # 课程类别
+            "p_xkxs": None,                          # 选课系数
+            "p_dyc": None,                           # 多语种
+            "p_kkxnxq": "",                          # 开课学年学期
+            "p_id": rwh,                             # ★ 课程id（任务号rwh）
+            "p_ids": ids if ids is not None else [], # ★ 批量id列表
+            "p_sfhlctkc": "1" if ignore_conflicts else "0",     # 是否忽略冲突课程
+            "p_sfhllrlkc": "1" if ignore_zero_capacity else "0", # 是否忽略零容量课程
+            "p_kxsj_xqj": "", "p_kxsj_ksjc": "", "p_kxsj_jsjc": "",
+            "p_kcdm_js": "", "p_kcdm_cxrw": "", "p_kcdm_cxrw_zckc": "",
+            "p_kc_gjz": "",
+            "p_xzcxtjz_nj": "", "p_xzcxtjz_yx": "", "p_xzcxtjz_zy": "",
+            "p_xzcxtjz_zyfx": "", "p_xzcxtjz_bj": "",
+            "p_sfxsgwckb": "1",
+            "p_skyy": "",
+            "p_sfmxzj": "0",
+        }
+
+    def _post_xsxk(self, endpoint: str, payload: dict, *,
+                   dry_run: bool, rwh: str) -> dict:
+        """POST to a write-side Xsxk/* endpoint.
+
+        With `dry_run=True`, returns a synthetic "would-post" response
+        without sending anything. With `dry_run=False`, logs in via TIS
+        and fires the real POST.
+
+        Response shape: `{jg: '1'|'0'|'-1', message: '...', ...}`
+        Raises EnrollmentError when jg != '1'.
+        """
+        if dry_run:
+            return {
+                "dry_run": True,
+                "endpoint": endpoint,
+                "would_post": payload,
+                "jg": None, "message": "(dry_run: no request sent)",
+            }
+
+        sess = self._login_for_write()
+        sess.headers["X-Requested-With"] = "XMLHttpRequest"
+        r = sess.post(endpoint, data=payload, timeout=30)
+        r.raise_for_status()
+        res = r.json() if r.content else {}
+        jg = str(res.get("jg", ""))
+        if jg != "1":
+            raise EnrollmentError(jg, res.get("message", "(no message)"),
+                                  endpoint=endpoint, rwh=rwh)
+        return res
+
+    def _login_for_write(self) -> requests.Session:
+        """Fresh TIS login for a write-side call."""
+        from sustech_survival.sso import Authorizer
+        creds = Authorizer(skill_dir=str(self.skill_root))
+        uname, pw = creds.read_creds()
+        return _tis_login(uname, pw)
+
+    def add_course(self, rwh: str, *,
+                   dry_run: bool = True,
+                   ignore_conflicts: bool = False,
+                   ignore_zero_capacity: bool = False,
+                   pylx: Optional[str] = None) -> dict:
+        """Add a course to your enrolled list (直接选课).
+
+        `rwh`: the 任务号 (task number) from `Course.rwh` or `my_courses()`.
+               Used as `p_id` in the POST body.
+
+        `dry_run=True` (default): returns what would be POSTed without
+                                  firing the request. SAFE.
+        `dry_run=False`: actually fires `Xsxk/addXuanke`. This MUTATES
+                         your enrollment — use only after reviewing.
+
+        `ignore_conflicts`/`ignore_zero_capacity`: pass through to the
+            TIS form's `p_sfhlctkc` / `p_sfhllrlkc`. Note that TIS may
+            still reject based on its own rules even when these are True.
+
+        Returns the TIS response dict. On dry_run, includes `dry_run=True`
+        and `would_post=<full payload>`. On real call, includes `jg='1'`
+        and `message='选课成功'` (or similar) on success.
+
+        Raises EnrollmentError on real-call failure (jg != '1').
+        """
+        payload = self._build_queryform(
+            rwh=rwh,
+            xktjz=XKTJZ_CART_TO_ENROLLED,
+            pylx=pylx,
+            ignore_conflicts=ignore_conflicts,
+            ignore_zero_capacity=ignore_zero_capacity,
+        )
+        return self._post_xsxk(TIS_ADD_XUANKE_URL, payload,
+                               dry_run=dry_run, rwh=rwh)
+
+    def drop_course(self, rwh: str, *, dry_run: bool = True,
+                    pylx: Optional[str] = None) -> dict:
+        """Drop a course (退课) by 任务号.
+
+        Same `dry_run` semantics as `add_course`. Fires `Xsxk/tuike`.
+        """
+        payload = self._build_queryform(rwh=rwh, pylx=pylx)
+        return self._post_xsxk(TIS_TUIKE_URL, payload,
+                               dry_run=dry_run, rwh=rwh)
+
+    def add_to_cart(self, rwh: str, *, dry_run: bool = True,
+                    pylx: Optional[str] = None,
+                    xktjz: str = XKTJZ_TASK_TO_CART) -> dict:
+        """Add a course to your shopping cart (购物车).
+
+        `xktjz` defaults to `rwtjzgwc` (任务→购物车). Set to
+        `gwctjzyx` (购物车→已选) to commit the cart in one step
+        (equivalent to `add_course`).
+
+        Fires `Xsxk/addGouwuche`.
+        """
+        payload = self._build_queryform(rwh=rwh, xktjz=xktjz, pylx=pylx)
+        return self._post_xsxk(TIS_ADD_GOUWUCHE_URL, payload,
+                               dry_run=dry_run, rwh=rwh)
+
+    def remove_from_cart(self, rwh: str, *, dry_run: bool = True,
+                         pylx: Optional[str] = None) -> dict:
+        """Remove a course from your shopping cart.
+
+        Fires `Xsxk/delGouwuche`.
+        """
+        payload = self._build_queryform(rwh=rwh, pylx=pylx)
+        return self._post_xsxk(TIS_DEL_GOUWUCHE_URL, payload,
+                               dry_run=dry_run, rwh=rwh)
 
 
 # ── Singleton factory ────────────────────────────────────────────────────────

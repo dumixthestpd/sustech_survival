@@ -20,9 +20,14 @@ Commands (human + agent friendly):
         --json
     refresh                        Force-refresh from TIS (bust cache)
 
-Note: The WRITE side (AddCourse / DropCourse) is NOT wrapped — the
-endpoint is gated behind a Vue component that needs JS-bundle walking.
-This CLI is the read-side: browse catalog, view details, see enrolled.
+    # WRITE-side (state-mutating; default to --dry-run for safety)
+    add RWH                        Add course (Xsxk/addXuanke) --dry-run
+        --dry-run / --no-dry-run   Toggle (default: dry-run)
+        --ignore-conflicts         Pass p_sfhlctkc=1
+    drop RWH                       Drop course (Xsxk/tuike) --dry-run
+        --dry-run / --no-dry-run   Toggle
+    add-to-cart RWH                Add to shopping cart (Xsxk/addGouwuche)
+    remove-from-cart RWH           Remove from cart (Xsxk/delGouwuche)
 
 Examples:
     # Browse SUMMER 2026 offerings
@@ -34,6 +39,14 @@ Examples:
 
     # What you're enrolled in
     python -m sustech_survival.selectcourse enrolled --semester 2025-2026-3
+
+    # Add course (dry-run: shows payload, doesn't mutate)
+    python -m sustech_survival.selectcourse add 2025-2026-2-BIO101-001
+    # Real add (mutates your enrollment — be sure!)
+    python -m sustech_survival.selectcourse add 2025-2026-2-BIO101-001 --no-dry-run
+
+    # Drop course
+    python -m sustech_survival.selectcourse drop 2025-2026-2-BIO101-001
 """
 from __future__ import annotations
 
@@ -177,6 +190,81 @@ def cmd_refresh(args) -> int:
     return 0
 
 
+def _print_write_result(label: str, rwh: str, res: dict, *,
+                        dry_run: bool, as_json: bool = False) -> None:
+    if as_json:
+        print(json.dumps({"action": label, "rwh": rwh, **res},
+                         ensure_ascii=False, indent=2))
+        return
+    if dry_run:
+        print(f"[DRY RUN] {label} {rwh}")
+        print(f"  endpoint: {res['endpoint']}")
+        print(f"  would POST:")
+        for k, v in res["would_post"].items():
+            if v not in (None, "", [], "0"):
+                print(f"    {k} = {v!r}")
+        return
+    jg = res.get("jg", "?")
+    msg = res.get("message", "")
+    ok = jg == "1"
+    marker = "✓" if ok else "✗"
+    print(f"{marker} {label} {rwh}: jg={jg}  {msg}")
+    if not ok:
+        print(f"  (this would have raised EnrollmentError if called from Python)")
+
+
+def cmd_add(args) -> int:
+    sc = sc_factory(xn=args.xn, xq=args.xq)
+    res = sc.add_course(
+        args.rwh,
+        dry_run=args.dry_run,
+        ignore_conflicts=args.ignore_conflicts,
+        ignore_zero_capacity=args.ignore_zero_capacity,
+        pylx=args.pylx,
+    )
+    label = "ADD COURSE →" if args.dry_run else "ADDED COURSE →"
+    _print_write_result(label, args.rwh, res,
+                        dry_run=args.dry_run, as_json=args.json)
+    return 0 if (args.dry_run or res.get("jg") == "1") else 1
+
+
+def cmd_drop(args) -> int:
+    sc = sc_factory(xn=args.xn, xq=args.xq)
+    res = sc.drop_course(args.rwh, dry_run=args.dry_run, pylx=args.pylx)
+    label = "DROP COURSE →" if args.dry_run else "DROPPED COURSE →"
+    _print_write_result(label, args.rwh, res,
+                        dry_run=args.dry_run, as_json=args.json)
+    return 0 if (args.dry_run or res.get("jg") == "1") else 1
+
+
+def cmd_add_to_cart(args) -> int:
+    sc = sc_factory(xn=args.xn, xq=args.xq)
+    res = sc.add_to_cart(args.rwh, dry_run=args.dry_run, pylx=args.pylx)
+    label = "ADD TO CART →" if args.dry_run else "ADDED TO CART →"
+    _print_write_result(label, args.rwh, res,
+                        dry_run=args.dry_run, as_json=args.json)
+    return 0 if (args.dry_run or res.get("jg") == "1") else 1
+
+
+def cmd_remove_from_cart(args) -> int:
+    sc = sc_factory(xn=args.xn, xq=args.xq)
+    res = sc.remove_from_cart(args.rwh, dry_run=args.dry_run, pylx=args.pylx)
+    label = "REMOVE FROM CART →" if args.dry_run else "REMOVED FROM CART →"
+    _print_write_result(label, args.rwh, res,
+                        dry_run=args.dry_run, as_json=args.json)
+    return 0 if (args.dry_run or res.get("jg") == "1") else 1
+
+
+def _add_write_common(p):
+    """Common args for write-side commands."""
+    p.add_argument("--no-dry-run", dest="dry_run", action="store_false",
+                   default=True,
+                   help="Actually fire the request (default: dry-run)")
+    p.add_argument("--pylx", default=None,
+                   help="培养类型 (1=本科, 2=研究生). Auto if omitted.")
+    p.add_argument("--json", action="store_true")
+
+
 # ── Parser ──────────────────────────────────────────────────────────────────
 
 
@@ -227,6 +315,37 @@ def _build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("refresh", help="Force-refresh from TIS")
     _add_semester_args(sp)
     sp.set_defaults(func=cmd_refresh)
+
+    # ── Write-side commands (state-mutating; default dry-run) ────────────
+    sp = sub.add_parser("add", help="Add course (Xsxk/addXuanke) — dry-run by default")
+    _add_semester_args(sp)
+    sp.add_argument("rwh", help="Course 任务号 (rwh), e.g. 2025-2026-2-BIO101-001")
+    _add_write_common(sp)
+    sp.add_argument("--ignore-conflicts", action="store_true",
+                    help="Set p_sfhlctkc=1 (skip schedule conflict check)")
+    sp.add_argument("--ignore-zero-capacity", action="store_true",
+                    help="Set p_sfhllrlkc=1 (skip zero-capacity check)")
+    sp.set_defaults(func=cmd_add)
+
+    sp = sub.add_parser("drop", help="Drop course (Xsxk/tuike) — dry-run by default")
+    _add_semester_args(sp)
+    sp.add_argument("rwh", help="Course 任务号 (rwh)")
+    _add_write_common(sp)
+    sp.set_defaults(func=cmd_drop)
+
+    sp = sub.add_parser("add-to-cart",
+                        help="Add to shopping cart (Xsxk/addGouwuche) — dry-run")
+    _add_semester_args(sp)
+    sp.add_argument("rwh", help="Course 任务号 (rwh)")
+    _add_write_common(sp)
+    sp.set_defaults(func=cmd_add_to_cart)
+
+    sp = sub.add_parser("remove-from-cart",
+                        help="Remove from cart (Xsxk/delGouwuche) — dry-run")
+    _add_semester_args(sp)
+    sp.add_argument("rwh", help="Course 任务号 (rwh)")
+    _add_write_common(sp)
+    sp.set_defaults(func=cmd_remove_from_cart)
 
     return p
 
