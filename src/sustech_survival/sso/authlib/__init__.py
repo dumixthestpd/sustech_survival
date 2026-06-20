@@ -16,7 +16,7 @@ logging.getLogger(__name__).setLevel(logging.DEBUG)
 # Lazy-load external service modules
 # =============================================================================
 
-_LAZY = frozenset({"wos", "rsc", "cnki", "ieee", "jstor", "pubmed", "acs", "wiley", "springer", "scopus", "pms"})
+_LAZY = frozenset({"wos", "rsc", "cnki", "ieee", "jstor", "pubmed", "acs", "wiley", "springer", "scopus", "pms", "booking"})
 _LOADED = {}
 
 

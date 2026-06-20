@@ -33,6 +33,7 @@ from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_v1_5 as PKCS1Padding
 
 from ..authorizer import Authorizer, AuthorizerError, UA, register_auth
+from ...pms.pms import OFF_CAMPUS_HINT, _looks_off_campus
 
 
 PMS_BASE = "https://pms.sustech.edu.cn"
@@ -72,6 +73,8 @@ class PMSAuth(Authorizer):
             f"{PMS_API}/client/Auth/Check",
             timeout=10,
         )
+        if _looks_off_campus(r):
+            return False, OFF_CAMPUS_HINT
         try:
             data = r.json()
         except Exception:
@@ -118,6 +121,8 @@ class PMSAuth(Authorizer):
 
         # Step 1: get auth token
         r = sess.post(f"{PMS_API}/client/Auth/GetAuthToken", timeout=10)
+        if _looks_off_campus(r):
+            raise AuthorizerError(OFF_CAMPUS_HINT)
         tok = r.json()
         if tok.get("code") != 0:
             raise AuthorizerError(f"GetAuthToken failed: {tok.get('message')}")
@@ -125,6 +130,8 @@ class PMSAuth(Authorizer):
 
         # Step 2: get public key + nonce
         r = sess.get(f"{PMS_API}/client/Auth/PublicKey", timeout=10)
+        if _looks_off_campus(r):
+            raise AuthorizerError(OFF_CAMPUS_HINT)
         pk = r.json()
         if pk.get("code") != 0:
             raise AuthorizerError(f"PublicKey failed: {pk.get('message')}")
@@ -146,6 +153,8 @@ class PMSAuth(Authorizer):
             headers={"Content-Type": "application/json"},
             timeout=10,
         )
+        if _looks_off_campus(r):
+            raise AuthorizerError(OFF_CAMPUS_HINT)
         out = r.json()
         if out.get("code") != 0:
             raise AuthorizerError(

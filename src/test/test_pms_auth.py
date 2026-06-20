@@ -95,6 +95,65 @@ class TestPMSAuthConstruction:
         assert RePMSAuth is PMSAuth
 
 
+# ── Off-campus detection on auth endpoints ──────────────────────────────────
+
+class TestPMSAuthOffCampus:
+    """PMS auth endpoints return 403 off-campus. check() must surface the
+    off-campus hint; login_password() must raise AuthorizerError with it."""
+
+    def _make_response(self, status_code: int, body: str):
+        import requests
+        r = requests.Response()
+        r.status_code = status_code
+        r._content = body.encode("utf-8")
+        return r
+
+    def test_check_returns_offcampus_hint_on_403(self, monkeypatch):
+        """check() should not crash; it should return (False, hint)."""
+        auth = PMSAuth()
+
+        r = self._make_response(403, "Access forbidden, please contact administrator.")
+        sess = auth.requests_session  # just need any session object
+        # Patch _api_session to return a session whose .post returns our r.
+        class FakeSess:
+            def post(self, *a, **kw): return r
+            def get(self, *a, **kw): return r
+        monkeypatch.setattr(auth, "_api_session", lambda: FakeSess())
+
+        ok, msg = auth.check()
+        assert ok is False
+        assert "NOT on the SUSTech campus network" in msg
+
+    def test_login_password_raises_auth_error_on_403(self, monkeypatch):
+        """login_password() raises AuthorizerError with the hint instead of
+        crashing on JSONDecodeError."""
+        auth = PMSAuth()
+
+        r = self._make_response(403, "Access forbidden, please contact administrator.")
+        class FakeSess:
+            # Mirror just enough of requests.Session for login_password().
+            def __init__(self):
+                self.headers = {}
+                self.cookies = requests_mock_cookies()
+            def post(self, *a, **kw): return r
+            def get(self, *a, **kw): return r
+        # The login flow builds its own session, so we have to monkeypatch
+        # requests.Session in the authlib.pms module.
+        import sustech_survival.sso.authlib.pms as authlib_pms
+        monkeypatch.setattr(authlib_pms.requests, "Session", FakeSess)
+
+        from sustech_survival.sso.authorizer import AuthorizerError
+        with pytest.raises(AuthorizerError) as exc:
+            auth.login_password(username="12413021", password="fake-but-not-used")
+        assert "NOT on the SUSTech campus network" in str(exc.value)
+
+
+def requests_mock_cookies():
+    """Minimal cookie jar compatible with .cookies attribute access."""
+    from requests.cookies import RequestsCookieJar
+    return RequestsCookieJar()
+
+
 # ── Live tests ──────────────────────────────────────────────────────────────
 
 @pytest.mark.live

@@ -45,6 +45,25 @@ from .schema import (
 PMS_BASE = "https://pms.sustech.edu.cn"
 PMS_API = f"{PMS_BASE}/api"
 
+# PMS sits behind the SUSTech campus firewall. Off-campus (VPN or otherwise)
+# requests get a 403 with this plain-text body before any auth runs.
+# Detect it so callers/agents get an actionable error instead of a JSON
+# decode crash on "Access forbidden, please contact administrator."
+OFF_CAMPUS_BODY = "Access forbidden, please contact administrator."
+OFF_CAMPUS_HINT = (
+    "PMS server blocked the request (HTTP 403: 'Access forbidden, please "
+    "contact administrator.'). You are most likely NOT on the SUSTech "
+    "campus network — connect to campus Wi-Fi / wired, or this module "
+    "will not work."
+)
+
+
+def _looks_off_campus(r: requests.Response) -> bool:
+    """True iff the response body matches PMS's off-campus 403."""
+    if r.status_code != 403:
+        return False
+    return OFF_CAMPUS_BODY in (r.text or "")
+
 
 class PMSClient:
     """One client object for the SUSTech 联创 PMS cloud print system.
@@ -114,6 +133,8 @@ class PMSClient:
             headers={"Content-Type": "application/json"},
             timeout=10,
         )
+        if _looks_off_campus(r):
+            raise PMSError(OFF_CAMPUS_HINT)
         out = r.json()
         return out.get("code") == 0
 
@@ -137,6 +158,8 @@ class PMSClient:
             headers={"Content-Type": "application/json"},
             timeout=10,
         )
+        if _looks_off_campus(r):
+            raise PMSError(OFF_CAMPUS_HINT)
         out = r.json()
         return out.get("code") == 0
 
@@ -180,6 +203,8 @@ class PMSClient:
             headers={"Content-Type": "application/json"},
             timeout=15,
         )
+        if _looks_off_campus(r):
+            raise PMSError(OFF_CAMPUS_HINT)
         out = r.json()
         if out.get("code") != 0:
             raise PMSError(out.get("message", "Report/DetailPage failed"))
@@ -302,11 +327,20 @@ class PMSClient:
 
     @staticmethod
     def _unwrap(r: requests.Response):
-        """Unwrap the standard {code, message, result} envelope."""
+        """Unwrap the standard {code, message, result} envelope.
+
+        Detects PMS's off-campus 403 and raises a `PMSError` with an
+        actionable hint instead of crashing on the non-JSON body.
+        """
+        if _looks_off_campus(r):
+            raise PMSError(OFF_CAMPUS_HINT)
         try:
             out = r.json()
         except Exception:
-            raise PMSError(f"Non-JSON response: HTTP {r.status_code}")
+            raise PMSError(
+                f"Non-JSON response: HTTP {r.status_code} "
+                f"(body: {(r.text or '')[:120]!r})"
+            )
         if out.get("code") != 0:
             raise PMSError(out.get("message", f"code={out.get('code')}"))
         return out.get("result")
