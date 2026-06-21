@@ -40,15 +40,17 @@ from .schema import Room, Meeting, MyMeeting
 BOOKING_BASE = "https://booking.sustech.edu.cn"
 BOOKING_API = f"{BOOKING_BASE}/api/SystemApi"
 
-# Off-campus signal: SUSTech firewall returns this exact body on 403 before
-# any auth runs. (Same pattern as `pms.py` — see references/sustech-firewall-off-campus-403.md.)
-OFF_CAMPUS_BODY = "Access forbidden, please contact administrator."
-OFF_CAMPUS_HINT = (
-    "Booking server blocked the request (HTTP 403: 'Access forbidden, "
-    "please contact administrator.'). You are most likely NOT on the "
-    "SUSTech campus network — connect to campus Wi-Fi / wired, or this "
-    "module will not work."
+# Off-campus signal: SUSTech firewall returns the same plain-text body on
+# 403 before any auth runs across all internal services. Canonical
+# detection lives in ``sustech_survival.sso._offcampus`` (PMS + booking +
+# future modules share it).
+from sustech_survival.sso._offcampus import (
+    OFF_CAMPUS_BODY,
+    looks_off_campus as _looks_off_campus,
+    off_campus_hint,
 )
+
+OFF_CAMPUS_HINT = off_campus_hint("Booking")
 
 # Server-side auth-error messages that should trigger an auto-relogin.
 # Captured during the 2026-06-15 probe.
@@ -62,12 +64,6 @@ AUTH_ERROR_MESSAGES = (
 
 class BookingError(RuntimeError):
     """Any failure from the Booking API or its auth flow."""
-
-
-def _looks_off_campus(r: requests.Response) -> bool:
-    if r.status_code != 403:
-        return False
-    return OFF_CAMPUS_BODY in (r.text or "")
 
 
 def _looks_auth_error(body: dict) -> bool:

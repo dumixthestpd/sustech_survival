@@ -46,23 +46,17 @@ PMS_BASE = "https://pms.sustech.edu.cn"
 PMS_API = f"{PMS_BASE}/api"
 
 # PMS sits behind the SUSTech campus firewall. Off-campus (VPN or otherwise)
-# requests get a 403 with this plain-text body before any auth runs.
+# requests get a 403 with a plain-text body before any auth runs.
 # Detect it so callers/agents get an actionable error instead of a JSON
-# decode crash on "Access forbidden, please contact administrator."
-OFF_CAMPUS_BODY = "Access forbidden, please contact administrator."
-OFF_CAMPUS_HINT = (
-    "PMS server blocked the request (HTTP 403: 'Access forbidden, please "
-    "contact administrator.'). You are most likely NOT on the SUSTech "
-    "campus network — connect to campus Wi-Fi / wired, or this module "
-    "will not work."
+# decode crash. Shared with booking and (future) other submodules —
+# canonical helpers live in ``sustech_survival.sso._offcampus``.
+from sustech_survival.sso._offcampus import (
+    OFF_CAMPUS_BODY,
+    looks_off_campus as _looks_off_campus,
+    off_campus_hint,
 )
 
-
-def _looks_off_campus(r: requests.Response) -> bool:
-    """True iff the response body matches PMS's off-campus 403."""
-    if r.status_code != 403:
-        return False
-    return OFF_CAMPUS_BODY in (r.text or "")
+OFF_CAMPUS_HINT = off_campus_hint("PMS")
 
 
 class PMSClient:
