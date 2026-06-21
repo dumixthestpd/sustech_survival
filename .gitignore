@@ -18,6 +18,7 @@ bb-courses.json
 content_discovery.json
 
 # Cache — personal per-user state
+cache/
 src/sustech_survival/bb/cache/
 bb/cache/
 _cache.py
