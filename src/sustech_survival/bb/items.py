@@ -484,7 +484,7 @@ class HomeworkItem(Item):
             ...                   deadline="2026-05-12T23:59:00+08:00")
             >>> ok, msg = hw.submit(
             ...     file_path="/tmp/hw15.pdf",
-            ...     target_name="第15次作业-段斯宸-12413021.pdf",
+            ...     target_name="<SID>-<NAME>-Experiment 15.pdf",
             ...     dry_run=True,
             ... )
         """
@@ -550,7 +550,7 @@ class HomeworkItem(Item):
             >>> hw = HomeworkItem.from_submission_page("8328", "610821")
             >>> ok, msg = hw.submit_rest(
             ...     file_path="/tmp/hw.pdf",
-            ...     target_name="12413021-段斯宸-Experiment 5.pdf",
+            ...     target_name="<SID>-<NAME>-Experiment 5.pdf",
             ...     dry_run=True,
             ... )
         """
