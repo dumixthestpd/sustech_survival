@@ -68,7 +68,7 @@ the two record types.
 ## CLI
 
 ```bash
-cd ~/.openclaw/workspace/skills/sustech_survival
+cd ~/.openclaw/code/sustech_survival
 PYTHONPATH=src python -m sustech_survival.faculty <cmd>
 
 Commands:

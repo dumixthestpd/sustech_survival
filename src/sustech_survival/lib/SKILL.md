@@ -19,7 +19,7 @@ python3 lib/login.py
 
 **Python (recommended):**
 ```bash
-cd ~/.openclaw/workspace/skills/sustech_survival
+cd ~/.openclaw/code/sustech_survival
 python3 lib/login.py
 ```
 

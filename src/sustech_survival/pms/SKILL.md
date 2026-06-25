@@ -8,8 +8,8 @@ parent: sustech_survival
 ---
 
 > **Canonical code lives in the OpenClaw workspace**, not here.
-> Real implementation: `~/.openclaw/workspace/skills/sustech_survival/src/sustech_survival/pms/`
-> Auth (custom RSA flow, NOT standard CAS): `~/.openclaw/workspace/skills/sustech_survival/src/sustech_survival/sso/authlib/pms.py`
+> Real implementation: `~/.openclaw/code/sustech_survival/src/sustech_survival/pms/`
+> Auth (custom RSA flow, NOT standard CAS): `~/.openclaw/code/sustech_survival/src/sustech_survival/sso/authlib/pms.py`
 
 # PMS — SUSTech 联创 Cloud Print (sub-skill)
 
@@ -38,7 +38,7 @@ Cookies (OSESSIONID) are set on success.
 
 ```python
 import sys
-sys.path.insert(0, '/Users/dumix/.openclaw/workspace/skills/sustech_survival/src')
+sys.path.insert(0, '/Users/dumix/.openclaw/code/sustech_survival/src')
 
 from sustech_survival.pms import pms, PMSClient
 
@@ -76,7 +76,7 @@ result = c.upload_print("/Users/dumix/hw.pdf", color="bw", copies=1)
 ## CLI
 
 ```bash
-cd ~/.openclaw/workspace/skills/sustech_survival
+cd ~/.openclaw/code/sustech_survival
 PYTHONPATH=src python -m sustech_survival.pms <command>
 
 Commands:
@@ -243,7 +243,7 @@ string aliases. Same for the CLI.
 ## Testing
 
 ```bash
-cd ~/.openclaw/workspace/skills/sustech_survival
+cd ~/.openclaw/code/sustech_survival
 ./venv/bin/python -m pytest src/test/test_pms_*.py -v
 ```
 

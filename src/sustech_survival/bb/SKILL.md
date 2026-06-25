@@ -15,7 +15,7 @@ description: Interact with SUSTech Blackboard (bb.sustech.edu.cn). Use when user
 
 ```python
 import sys
-sys.path.insert(0, '/Users/dumix/.openclaw/workspace/skills/sustech_survival/src')
+sys.path.insert(0, '/Users/dumix/.openclaw/code/sustech_survival/src')
 import sustech_survival.bb as bb
 
 # Session
@@ -162,7 +162,7 @@ python3 bb.py submit --course 8328 --content 610812 --files report.pdf
 
 ```python
 import sys
-sys.path.insert(0, '/Users/dumix/.openclaw/workspace/skills/sustech_survival/src')
+sys.path.insert(0, '/Users/dumix/.openclaw/code/sustech_survival/src')
 from sustech_survival.bb import submit, check_attempts, find_assignment, list_upcoming
 
 # Check attempts (before submitting)

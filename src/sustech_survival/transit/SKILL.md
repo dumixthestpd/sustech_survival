@@ -9,7 +9,7 @@ parent: sustech_survival
 
 > **Canonical code lives in the OpenClaw workspace**, not here.
 > Real implementation:
-> `~/.openclaw/workspace/skills/sustech_survival/src/sustech_survival/transit/`
+> `~/.openclaw/code/sustech_survival/src/sustech_survival/transit/`
 > Web UI assets: `.../transit/web/`
 
 # transit — SUSTech Campus Navigation &amp; Bus Data (sub-skill)
@@ -35,7 +35,7 @@ Two data sources, both pulled live:
 
 ```python
 import sys
-sys.path.insert(0, '/Users/dumix/.openclaw/workspace/skills/sustech_survival/src')
+sys.path.insert(0, '/Users/dumix/.openclaw/code/sustech_survival/src')
 
 from sustech_survival.transit import transit
 
@@ -62,7 +62,7 @@ print(path.to_markdown())
 ## Quick start (CLI)
 
 ```bash
-cd ~/.openclaw/workspace/skills/sustech_survival
+cd ~/.openclaw/code/sustech_survival
 PYTHONPATH=src python -m sustech_survival.transit <command>
 
 Commands:
@@ -252,7 +252,7 @@ directly — `window._map` is exposed at L67, which mirrors what
 ## Testing
 
 ```bash
-cd ~/.openclaw/workspace/skills/sustech_survival
+cd ~/.openclaw/code/sustech_survival
 ./venv/bin/python -m pytest src/test/test_transit_*.py -v
 ```
 
