@@ -37,6 +37,11 @@ from playwright.sync_api import sync_playwright
 
 from sustech_survival.sso import BBAuth
 
+from .result import (
+    SubmitResult, SubmitStatus,
+    success, failure, duplicate, dry_run as _dry_run_factory,
+)
+
 bb_auth = BBAuth()
 
 
@@ -112,9 +117,11 @@ def submit_file(content_id, file_path, course_id=None, submitted_name=None):
     else:
         file_to_upload = file_path
 
-    ok, msg = submit_assignment(course_num, cid, [str(file_to_upload)],
-                                skip_dedup=True, name_override=target_name)
-    return ok, msg
+    result = submit_assignment(course_num, cid, [str(file_to_upload)],
+                              skip_dedup=True, name_override=target_name)
+    # Backwards compat: keep the legacy (ok, msg) tuple for the CLI.
+    # New code should use the SubmitResult directly.
+    return result.to_tuple()
 
 
 def check_attempts(content_id, course_id=None):
@@ -318,9 +325,9 @@ def submit_assignment(course_id, content_id, file_paths, skip_dedup=False,
     for fp in file_paths:
         p = Path(fp).resolve()
         if not p.exists():
-            return False, f"File not found: {p}"
+            return failure(f"File not found: {p}", reason="file_not_found")
         if not p.stat().st_size:
-            return False, f"File is empty: {p}"
+            return failure(f"File is empty: {p}", reason="file_empty")
         resolved.append(p)
 
     total_size = sum(p.stat().st_size for p in resolved)
@@ -387,7 +394,10 @@ def submit_assignment(course_id, content_id, file_paths, skip_dedup=False,
         print(f"  Dedup REST check failed (continuing anyway): {e}")
 
     if prior_files and not skip_dedup:
-        return None, f"DUPLICATE: '{fname}' already submitted in {prior_files}"
+        return duplicate(
+            f"DUPLICATE: '{fname}' already submitted in {prior_files}",
+            prior_files=prior_files,
+        )
 
     # ── Step 1: Launch Playwright, navigate, dismiss dialog, set_input_files ─
     with sync_playwright() as p:
@@ -444,7 +454,7 @@ def submit_assignment(course_id, content_id, file_paths, skip_dedup=False,
             # adds 1 row to newFile_table.
             fi = page.query_selector("#newFile_chooseLocalFile")
             if not fi:
-                return False, "File input not found on page"
+                return failure("File input not found on page", reason="dom_missing")
             fi.set_input_files([str(staged_path)])
 
             # Poll newFile_table for up to 10s. BB's handler can be slow on
@@ -473,9 +483,12 @@ def submit_assignment(course_id, content_id, file_paths, skip_dedup=False,
                     break
 
             if row_count <= 0:
-                return False, (
+                return failure(
                     f"BB did not add file to table after 10s poll "
-                    f"(input_files={input_count}, link_titles={link_titles})"
+                    f"(input_files={input_count}, link_titles={link_titles})",
+                    reason="dom_poll_timeout",
+                    row_count=row_count,
+                    link_titles=list(link_titles),
                 )
 
             # Verify: the single row's linkTitle should equal our target basename
@@ -487,13 +500,21 @@ def submit_assignment(course_id, content_id, file_paths, skip_dedup=False,
             diag = f"rows={row_count}, link_titles={link_titles}, staged={staged_path}"
 
             if dry_run:
-                return True, f"DRY-RUN: {diag}"
+                return _dry_run_factory(
+                    message=f"DRY-RUN: {diag}",
+                    staged_path=staged_path,
+                    link_titles=tuple(link_titles),
+                    row_count=row_count,
+                )
 
             # ── Step 3: BB dedup check + submit ───────────────────────────────
             page.evaluate("checkDupeFile('submit')")
             submit_form = page.evaluate("submit_form")
             if not submit_form:
-                return False, f"checkDupeFile rejected submission. {diag}"
+                return failure(
+                    f"checkDupeFile rejected submission. {diag}",
+                    reason="check_dupe_rejected",
+                )
 
             page.evaluate("document.getElementById('uploadAssignmentFormId').submit()")
             page.wait_for_timeout(8000)
@@ -511,10 +532,28 @@ def submit_assignment(course_id, content_id, file_paths, skip_dedup=False,
                     body,
                 )
                 conf = m.group(1) if m else "no-conf-num"
-                return True, f"SUCCESS. Confirmation: {conf}. {diag}\nURL: {url}"
+                return success(
+                    message=f"SUCCESS. Confirmation: {conf}. {diag}\nURL: {url}",
+                    destination_url=url,
+                    confirmation_uuid=conf,
+                    staged_path=staged_path,
+                    link_titles=tuple(link_titles),
+                    row_count=row_count,
+                )
             if "错误" in body or "error" in body.lower():
-                return False, f"Error: {body[:300]}\n{diag}"
-            return True, f"Complete (verify manually). URL: {url}\n{diag}"
+                return failure(
+                    f"Error: {body[:300]}\n{diag}",
+                    reason="post_submit_error",
+                    destination_url=url,
+                )
+            return success(
+                message=f"Complete (verify manually). URL: {url}\n{diag}",
+                destination_url=url,
+                staged_path=staged_path,
+                link_titles=tuple(link_titles),
+                row_count=row_count,
+                verification="manual",
+            )
         finally:
             browser.close()
 

@@ -497,7 +497,7 @@ class HomeworkItem(Item):
 
         # Lazy import to avoid circular dependency (items.py → submit.py)
         from sustech_survival.bb.submit import submit_assignment
-        return submit_assignment(
+        result = submit_assignment(
             self.course_id,                 # positional
             self.content_id,                # positional
             [file_path],                    # positional
@@ -506,6 +506,10 @@ class HomeworkItem(Item):
             dry_run=dry_run,                # kwarg
             headless=headless,              # kwarg
         )
+        # Pass through the SubmitResult directly. CLI / agent callers can
+        # do `if result:` for truthy check, `result.is_duplicate` for the
+        # dedup case, or `result.message` for the human-readable summary.
+        return result
 
     def submit_rest(self, file_path: str, target_name: str | None = None,
                     dry_run: bool = False, skip_dedup: bool = True,

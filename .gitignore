@@ -42,6 +42,16 @@ __pycache__/
 *.mp3
 *.mp4
 
+# Build artifacts (PyPI packaging)
+dist/
+build/
+*.egg-info/
+*.egg
+
+# Wheels
+*.whl
+src/sustech_survival/_version.py.bak
+
 # Temp bilibili downloads
 bili_temp/
 

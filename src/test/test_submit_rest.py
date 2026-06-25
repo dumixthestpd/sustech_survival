@@ -119,6 +119,7 @@ def test_get_upload_form_uses_correct_url():
 def test_submit_assignment_rest_dry_run(tmp_path):
     """Dry-run: GET form, do NOT POST, return descriptive message."""
     from sustech_survival.bb.submit_rest import submit_assignment_rest
+    from sustech_survival.bb.result import SubmitStatus
     pdf = tmp_path / "test.pdf"
     pdf.write_bytes(b"%PDF-1.4\n")
     with patch("sustech_survival.bb.submit_rest._bb_session") as mock_sess:
@@ -126,41 +127,49 @@ def test_submit_assignment_rest_dry_run(tmp_path):
         mock_response.status_code = 200
         mock_response.text = MOCK_UPLOAD_PAGE_HTML
         mock_sess.return_value.get.return_value = mock_response
-        ok, msg = submit_assignment_rest(
+        result = submit_assignment_rest(
             "8328", "610821", str(pdf),
             name_override="12413021-段斯宸-Experiment 5 (Aspirin).pdf",
             dry_run=True,
         )
-    assert ok is True
-    assert "DRY-RUN" in msg
-    assert "Experiment 5" in msg
+    assert result.ok is True
+    assert result.status == SubmitStatus.DRY_RUN
+    assert "DRY-RUN" in result.message
+    assert "Experiment 5" in result.message
     # The POST should NOT have been called
     mock_sess.return_value.post.assert_not_called()
 
 
 def test_submit_assignment_rest_file_not_found():
-    """Missing file should return False with a clear error."""
+    """Missing file should return FAILURE SubmitResult with clear error."""
     from sustech_survival.bb.submit_rest import submit_assignment_rest
-    ok, msg = submit_assignment_rest(
+    from sustech_survival.bb.result import SubmitStatus
+    result = submit_assignment_rest(
         "8328", "610821", "/nonexistent/file.pdf", dry_run=True,
     )
-    assert ok is False
-    assert "not found" in msg.lower() or "no such file" in msg.lower()
+    assert result.ok is False
+    assert result.status == SubmitStatus.FAILURE
+    assert "not found" in result.message.lower() or "no such file" in result.message.lower()
+    assert result.diagnostics.get("reason") == "file_not_found"
 
 
 def test_submit_assignment_rest_empty_file(tmp_path):
     """Empty file should be rejected."""
     from sustech_survival.bb.submit_rest import submit_assignment_rest
+    from sustech_survival.bb.result import SubmitStatus
     pdf = tmp_path / "empty.pdf"
     pdf.write_bytes(b"")
-    ok, msg = submit_assignment_rest("8328", "610821", str(pdf))
-    assert ok is False
-    assert "empty" in msg.lower()
+    result = submit_assignment_rest("8328", "610821", str(pdf))
+    assert result.ok is False
+    assert result.status == SubmitStatus.FAILURE
+    assert "empty" in result.message.lower()
+    assert result.diagnostics.get("reason") == "file_empty"
 
 
 def test_submit_assignment_rest_submits_form(tmp_path):
     """Live flow: GET form, POST form, parse destinationUrl."""
     from sustech_survival.bb.submit_rest import submit_assignment_rest
+    from sustech_survival.bb.result import SubmitStatus
     pdf = tmp_path / "test.pdf"
     pdf.write_bytes(b"%PDF-1.4\n")
     with patch("sustech_survival.bb.submit_rest._bb_session") as mock_sess:
@@ -174,10 +183,13 @@ def test_submit_assignment_rest_submits_form(tmp_path):
         post_resp.headers = {"Content-Type": "text/x-json;charset=UTF-8"}
         mock_sess.return_value.get.return_value = get_resp
         mock_sess.return_value.post.return_value = post_resp
-        ok, msg = submit_assignment_rest("8328", "610821", str(pdf))
+        result = submit_assignment_rest("8328", "610821", str(pdf))
 
-    assert ok is True
-    assert "destinationUrl" in msg
+    assert result.ok is True
+    assert result.status == SubmitStatus.SUCCESS
+    assert "destinationUrl" in result.message
+    assert result.destination_url is not None
+    assert "/uploadAssignment" in result.destination_url
     # POST was called
     mock_sess.return_value.post.assert_called_once()
 
@@ -198,8 +210,9 @@ def test_submit_assignment_rest_sends_file_in_multipart(tmp_path):
         post_resp.headers = {"Content-Type": "text/x-json;charset=UTF-8"}
         mock_sess.return_value.get.return_value = get_resp
         mock_sess.return_value.post.return_value = post_resp
-        ok, msg = submit_assignment_rest("8328", "610821", str(pdf))
+        result = submit_assignment_rest("8328", "610821", str(pdf))
 
+    assert result.ok
     call_kwargs = mock_sess.return_value.post.call_args.kwargs
     # File must be present in multipart
     assert "files" in call_kwargs
@@ -222,11 +235,12 @@ def test_submit_assignment_rest_includes_picker_fields(tmp_path):
         post_resp.headers = {"Content-Type": "text/x-json;charset=UTF-8"}
         mock_sess.return_value.get.return_value = get_resp
         mock_sess.return_value.post.return_value = post_resp
-        submit_assignment_rest(
+        result = submit_assignment_rest(
             "8328", "610821", str(pdf),
             name_override="中文名-test.pdf",
         )
 
+    assert result.ok
     call_kwargs = mock_sess.return_value.post.call_args.kwargs
     data = call_kwargs["data"]
     # The picker fields
@@ -252,11 +266,11 @@ def test_submit_assignment_rest_uses_target_name(tmp_path):
         post_resp.headers = {"Content-Type": "text/x-json;charset=UTF-8"}
         mock_sess.return_value.get.return_value = get_resp
         mock_sess.return_value.post.return_value = post_resp
-        ok, msg = submit_assignment_rest(
+        result = submit_assignment_rest(
             "8328", "610821", str(pdf),
             name_override="中文名-test.pdf",
         )
-    assert ok is True
+    assert result.ok
     files = mock_sess.return_value.post.call_args.kwargs["files"]
     assert "中文名-test.pdf" in str(files)
 
@@ -264,6 +278,7 @@ def test_submit_assignment_rest_uses_target_name(tmp_path):
 def test_submit_assignment_rest_handles_non_json_response(tmp_path):
     """A 200 with HTML body should surface a clear error."""
     from sustech_survival.bb.submit_rest import submit_assignment_rest
+    from sustech_survival.bb.result import SubmitStatus
     pdf = tmp_path / "test.pdf"
     pdf.write_bytes(b"%PDF-1.4\n")
     with patch("sustech_survival.bb.submit_rest._bb_session") as mock_sess:
@@ -277,15 +292,18 @@ def test_submit_assignment_rest_handles_non_json_response(tmp_path):
         post_resp.headers = {"Content-Type": "text/html"}
         mock_sess.return_value.get.return_value = get_resp
         mock_sess.return_value.post.return_value = post_resp
-        ok, msg = submit_assignment_rest("8328", "610821", str(pdf))
+        result = submit_assignment_rest("8328", "610821", str(pdf))
 
-    assert ok is False
-    assert "non-JSON" in msg or "200" in msg
+    assert result.ok is False
+    assert result.status == SubmitStatus.FAILURE
+    assert "non-JSON" in result.message or "200" in result.message
+    assert result.diagnostics.get("http_status") == 200
 
 
 def test_submit_assignment_rest_handles_500(tmp_path):
     """A 500 error should be reported."""
     from sustech_survival.bb.submit_rest import submit_assignment_rest
+    from sustech_survival.bb.result import SubmitStatus
     pdf = tmp_path / "test.pdf"
     pdf.write_bytes(b"%PDF-1.4\n")
     with patch("sustech_survival.bb.submit_rest._bb_session") as mock_sess:
@@ -299,10 +317,47 @@ def test_submit_assignment_rest_handles_500(tmp_path):
         post_resp.headers = {"Content-Type": "text/plain"}
         mock_sess.return_value.get.return_value = get_resp
         mock_sess.return_value.post.return_value = post_resp
-        ok, msg = submit_assignment_rest("8328", "610821", str(pdf))
+        result = submit_assignment_rest("8328", "610821", str(pdf))
 
+    assert result.ok is False
+    assert result.status == SubmitStatus.FAILURE
+    assert "500" in result.message
+    assert result.diagnostics.get("http_status") == 500
+
+
+# ─── Backwards compat: .to_tuple() shim ─────────────────────────────────
+
+def test_submit_result_to_tuple_for_legacy_callers():
+    """Legacy `(ok, msg)` callers can use `result.to_tuple()` to get the
+    old shape. New code should use the dataclass fields directly."""
+    from sustech_survival.bb.result import success, failure, SubmitResult
+    ok, msg = success("hi").to_tuple()
+    assert ok is True
+    assert msg == "hi"
+
+    ok, msg = failure("nope").to_tuple()
     assert ok is False
-    assert "500" in msg
+    assert msg == "nope"
+
+
+def test_submit_result_status_enum_values():
+    """SubmitStatus values are stable strings for JSON serialization."""
+    from sustech_survival.bb.result import SubmitStatus
+    assert SubmitStatus.SUCCESS.value == "success"
+    assert SubmitStatus.FAILURE.value == "failure"
+    assert SubmitStatus.DUPLICATE.value == "duplicate"
+    assert SubmitStatus.LATE_BLOCKED.value == "late_blocked"
+    assert SubmitStatus.DRY_RUN.value == "dry_run"
+
+
+def test_submit_result_is_duplicate_property():
+    """The dedup case is now an explicit property, not a magic None."""
+    from sustech_survival.bb.result import duplicate, success, failure
+    assert duplicate("already there").is_duplicate is True
+    assert success("ok").is_duplicate is False
+    assert failure("oops").is_duplicate is False
+    # And bool() collapses to False for dup (use is_duplicate for the case)
+    assert not duplicate("x")
 
 
 # ─── Module-level invariants ────────────────────────────────────────────────

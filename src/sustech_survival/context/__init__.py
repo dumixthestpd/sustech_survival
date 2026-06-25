@@ -408,6 +408,48 @@ def fetch_next_deadline() -> Optional[dict]:
         return None
 
 
+def fetch_next_exam() -> Optional[dict]:
+    """Get nearest TIS exam by date. Returns {name, code, date, time, building, room}.
+
+    On auth failure returns {"error": "auth", "hint": "tis session refresh"} so agents
+    know exactly what to do without guessing. Matches fetch_next_deadline / fetch_next_eval
+    shape for Context integration.
+    """
+    from sustech_survival.exceptions import SessionExpired
+    from sustech_survival.tis.exams import auth as _tis_exams_auth, fetch_exams
+    try:
+        cookies = _tis_exams_auth()
+    except SessionExpired as e:
+        return {"error": "auth", "message": str(e), "hint": "tis session refresh"}
+    except Exception as e:
+        return {"error": "auth", "message": str(e), "hint": "tis session refresh"}
+
+    try:
+        exams = fetch_exams(cookies)
+    except Exception:
+        return None
+
+    if not exams:
+        return None
+
+    # Sort by date — fetch_exams already sorts, but enforce here for safety
+    exams = sorted(exams, key=lambda x: x.get("KSRQ", ""))
+
+    nearest = exams[0]
+    return {
+        "name": nearest.get("KCMC", ""),
+        "code": nearest.get("KCDM", ""),
+        "date": nearest.get("KSRQ", ""),
+        "weekday": nearest.get("XQJMC", ""),
+        "time_slot": nearest.get("KSJTSJ", ""),
+        "periods": f"第{nearest.get('KSJC', '?')}-{nearest.get('JSJC', '?')}节",
+        "building": nearest.get("JXLMC", ""),
+        "room": nearest.get("JXCDMC", ""),
+        "campus": nearest.get("XIAOQUBMC", "") or "一期校区",
+        "exam_type": nearest.get("KSSJDMC", "考试"),
+    }
+
+
 def fetch_next_eval() -> Optional[dict]:
     """Get nearest unsubmitted TIS evaluation. Returns {name, course, days_left}.
 
@@ -686,6 +728,12 @@ class Context:
             self._eval_cache = fetch_next_eval()
         return self._eval_cache
 
+    @property
+    def next_exam(self) -> Optional[dict]:
+        if not hasattr(self, "_exam_cache"):
+            self._exam_cache = fetch_next_exam()
+        return self._exam_cache
+
     # ── Tiered exporters ────────────────────────────────────────────────
 
     def to_str(self, *, level: Union[str, Level, None] = None) -> str:
@@ -711,6 +759,7 @@ class Context:
         if _LEVEL_ORDER[lvl] >= _LEVEL_ORDER[Level.NORMAL]:
             out["next_deadline"] = self.next_deadline
             out["next_eval"] = self.next_eval
+            out["next_exam"] = self.next_exam
         if _LEVEL_ORDER[lvl] >= _LEVEL_ORDER[Level.VERBOSE]:
             out["weather_cond"] = self.weather_cond
             out["aqi"] = self.aqi_value
@@ -791,6 +840,14 @@ class Context:
                 eval_str = f"Eval due in {days} days"
             parts.append(f"Next TIS eval: [{ne['course']} — {ne['name']}] — {eval_str}")
 
+        nx = self.next_exam
+        if nx and "error" not in nx:
+            location = f"{nx['building']} {nx['room']}".strip() or nx.get("campus", "")
+            parts.append(
+                f"Next TIS exam: [{nx['name']} ({nx['code']})] — {nx['date']} "
+                f"{nx['time_slot']} @ {location}"
+            )
+
         return "\n".join(parts) if parts else "(no deadlines)"
 
     def _render_verbose(self) -> str:
@@ -812,7 +869,7 @@ __all__ = [
     "Level", "Context",
     "now_",
     "fetch_json", "fetch_weather", "fetch_aqi", "fetch_library_status",
-    "fetch_next_deadline", "fetch_next_eval",
+    "fetch_next_deadline", "fetch_next_eval", "fetch_next_exam",
     "slot_times", "entry_time_range", "entry_name", "get_schedule_reminder",
     "get_academic_info", "is_holiday",
     "aqi_level", "aqi_icon",

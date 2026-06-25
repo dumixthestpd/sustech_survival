@@ -5,15 +5,17 @@ REST-first (no Playwright) for:
   • Course/content discovery
   • Course ID resolution
   • Submitted attempt metadata (via gradebook API)
+  • x-bb-document content file URLs (bbcswebdav) — see download_file()
 
-Playwright still used for:
-  • Submitted file URLs (gradebook has no file URLs — need the HTML view page)
-  • x-bb-file download URLs (REST gives fileName only, no signed URL)
+Playwright is delegated to `bb._playwright` for the one case REST cannot
+do: scraping the submitted-file URLs from the assignment view page. If
+you only need the metadata (id, created, score, feedback), this module
+is fully REST. If you need the actual file URLs, you must install
+playwright (see bb/_playwright.py).
 
 API:
   from download import download_content, resolve_course
 """
-
 import json, re, sys, os, argparse
 from pathlib import Path
 from urllib.parse import unquote
@@ -354,69 +356,19 @@ def get_column_id_for_content(course_id, content_id, session=None):
     return item.get("contentHandler", {}).get("gradeColumnId", "").lstrip("_").rstrip("_1")
 
 
-# ── Submission Attempt Files (requires Playwright) ────────────────────────────
+# ── Submission Attempt Files (delegated to Playwright module) ───────────────
+#
+# The actual scraping function lives in bb._playwright (the ONLY Playwright
+# import in the bb/ package). This re-export keeps existing callers working
+# without an import surface change.
 
 def scrape_attempt_files_via_browser(course_id, content_id, attempt_id):
-    """
-    Navigate assignment view page via Playwright to collect file download links.
+    """Playwright shim — see bb._playwright for the real implementation.
+
     Returns (timestamp_str, [(filename, url)]).
-
-    This is the one case where Playwright is still needed — the gradebook API
-    does not expose submitted file URLs.
     """
-    from playwright.sync_api import sync_playwright
-    import sustech_survival.bb.submit as bb_submit  # local to avoid circular
-
-    cookies = bb_submit.load_cookies()
-
-    page_url = (
-        f"{BB_BASE}/webapps/assignment/uploadAssignment"
-        f"?course_id=_{course_id}_1&content_id=_{content_id}_1"
-        f"&attempt_id=_{attempt_id}_1&mode=view"
-    )
-
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        ctx = browser.new_context()
-        ctx.add_cookies(cookies)
-        page = ctx.new_page()
-        page.goto(page_url, wait_until="domcontentloaded", timeout=30000)
-        page.wait_for_timeout(2000)
-
-        # Dismiss dialogs
-        for _ in range(5):
-            d = page.query_selector('[role="dialog"]')
-            if not d:
-                break
-            btn = d.query_selector("button")
-            if btn:
-                btn.click()
-                page.wait_for_timeout(600)
-
-        # Timestamp
-        ts = ""
-        try:
-            dp = page.query_selector(r"text=/\d{1,2}[-/]\d{1,2}[-/]\d{2,4}/")
-            ts = dp.inner_text()[:40] if dp else ""
-        except Exception:
-            pass
-
-        # File links
-        files = []
-        seen = set()
-        for a in page.query_selector_all("a"):
-            href = a.get_attribute("href") or ""
-            if "download" not in href.lower():
-                continue
-            if href in seen:
-                continue
-            seen.add(href)
-            fname_raw = re.search(r"fileName=([^&]+)", href)
-            fname = unquote(fname_raw.group(1)) if fname_raw else "file"
-            files.append((slugify(fname), href))
-
-        page.close()
-    return ts, files
+    from sustech_survival.bb._playwright import scrape_attempt_files_via_browser as _impl
+    return _impl(course_id, content_id, attempt_id)
 
 
 # ── Submission Download (gradebook REST + Playwright for files) ───────────────
