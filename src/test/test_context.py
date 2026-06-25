@@ -352,3 +352,105 @@ def test_quickcontext_shim_reexports_constants():
     assert qc.CHINA_TZ is CHINA_TZ
     assert qc.ACADEMIC_CALENDARS is ACADEMIC_CALENDARS
     assert qc.HOLIDAY_DATA is HOLIDAY_DATA
+
+
+# ─── fetch_next_exam (Q8: bb ddl + tis exams correlated in context) ─────
+
+def test_fetch_next_exam_returns_nearest_exam():
+    """fetch_next_exam should return the first (nearest-by-date) exam."""
+    from sustech_survival.context import fetch_next_exam
+    fake_exams = [
+        {"KCMC": "高等数学", "KCDM": "MA101", "KSRQ": "2026-06-20",
+         "KSJTSJ": "09:00-11:00", "KSJC": "1", "JSJC": "2",
+         "JXLMC": "主楼", "JXCDMC": "301", "XIAOQUBMC": "一期校区",
+         "KSSJDMC": "期末考试", "XQJMC": "周六", "XQJMC_EN": "Saturday"},
+        {"KCMC": "大学物理", "KCDM": "PHY101", "KSRQ": "2026-06-15",
+         "KSJTSJ": "14:00-16:00", "KSJC": "5", "JSJC": "6",
+         "JXLMC": "二教", "JXCDMC": "201", "XIAOQUBMC": "一期校区",
+         "KSSJDMC": "期末考试", "XQJMC": "周一", "XQJMC_EN": "Monday"},
+    ]
+    with patch("sustech_survival.tis.exams.auth", return_value={"route": "x", "JSESSIONID": "y"}), \
+         patch("sustech_survival.tis.exams.fetch_exams", return_value=fake_exams):
+        result = fetch_next_exam()
+
+    # The earliest date is 2026-06-15 (大学物理)
+    assert result is not None
+    assert result["name"] == "大学物理"
+    assert result["code"] == "PHY101"
+    assert result["date"] == "2026-06-15"
+    assert result["time_slot"] == "14:00-16:00"
+    assert result["building"] == "二教"
+    assert result["room"] == "201"
+    assert result["exam_type"] == "期末考试"
+    assert "第5-6节" == result["periods"]
+
+
+def test_fetch_next_exam_returns_none_when_empty():
+    """Empty exam list → None (matches fetch_next_deadline behavior)."""
+    from sustech_survival.context import fetch_next_exam
+    with patch("sustech_survival.tis.exams.auth", return_value={"route": "x", "JSESSIONID": "y"}), \
+         patch("sustech_survival.tis.exams.fetch_exams", return_value=[]):
+        assert fetch_next_exam() is None
+
+
+def test_fetch_next_exam_sorts_by_date():
+    """If TIS returns unsorted exams, fetch_next_exam should sort by KSRQ."""
+    from sustech_survival.context import fetch_next_exam
+    # NOTE: KSRQ is a string — string sort works for ISO YYYY-MM-DD
+    fake_exams = [
+        {"KCMC": "Later Exam", "KCDM": "X1", "KSRQ": "2026-12-20",
+         "KSJTSJ": "09:00-11:00", "KSJC": "1", "JSJC": "2",
+         "JXLMC": "A", "JXCDMC": "1"},
+        {"KCMC": "Earlier Exam", "KCDM": "X2", "KSRQ": "2026-06-15",
+         "KSJTSJ": "09:00-11:00", "KSJC": "1", "JSJC": "2",
+         "JXLMC": "A", "JXCDMC": "1"},
+    ]
+    with patch("sustech_survival.tis.exams.auth", return_value={"route": "x", "JSESSIONID": "y"}), \
+         patch("sustech_survival.tis.exams.fetch_exams", return_value=fake_exams):
+        result = fetch_next_exam()
+    assert result["name"] == "Earlier Exam"
+
+
+def test_fetch_next_exam_returns_auth_error_on_session_expired():
+    """SessionExpired → {"error": "auth", "hint": ...} like fetch_next_deadline."""
+    from sustech_survival.context import fetch_next_exam
+    from sustech_survival.exceptions import SessionExpired
+    def fake_auth_raises():
+        raise SessionExpired("TIS auth failed: no session")
+    with patch("sustech_survival.tis.exams.auth", side_effect=fake_auth_raises):
+        result = fetch_next_exam()
+    assert result is not None
+    assert result["error"] == "auth"
+    assert "tis session refresh" in result["hint"]
+
+
+def test_context_next_exam_property_lazy_caches():
+    """Context.next_exam should lazy-fetch once and cache."""
+    from sustech_survival.context import Context, fetch_next_exam
+    with patch("sustech_survival.context.fetch_next_exam",
+               return_value={"name": "X", "code": "Y", "date": "2026-06-15",
+                             "building": "A", "room": "1"}) as mock_f:
+        ctx = Context(level="normal", dt=datetime(2026, 6, 10, 10, 0, tzinfo=CHINA_TZ))
+        # First access triggers fetch
+        first = ctx.next_exam
+        # Second access uses cache
+        second = ctx.next_exam
+        assert first is second  # cached
+        assert mock_f.call_count == 1
+        assert first["name"] == "X"
+
+
+def test_context_to_dict_normal_includes_next_exam():
+    """The to_dict(normal) dict should include next_exam alongside next_deadline/eval."""
+    from sustech_survival.context import Context
+    ctx = Context(level="normal", dt=datetime(2026, 5, 29, 14, 30, tzinfo=CHINA_TZ))
+    _pre_cache_schedule_reminder(ctx)
+    with patch("sustech_survival.context.fetch_weather", return_value=None), \
+         patch("sustech_survival.context.fetch_aqi", return_value=None), \
+         patch("sustech_survival.context.fetch_next_deadline", return_value=None), \
+         patch("sustech_survival.context.fetch_next_eval", return_value=None), \
+         patch("sustech_survival.context.fetch_next_exam", return_value=None):
+        d = ctx.to_dict(level="normal")
+    assert "next_exam" in d
+    assert "next_deadline" in d
+    assert "next_eval" in d

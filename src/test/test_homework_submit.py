@@ -53,7 +53,8 @@ class TestHomeworkItemSubmitDelegates:
         def fake_submit_assignment(*args, **kwargs):
             captured["args"] = args
             captured["kwargs"] = kwargs
-            return (True, "FAKE_OK")
+            from sustech_survival.bb.result import success
+            return success("FAKE_OK")
 
         # Import the lazy path
         from sustech_survival.bb import submit as submit_mod
@@ -61,7 +62,7 @@ class TestHomeworkItemSubmitDelegates:
 
         # Re-import HomeworkItem to pick up the patched submit_assignment
         # (it's lazy-imported, so the patch takes effect on call)
-        ok, msg = hw.submit(
+        result = hw.submit(
             file_path=str(real_pdf),
             target_name="HW1-renamed.pdf",
             dry_run=True,
@@ -69,8 +70,8 @@ class TestHomeworkItemSubmitDelegates:
             headless=False,
         )
 
-        assert ok is True
-        assert msg == "FAKE_OK"
+        assert result.ok is True
+        assert result.message == "FAKE_OK"
         # Args: course_id, content_id, file_paths
         assert captured["args"][0] == "8221"
         assert captured["args"][1] == "626071"
@@ -95,12 +96,14 @@ class TestHomeworkItemSubmitDelegates:
 
         def fake_submit_assignment(*args, **kwargs):
             captured["kwargs"] = kwargs
-            return (True, "OK")
+            from sustech_survival.bb.result import success
+            return success("OK")
 
         from sustech_survival.bb import submit as submit_mod
         monkeypatch.setattr(submit_mod, "submit_assignment", fake_submit_assignment)
 
-        ok, msg = hw.submit(file_path=str(real_pdf))
+        result = hw.submit(file_path=str(real_pdf))
+        assert result.ok is True
 
         assert captured["kwargs"]["name_override"] == "my_basename.pdf"
 
@@ -117,7 +120,8 @@ class TestHomeworkItemDeadlineWarning:
         def fake_submit_assignment(*args, **kwargs):
             captured["args"] = args
             captured["kwargs"] = kwargs
-            return (True, "FAKE_OK")
+            from sustech_survival.bb.result import success
+            return success("FAKE_OK")
         from sustech_survival.bb import submit as submit_mod
         monkeypatch.setattr(submit_mod, "submit_assignment", fake_submit_assignment)
         return captured
@@ -136,8 +140,8 @@ class TestHomeworkItemDeadlineWarning:
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            ok, msg = hw.submit(file_path=str(pdf), dry_run=False, skip_dedup=True)
-        assert ok is True
+            result = hw.submit(file_path=str(pdf), dry_run=False, skip_dedup=True)
+        assert result.ok is True
         late = [x for x in w if "LATE" in str(x.message)]
         assert len(late) == 1, f"Expected exactly 1 LATE warning, got {len(late)}: {[str(x.message) for x in w]}"
         msg_text = str(late[0].message)
@@ -462,7 +466,8 @@ class TestHomeworkItemFromSubmissionPage:
 
         # Mock the actual submission
         def fake_submit_assignment(*args, **kwargs):
-            return (True, "OK")
+            from sustech_survival.bb.result import success
+            return success("OK")
         from sustech_survival.bb import submit as submit_mod
         monkeypatch.setattr(submit_mod, "submit_assignment", fake_submit_assignment)
 

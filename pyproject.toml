@@ -1,0 +1,151 @@
+[build-system]
+requires = ["hatchling>=1.18"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sustech-survival"
+version = "0.1.0"
+description = "SUSTech academic toolkit — Blackboard, TIS, Library, PMS, transit, papers, course eval, faculty, classroom booking, and SSO for the entire sustech.edu.cn ecosystem."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [
+    { name = "dumix", email = "dumix@sustech.edu.cn" },
+]
+keywords = [
+    "sustech",
+    "blackboard",
+    "sso",
+    "cas",
+    "tis",
+    "shibboleth",
+    "academic",
+    "library",
+    "transit",
+    "papers",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Education",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Education",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "requests>=2.28",
+    "beautifulsoup4>=4.12",
+    "lxml>=4.9",
+    "PyYAML>=6.0",
+    "urllib3>=2.0",
+    "python-dateutil>=2.8",
+]
+
+[project.optional-dependencies]
+# The full set of optional integrations. Each maps to one submodule.
+cli = [
+    "click>=8.1",
+    "rich>=13.0",
+]
+playwright = [
+    # Required for bb._playwright (file-download scraping, legacy submitter).
+    "playwright>=1.40",
+]
+flask = [
+    # Required for tis.grid_server (the course-grid SPA backend).
+    "flask>=2.3",
+]
+all = [
+    "sustech-survival[cli,playwright,flask]",
+]
+
+[project.urls]
+Homepage = "https://github.com/dumixthestpd/sustech-survival"
+Documentation = "https://github.com/dumixthestpd/sustech-survival#readme"
+Issues = "https://github.com/dumixthestpd/sustech-survival/issues"
+Changelog = "https://github.com/dumixthestpd/sustech-survival/blob/main/CHANGELOG.md"
+
+[project.scripts]
+# One CLI entry point per submodule that ships a CLI. All dispatch to
+# `python -m sustech_survival.<submodule>` under the hood.
+sustech-bb = "sustech_survival.bb.cli:main"
+sustech-tis = "sustech_survival.tis.cli:main"
+sustech-ws = "sustech_survival.ws.cli:main"
+sustech-context = "sustech_survival.context:cli"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sustech_survival"]
+include = [
+    "src/sustech_survival/py.typed",
+    "src/sustech_survival/**/*.py",
+    # Non-Python assets shipped with the package.
+    "src/sustech_survival/resources/**/*",
+    "src/sustech_survival/references/**/*.md",
+    "src/sustech_survival/docs/**/*.md",
+]
+exclude = [
+    "src/sustech_survival/**/__pycache__",
+    "src/sustech_survival/**/*.pyc",
+    "src/sustech_survival/**/test_*.py",
+    "src/sustech_survival/**/*_test.py",
+    "src/sustech_survival/**/.cache",
+    "src/sustech_survival/**/cache/**",
+    "src/sustech_survival/credentials.txt",
+    "src/sustech_survival/credentials.example.txt",
+    "src/sustech_survival/bb_session.json",
+    "src/sustech_survival/**/session.json",
+]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/sustech_survival",
+    "tests",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "pyproject.toml",
+    "docs",
+]
+exclude = [
+    ".git",
+    ".github",
+    "**/__pycache__",
+    "**/*.pyc",
+    "**/.pytest_cache",
+    "**/cache",
+    "**/credentials.txt",
+    "**/session.json",
+]
+
+[tool.hatch.build.targets.wheel.shared-data]
+"src/sustech_survival/resources" = "sustech_survival/resources"
+
+# ── Pytest (used by `pip install -e .[all]` + dev workflow) ──────────────
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+]
+
+# ── Black + isort (code style) ─────────────────────────────────────────────
+
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311", "py312"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+known_first_party = ["sustech_survival"]

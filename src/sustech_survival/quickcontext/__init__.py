@@ -31,7 +31,7 @@ from sustech_survival.context import (  # noqa: F401, E402
     now_,
     # I/O fetchers
     fetch_json, fetch_weather, fetch_aqi, fetch_library_status,
-    fetch_next_deadline, fetch_next_eval,
+    fetch_next_deadline, fetch_next_eval, fetch_next_exam,
     # Schedule helpers (used by Context.class_now)
     slot_times, entry_time_range, entry_name, get_schedule_reminder,
     # Academic / holiday helpers

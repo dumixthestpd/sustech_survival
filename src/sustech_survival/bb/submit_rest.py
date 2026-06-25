@@ -46,6 +46,8 @@ import requests
 
 from sustech_survival.sso import BBAuth
 
+from .result import success, failure, dry_run as _dry_run_result
+
 BB_BASE = "https://bb.sustech.edu.cn"
 
 _UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -191,7 +193,7 @@ def submit_assignment_rest(
     name_override: Optional[str] = None,
     dry_run: bool = False,
     skip_dedup: bool = False,
-) -> tuple:
+):
     """REST-based BB submission. End-to-end working as of 2026-06-08.
 
     Args:
@@ -220,14 +222,17 @@ def submit_assignment_rest(
     """
     file_path_p = Path(file_path).expanduser().resolve()
     if not file_path_p.exists():
-        return False, f"File not found: {file_path_p}"
+        return failure(f"File not found: {file_path_p}", reason="file_not_found")
     if not file_path_p.stat().st_size:
-        return False, f"File is empty: {file_path_p}"
+        return failure(f"File is empty: {file_path_p}", reason="file_empty")
 
     target_name = name_override or file_path_p.name
     target_name = Path(target_name).name  # strip any path components
     if not target_name:
-        return False, f"name_override is not a valid basename: {name_override!r}"
+        return failure(
+            f"name_override is not a valid basename: {name_override!r}",
+            reason="invalid_name",
+        )
 
     print(f"  REST submit: course={course_id} content={content_id} file={target_name!r}")
 
@@ -252,10 +257,14 @@ def submit_assignment_rest(
         form_data["dispatch"] = "submit"
 
         if dry_run:
-            return True, (
-                f"DRY-RUN: would submit {target_name!r} "
-                f"(file={staged_path}, {len(form_data)} form fields, "
-                f"file part=newFile_LocalFile0)"
+            return _dry_run_result(
+                message=(
+                    f"DRY-RUN: would submit {target_name!r} "
+                    f"(file={staged_path}, {len(form_data)} form fields, "
+                    f"file part=newFile_LocalFile0)"
+                ),
+                staged_path=staged_path,
+                row_count=0,
             )
 
         # Step 3: POST the form with the file in the multipart envelope.
@@ -278,24 +287,33 @@ def submit_assignment_rest(
             parsed = None
 
         if parsed and "destinationUrl" in parsed:
-            return True, (
-                f"Submitted OK. destinationUrl: {parsed['destinationUrl']} "
-                f"file: {target_name} ({staged_path.stat().st_size} bytes)"
+            return success(
+                message=(
+                    f"Submitted OK. destinationUrl: {parsed['destinationUrl']} "
+                    f"file: {target_name} ({staged_path.stat().st_size} bytes)"
+                ),
+                destination_url=parsed["destinationUrl"],
+                staged_path=staged_path,
+                file_size=staged_path.stat().st_size,
             )
 
         if resp.status_code == 200 and parsed is None:
             # Sometimes BB returns 200 with HTML — likely a form validation
             # error. Surface the response body.
-            return False, (
-                f"Form POST returned 200 with non-JSON body: {resp.text[:300]}"
+            return failure(
+                f"Form POST returned 200 with non-JSON body: {resp.text[:300]}",
+                http_status=200,
+                response_body=resp.text[:500],
             )
 
-        return False, (
-            f"Form POST returned {resp.status_code}: {resp.text[:200]}"
+        return failure(
+            f"Form POST returned {resp.status_code}: {resp.text[:200]}",
+            http_status=resp.status_code,
+            response_body=resp.text[:500],
         )
 
     except Exception as e:
-        return False, f"REST submit error: {e}"
+        return failure(f"REST submit error: {e}", exception_type=type(e).__name__)
 
 
 # ─────────────────────────────────────────────────────────────────────────
