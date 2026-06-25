@@ -1,6 +1,10 @@
 import sys, json, time
+from pathlib import Path
 sys.path.insert(0, "src")
-skill_dir = "/Users/dumix/.openclaw/workspace/skills/sustech_survival"
+# Resolve skill root from this file's location (independent of install path).
+# Was hard-coded to /Users/dumix/.openclaw/workspace/skills/sustech_survival —
+# now works from any install location (editable install, wheel, source tree, etc.).
+skill_dir = str(Path(__file__).resolve().parent.parent.parent.parent)
 from playwright.sync_api import sync_playwright
 
 SESSION_FILE = f"{skill_dir}/bb/wos_session.json"

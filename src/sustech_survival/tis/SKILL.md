@@ -5,7 +5,7 @@ SUSTech Teaching Information System (教学信息管理系统) automation.
 ## Quick Start
 
 ```bash
-cd ~/.openclaw/workspace/skills/sustech_survival && ./tis/check.sh
+cd ~/.openclaw/code/sustech_survival && ./tis/check.sh
 ```
 
 **Always use check.sh to verify login status** — TIS can show placeholder content when not logged in.
@@ -71,12 +71,12 @@ Questions on different pages use different wjids — page 1 uses the course wjid
 - **Course Schedule**: from TIS
 - **Academic Calendar**: from TIS
 
-Data stored in: `~/.openclaw/workspace/skills/sustech_survival/` (sessions) and `~/.openclaw/workspace/sustech/26spring/` (course data)
+Data stored in: `~/.openclaw/code/sustech_survival/` (sessions) and `~/.openclaw/workspace/sustech/26spring/` (course data)
 
 ## Fetch Course Info
 
 ```bash
-cd ~/.openclaw/workspace/skills/sustech_survival
+cd ~/.openclaw/code/sustech_survival
 python3 tis/courses.py
 ```
 

@@ -112,7 +112,7 @@ class SelectCourseClient:
         self.xq = xq
         self.max_age = max_age
         self.skill_root = skill_root or (
-            Path.home() / ".openclaw" / "workspace" / "skills" / "sustech_survival"
+            Path.home() / ".openclaw" / "code" / "sustech_survival"
         )
         self.cache_dir = self.skill_root / "selectcourse" / "cache"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
