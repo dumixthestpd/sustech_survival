@@ -22,6 +22,7 @@ __all__ = [
     "__version__",
     "bb", "tis", "lib", "sso", "papers",
     "Context", "Level",
+    "Semester", "Season",
 ]
 
 _PKG_ROOT = Path(__file__).resolve().parent
@@ -43,3 +44,6 @@ from . import papers
 
 # ── context (replaces old quickcontext) ─────────────────────────────────
 from .context import Context, Level  # noqa: F401
+
+# ── semester (canonical type for entire package) ────────────────────────
+from .semester import Semester, Season  # noqa: F401

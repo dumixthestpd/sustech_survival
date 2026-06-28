@@ -20,11 +20,14 @@ Usage::
     c.ensure_session()
 
     # Check permission
-    perm = c.check_permission("2025-2026", "2")
+    perm = c.check_permission(Semester("2025-20262"))
     print(perm.allowed)
 
     # Query occupancy before booking
-    slots = c.query_venue_occupancy(xn="2025-2026", xq="2", room_codes=["YJ-123"])
+    slots = c.query_venue_occupancy(
+        semester=Semester("2025-20262"),
+        room_codes=["YJ-123"],
+    )
 
     # Create a borrowing application (dry-run by default)
     form = BorrowApplication(
@@ -47,6 +50,7 @@ from typing import Any, Dict, List, Optional
 import requests
 
 from sustech_survival.classroom.live import LiveOccupancyClient, TIS_BASE
+from sustech_survival.semester import Semester
 from .booking_schema import (
     AuditStatus,
     BorrowApplication,
@@ -171,9 +175,9 @@ class VenueBorrowClient:
 
     # ── Permission check ──────────────────────────────────────────────────
 
-    def check_permission(self, xn: str, xq: str) -> PermissionResult:
+    def check_permission(self, semester: Semester) -> PermissionResult:
         """Check if the current user is allowed to borrow venues this semester."""
-        raw = self._post(EP_YZKG, data={"xn": xn, "xq": xq})
+        raw = self._post(EP_YZKG, data={"xn": semester.xn, "xq": semester.xq})
         return PermissionResult.from_api(raw)
 
     # ── Audit statuses (workflow reference) ────────────────────────────────
@@ -189,8 +193,7 @@ class VenueBorrowClient:
     def query_venue_occupancy(
         self,
         *,
-        xn: str,
-        xq: str,
+        semester: Semester,
         room_codes: Optional[List[str]] = None,
         weeks: Optional[List[int]] = None,
         weekday: Optional[int] = None,
@@ -199,7 +202,7 @@ class VenueBorrowClient:
 
         Use this BEFORE creating an application to find available slots.
         """
-        body: Dict[str, Any] = {"xn": xn, "xq": xq}
+        body: Dict[str, Any] = {"xn": semester.xn, "xq": semester.xq}
         if room_codes:
             body["cddms"] = room_codes
         if weeks:

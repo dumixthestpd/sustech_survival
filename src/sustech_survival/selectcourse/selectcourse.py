@@ -38,6 +38,7 @@ from typing import Dict, List, Optional
 
 import requests
 
+from ..semester import Semester
 from .schema import Course
 
 
@@ -105,11 +106,18 @@ class SelectCourseClient:
 
     BASE_URL = TIS_BASE
 
-    def __init__(self, *, xn: str = "2025-2026", xq: str = "2",
+    def __init__(self, *, semester: Optional[Semester] = None,
+                 xn: str = "2025-2026", xq: str = "2",
                  max_age: int = DEFAULT_TTL,
                  skill_root: Optional[Path] = None):
-        self.xn = xn
-        self.xq = xq
+        if semester is not None:
+            self._sem = semester
+            self.xn = semester.xn
+            self.xq = semester.xq
+        else:
+            self._sem = Semester(xn, xq)
+            self.xn = xn
+            self.xq = xq
         self.max_age = max_age
         self.skill_root = skill_root or (
             Path.home() / ".openclaw" / "code" / "sustech_survival"
@@ -186,7 +194,7 @@ class SelectCourseClient:
         page_size = 500
         for pg in range(1, 10):
             params = {
-                "p_xn": self.xn, "p_xq": self.xq, "p_xnxq": None, "p_gjz": "",
+                "p_xn": self._sem.xn, "p_xq": self._sem.xq, "p_xnxq": None, "p_gjz": "",
                 "p_xiaoqu": "", "p_kkyx": "", "p_rwlx": "", "p_kclb": "",
                 "p_kcxz": "", "p_chaxunpylx": "3",
                 "pageNum": str(pg), "pageSize": str(page_size),
@@ -270,7 +278,7 @@ class SelectCourseClient:
         """Your enrolled courses for a semester.
 
         `semester`: "2025-2026-2" or "2025-2026-3" (summer). Defaults to
-        the current client's xn/xq.
+        the current client's semester.
 
         Returns raw dicts from the xszykb API (no kcxx parsing — these
         are already your personal schedule items).
@@ -282,7 +290,7 @@ class SelectCourseClient:
             xn = f"{parts[0]}-{parts[1]}"
             xq = parts[2]
         else:
-            xn, xq = self.xn, self.xq
+            xn, xq = self._sem.xn, self._sem.xq
 
         from sustech_survival.sso import Authorizer
         creds = Authorizer(skill_dir=str(self.skill_root))
@@ -352,8 +360,8 @@ class SelectCourseClient:
             "p_chaxunxh": "",                        # 管理端查询学号
             "p_gjz": "",                             # 关键字
             "p_skjs": "",                            # 上课教师
-            "p_xn": self.xn,                         # 学年
-            "p_xq": self.xq,                         # 学期
+            "p_xn": self._sem.xn,                         # 学年
+            "p_xq": self._sem.xq,                         # 学期
             "p_xnxq": None,                          # 学年学期（合并）
             "p_dqxn": None, "p_dqxq": None, "p_dqxnxq": None,
             "p_xkfsdm": "",                          # 选课方式代码
@@ -488,10 +496,12 @@ class SelectCourseClient:
 # ── Singleton factory ────────────────────────────────────────────────────────
 
 
-def selectcourse(*, xn: str = "2025-2026", xq: str = "2",
+def selectcourse(*, semester: Optional[Semester] = None,
+                 xn: str = "2025-2026", xq: str = "2",
                  max_age: int = DEFAULT_TTL) -> SelectCourseClient:
     """Module-level factory. Defaults to current Spring semester.
 
-    Pass `xq="3"` for summer.
+    Pass `semester=Semester(...)` for full type support,
+    or `xq="3"` for summer (kept for backward compatibility).
     """
-    return SelectCourseClient(xn=xn, xq=xq, max_age=max_age)
+    return SelectCourseClient(semester=semester, xn=xn, xq=xq, max_age=max_age)

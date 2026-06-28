@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import List, Optional
 
+from sustech_survival.semester import Semester
+
 
 # ── Date / time helpers ──────────────────────────────────────────────────────
 
@@ -236,9 +238,7 @@ class BorrowApplication:
     user_dept_code: str = ""       # syrdwdm
 
     # Time scope
-    semester: str = ""             # xnxq — "2025-2026-2"
-    xn: str = ""                   # 学年 — "2025-2026"
-    xq: str = ""                   # 学期 — "1" / "2" / "3"
+    semester: Optional[Semester] = None
     weeks: str = ""                # zc — week pattern, e.g. "5-8"
     start_end_weeks: str = ""      # qsjsz — explicit "start_week, end_week"
     campus: str = ""               # xiaoqu — "1" (一期) / "2" (二期) / "9" (九祥)
@@ -285,6 +285,22 @@ class BorrowApplication:
 
     @classmethod
     def from_api(cls, raw: dict) -> "BorrowApplication":
+        # Extract semester from xnxq (preferred) or xn+xq pair
+        semester: Optional[Semester] = None
+        raw_xnxq = raw.get("xnxq")
+        raw_xn = raw.get("xn")
+        raw_xq = raw.get("xq")
+        if raw_xnxq:
+            try:
+                semester = Semester(str(raw_xnxq))
+            except (ValueError, TypeError):
+                pass
+        elif raw_xn and raw_xq:
+            try:
+                semester = Semester(str(raw_xn), str(raw_xq))
+            except (ValueError, TypeError):
+                pass
+
         return cls(
             id=str(raw.get("id") or ""),
             jhdh=str(raw.get("jhdh") or ""),
@@ -298,9 +314,7 @@ class BorrowApplication:
             user_phone=str(raw.get("syrdh") or ""),
             user_employee_id=str(raw.get("syrzgh") or ""),
             user_dept_code=str(raw.get("syrdwdm") or ""),
-            semester=str(raw.get("xnxq") or ""),
-            xn=str(raw.get("xn") or ""),
-            xq=str(raw.get("xq") or ""),
+            semester=semester,
             weeks=str(raw.get("zc") or ""),
             start_end_weeks=str(raw.get("qsjsz") or ""),
             campus=str(raw.get("xiaoqu") or ""),
@@ -329,9 +343,9 @@ class BorrowApplication:
             "syrdh": self.user_phone,
             "syrzgh": self.user_employee_id,
             "syrdwdm": self.user_dept_code,
-            "xnxq": self.semester,
-            "xn": self.xn,
-            "xq": self.xq,
+            "xnxq": self.semester.xnxq if self.semester else "",
+            "xn": self.semester.xn if self.semester else "",
+            "xq": self.semester.xq if self.semester else "",
             "zc": self.weeks,
             "qsjsz": self.start_end_weeks,
             "xiaoqu": self.campus,
