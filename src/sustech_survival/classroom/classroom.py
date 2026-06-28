@@ -30,12 +30,57 @@ from typing import Dict, List, Optional, Tuple
 
 import requests
 
+from .live import LiveOccupancyClient, RoomScheduleEntry, live as _live_default
 from .schema import Room, ScheduleSlot
 
 
 # ── TIS endpoints (mirrors tis/campus_schedule.py) ───────────────────────────
 
 TIS_BASE = "https://tis.sustech.edu.cn"
+
+
+# ── Building name aliases ────────────────────────────────────────────────────
+#
+# SUSTech renames teaching buildings occasionally. The TIS catalog keeps
+# BOTH the old and new entries for a while (verified 2026-06-28: 智华楼
+# and 三教 coexist as 56 + 56 entries with identical room numbers). To
+# give users a single canonical spelling, normalize the prefix BEFORE
+# looking up in the catalog. Any prefix in `BUILDING_ALIASES` is rewritten
+# to its canonical form; non-matching prefixes pass through unchanged.
+#
+# Add new aliases here when a building is renamed. Order doesn't matter
+# since aliases don't share prefixes (yet) — if they ever do, match
+# longer prefixes first.
+BUILDING_ALIASES: Dict[str, str] = {
+    # 三教 renamed to 智华楼 (verified 2026-06-28). Self-aliases included
+    # so the longest-prefix-first sort picks the canonical form when the
+    # user types it directly (otherwise '智华楼102' would get rewritten to
+    # '智华楼楼102' by the '智华' alias).
+    "三教":   "智华楼",
+    "智华":   "智华楼",
+    "智华楼": "智华楼",
+}
+
+
+def normalize_room_name(name: str) -> str:
+    """Rewrite the building prefix if it's in BUILDING_ALIASES.
+
+    Examples (2026-06-28):
+        '三教102'   → '智华楼102'
+        '智华102'   → '智华楼102'
+        '智华楼102' → '智华楼102'   (no-op)
+        '一教324'   → '一教324'     (not aliased, pass through)
+    """
+    n = name.strip()
+    # Iterate longest-prefix first so '智华楼' beats '智华' and doesn't
+    # double-up (e.g. '智华楼102' would otherwise become '智华楼楼102').
+    for old in sorted(BUILDING_ALIASES, key=len, reverse=True):
+        new = BUILDING_ALIASES[old]
+        if n.startswith(old):
+            return new + n[len(old):]
+    return n
+
+
 TIS_CAMPUS_SCHEDULE_URL = f"{TIS_BASE}/Xsxktz/queryRwxxcxList"
 DEFAULT_TTL = 3600  # 1 hour
 
@@ -85,7 +130,8 @@ class ClassroomOccupancy:
     BASE_URL = TIS_BASE
 
     def __init__(self, *, xn: str = "2025-2026", xq: str = "2",
-                 max_age: int = DEFAULT_TTL, skill_root: Optional[Path] = None):
+                 max_age: int = DEFAULT_TTL, skill_root: Optional[Path] = None,
+                 live_client: Optional[LiveOccupancyClient] = None):
         self.xn = xn
         self.xq = xq
         self.max_age = max_age
@@ -96,6 +142,7 @@ class ClassroomOccupancy:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._slots: Optional[List[ScheduleSlot]] = None
         self._rooms: Optional[Dict[str, Room]] = None
+        self._live_client: LiveOccupancyClient = live_client or _live_default()
 
     # ── Cache management ─────────────────────────────────────────────────────
 
@@ -304,14 +351,218 @@ class ClassroomOccupancy:
         all_rooms = {s.room for s in slots}
         return sorted(all_rooms - busy)
 
+    # ── Live occupancy (cdkb/querycdkbList) ─────────────────────────────────
+
+    def _init_live(self, *, live_client: Optional[LiveOccupancyClient] = None) -> None:
+        """Wire up the live client (no-op after __init__ — kept for tests)."""
+        if live_client is not None:
+            self._live_client = live_client
+
+    # ── Live bridge: room name → TIS code (cddm) ───────────────────────────
+
+    def _query_didian_catalog(self) -> List[dict]:
+        """Fetch all rooms from TIS 场地 (queryDiDian) — for name → code mapping.
+
+        Returns the raw list of room dicts from the API. Cached for 1h.
+        """
+        cache_dir = self.skill_root / "classroom" / "cache" / "live"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cf = cache_dir / f"didian_{self.xn}_{self.xq}.json"
+        if cf.exists():
+            try:
+                payload = json.loads(cf.read_text())
+                if time.time() - payload.get("saved_at", 0) < self.max_age:
+                    return payload.get("rooms", [])
+            except Exception:
+                pass
+
+        sess = self._fetch_all_courses.__self__ if False else None
+        # Use the live client session to query didian (shares the same TIS auth).
+        live_sess = self._live_client._ensure_session()
+        all_rooms: List[dict] = []
+        for page in range(1, 15):
+            params = [
+                ("pylx", "1"),
+                ("pageNum", str(page)),
+                ("pageSize", "50"),
+                ("xn", self.xn),
+                ("xq", self.xq),
+                ("hlct", "0"),
+                ("hltyxct", "0"),
+                ("sfjtjs", "2"),
+                ("zysfkyd", "2"),
+                ("jslx", ""),
+                ("xiaoqu", "1"),
+                ("lc", ""),
+                ("kkyx", ""),
+                ("key", ""),
+                ("sybm", ""),
+                ("mxid", "[]"),
+                ("sfxsyxzws", "0"),
+                ("yqzws", "0"),
+                ("yqkszws", "0"),
+                ("yxzws", "0"),
+                ("yxkszws", "0"),
+                ("bjrs", "0"),
+                ("zws", "0"),
+                ("kszws", "0"),
+            ]
+            r = live_sess.post(
+                "https://tis.sustech.edu.cn/component/queryDiDian",
+                data=params,
+                headers={"RoleCode": "00"},
+                timeout=60,
+            )
+            if not r.text.strip():
+                break
+            try:
+                data = r.json()
+            except Exception:
+                break
+            rooms = data.get("list", [])
+            if not rooms:
+                break
+            all_rooms.extend(rooms)
+            if len(all_rooms) >= data.get("total", 0):
+                break
+            time.sleep(0.3)
+        cf.write_text(json.dumps({"saved_at": time.time(), "rooms": all_rooms},
+                                ensure_ascii=False))
+        return all_rooms
+
+    def _room_code_for_name(self, name: str) -> Optional[str]:
+        """Find the TIS 场地 code (dm) for a given room display name (mc).
+
+        Uses queryDiDian's room catalog. Exact match on `mc` first, then
+        substring. Returns None if not found.
+
+        Building prefix is normalized via BUILDING_ALIASES first, so
+        `三教102`, `智华102`, and `智华楼102` all resolve to the same room.
+        """
+        name_norm = normalize_room_name(name).strip().lower()
+        rooms = self._query_didian_catalog()
+        # Exact match on display name
+        for r in rooms:
+            if (r.get("mc") or "").strip().lower() == name_norm:
+                return r.get("dm")
+        # Substring match
+        substring_matches = [r for r in rooms
+                             if name_norm in (r.get("mc") or "").strip().lower()]
+        if len(substring_matches) == 1:
+            return substring_matches[0].get("dm")
+        if substring_matches:
+            # Pick the one with highest zws (largest room — likely the
+            # "main" version of the named room, e.g. 一教 vs 一教A)
+            return max(substring_matches, key=lambda r: int(r.get("zws") or 0)).get("dm")
+        return None
+
+    # ── Live queries ───────────────────────────────────────────────────────
+
+    def live_entries_for_name(self, room_name: str) -> List[RoomScheduleEntry]:
+        """All live schedule entries (courses + borrowings) for a room name.
+
+        Resolves the name → TIS code via queryDiDian, then queries
+        cdkb/querycdkbList. Returns [] if the name cannot be resolved.
+        """
+        cddm = self._room_code_for_name(room_name)
+        if not cddm:
+            return []
+        return self._live_client.query_room(cddm, xn=self.xn, xq=self.xq)
+
+    def live_occupancy(self, room_name: str, week: int, day: int) -> List[RoomScheduleEntry]:
+        """Live entries active at (week, day) in the named room.
+
+        Combines registered courses + borrowings (借用).
+        """
+        return [e for e in self.live_entries_for_name(room_name)
+                if e.active_on(week, day)]
+
+    def live_occupancy_at(self, room_name: str, week: int, day: int,
+                          period: int) -> List[RoomScheduleEntry]:
+        """Live entries active at (week, day, period) in the named room."""
+        return [e for e in self.live_occupancy(room_name, week, day)
+                if e.period_start == period]
+
+    def live_rooms_occupied_at(self, *, week: int, day: int, period: int,
+                               min_capacity: Optional[int] = None
+                               ) -> List[Tuple[str, List[RoomScheduleEntry]]]:
+        """All rooms occupied at (week, day, period) — by name.
+
+        Walks every room in the didian catalog, queries cdkb, returns
+        rooms that have an active entry. Slow first call (421 cdkb
+        queries); cached on subsequent calls.
+        """
+        didian = self._query_didian_catalog()
+        out = []
+        for room in didian:
+            mc = room.get("mc") or ""
+            dm = room.get("dm") or ""
+            if not dm:
+                continue
+            cap = int(room.get("zws") or 0)
+            if min_capacity and cap < min_capacity:
+                continue
+            try:
+                entries = self._live_client.query_room(dm, xn=self.xn, xq=self.xq)
+            except Exception:
+                continue
+            hits = [e for e in entries
+                    if e.active_on(week, day) and e.period_start == period]
+            if hits:
+                out.append((mc, hits))
+        return out
+
+    def live_rooms_free_at(self, *, week: int, day: int, period_start: int,
+                           period_end: Optional[int] = None,
+                           min_capacity: Optional[int] = None
+                           ) -> List[str]:
+        """All rooms free at (week, day, period range) — by name.
+
+        Returns a sorted list of room names that have no entry overlapping
+        the queried slot in cdkb. Slow first call (~421 queries, cached).
+        """
+        if period_end is None:
+            period_end = period_start
+        didian = self._query_didian_catalog()
+        out = []
+        for room in didian:
+            mc = room.get("mc") or ""
+            dm = room.get("dm") or ""
+            if not dm:
+                continue
+            cap = int(room.get("zws") or 0)
+            if min_capacity and cap < min_capacity:
+                continue
+            try:
+                entries = self._live_client.query_room(dm, xn=self.xn, xq=self.xq)
+            except Exception:
+                continue
+            busy = False
+            for e in entries:
+                if e.active_on(week, day):
+                    if not (e.period_start > period_end or
+                            e.period_start + 0 < period_start):
+                        # e is a single-period entry — only checks period_start.
+                        # For multi-period entries we'd need the underlying API
+                        # to expose end period; for now this matches TIS's
+                        # granularity.
+                        busy = True
+                        break
+            if not busy:
+                out.append(mc)
+        return sorted(out)
+
 
 # ── Singleton ────────────────────────────────────────────────────────────────
 
 
 def classroom(*, xn: str = "2025-2026", xq: str = "2",
-              max_age: int = DEFAULT_TTL) -> ClassroomOccupancy:
+              max_age: int = DEFAULT_TTL,
+              live_client: Optional[LiveOccupancyClient] = None) -> ClassroomOccupancy:
     """Module-level factory. Returns a ClassroomOccupancy for the given semester.
 
     Default semester is 2025-2026 Spring (xq=2). Override with kwargs.
+    Pass `live_client` to inject a custom live client (mainly for tests).
     """
-    return ClassroomOccupancy(xn=xn, xq=xq, max_age=max_age)
+    return ClassroomOccupancy(xn=xn, xq=xq, max_age=max_age,
+                              live_client=live_client)
