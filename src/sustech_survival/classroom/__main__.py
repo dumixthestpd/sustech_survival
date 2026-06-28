@@ -23,17 +23,29 @@ Commands (human + agent friendly):
     refresh                          Force-refresh from TIS (bust cache)
         --xn YEAR --xq N
 
-Note: All commands use a 1-hour disk cache. Run `refresh` if you want
-fresh data.
+    LIVE OCCUPANCY (cdkb/querycdkbList — incl. borrowings 借用):
+    live ROOM                        All live schedule entries for a room
+                                     (courses + ad-hoc borrowings)
+        --json
+    live-at ROOM --week N --day N    Live entries active on (week, day)
+        --period N                    Filter to one period (1-12)
+        --json
+    now ROOM                         What's currently in this room
+                                     (uses local time → TIS format)
+        --json
+
+Note: All commands use a 1-hour disk cache. Run `refresh` to bust.
 """
 from __future__ import annotations
 
 import argparse
 import json
 import sys
+from datetime import datetime
 from typing import List, Optional
 
 from .classroom import classroom as classroom_factory
+from .live import current_weekday_and_period
 from .schema import (
     DAY_NAMES_ZH, DAY_NAMES_EN, PERIOD_TIMES,
 )
@@ -154,6 +166,118 @@ def cmd_refresh(args) -> int:
     return 0
 
 
+# ── Live occupancy commands ─────────────────────────────────────────────────
+
+
+def _print_live_entries(entries, as_json: bool = False) -> None:
+    if as_json:
+        out = []
+        for e in entries:
+            out.append({
+                "cddm": e.cddm,
+                "type": e.type,
+                "is_borrowing": e.is_borrowing,
+                "is_course": e.is_course,
+                "weekday": e.weekday,
+                "period_start": e.period_start,
+                "weeks": e.weeks,
+                "course_code": e.course_code,
+                "course_name": e.course_name,
+                "borrower": e.borrower,
+                "phone": e.phone,
+                "purpose": e.purpose,
+                "sksj_text": e.sksj_text,
+                "when": e.when_str,
+            })
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+        return
+    if not entries:
+        print("(no live entries)")
+        return
+    for e in entries:
+        print(f"  {e.to_markdown()}")
+
+
+def cmd_live(args) -> int:
+    """Show all live schedule entries for a room (incl. borrowings)."""
+    c = classroom_factory(xn=args.xn, xq=args.xq)
+    entries = c.live_entries_for_name(args.room)
+    if not entries:
+        print(f"No live entries for {args.room!r} (room not found or empty).",
+              file=sys.stderr)
+        return 1
+    borrow_count = sum(1 for e in entries if e.is_borrowing)
+    course_count = sum(1 for e in entries if e.is_course)
+    print(f"=== Live schedule for {args.room!r} "
+          f"({len(entries)} entries: {course_count} courses + "
+          f"{borrow_count} borrowings) ===")
+    _print_live_entries(entries, as_json=args.json)
+    return 0
+
+
+def cmd_live_at(args) -> int:
+    """Live entries active at (week, day[, period]) in a room."""
+    c = classroom_factory(xn=args.xn, xq=args.xq)
+    if args.period is not None:
+        hits = c.live_occupancy_at(args.room, week=args.week,
+                                   day=args.day, period=args.period)
+    else:
+        hits = c.live_occupancy(args.room, week=args.week, day=args.day)
+    day_zh = DAY_NAMES_ZH[args.day] if 1 <= args.day <= 7 else f"day{args.day}"
+    pstr = f" period {args.period}" if args.period is not None else ""
+    print(f"=== {args.room!r} live on week {args.week} {day_zh}{pstr} ===")
+    _print_live_entries(hits, as_json=args.json)
+    return 0
+
+
+def cmd_now(args) -> int:
+    """What's currently in this room (now = local time)."""
+    c = classroom_factory(xn=args.xn, xq=args.xq)
+    weekday, period = current_weekday_and_period()
+    inferred_week = _infer_current_week(c)
+    if period is None:
+        print(f"Now is {datetime.now().isoformat(timespec='minutes')} — "
+              "outside class hours (8:00-22:30). Showing full day instead.",
+              file=sys.stderr)
+        # Fall back to full-day occupancy for the current weekday
+        hits = c.live_occupancy(args.room, week=inferred_week, day=weekday)
+    else:
+        hits = c.live_occupancy_at(args.room,
+                                   week=inferred_week,
+                                   day=weekday, period=period)
+    day_zh = DAY_NAMES_ZH[weekday] if 1 <= weekday <= 7 else f"day{weekday}"
+    pstr = f" period {period}" if period is not None else ""
+    week_str = f"week {inferred_week}" if inferred_week else "week ?"
+    print(f"=== {args.room!r} NOW ({datetime.now().isoformat(timespec='minutes')}, "
+          f"{week_str}, weekday={weekday} {day_zh}{pstr}) ===")
+    _print_live_entries(hits, as_json=args.json)
+    return 0
+
+
+def _infer_current_week(c) -> int:
+    """Best-effort guess of current semester week (1-18).
+
+    Uses `live.current_week()` which reads `ACADEMIC_CALENDARS` (the
+    hand-maintained table in `sustech_survival.context`) and rounds
+    `semester_start` back to the most recent Monday before computing
+    `(today - aligned_start).days // 7 + 1`.
+
+    Falls back to 1 if:
+      - The (xn, xq) isn't in ACADEMIC_CALENDARS
+      - Today is outside the semester window
+      - Anything else goes wrong
+
+    To get a real number for a semester not yet in the table, add it to
+    `sustech_survival/context/__init__.py:ACADEMIC_CALENDARS`.
+    """
+    try:
+        from .live import current_week
+        w = current_week(c.xn, c.xq)
+        return w if w is not None else 1
+    except Exception:
+        return 1
+
+
 # ── Parser ──────────────────────────────────────────────────────────────────
 
 
@@ -204,12 +328,38 @@ def _build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("refresh", help="Force-refresh from TIS")
     sp.set_defaults(func=cmd_refresh)
 
+    sp = sub.add_parser("live",
+                        help="All live schedule entries for a room "
+                             "(incl. borrowings 借用)")
+    sp.add_argument("room", help="Room display name (e.g. 一教123)")
+    sp.add_argument("--json", action="store_true")
+    sp.set_defaults(func=cmd_live)
+
+    sp = sub.add_parser("live-at",
+                        help="Live entries active at (week, day[, period])")
+    sp.add_argument("room", help="Room display name")
+    sp.add_argument("--week", type=int, required=True)
+    sp.add_argument("--day", type=int, required=True,
+                    help="1=Mon ... 7=Sun")
+    sp.add_argument("--period", type=int, default=None,
+                    help="Period number (1-12). Optional.")
+    sp.add_argument("--json", action="store_true")
+    sp.set_defaults(func=cmd_live_at)
+
+    sp = sub.add_parser("now",
+                        help="What's currently in this room (local time)")
+    sp.add_argument("room", help="Room display name")
+    sp.add_argument("--json", action="store_true")
+    sp.set_defaults(func=cmd_now)
+
     return p
 
 
 def _normalize_period_args(args) -> None:
-    """Convert --period list into (start, end) attributes."""
-    if not hasattr(args, "period"):
+    """Convert --period list into (start, end) attributes for the `free` cmd."""
+    # Only the `free` command uses --period as a list (1 or 2 numbers).
+    # `live-at` uses --period as a single int. Skip if not present.
+    if not hasattr(args, "period") or not isinstance(args.period, list):
         return
     if len(args.period) == 1:
         args.period_start = args.period[0]

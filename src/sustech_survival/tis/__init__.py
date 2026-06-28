@@ -17,6 +17,7 @@ Usage::
 
 from . import grades
 from . import courses
+from . import classroom
 
 __all__ = ["grades", "courses", "TISAuthEval", "Evaluation"]
 

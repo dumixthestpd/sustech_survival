@@ -101,3 +101,48 @@ After login:
 - TIS home page
 
 Only `/authentication/main` is kept to maintain session.
+
+## Venue Borrowing (场地借用 / cdjy)
+
+Located at `sustech_survival.tis.classroom.booking` — NOT under `classroom/`.
+
+Minimal client (no CRUD bloat — write-once, wait-for-approval):
+
+```python
+from sustech_survival.tis.classroom.booking import venue_borrow
+from sustech_survival.tis.classroom.booking_schema import (
+    BorrowApplication, BorrowDetail, BorrowTimeSlot,
+)
+
+c = venue_borrow()
+c.ensure_session()
+
+# Check permission first
+perm = c.check_permission("2025-2026", "2")
+if perm.allowed:
+    # Build the application
+    form = BorrowApplication(
+        applicant_name="段斯宸", applicant_phone="13908478929",
+        user_name="段斯宸", user_phone="13908478929",
+        xn="2025-2026", xq="2", semester="2025-2026-2",
+        weeks="5-8", headcount=30, purpose="学术讲座",
+        details=[BorrowDetail(
+            room_code="YJ-123", room_name="一教123",
+            time_slots=[BorrowTimeSlot(
+                weekday=2, period_start=3, period_end=4, week_pattern="5-8"
+            )],
+        )],
+    )
+    # Dry-run first (default, no network call)
+    c.create_borrow_application(form, dry_run=True)
+    # Then commit
+    saved = c.create_borrow_application(form, dry_run=False)
+```
+
+Client methods:
+- `check_permission(xn, xq)` → `PermissionResult`
+- `list_audit_statuses()` → `[AuditStatus]` (workflow reference)
+- `query_venue_occupancy(xn, xq, room_codes=...)` → `[VenueOccupancySlot]`
+- `create_borrow_application(form, dry_run=True)` → `BorrowApplication`
+
+Endpoints: `/cdjy/*` and `/gzlshywlc/*`. Auth via `LiveOccupancyClient` (TIS CAS).
