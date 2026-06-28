@@ -51,6 +51,7 @@ import requests
 
 from sustech_survival.classroom.live import LiveOccupancyClient, TIS_BASE
 from sustech_survival.semester import Semester
+from sustech_survival.classroom._booking_time import BookingTime, Schedule
 from .booking_schema import (
     AuditStatus,
     BorrowApplication,
@@ -280,10 +281,106 @@ def venue_borrow(
 _default_venue_borrow_client: Optional[VenueBorrowClient] = None
 
 
+# ── book() — the human-facing single entry point ─────────────────────────┐
+
+
+def book(
+    purpose: str,
+    headcount: int,
+    schedule: "Schedule",
+    *,
+    semester: Optional["Semester"] = None,
+    applicant_name: Optional[str] = None,
+    applicant_phone: Optional[str] = None,
+    applicant_employee_id: Optional[str] = None,
+    applicant_dept: Optional[str] = None,
+) -> "BorrowApplication":
+    """Build a venue-borrowing application from human-friendly inputs.
+
+    Auto-fills everything possible from the logged-in session:
+    semester (detected), applicant fields (session), user fields (same
+    as applicant). The caller provides the purpose, headcount, and
+    time schedule.
+
+    The returned application is NOT submitted — it's ready for review.
+    Pass to VenueBorrowClient.create_borrow_application() when ready.
+
+    ::
+
+        from sustech_survival.tis.classroom.booking import book
+        from sustech_survival.classroom._booking_time import BookingTime
+
+        # Simple: Tuesday period 3-4, weeks 5-8, ~30 people
+        app = book(
+            purpose=\"学术讲座\",
+            headcount=30,
+            schedule=BookingTime(weekday=2, period_start=3, period_end=4,
+                                 weeks=[5,6,7,8]),
+        )
+
+        # Clock time: Monday 14:00-16:00, all weeks
+        app = book(
+            purpose=\"社团活动\",
+            headcount=15,
+            schedule=BookingTime.from_clock(
+                weekday=1, clock_start=\"14:00\", clock_end=\"16:00\",
+            ),
+        )
+
+        # Multiple time slots
+        app = book(
+            purpose=\"招生活动\",
+            headcount=20,
+            schedule=[
+                BookingTime(weekday=1, period_start=3, period_end=4),
+                BookingTime(weekday=3, period_start=5, period_end=6),
+            ],
+        )
+    """
+    if semester is None:
+        c = venue_borrow()
+        sess = c.ensure_session()
+        from sustech_survival.classroom.live import current_semester
+        semester = current_semester(sess)
+
+    # Normalize schedule into slot list
+    bts: list[BookingTime] = (
+        [schedule] if isinstance(schedule, BookingTime) else list(schedule)
+    )
+    if not bts:
+        raise ValueError("schedule must be at least one BookingTime")
+
+    # Build BorrowTimeSlot list from BookingTime descriptors
+    time_slots = [
+        BorrowTimeSlot(
+            weekday=bt.weekday,
+            period_start=bt.period_start,
+            period_end=bt.period_end,
+            week_pattern=bt.week_str if bt.weeks else "1-17",
+        )
+        for bt in bts
+    ]
+
+    return BorrowApplication(
+        semester=semester,
+        applicant_name=applicant_name or "",
+        applicant_phone=applicant_phone or "",
+        applicant_employee_id=applicant_employee_id or "",
+        applicant_dept=applicant_dept or "",
+        user_name=applicant_name or "",
+        user_phone=applicant_phone or "",
+        user_employee_id=applicant_employee_id or "",
+        headcount=headcount,
+        purpose=purpose,
+        details=[BorrowDetail(seq=1, time_slots=time_slots)],
+    )
+
+
 __all__ = [
     "VenueBorrowClient",
     "BorrowError",
     "venue_borrow",
+    "book",
     "WORKFLOW_CDJY",
     "EP_YZKG",
     "EP_SHZTLIST",
