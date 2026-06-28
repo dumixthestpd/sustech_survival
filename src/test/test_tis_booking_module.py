@@ -20,6 +20,7 @@ import requests
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from sustech_survival.semester import Semester
 from sustech_survival.tis.classroom.booking import (
     BorrowError,
     EP_CREATE,
@@ -106,25 +107,25 @@ class TestCheckPermission:
     def test_allowed(self):
         c = make_client()
         c._sess.post.return_value = make_response(raw_text="1", is_json=False)
-        result = c.check_permission("2025-2026", "2")
+        result = c.check_permission(Semester("2025-20262"))
         assert result.allowed is True
 
     def test_denied(self):
         c = make_client()
         c._sess.post.return_value = make_response(raw_text="0", is_json=False)
-        result = c.check_permission("2025-2026", "2")
+        result = c.check_permission(Semester("2025-20262"))
         assert result.allowed is False
 
     def test_envelope_format(self):
         c = make_client()
         c._sess.post.return_value = make_response({"code": 200, "content": "1"})
-        result = c.check_permission("2025-2026", "2")
+        result = c.check_permission(Semester("2025-20262"))
         assert result.allowed is True
 
     def test_sends_correct_params(self):
         c = make_client()
         c._sess.post.return_value = make_response(raw_text="1", is_json=False)
-        c.check_permission("2025-2026", "2")
+        c.check_permission(Semester("2025-20262"))
         call = c._sess.post.call_args
         assert call.args[0] == EP_YZKG
         assert call.kwargs["data"] == {"xn": "2025-2026", "xq": "2"}
@@ -169,7 +170,7 @@ class TestQueryVenueOccupancy:
                 {"cddm": "YJ-123", "xqj": 2, "ksjc": 3, "jsjc": 4, "zcbds": "1-15"},
             ]},
         })
-        slots = c.query_venue_occupancy(xn="2025-2026", xq="2")
+        slots = c.query_venue_occupancy(semester=Semester("2025-20262"))
         assert len(slots) == 1
         assert slots[0].room_code == "YJ-123"
         assert slots[0].weekday == 2
@@ -177,7 +178,7 @@ class TestQueryVenueOccupancy:
     def test_uses_json_body(self):
         c = make_client()
         c._sess.post.return_value = make_response({"code": 200, "content": {"rows": []}})
-        c.query_venue_occupancy(xn="2025-2026", xq="2", room_codes=["YJ-123", "YJ-324"])
+        c.query_venue_occupancy(semester=Semester("2025-20262"), room_codes=["YJ-123", "YJ-324"])
         call = c._sess.post.call_args
         assert call.kwargs["json"] == {
             "xn": "2025-2026", "xq": "2", "cddms": ["YJ-123", "YJ-324"],
@@ -188,7 +189,7 @@ class TestQueryVenueOccupancy:
         c = make_client()
         c._sess.post.return_value = make_response({"code": 200, "content": {"rows": []}})
         c.query_venue_occupancy(
-            xn="2025-2026", xq="2",
+            semester=Semester("2025-20262"),
             room_codes=["YJ-123"], weeks=[5, 6, 7], weekday=2,
         )
         body = c._sess.post.call_args.kwargs["json"]
@@ -199,7 +200,7 @@ class TestQueryVenueOccupancy:
     def test_endpoint_url(self):
         c = make_client()
         c._sess.post.return_value = make_response({"code": 200, "content": {"rows": []}})
-        c.query_venue_occupancy(xn="2025-2026", xq="2")
+        c.query_venue_occupancy(semester=Semester("2025-20262"))
         assert c._sess.post.call_args.args[0] == EP_OCCUPANCY
 
 
@@ -215,9 +216,7 @@ SAMPLE_FORM = BorrowApplication(
     user_name="段斯宸",
     user_phone="13908478929",
     user_employee_id="12413021",
-    xn="2025-2026",
-    xq="2",
-    semester="2025-2026-2",
+    semester=Semester("2025-20262"),
     weeks="5-8",
     headcount=30,
     purpose="学术讲座",
@@ -242,7 +241,7 @@ class TestCreateBorrowApplication:
         c = make_client()
         result = c.create_borrow_application(SAMPLE_FORM, dry_run=True)
         assert result.applicant_name == "段斯宸"
-        assert result.xn == "2025-2026"
+        assert result.semester.xn == "2025-2026"
         assert result.details[0].room_code == "YJ-123"
 
     def test_real_post(self):

@@ -544,11 +544,11 @@ class TestLiveOccupancyClientLive:
     def test_current_semester_live(self):
         client = LiveOccupancyClient()
         sess = client._ensure_session()
-        xn, xq = current_semester(sess)
+        sem = current_semester(sess)
         # Current semester should be 2025-2026 xq=2 (Spring 2026) since
         # today is 2026-06-28
-        assert xn == "2025-2026"
-        assert xq == "2"
+        assert sem.xn == "2025-2026"
+        assert sem.xq == "2"
 
 
 if __name__ == "__main__":

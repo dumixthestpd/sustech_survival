@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
 
+from sustech_survival.semester import Semester
 from sustech_survival.tis.classroom.booking_schema import (
     AuditNode,
     AuditStatus,
@@ -361,9 +362,9 @@ class TestBorrowApplication:
         assert b.applicant_phone == "13908478929"
         assert b.applicant_employee_id == "12413021"
         assert b.applicant_dept == "材料科学与工程系"
-        assert b.semester == "2025-2026-2"
-        assert b.xn == "2025-2026"
-        assert b.xq == "2"
+        assert b.semester == Semester("2025-2026-2")
+        assert b.semester.xn == "2025-2026"
+        assert b.semester.xq == "2"
         assert b.weeks == "5-8"
         assert b.start_end_weeks == "5,8"
         assert b.campus == "1"
@@ -431,7 +432,7 @@ class TestBorrowApplication:
         raw = dict(REAL_APPLICATION, rs="50", xq="2")
         b = BorrowApplication.from_api(raw)
         assert b.headcount == 50
-        assert b.xq == "2"
+        assert b.semester.xq == "2"
 
     def test_from_api_missing_optional(self):
         b = BorrowApplication.from_api({"id": "x", "jhdh": "y"})
@@ -453,9 +454,7 @@ class TestNestedIntegration:
             user_name="段斯宸",
             user_phone="13908478929",
             user_employee_id="12413021",
-            semester="2025-2026-2",
-            xn="2025-2026",
-            xq="2",
+            semester=Semester("2025-2026-2"),
             weeks="5-8",
             campus="1",
             headcount=30,
@@ -482,7 +481,7 @@ class TestNestedIntegration:
         reconstructed = BorrowApplication.from_api(dumped)
 
         assert reconstructed.applicant_name == "段斯宸"
-        assert reconstructed.xn == "2025-2026"
+        assert reconstructed.semester.xn == "2025-2026"
         assert reconstructed.weeks == "5-8"
         assert reconstructed.details[0].room_code == "YJ-123"
         assert reconstructed.details[0].time_slots[0].weekday == 2

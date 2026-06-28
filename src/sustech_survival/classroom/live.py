@@ -55,6 +55,7 @@ from typing import Dict, List, Optional, Tuple
 import requests
 
 from .schema import DAY_NAMES_ZH
+from sustech_survival.semester import Semester
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
@@ -366,15 +367,15 @@ def current_period(time_h: int, time_m: int) -> Optional[int]:
     return None
 
 
-def current_semester(sess: requests.Session) -> Tuple[str, str]:
-    """Query TIS for the current academic year + semester. Returns (xn, xq)."""
+def current_semester(sess: requests.Session) -> Semester:
+    """Query TIS for the current academic year + semester. Returns a Semester."""
     r = sess.post(TIS_DQ_XNXQ_URL, headers={"RoleCode": "00"}, timeout=15)
     r.raise_for_status()
     data = r.json()
     content = data.get("content") or {}
     xn = content.get("XN") or "2025-2026"
     xq = content.get("XQ") or "2"
-    return xn, xq
+    return Semester(xn, xq)
 
 
 def current_weekday_and_period(now: Optional[dt.datetime] = None) -> Tuple[int, Optional[int]]:
@@ -636,7 +637,8 @@ class LiveOccupancyClient:
         """
         sess = self._ensure_session()
         if xn is None or xq is None:
-            xn, xq = current_semester(sess)
+            sem = current_semester(sess)
+            xn, xq = sem.xn, sem.xq
         weekday, period = current_weekday_and_period()
         if period is None:
             return []

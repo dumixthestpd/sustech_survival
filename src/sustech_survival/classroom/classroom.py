@@ -30,6 +30,7 @@ from typing import Dict, List, Optional, Tuple
 
 import requests
 
+from ..semester import Semester
 from .live import LiveOccupancyClient, RoomScheduleEntry, live as _live_default
 from .schema import Room, ScheduleSlot
 
@@ -130,10 +131,13 @@ class ClassroomOccupancy:
     BASE_URL = TIS_BASE
 
     def __init__(self, *, xn: str = "2025-2026", xq: str = "2",
+                 semester: Optional[Semester] = None,
                  max_age: int = DEFAULT_TTL, skill_root: Optional[Path] = None,
                  live_client: Optional[LiveOccupancyClient] = None):
-        self.xn = xn
-        self.xq = xq
+        if semester is not None:
+            self._sem = semester
+        else:
+            self._sem = Semester(xn, xq)
         self.max_age = max_age
         self.skill_root = skill_root or (
             Path.home() / ".openclaw" / "workspace" / "skills" / "sustech_survival"
@@ -147,7 +151,7 @@ class ClassroomOccupancy:
     # ── Cache management ─────────────────────────────────────────────────────
 
     def _cache_file(self) -> Path:
-        return self.cache_dir / f"schedule_{self.xn}_{self.xq}.json"
+        return self.cache_dir / f"schedule_{self._sem.xn}_{self._sem.xq}.json"
 
     def _load_cache(self) -> Optional[List[ScheduleSlot]]:
         cf = self._cache_file()
@@ -207,7 +211,7 @@ class ClassroomOccupancy:
         page_size = 500
         for pg in range(1, 10):  # safety cap: 10 pages × 500 = 5000
             params = {
-                "p_xn": self.xn, "p_xq": self.xq, "p_xnxq": None, "p_gjz": "",
+                "p_xn": self._sem.xn, "p_xq": self._sem.xq, "p_xnxq": None, "p_gjz": "",
                 "p_xiaoqu": "", "p_kkyx": "", "p_rwlx": "", "p_kclb": "",
                 "p_kcxz": "", "p_chaxunpylx": "3",
                 "pageNum": str(pg), "pageSize": str(page_size),
@@ -367,7 +371,7 @@ class ClassroomOccupancy:
         """
         cache_dir = self.skill_root / "classroom" / "cache" / "live"
         cache_dir.mkdir(parents=True, exist_ok=True)
-        cf = cache_dir / f"didian_{self.xn}_{self.xq}.json"
+        cf = cache_dir / f"didian_{self._sem.xn}_{self._sem.xq}.json"
         if cf.exists():
             try:
                 payload = json.loads(cf.read_text())
@@ -385,8 +389,8 @@ class ClassroomOccupancy:
                 ("pylx", "1"),
                 ("pageNum", str(page)),
                 ("pageSize", "50"),
-                ("xn", self.xn),
-                ("xq", self.xq),
+                ("xn", self._sem.xn),
+                ("xq", self._sem.xq),
                 ("hlct", "0"),
                 ("hltyxct", "0"),
                 ("sfjtjs", "2"),
@@ -467,7 +471,7 @@ class ClassroomOccupancy:
         cddm = self._room_code_for_name(room_name)
         if not cddm:
             return []
-        return self._live_client.query_room(cddm, xn=self.xn, xq=self.xq)
+        return self._live_client.query_room(cddm, xn=self._sem.xn, xq=self._sem.xq)
 
     def live_occupancy(self, room_name: str, week: int, day: int) -> List[RoomScheduleEntry]:
         """Live entries active at (week, day) in the named room.
@@ -503,7 +507,7 @@ class ClassroomOccupancy:
             if min_capacity and cap < min_capacity:
                 continue
             try:
-                entries = self._live_client.query_room(dm, xn=self.xn, xq=self.xq)
+                entries = self._live_client.query_room(dm, xn=self._sem.xn, xq=self._sem.xq)
             except Exception:
                 continue
             hits = [e for e in entries
@@ -534,7 +538,7 @@ class ClassroomOccupancy:
             if min_capacity and cap < min_capacity:
                 continue
             try:
-                entries = self._live_client.query_room(dm, xn=self.xn, xq=self.xq)
+                entries = self._live_client.query_room(dm, xn=self._sem.xn, xq=self._sem.xq)
             except Exception:
                 continue
             busy = False
@@ -557,12 +561,14 @@ class ClassroomOccupancy:
 
 
 def classroom(*, xn: str = "2025-2026", xq: str = "2",
+              semester: Optional[Semester] = None,
               max_age: int = DEFAULT_TTL,
               live_client: Optional[LiveOccupancyClient] = None) -> ClassroomOccupancy:
     """Module-level factory. Returns a ClassroomOccupancy for the given semester.
 
     Default semester is 2025-2026 Spring (xq=2). Override with kwargs.
+    Pass `semester=Semester(...)` to use the canonical Semester type.
     Pass `live_client` to inject a custom live client (mainly for tests).
     """
-    return ClassroomOccupancy(xn=xn, xq=xq, max_age=max_age,
+    return ClassroomOccupancy(xn=xn, xq=xq, semester=semester, max_age=max_age,
                               live_client=live_client)
