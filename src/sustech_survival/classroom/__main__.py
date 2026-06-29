@@ -34,6 +34,44 @@ Commands (human + agent friendly):
                                      (uses local time → TIS format)
         --json
 
+    BOOKING (cdjy/addChangDiJieYongShenQing/1 — wire-shape verified 2026-06-29):
+    book --room NAME --day N --period P1 [P2] --week N [N2..]
+         --headcount N --purpose "..."
+         [--applicant-name NAME --applicant-phone PHONE]
+         [--user-name NAME --user-phone PHONE]
+         [--media | --no-media]
+         [--tiered not-care|yes|no --movable-seats not-care|yes|no]
+         [--save | (submit default)] [--dry-run | --commit]
+                                     Build a venue-borrowing application.
+        --room 一教107              Room display name OR code (YJ-107)
+        --day 3                     Weekday 1=Mon ... 7=Sun
+        --period 3 4                Period range (1-12)
+        --clock-start 14:00         Clock-time alternative to --period
+        --clock-end 16:00
+        --week 5 6 7 8              Week numbers (1-17)
+        --headcount 30              Number of people
+        --purpose "学术讲座"          借用原因
+        --campus 1                  1=一期 (default), 2=二期, 9=九祥
+        --applicant-name "段斯宸"    申请人 sqr (who requests)
+        --applicant-phone 13800138000
+        --user-name "李四"           使用人 syr (who actually uses the room,
+                                     defaults to applicant if omitted)
+        --user-phone 13900139000
+        --media                     sfsysb='1' (default: use equipment)
+        --no-media                  sfsysb='0'
+        --tiered not-care           阶梯教室 sfjtjs (default: 不限制)
+        --movable-seats yes         座椅可移动 zysfkyd
+        --start-date 2026-07-01     Per-row ksrq (auto-derived from week if omitted)
+        --save                      保存 draft (shbj='0') instead of 提交 submit
+        --dry-run                   Print wire, no POST (default)
+        --commit                    Actually POST to TIS
+        --yes                       Skip confirmation prompt
+
+    Multi-ticket (repeat --slot instead of --room/--day/--period/--week):
+    book --slot "room=一教107 day=3 period=3-4 week=5" \\
+         --slot "room=智华楼201 day=5 clock=14:00-16:00 week=6" \\
+         --headcount 30 --purpose "学术讲座"
+
 Note: All commands use a 1-hour disk cache. Run `refresh` to bust.
 """
 from __future__ import annotations
@@ -166,6 +204,263 @@ def cmd_refresh(args) -> int:
     return 0
 
 
+# ── Book command (wire-shape verified 2026-06-29) ──────────────────────────
+
+
+def cmd_book(args) -> int:
+    """Build a venue-borrowing application from CLI args.
+
+    Uses the new ``build_booking()`` + ``RowTicket`` API.
+    See ``booking_schema.build_booking`` for the full parameter doc.
+
+    Modes:
+        --dry-run       Default. Print the wire payload that would be sent.
+        --commit        Actually POST to TIS.
+
+    Single-ticket (backward compat):
+        --room NAME --day N --period P1 [P2] --week N [N..]
+    Multi-ticket:
+        --slot room=一周107 day=3 period=3-4 week=5 [date=2026-07-01] \\
+        --slot room=智华楼201 day=5 period=5-6 week=6 [date=2026-07-02]
+    """
+    from pathlib import Path
+    from sustech_survival.tis.classroom.booking_schema import (
+        build_booking, RowTicket, Semester,
+    )
+
+    # Resolve room name → TIS code if single-ticket mode
+    actual_skill_root = Path.home() / ".openclaw" / "code" / "sustech_survival"
+    from sustech_survival.classroom.classroom import ClassroomOccupancy
+    classroom_obj = ClassroomOccupancy(
+        xn=args.xn, xq=args.xq, skill_root=actual_skill_root,
+    )
+
+    # ── Build tickets from args ──
+    tickets: list[RowTicket] = []
+
+    if hasattr(args, "slot") and args.slot:
+        # Multi-ticket: --slot key=value key=value ...
+        from sustech_survival.classroom._booking_time import _clock_to_period, ClockTime
+        for slot_str in args.slot:
+            fields = {}
+            for pair in slot_str.split():
+                if "=" in pair:
+                    k, v = pair.split("=", 1)
+                    fields[k.strip().lower()] = v.strip()
+            room_query = fields.get("room", "")
+            room_lookup = _resolve_room(room_query, classroom_obj)
+            if room_lookup is None:
+                print(f"❌ Room not found: {room_query!r}", file=sys.stderr)
+                return 2
+            room_code, room_name, _ = room_lookup
+            day = int(fields.get("day", "0"))
+            period_str = fields.get("period", "")
+            clock_str = fields.get("clock", "")
+            week = fields.get("week", "")
+            date = fields.get("date", "")
+            # Clock-time support: "14:00-16:00" or "14:00 16:00"
+            if clock_str:
+                parts = clock_str.replace("-", " ").split()
+                if len(parts) >= 2:
+                    ps = _clock_to_period(ClockTime.from_str(parts[0]))
+                    pe = _clock_to_period(ClockTime.from_str(parts[1]))
+                else:
+                    print(f"❌ Invalid clock format: {clock_str!r} (need start-end)", file=sys.stderr)
+                    return 2
+            else:
+                period_parts = period_str.replace("-", " ").split()
+                ps = int(period_parts[0]) if period_parts else 0
+                pe = int(period_parts[-1]) if period_parts else 0
+            if not (1 <= ps <= pe <= 12):
+                print(f"❌ Invalid period/clock in slot: {slot_str!r}", file=sys.stderr)
+                return 2
+            tickets.append(RowTicket(
+                room_code=room_code, room_name=room_name,
+                weekday=day, period_start=ps, period_end=pe,
+                week=week, week_range=week,
+                start_date=date, end_date=date,
+            ))
+    else:
+        # Single-ticket mode (original style or --clock-start/--clock-end)
+        room_lookup = _resolve_room(args.room, classroom_obj)
+        if room_lookup is None:
+            print(f"❌ Room not found: {args.room!r}", file=sys.stderr)
+            return 2
+        room_code, room_name, _ = room_lookup
+
+        # Convert clock times → periods if clock-start/clock-end provided
+        if args.clock_start and args.clock_end:
+            from sustech_survival.classroom._booking_time import _clock_to_period, ClockTime
+            ps = _clock_to_period(ClockTime.from_str(args.clock_start))
+            pe = _clock_to_period(ClockTime.from_str(args.clock_end))
+        elif args.period:
+            ps = args.period[0]
+            pe = args.period[-1]
+        else:
+            print("❌ Must specify either --period or --clock-start/--clock-end",
+                  file=sys.stderr)
+            return 2
+
+        weeks = " ".join(str(w) for w in args.week)
+        week_str = "-".join(str(w) for w in args.week) if len(args.week) > 1 else str(args.week[0])
+        ksrq = args.start_date or ""
+        jsrq = args.end_date or ""
+        tickets.append(RowTicket(
+            room_code=room_code, room_name=room_name,
+            weekday=args.day, period_start=ps, period_end=pe,
+            week=weeks, week_range=week_str,
+            start_date=ksrq, end_date=jsrq,
+        ))
+
+    if not tickets:
+        print("❌ No tickets specified. Use --slot or --room/--day/--period/--week.",
+              file=sys.stderr)
+        return 2
+
+    # ── Build application ──
+    from sustech_survival.semester import Semester
+    semester = Semester(args.xn, args.xq)
+
+    tiered_map = {"not-care": "2", "yes": "1", "no": "0", "2": "2", "1": "1", "0": "0"}
+    movable_map = {"not-care": "2", "yes": "1", "no": "0", "2": "2", "1": "1", "0": "0"}
+
+    app = build_booking(
+        tickets=tickets,
+        semester=semester,
+        applicant_name=args.applicant_name or "",
+        applicant_phone=args.applicant_phone or "",
+        applicant_id=args.applicant_id or "",
+        applicant_dept=args.applicant_dept or "",
+        applicant_dept_en=args.applicant_dept_en or "",
+        user_name=args.user_name or args.applicant_name or "",
+        user_phone=args.user_phone or args.applicant_phone or "",
+        campus=args.campus,
+        headcount=args.headcount,
+        use_media=args.media,
+        purpose=args.purpose,
+        save_as_draft=args.save,
+        tiered=tiered_map.get(args.tiered, "2"),
+        movable_seats=movable_map.get(args.movable_seats, "2"),
+    )
+
+    wire = app.to_api()
+
+    # ── Dry-run mode ──
+    if args.dry_run:
+        print(f"=== DRY RUN — wire payload (NOT POSTed) ===")
+        print(f"Endpoint: POST https://tis.sustech.edu.cn/cdjy/addChangDiJieYongShenQing/1")
+        print(f"Body ({len(wire)} form-level keys, "
+              f"{len(wire['cdjymxlist'])} detail rows, "
+              f"{len(wire['jtsjlist'])} flat slots):")
+        print(json.dumps(wire, ensure_ascii=False, indent=2))
+        print()
+        for i, t in enumerate(tickets):
+            print(f"  Ticket {i+1}: {t.room_name} ({t.room_code}), "
+                  f"day {t.weekday} period {t.period_start}-{t.period_end}, "
+                  f"week {t.week}")
+        print(f"  shbj: {args.save} → wire = "
+              f"{'0 (draft)' if args.save else '1 (submit)'!r}")
+        print()
+        if not args.yes:
+            print("To actually POST, re-run with --commit (will prompt for confirmation).")
+        return 0
+
+    # ── Commit mode ──
+    if not args.yes:
+        print(f"=== CONFIRM BOOKING ===")
+        for i, t in enumerate(tickets):
+            print(f"  [{i+1}] {t.room_name} ({t.room_code}), "
+                  f"day {t.weekday} period {t.period_start}-{t.period_end}, "
+                  f"week {t.week}")
+        print(f"  People:  {args.headcount}")
+        print(f"  Purpose: {args.purpose}")
+        print(f"  Action:  {'保存 (draft)' if args.save else '提交 (submit)'}")
+        print()
+        try:
+            confirm = input("Type 'yes' to confirm POST to TIS: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("Aborted.", file=sys.stderr)
+            return 130
+        if confirm != "yes":
+            print("Aborted.", file=sys.stderr)
+            return 1
+
+    # ── Real POST ──
+    from sustech_survival.tis.classroom.booking import (
+        venue_borrow, BorrowError,
+    )
+    c = venue_borrow()
+    sess = c.ensure_session()
+
+    missing = []
+    if not args.applicant_name:
+        missing.append("--applicant-name")
+    if not args.applicant_phone:
+        missing.append("--applicant-phone")
+    if missing:
+        print(f"❌ Missing required fields: {', '.join(missing)}", file=sys.stderr)
+        return 2
+
+    try:
+        saved = c.create_borrow_application(app, dry_run=False)
+        print(f"✅ Application created!")
+        print(f"   id:   {saved.id}")
+        print(f"   jhdh: {saved.jhdh}")
+        print(f"   status: {saved.status}")
+        return 0
+    except BorrowError as e:
+        print(f"❌ Borrow error: {e}", file=sys.stderr)
+        return 1
+
+
+def _resolve_room(query: str, classroom) -> Optional[tuple]:
+    """Resolve a room display name OR code to (cddm, cdmc, capacity).
+
+    Strategy (in order):
+      1. Try didian catalog (TIS-side cddm/mc) if accessible.
+      2. Fall back to the public schedule's room index
+         (display name only — cddm will be the display name itself,
+         which TIS may not accept for non-trivial room codes).
+
+    Returns None if not found anywhere.
+    """
+    # Strategy 1: didian catalog (TIS-side identifiers)
+    try:
+        didian = classroom._query_didian_catalog()
+    except Exception:
+        didian = None
+
+    if didian:
+        # Exact match on TIS code (e.g. "YJ-107")
+        for r in didian:
+            if r.get("dm") == query:
+                return (r["dm"], r.get("mc") or query, int(r.get("zws") or 0))
+        # Exact match on display name (e.g. "一教107")
+        for r in didian:
+            if r.get("mc") == query:
+                return (r["dm"], r.get("mc") or query, int(r.get("zws") or 0))
+        # Substring match on display name
+        matches = [r for r in didian if query in (r.get("mc") or "")]
+        if matches:
+            r = matches[0]
+            return (r["dm"], r.get("mc") or query, int(r.get("zws") or 0))
+
+    # Strategy 2: public schedule Room index (display name only)
+    try:
+        rooms = classroom.rooms()
+    except Exception:
+        rooms = []
+
+    for r in rooms:
+        if r.name == query or query in r.name:
+            return (r.name, r.short_name or r.name, r.capacity or 0)
+    for r in rooms:
+        if query in (r.short_name or ""):
+            return (r.name, r.short_name or r.name, r.capacity or 0)
+
+    return None
+
+
 # ── Live occupancy commands ─────────────────────────────────────────────────
 
 
@@ -278,7 +573,110 @@ def _infer_current_week(c) -> int:
         return 1
 
 
-# ── Parser ──────────────────────────────────────────────────────────────────
+def cmd_search_rooms(args) -> int:
+    """Find rooms matching demand + time filters (TIS 选择场地 modal).
+
+    Uses `live_rooms_free_at()` for occupancy check + `queryDiDian` catalog
+    for filter matching (capacity, building, media, tiered, movable-seats).
+
+    This is the CLI equivalent of the TIS UI's 选择场地 dialog.
+    """
+    from sustech_survival.classroom.classroom import ClassroomOccupancy
+    from pathlib import Path
+    actual_skill_root = Path.home() / ".openclaw" / "code" / "sustech_survival"
+    c = ClassroomOccupancy(xn=args.xn, xq=args.xq, skill_root=actual_skill_root)
+
+    didian = c._query_didian_catalog()
+    if not didian:
+        print("❌ Could not fetch room catalog from TIS. Check your session.", file=sys.stderr)
+        return 1
+
+    # Filter by campus
+    if args.campus:
+        didian = [r for r in didian if str(r.get("xiaoqu", "")) == str(args.campus)]
+
+    # Filter by building
+    if args.building:
+        building = args.building
+        didian = [r for r in didian if building in (r.get("jxlmc") or "") or building in (r.get("mc") or "")]
+
+    # Filter by capacity
+    if args.min_cap:
+        didian = [r for r in didian if int(r.get("zws", 0) or 0) >= args.min_cap]
+
+    # Filter by movable-seats
+    movable_map = {"not-care": None, "yes": "1", "no": "0"}
+    movable_filter = movable_map.get(args.movable_seats)
+    if movable_filter is not None:
+        didian = [r for r in didian if r.get("zysfkyd") == movable_filter]
+
+    # Filter by tiered
+    tiered_map = {"not-care": None, "yes": "1", "no": "0"}
+    tiered_filter = tiered_map.get(args.tiered)
+    if tiered_filter is not None:
+        didian = [r for r in didian if r.get("sfjtjs") == tiered_filter]
+
+    # Categorize by type (cdlb / lbmc)
+    cdlb_map = {}
+    for r in didian:
+        lbmc = r.get("lbmc") or r.get("cdlb") or "未知"
+        cdlb_map.setdefault(lbmc, []).append(r)
+
+    # ── Check live occupancy (who's free at this time) ──
+    free_names = set()
+    if args.period_start:
+        try:
+            free_names = set(c.live_rooms_free_at(
+                week=args.week, day=args.day,
+                period_start=args.period_start, period_end=args.period_end,
+            ))
+        except Exception:
+            pass
+
+    # Cross-reference: only rooms in both catalog filter AND free
+    if free_names:
+        didian_free = [r for r in didian if r.get("mc") in free_names]
+        didian_occupied = [r for r in didian if r.get("mc") not in free_names]
+    else:
+        didian_free = didian
+        didian_occupied = []
+
+    print(f"=== Room search: week {args.week} day {args.day} "
+          f"period {args.period_start if args.period_start else ''}"
+          f"{'-'+str(args.period_end) if args.period_end and args.period_end != args.period_start else ''} ===")
+    print(f"Filters: campus={args.campus} capacity≥{args.min_cap or 0} "
+          f"building={args.building or 'any'} "
+          f"tiered={args.tiered} movable={args.movable_seats}")
+    print(f"Catalog-matched: {len(didian)}  "
+          f"Free at that time: {len(didian_free)}  "
+          f"Occupied: {len(didian_occupied)}")
+
+    # Group free rooms by category
+    cdlb_map_free = {}
+    for r in didian_free:
+        lbmc = r.get("lbmc") or r.get("cdlb") or "未知"
+        cdlb_map_free.setdefault(lbmc, []).append(r)
+
+    for lbmc, rooms in sorted(cdlb_map_free.items()):
+        print(f"\n  {lbmc} ({len(rooms)} free)")
+        for r in sorted(rooms, key=lambda x: int(x.get("zws", 0) or 0), reverse=True)[:10]:
+            mc = r.get("mc", "?")
+            dm = r.get("dm", "?")
+            zws = r.get("zws", "?")
+            print(f"    ✓ {mc} ({dm}) — {zws}座")
+        if len(rooms) > 10:
+            print(f"    ... ({len(rooms) - 10} more)")
+
+    if didian_occupied:
+        print(f"\n  ── Occupied ({len(didian_occupied)} rooms) ──")
+        for r in sorted(didian_occupied,
+                        key=lambda x: int(x.get("zws", 0) or 0), reverse=True)[:5]:
+            mc = r.get("mc", "?")
+            dm = r.get("dm", "?")
+            print(f"    ✗ {mc} ({dm})")
+        if len(didian_occupied) > 5:
+            print(f"    ... ({len(didian_occupied) - 5} more)")
+    return 0
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -352,13 +750,97 @@ def _build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--json", action="store_true")
     sp.set_defaults(func=cmd_now)
 
+    sp = sub.add_parser("book",
+                        help="Build a venue-borrowing application "
+                             "(dry-run by default)")
+    sp.add_argument("--room",
+                    help="Room display name (e.g. 一教324) or code (YJ-324)")
+    sp.add_argument("--day", type=int,
+                    help="Weekday 1=Mon ... 7=Sun")
+    sp.add_argument("--period", type=int, nargs="+",
+                    help="Period number(s) (1-12). One or two (range). "
+                         "Alternative to --clock-start/--clock-end.")
+    sp.add_argument("--clock-start", default=None,
+                    help='Clock start (e.g. "14:00"). Alternative to --period.')
+    sp.add_argument("--clock-end", default=None,
+                    help='Clock end (e.g. "16:00"). Alternative to --period.')
+    sp.add_argument("--week", type=int, nargs="+",
+                    help="Week number(s) (1-17). One or more.")
+    sp.add_argument("--slot", action="append", default=None,
+                    help='Multi-ticket: "room=X day=N [period=P1-P2|clock=14:00-16:00] week=W [date=YYYY-MM-DD]" '
+                         'Repeat for each ticket. Alternative to --room/--day/--period/--week.')
+    sp.add_argument("--headcount", type=int, required=True,
+                    help="Number of people")
+    sp.add_argument("--purpose", required=True,
+                    help="借用原因 (purpose)")
+    sp.add_argument("--campus", default="1",
+                    help="校区: 1=一期 (default), 2=二期, 9=九祥")
+    sp.add_argument("--start-date", default=None,
+                    help="Start date YYYY-MM-DD (per-row ksrq)")
+    sp.add_argument("--end-date", default=None,
+                    help="End date YYYY-MM-DD (per-row jsrq)")
+    sp.add_argument("--applicant-name", default=None,
+                    help="申请人 sqr (override session default)")
+    sp.add_argument("--applicant-phone", default=None,
+                    help="申请人 sqrdh")
+    sp.add_argument("--applicant-id", default=None,
+                    help="申请人职工/学号 sqrzgh")
+    sp.add_argument("--applicant-dept", default=None,
+                    help="申请人单位 sqrdw")
+    sp.add_argument("--applicant-dept-en", default=None,
+                    help="申请人单位 EN sqrdw_en")
+    sp.add_argument("--user-name", default=None,
+                    help="使用人 syr (defaults to --applicant-name)")
+    sp.add_argument("--user-phone", default=None,
+                    help="使用人 syrdh (defaults to --applicant-phone)")
+    sp.add_argument("--media", action="store_true", default=True,
+                    help="使用设备 sfsysb='1' (default)")
+    sp.add_argument("--no-media", dest="media", action="store_false",
+                    help="不使用设备 sfsysb='0'")
+    sp.add_argument("--tiered", default="not-care",
+                    choices=["not-care", "yes", "no"],
+                    help="阶梯教室 sfjtjs: not-care(默认)/yes/no")
+    sp.add_argument("--movable-seats", default="not-care",
+                    choices=["not-care", "yes", "no"],
+                    help="座椅可移动 zysfkyd: not-care(默认)/yes/no")
+    sp.add_argument("--save", action="store_true",
+                    help="保存 draft (shbj='0') instead of 提交 submit (shbj='1')")
+    sp.add_argument("--dry-run", action="store_true", default=True,
+                    help="Print wire payload, no POST (default)")
+    sp.add_argument("--commit", dest="dry_run", action="store_false",
+                    help="Actually POST to TIS (requires --yes or interactive confirm)")
+    sp.add_argument("--yes", action="store_true",
+                    help="Skip confirmation prompt (with --commit)")
+    sp.set_defaults(func=cmd_book)
+
+    sp = sub.add_parser("search-rooms",
+                        help="Search available rooms matching filters "
+                             "(TIS 选择场地 dialog)")
+    sp.add_argument("--week", type=int, default=1,
+                    help="Week number (1-17)")
+    sp.add_argument("--day", type=int, required=True,
+                    help="Weekday 1=Mon ... 7=Sun")
+    sp.add_argument("--period", type=int, nargs="+",
+                    help="Period number(s) (1-12). One or two (range).")
+    sp.add_argument("--campus", default="1",
+                    help="校区: 1=一期 (default), 2=二期, 9=九祥")
+    sp.add_argument("--building", default=None,
+                    help="Filter by building name (e.g. 一教, 智华楼)")
+    sp.add_argument("--min-cap", type=int, default=None,
+                    help="Minimum capacity")
+    sp.add_argument("--tiered", default="not-care",
+                    choices=["not-care", "yes", "no"],
+                    help="阶梯教室 sfjtjs")
+    sp.add_argument("--movable-seats", default="not-care",
+                    choices=["not-care", "yes", "no"],
+                    help="座椅可移动 zysfkyd")
+    sp.set_defaults(func=cmd_search_rooms)
+
     return p
 
 
 def _normalize_period_args(args) -> None:
-    """Convert --period list into (start, end) attributes for the `free` cmd."""
-    # Only the `free` command uses --period as a list (1 or 2 numbers).
-    # `live-at` uses --period as a single int. Skip if not present.
+    """Convert --period list into (start, end) attributes for the `free` and `search-rooms` cmds."""
     if not hasattr(args, "period") or not isinstance(args.period, list):
         return
     if len(args.period) == 1:

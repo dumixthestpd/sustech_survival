@@ -342,6 +342,8 @@ def book(
         sess = c.ensure_session()
         from sustech_survival.classroom.live import current_semester
         semester = current_semester(sess)
+    elif isinstance(semester, str):
+        semester = Semester(semester)
 
     # Normalize schedule into slot list
     bts: list[BookingTime] = (
