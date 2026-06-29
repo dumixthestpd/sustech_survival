@@ -407,7 +407,76 @@ class TestBorrowApplication:
         assert dumped["jyyy"] == "学术讲座"
         assert len(dumped["cdjymxlist"]) == 1
         assert dumped["cdjymxlist"][0]["cddm"] == "YJ-123"
-        assert dumped["cdjymxlist"][0]["jtsjlist"][0]["xqj"] == 2
+        # The row's slot is duplicated on the row itself (wire shape).
+        assert dumped["cdjymxlist"][0]["xqj"] == "2"
+        # The flat-slot list lives at form level (jtsjlist), not nested.
+        assert len(dumped["jtsjlist"]) == 1
+        assert dumped["jtsjlist"][0]["xqj"] == "2"
+
+    def test_to_api_wire_shape_2026_06_29(self):
+        """The wire shape (verified 2026-06-29) requires these keys."""
+        b = BorrowApplication(
+            id="", jhdh="",
+            applicant_name="段斯宸", applicant_phone="13800138000",
+            semester=Semester("2025-2026-2"), campus="1",
+            headcount=30, purpose="测试",
+            details=[BorrowDetail(
+                seq=1, room_code="YJ-101", room_name="一教101",
+                capacity=30, start_date="2026-07-01", end_date="2026-07-01",
+                week_bitmask="1", week_range="1",
+                sfsysb="1", zysfkyd="2", sfjtjs="2",
+                time_slots=[BorrowTimeSlot(
+                    seq=1, weekday=3, period_start=3, period_end=4,
+                    week_pattern="1",
+                )],
+            )],
+        )
+        dumped = b.to_api()
+
+        # Form-level: 35 keys
+        expected_form_keys = {
+            "id", "jhdh", "sqr", "sqr_en", "sqrdh", "sqrzgh", "sqrdw",
+            "sqrdw_en", "sqrdwdh", "syr", "syr_en", "jyrdh", "syrdh",
+            "syrzgh", "syrdwdm", "xn", "xq", "zc", "qsjsz", "xiaoqu",
+            "rs", "jyyy", "sfsjysxtly", "shjs", "shjsxm", "shjsxm_en",
+            "shyj", "shbj", "xnxw", "zhxgr", "xhxgsj", "hlddct",
+            "jtsjlist", "cdjymxlist", "cdjymlist",
+        }
+        assert set(dumped.keys()) == expected_form_keys, (
+            f"Missing keys: {expected_form_keys - set(dumped.keys())}\n"
+            f"Extra keys: {set(dumped.keys()) - expected_form_keys}"
+        )
+
+        # xnxq MUST NOT be in the wire
+        assert "xnxq" not in dumped
+
+        # Per-row: 28 keys
+        row = dumped["cdjymxlist"][0]
+        expected_row_keys = {
+            "xuhhao", "ksrq", "jsrq", "rs", "jyyy", "zc", "qsjsz",
+            "xqj", "ksjc", "jsjc", "jyxq", "sfsysb", "zysfkyd", "sfjtjs",
+            "jyjs", "cddm", "cdmc", "xn", "xq", "xiaoqu",
+            "sqr", "sqrdh", "syr", "syrdh", "sqrdw", "sqrdwdh",
+            "shjs", "shyj",
+        }
+        assert set(row.keys()) == expected_row_keys, (
+            f"Missing: {expected_row_keys - set(row.keys())}\n"
+            f"Extra: {set(row.keys()) - expected_row_keys}"
+        )
+
+        # Overspecified fields MUST NOT be in the wire
+        assert "zws" not in row
+        assert "cdlocation" not in row
+        assert "yongtu" not in row
+        assert "jtsjlist" not in row  # NOT nested per-row
+
+        # Per-row rs is a STRING
+        assert isinstance(row["rs"], str)
+        assert row["rs"] == "30"
+
+        # Per-slot: 3 keys (just xqj/ksjc/jsjc)
+        slot = dumped["jtsjlist"][0]
+        assert set(slot.keys()) == {"xqj", "ksjc", "jsjc"}
 
     def test_to_api_skips_server_fields(self):
         b = BorrowApplication(
@@ -418,9 +487,11 @@ class TestBorrowApplication:
         assert dumped["id"] == "abc123"
         assert dumped["jhdh"] == "JY20260628001"
         assert dumped["shjs"] == ""
+        # status (Python-side) is NOT in the wire; the wire uses shbj
         assert "status" not in dumped
-        assert "shjsxm" not in dumped
-        assert "shyj" not in dumped
+        # shjsxm / shyj ARE in the wire (empty on create) per 06-29 probe
+        assert dumped["shjsxm"] == "辅导员"
+        assert dumped["shyj"] == ""
 
     def test_from_api_empty(self):
         b = BorrowApplication.from_api({})
@@ -485,6 +556,133 @@ class TestNestedIntegration:
         assert reconstructed.weeks == "5-8"
         assert reconstructed.details[0].room_code == "YJ-123"
         assert reconstructed.details[0].time_slots[0].weekday == 2
+
+
+class TestWirePayloadProbe2026_06_29:
+    """Golden test against the LIVE wire payload captured by the probe.
+
+    Source: `~/.openclaw/code/sustech_survival/scripts/probe_cdjy_post.py`
+    ran in Playwright against https://tis.sustech.edu.cn/cdjy/query/1/sq,
+    hooked `$.ajax`, called `saveOrSubmit('bc')`, and captured the
+    exact JSON body. See `~/.hermes/skills/sustech-dev/references/
+    tis-cdjy-post-probe-2026-06-29.md` for the full probe write-up.
+
+    This test ensures `to_api()` continues to match the wire shape.
+    Any drift between the schema and the wire (e.g. a server-side
+    change to a field name) will fail this test loudly.
+    """
+    WIRE_PAYLOAD = {
+        "id": "",
+        "jhdh": "",
+        "sqr": "段斯宸",
+        "sqr_en": "Sicheng Duan",
+        "sqrdh": "13800138000",
+        "xn": "2025-2026",
+        "xq": "3",
+        "zc": "",
+        "rs": 30,
+        "qsjsz": "",
+        "syr": "段斯宸",
+        "syr_en": "",
+        "jyrdh": "",
+        "syrdh": "13800138000",
+        "sqrdw": "测试单位",
+        "sqrdw_en": "Test Dept",
+        "sqrdwdh": "000",
+        "shjs": "",
+        "shjsxm": "",
+        "shjsxm_en": "",
+        "shyj": "",
+        "jyyy": "测试借用",
+        "xiaoqu": "1",
+        "shbj": "0",
+        "xnxw": "",
+        "cdjymxlist": [{
+            "xuhhao": 1,
+            "ksrq": "2026-07-01",
+            "jsrq": "2026-07-01",
+            "rs": "30",
+            "jyyy": "测试借用",
+            "zc": "1",
+            "qsjsz": "1",
+            "xqj": "3",
+            "ksjc": "3",
+            "jsjc": "4",
+            "jyxq": "2025-20263",
+            "sfsysb": "1",
+            "jyjs": "",
+            "cddm": "YJ-101",
+            "cdmc": "一教101",
+            "xn": "2025-2026",
+            "xq": "3",
+            "xiaoqu": "1",
+            "sqr": "",
+            "sqrdh": "",
+            "syr": "",
+            "syrdh": "",
+            "sqrdw": "",
+            "sqrdwdh": "",
+            "shjs": "",
+            "shyj": "",
+            "zysfkyd": "2",
+            "sfjtjs": "2",
+        }],
+        "jtsjlist": [{"xqj": "3", "ksjc": "3", "jsjc": "4"}],
+        "sfsjysxtly": "",
+        "syrdwdm": "",
+        "sqrzgh": "12413021",
+        "syrzgh": "12413021",
+        "cdjymlist": [],
+        "zhxgr": "",
+        "xhxgsj": "",
+        "hlddct": "0",
+    }
+
+    def test_wire_form_keys_match(self):
+        """35 form-level keys must round-trip exactly."""
+        app = BorrowApplication.from_api(self.WIRE_PAYLOAD)
+        out = app.to_api()
+        wire_keys = set(self.WIRE_PAYLOAD.keys())
+        out_keys = set(out.keys())
+        assert wire_keys == out_keys, (
+            f"Form-level key mismatch:\n"
+            f"  In wire but not in to_api: {sorted(wire_keys - out_keys)}\n"
+            f"  In to_api but not in wire: {sorted(out_keys - wire_keys)}"
+        )
+
+    def test_wire_row_keys_match(self):
+        """28 per-row keys must round-trip exactly."""
+        app = BorrowApplication.from_api(self.WIRE_PAYLOAD)
+        row_out = app.to_api()["cdjymxlist"][0]
+        row_wire = self.WIRE_PAYLOAD["cdjymxlist"][0]
+        assert set(row_wire.keys()) == set(row_out.keys()), (
+            f"Per-row key mismatch:\n"
+            f"  In wire: {sorted(set(row_wire.keys()) - set(row_out.keys()))}\n"
+            f"  In to_api: {sorted(set(row_out.keys()) - set(row_wire.keys()))}"
+        )
+
+    def test_wire_slot_keys_match(self):
+        """3 per-slot keys must round-trip exactly."""
+        app = BorrowApplication.from_api(self.WIRE_PAYLOAD)
+        slot_out = app.to_api()["jtsjlist"][0]
+        slot_wire = self.WIRE_PAYLOAD["jtsjlist"][0]
+        assert set(slot_wire.keys()) == set(slot_out.keys()) == {"xqj", "ksjc", "jsjc"}
+
+    def test_wire_values_match(self):
+        """Values must round-trip exactly for all shared keys."""
+        app = BorrowApplication.from_api(self.WIRE_PAYLOAD)
+        out = app.to_api()
+
+        for level_name, wire_dict, out_dict in [
+            ("form", self.WIRE_PAYLOAD, out),
+            ("row", self.WIRE_PAYLOAD["cdjymxlist"][0], out["cdjymxlist"][0]),
+            ("slot", self.WIRE_PAYLOAD["jtsjlist"][0], out["jtsjlist"][0]),
+        ]:
+            for k in wire_dict:
+                assert wire_dict[k] == out_dict[k], (
+                    f"{level_name}.{k}: wire={wire_dict[k]!r} "
+                    f"!= to_api={out_dict[k]!r}"
+                )
 
 
 if __name__ == "__main__":
