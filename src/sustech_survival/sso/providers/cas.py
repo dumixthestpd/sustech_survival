@@ -98,9 +98,11 @@ class CASAuthorizer(Authorizer):
         return cookies
 
     def _build_cas_session(self) -> requests.Session:
-        """Build a requests Session for CAS login. Uses LegacyAdapter for older SSL."""
+        """Build a requests Session for CAS login. Handles Primo's ancient TLS."""
         legacy_ctx = ssl.create_default_context()
         legacy_ctx.options |= _OP_LEGACY
+        legacy_ctx.check_hostname = False
+        legacy_ctx.verify_mode = ssl.CERT_NONE
 
         from requests.adapters import HTTPAdapter
 
@@ -108,6 +110,16 @@ class CASAuthorizer(Authorizer):
             def init_poolmanager(self, *args, **kwargs):
                 kwargs["ssl_context"] = legacy_ctx
                 return super().init_poolmanager(*args, **kwargs)
+
+            def get_connection_with_tls_context(
+                self, request, verify, proxies=None, cert=None
+            ):
+                # requests adapter hardcodes cert_reqs=CERT_REQUIRED; we need
+                # verify=False so our custom SSL context (with legacy renegotiation
+                # and cert validation disabled) isn't overridden.
+                return super().get_connection_with_tls_context(
+                    request, verify=False, proxies=proxies, cert=cert
+                )
 
         sess = requests.Session()
         sess.mount("https://", LegacyAdapter())
