@@ -55,7 +55,11 @@ class PMSAuth(Authorizer):
     # ── Session management ────────────────────────────────────────────────────
 
     def check(self) -> Tuple[bool, str]:
-        """Is the current session still authenticated? Calls /Auth/Check."""
+        """Is the current session still authenticated? Calls /Auth/Check.
+        Auto-refreshes if no session cached."""
+        if not self._session_cache:
+            if not self._refresh():
+                return False, "PMSAuth session not available"
         sess = self._api_session()
         r = sess.post(
             f"{PMS_API}/client/Auth/Check",

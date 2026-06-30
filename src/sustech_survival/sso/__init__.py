@@ -151,30 +151,11 @@ class LibAuth(CASAuthorizer):
         legacy_ctx.options |= _OP_LEGACY
 
         from requests.adapters import HTTPAdapter
-        from requests.adapters import (
-            _urllib3_request_context, prepend_scheme_if_needed,
-            select_proxy, parse_url
-        )
 
         class LegacyAdapter(HTTPAdapter):
-            def get_connection_with_tls_context(
-                self, request, verify, proxies=None, cert=None, poolmanager=None
-            ):
-                proxy = select_proxy(request.url, proxies)
-                host_params, pool_kwargs = _urllib3_request_context(
-                    request, verify, cert, self.poolmanager,
-                )
-                pool_kwargs["ssl_context"] = legacy_ctx
-                pool_kwargs["ssl_context"].check_hostname = False
-                if proxy:
-                    proxy = prepend_scheme_if_needed(proxy, "http")
-                    proxy_url = parse_url(proxy)
-                    if not proxy_url.host:
-                        from requests.exceptions import InvalidProxyURL
-                        raise InvalidProxyURL("Malformed proxy URL")
-                    proxy_manager = self.proxy_manager_for(proxy)
-                    return proxy_manager.connection_from_host(**host_params, pool_kwargs=pool_kwargs)
-                return self.poolmanager.connection_from_host(**host_params, pool_kwargs=pool_kwargs)
+            def init_poolmanager(self, *args, **kwargs):
+                kwargs["ssl_context"] = legacy_ctx
+                return super().init_poolmanager(*args, **kwargs)
 
         sess = _requests.Session()
         sess.mount("https://", LegacyAdapter())
@@ -192,10 +173,10 @@ class WSAuth(WSProvider):
 
 
 # Register singletons for backwards compatibility
-register_auth("tis", TISAuth())
-register_auth("bb", BBAuth())
-register_auth("lib", LibAuth())
-register_auth("ws", WSAuth())
+register_auth("tis", TISAuth(skill_dir=str(SKILL_ROOT)))
+register_auth("bb", BBAuth(skill_dir=str(SKILL_ROOT)))
+register_auth("lib", LibAuth(skill_dir=str(SKILL_ROOT)))
+register_auth("ws", WSAuth(skill_dir=str(SKILL_ROOT)))
 
 
 # Export ensured from Authorizer
