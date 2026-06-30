@@ -43,38 +43,17 @@ def build_legacy_adapter():
     legacy_ctx = ssl.create_default_context()
     legacy_ctx.options |= _OP_LEGACY
 
-    from requests.adapters import (
-        HTTPAdapter,
-        _urllib3_request_context,
-        parse_url,
-        prepend_scheme_if_needed,
-        select_proxy,
-    )
+    from requests.adapters import HTTPAdapter
 
     class LegacyAdapter(HTTPAdapter):
-        def get_connection_with_tls_context(
-            self, request, verify, proxies=None, cert=None, poolmanager=None
-        ):
-            proxy = select_proxy(request.url, proxies)
-            host_params, pool_kwargs = _urllib3_request_context(
-                request, verify, cert, self.poolmanager,
-            )
-            pool_kwargs["ssl_context"] = legacy_ctx
-            pool_kwargs["ssl_context"].check_hostname = False
-            if proxy:
-                proxy = prepend_scheme_if_needed(proxy, "http")
-                proxy_url = parse_url(proxy)
-                if not proxy_url.host:
-                    from requests.exceptions import InvalidProxyURL
-                    raise InvalidProxyURL("Malformed proxy URL")
-                proxy_manager = self.proxy_manager_for(proxy)
-                return proxy_manager.connection_from_host(**host_params, pool_kwargs=pool_kwargs)
-            return self.poolmanager.connection_from_host(**host_params, pool_kwargs=pool_kwargs)
+        def init_poolmanager(self, *args, **kwargs):
+            kwargs["ssl_context"] = legacy_ctx
+            return super().init_poolmanager(*args, **kwargs)
 
     return LegacyAdapter
 
 
-def sess() -> requests.Session:
+def make_ws_session() -> requests.Session:
     """Return a requests.Session with LegacyAdapter mounted."""
     sess = requests.Session()
     sess.mount("https://", build_legacy_adapter()())
@@ -100,12 +79,12 @@ class WSProvider(Authorizer):
 
     # ── Auth ─────────────────────────────────────────────────────────────────
 
-    def get_ticket_cookies(self, username: str, password: str) -> dict:
+    def _get_ticket_cookies(self, username: str, password: str) -> dict:
         """
         Perform the full CAS ticket exchange for WS.
         Uses LegacyAdapter throughout to avoid TLS errors.
         """
-        sess = sess()
+        sess = make_ws_session()
         sess.headers["User-Agent"] = UA
 
         # Step 1 — fetch CAS login page → extract execution token
@@ -196,7 +175,9 @@ class WSProvider(Authorizer):
         legacy_ctx.options |= _OP_LEGACY
 
         class LegacyAdapter(HTTPAdapter):
-            pass  # uses the base context
+            def init_poolmanager(self, *args, **kwargs):
+                kwargs["ssl_context"] = legacy_ctx
+                return super().init_poolmanager(*args, **kwargs)
 
         raw = self._session_cache
         sess = requests.Session()
@@ -207,7 +188,12 @@ class WSProvider(Authorizer):
     def check(self) -> tuple[bool, str]:
         """
         Verify WS session by hitting the menu API.
+        Auto-refreshes if no session cached.
         """
+        # Ensure we have a session first
+        if not self._session_cache:
+            if not self._refresh():
+                return False, "WSAuth session not available"
         try:
             r = self.session.get(
                 f"{self.BASE_URL}/Main/GetSmartLeftMenuTData.do",

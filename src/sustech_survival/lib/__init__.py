@@ -12,7 +12,7 @@ __all__ = ["login", "check", "refresh", "ensure"]
 
 from pathlib import Path as _Path
 
-_SKILL_DIR = str(_Path(__file__).resolve().parent.parent.parent)
+_SKILL_DIR = str(_Path(__file__).resolve().parent.parent.parent.parent)
 
 from sustech_survival.sso import LibAuth
 
