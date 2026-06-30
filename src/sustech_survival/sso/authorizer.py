@@ -277,6 +277,10 @@ class Authorizer(ABC):
         self.skill_dir = self._resolve_skill_dir()
         return self.skill_dir / "credentials.txt"
 
+    def read_creds(self) -> tuple[str, str]:
+        """Public wrapper for _read_creds (backward compat)."""
+        return self._read_creds()
+
     @property
     def username(self) -> str:
         return self._read_creds()[0]
