@@ -1,5 +1,5 @@
 """
-sustech_survival.classroom.live — TIS 场地课表 (per-room live schedule) client.
+sustech_survival.tis.classroom.live — TIS 场地课表 (per-room live schedule) client.
 
 The current classroom module derives occupancy from the public course
 catalog (Xsxktz/queryRwxxcxList → kcxx HTML parse). It misses all
@@ -27,7 +27,7 @@ Response: list of entries with fields:
               (different weeks, same day/period).
 
 Public API:
-    from sustech_survival.classroom.live import (
+    from sustech_survival.tis.classroom.live import (
         LiveOccupancyClient, RoomScheduleEntry,
         parse_sksj, parse_key, current_semester, now_to_tis_slot,
     )

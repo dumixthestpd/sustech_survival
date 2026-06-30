@@ -1,5 +1,5 @@
 """
-sustech_survival.classroom.classroom — Live client for TIS 全校课表 reverse view.
+sustech_survival.tis.classroom.classroom — Live client for TIS 全校课表 reverse view.
 
 ONE class. ALL operations. ZERO local data — every call hits the live TIS
 server (with on-disk JSON cache, 1h TTL by default).
@@ -30,7 +30,7 @@ from typing import Dict, List, Optional, Tuple
 
 import requests
 
-from ..semester import Semester
+from ...semester import Semester
 from .live import LiveOccupancyClient, RoomScheduleEntry, live as _live_default
 from .schema import Room, ScheduleSlot
 

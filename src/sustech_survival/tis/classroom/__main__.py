@@ -1,8 +1,8 @@
 """
-sustech_survival.classroom — CLI.
+sustech_survival.tis.classroom — CLI.
 
 Usage:
-    python -m sustech_survival.classroom <command> [...]
+    python -m sustech_survival.tis.classroom <command> [...]
 
 Commands (human + agent friendly):
     rooms [KW]                       List all rooms (with slot counts)
@@ -230,7 +230,7 @@ def cmd_book(args) -> int:
 
     # Resolve room name → TIS code if single-ticket mode
     actual_skill_root = Path.home() / ".openclaw" / "code" / "sustech_survival"
-    from sustech_survival.classroom.classroom import ClassroomOccupancy
+    from sustech_survival.tis.classroom.classroom import ClassroomOccupancy
     classroom_obj = ClassroomOccupancy(
         xn=args.xn, xq=args.xq, skill_root=actual_skill_root,
     )
@@ -240,7 +240,7 @@ def cmd_book(args) -> int:
 
     if hasattr(args, "slot") and args.slot:
         # Multi-ticket: --slot key=value key=value ...
-        from sustech_survival.classroom._booking_time import _clock_to_period, ClockTime
+        from sustech_survival.tis.classroom._booking_time import _clock_to_period, ClockTime
         for slot_str in args.slot:
             fields = {}
             for pair in slot_str.split():
@@ -290,7 +290,7 @@ def cmd_book(args) -> int:
 
         # Convert clock times → periods if clock-start/clock-end provided
         if args.clock_start and args.clock_end:
-            from sustech_survival.classroom._booking_time import _clock_to_period, ClockTime
+            from sustech_survival.tis.classroom._booking_time import _clock_to_period, ClockTime
             ps = _clock_to_period(ClockTime.from_str(args.clock_start))
             pe = _clock_to_period(ClockTime.from_str(args.clock_end))
         elif args.period:
@@ -581,7 +581,7 @@ def cmd_search_rooms(args) -> int:
 
     This is the CLI equivalent of the TIS UI's 选择场地 dialog.
     """
-    from sustech_survival.classroom.classroom import ClassroomOccupancy
+    from sustech_survival.tis.classroom.classroom import ClassroomOccupancy
     from pathlib import Path
     actual_skill_root = Path.home() / ".openclaw" / "code" / "sustech_survival"
     c = ClassroomOccupancy(xn=args.xn, xq=args.xq, skill_root=actual_skill_root)
@@ -681,7 +681,7 @@ def cmd_search_rooms(args) -> int:
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="python -m sustech_survival.classroom",
+        prog="python -m sustech_survival.tis.classroom",
         description="TIS 全校课表 reverse view: room-centric queries",
     )
     p.add_argument("--xn", default="2025-2026",

@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from sustech_survival.classroom.schema import (
+from sustech_survival.tis.classroom.schema import (
     parse_kcxx, expand_weeks, day_char_to_int,
     DAY_NAMES_ZH,
 )

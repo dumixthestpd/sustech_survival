@@ -6,6 +6,18 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **Version scheme**: switched from plain semver (`0.1.0`) to date-based
+  dev versions (`YYYY.M.D.devHHMM` in CST) for development builds.
+- **`classroom` moved into `tis.classroom`**: the inquiry module (查空
+  教室, room occupancy, live per-room schedule) moved from
+  `sustech_survival.classroom` to `sustech_survival.tis.classroom`.
+  All imports updated across `booking.py`, `selectcourse/schema.py`,
+  and test files. Booking (cdjy) was already at `tis.classroom.booking`;
+  both inquiry and booking now share one package.
+  - Import path: `from sustech_survival.tis.classroom import ...`
+  - CLI: `python -m sustech_survival.tis.classroom <command>`
+
 ### Added
 - **BB REST submitter** (`bb.submit_rest`): file uploads without Playwright.
   Verified end-to-end on 2026-06-08 — a single multipart POST with

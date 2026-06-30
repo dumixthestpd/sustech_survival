@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 
-from sustech_survival.classroom._booking_time import (
+from sustech_survival.tis.classroom._booking_time import (
     BookingTime,
     ClockTime,
     _clock_to_period,

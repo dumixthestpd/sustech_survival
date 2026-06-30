@@ -1,5 +1,5 @@
 """
-sustech_survival.classroom.schema — Dataclasses + kcxx HTML parser.
+sustech_survival.tis.classroom.schema — Dataclasses + kcxx HTML parser.
 
 The TIS campus schedule `kcxx` field embeds schedule data as
 HTML strings in the form:
