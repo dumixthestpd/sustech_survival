@@ -81,9 +81,9 @@ def _bb_session() -> requests.Session:
     sess = requests.Session()
     sess.headers["User-Agent"] = _UA
     sess.headers["X-Requested-With"] = "XMLHttpRequest"
-    for k, v in auth.cookies.items():
-        if v:
-            sess.cookies.set(k, v, domain=".bb.sustech.edu.cn", path="/")
+    for c in auth.session.cookies:
+        if c.value:
+            sess.cookies.set(c.name, c.value, domain=".bb.sustech.edu.cn", path="/")
     return sess
 
 

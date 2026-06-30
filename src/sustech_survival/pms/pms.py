@@ -451,7 +451,7 @@ def _build_default_client() -> PMSClient:
     from sustech_survival.sso.authlib.pms import PMSAuth
     auth = PMSAuth()
     auth.ensure()  # login if needed
-    return PMSClient(session=auth.requests_session)
+    return PMSClient(session=auth.session)
 
 
 # Lazy singleton — only built on first attribute access, so importing this

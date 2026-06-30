@@ -415,17 +415,15 @@ def fetch_next_exam() -> Optional[dict]:
     know exactly what to do without guessing. Matches fetch_next_deadline / fetch_next_eval
     shape for Context integration.
     """
-    from sustech_survival.exceptions import SessionExpired
-    from sustech_survival.tis.exams import auth as _tis_exams_auth, fetch_exams
-    try:
-        cookies = _tis_exams_auth()
-    except SessionExpired as e:
-        return {"error": "auth", "message": str(e), "hint": "tis session refresh"}
-    except Exception as e:
-        return {"error": "auth", "message": str(e), "hint": "tis session refresh"}
+    from sustech_survival.sso import TISAuth
+    from sustech_survival.tis.exams import fetch_exams
+    auth = TISAuth()
+    ok, msg = auth.ensure()
+    if not ok:
+        return {"error": "auth", "message": msg, "hint": "tis session refresh"}
 
     try:
-        exams = fetch_exams(cookies)
+        exams = fetch_exams(auth)
     except Exception:
         return None
 

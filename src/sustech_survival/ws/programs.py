@@ -26,22 +26,16 @@ WS_BASE = "https://ws.sustech.edu.cn"
 _AUTH: WSAuth | None = None
 
 
-def auth() -> WSAuth:
+def _get_auth() -> WSAuth:
     global _AUTH, _token_cache
     if _AUTH is None:
         _AUTH = WSAuth()
-    try:
-        ok, _ = _AUTH.check()
-    except Exception:
-        ok = False
-    if not ok:
-        _token_cache = None      # invalidate token cache on re-auth
-        _AUTH.login()
+    _AUTH.ensure()
     return _AUTH
 
 
 def session() -> requests.Session:
-    return auth().session
+    return _get_auth().session
 
 
 _token_cache: tuple[str, str] | None = None

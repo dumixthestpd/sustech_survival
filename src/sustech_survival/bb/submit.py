@@ -61,19 +61,11 @@ def clean_filename(name: str) -> str:
 
 def load_cookies():
     """Load cookies for Playwright (list format for ctx.add_cookies)."""
-    raw = bb_auth.load()
-    return [{"name": k, "value": v, "domain": ".bb.sustech.edu.cn", "path": "/"} for k, v in raw.items() if v]
-
-
-def requests_session():
-    """Return a requests.Session with BB cookies attached."""
-    import requests as _requests
-    sess = _requests.Session()
-    cookies = bb_auth.load()
-    for name, value in cookies.items():
-        if value:
-            sess.cookies.set(name, value, domain=".bb.sustech.edu.cn", path="/")
-    return sess
+    ok, reason = bb_auth.ensure()
+    if not ok:
+        raise RuntimeError(f"BB auth failed: {reason}")
+    return [{"name": c.name, "value": c.value, "domain": ".bb.sustech.edu.cn", "path": "/"}
+            for c in bb_auth.session.cookies if c.value]
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -313,13 +305,13 @@ def submit_assignment(course_id, content_id, file_paths, skip_dedup=False,
         bb_auth.refresh()
     except Exception as e:
         print(f"  ⚠️  Session refresh failed (continuing with on-disk cookies): {e}")
-        # Fall back: populate in-memory from on-disk so requests_session works
+        # Fall back: populate in-memory from on-disk so session works
         if cookies:
             bb_auth.set_session({c["name"]: c["value"] for c in cookies})
     # Re-load cookies from the in-memory cache (post-refresh) so Playwright uses fresh
     cookies = [
         {"name": c.name, "value": c.value, "domain": ".bb.sustech.edu.cn", "path": "/"}
-        for c in bb_auth.requests_session.cookies if c.value
+        for c in bb_auth.session.cookies if c.value
     ]
     resolved = []
     for fp in file_paths:
@@ -365,8 +357,8 @@ def submit_assignment(course_id, content_id, file_paths, skip_dedup=False,
     try:
         import urllib.parse
         # Build a quick requests session for the dedup REST check.
-        # bb_auth.requests_session is already populated from the refresh above.
-        _sess = bb_auth.requests_session
+        # bb_auth.session is already populated from the refresh above.
+        _sess = bb_auth.session
         # column_id is needed for /attempts; look it up via gradebook columns
         cols = _sess.get(
             f"{BB_BASE}/learn/api/public/v1/courses/_{course_id}_1/gradebook/columns",

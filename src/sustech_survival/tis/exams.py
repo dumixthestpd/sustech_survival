@@ -1,47 +1,31 @@
 """TIS Exam Schedule — Spring 2026 final exams."""
 
 from pathlib import Path as _Path
+import requests
 
 SKILL_ROOT = _Path(__file__).resolve().parent.parent.parent.parent
 
 __all__ = ["run"]
 
-from sustech_survival.exceptions import NetworkError
+from sustech_survival.exceptions import NetworkError, SessionExpired
 from sustech_survival.sso import TISAuth
 
-tis_auth_singleton = None  # TISAuth singleton (in-memory session, auto-refresh on expiry)
 
+def fetch_exams(auth: TISAuth):
+    """Fetch exam schedule from TIS student exam endpoint.
 
-def auth():
-    """Return valid cookies from TISAuth, or raise RuntimeError."""
-    global tis_auth_singleton
-    if tis_auth_singleton is None:
-        tis_auth_singleton = TISAuth(skill_dir=str(SKILL_ROOT))
-    ok, reason = tis_auth_singleton.ensure()
-    if not ok:
-        raise RuntimeError(f"TIS auth failed: {reason}")
-    return tis_auth_singleton.cookies
-
-
-def fetch_exams(cookies: dict):
-    """Fetch exam schedule from TIS student exam endpoint."""
-    import requests
-
-    h = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-        "X-Requested-With": "XMLHttpRequest",
-        "Content-Type": "application/json",
-        "Cookie": f"route={cookies['route']}; JSESSIONID={cookies['JSESSIONID']}"
-    }
+    Args:
+        auth: A TISAuth instance with an active session.
+    """
     try:
-        r = requests.post(
-            "https://tis.sustech.edu.cn/component/queryKsxxByXs",
-            json={}, headers=h, timeout=15
+        r = auth.post(
+            "/component/queryKsxxByXs",
+            json={}, timeout=15,
         )
     except requests.RequestException as e:
         raise NetworkError(f"TIS exam endpoint unreachable: {e}")
     if r.status_code == 401:
-        raise InvalidCredentials("TIS session rejected — re-run bb.py login")
+        raise SessionExpired("TIS session rejected — re-run bb.py login")
     if r.status_code != 200:
         raise NetworkError(f"TIS exam API returned {r.status_code}")
     return r.json()  # returns a plain list (not wrapped in content/)
@@ -63,15 +47,15 @@ def run(export: str = None):
         export: "csv" to export to ~/.openclaw/workspace/sustech/exams.csv
     """
     print("🔑 Checking session...")
-    try:
-        cookies = _auth()
-    except (NetworkError, RuntimeError) as e:
-        print(f"❌ {e}")
-        raise
+    auth = TISAuth(skill_dir=str(SKILL_ROOT))
+    ok, reason = auth.ensure()
+    if not ok:
+        print(f"❌ {reason}")
+        raise RuntimeError(f"TIS auth failed: {reason}")
 
     print("📅 Fetching exam schedule...")
     try:
-        exams = fetch_exams(cookies)
+        exams = fetch_exams(auth)
     except (NetworkError, RuntimeError) as e:
         print(f"❌ {e}")
         raise
@@ -126,7 +110,7 @@ def run(export: str = None):
     # Export
     if export == "csv":
         import csv
-        out = _SKILL_ROOT.parent.parent / "workspace" / "sustech" / "exams.csv"
+        out = SKILL_ROOT.parent.parent / "workspace" / "sustech" / "exams.csv"
         out.parent.mkdir(parents=True, exist_ok=True)
         fields = ["KCMC", "KCDM", "KSRQ", "XQJMC", "KSJTSJ", "KSJC", "JSJC",
                   "JXLMC", "JXCDMC", "XIAOQUBMC", "KSSJDMC", "XNXQMC"]

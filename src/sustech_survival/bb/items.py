@@ -190,8 +190,9 @@ def _bb_session_for_discovery():
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/120.0.0.0 Safari/537.36"
     )
-    for k, v in auth.cookies.items():
-        sess.cookies.set(k, v, domain=".bb.sustech.edu.cn", path="/")
+    for c in auth.session.cookies:
+        if c.value:
+            sess.cookies.set(c.name, c.value, domain=".bb.sustech.edu.cn", path="/")
     return sess
 
 
@@ -627,11 +628,7 @@ class HomeworkItem(Item):
             if not ok:
                 self.attempts_cached = []
                 return []
-            raw = auth.load()
-            import requests
-            sess = requests.Session()
-            for name, value in raw.items():
-                sess.cookies.set(name, value, domain=".bb.sustech.edu.cn", path="/")
+            sess = auth.session
 
             BB_BASE = "https://bb.sustech.edu.cn"
 

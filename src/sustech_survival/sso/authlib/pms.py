@@ -24,7 +24,6 @@
 # =============================================================================
 
 import json
-import time
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -47,22 +46,11 @@ class PMSAuth(Authorizer):
     Subclass of Authorizer — does NOT inherit from CASAuthorizer.
     PMS uses its own RSA-encrypted login API rather than standard CAS.
 
-    Storage: in-memory only (session_cache). Use refresh() to re-populate
-    from session.json after a fresh process start (auto-applied via ensure()).
+    Storage: in-memory only (session_cache). Use refresh() to re-populate.
     """
 
     BASE_URL = PMS_BASE
     SERVICE_URL = PMS_SERVICE
-
-    # ── Paths ────────────────────────────────────────────────────────────────
-
-    @property
-    def submodule_dir(self) -> Path:
-        return self.skill_root / "pms"
-
-    @property
-    def session_file(self) -> Path:
-        return self.submodule_dir / "session.json"
 
     # ── Session management ────────────────────────────────────────────────────
 
@@ -86,20 +74,13 @@ class PMSAuth(Authorizer):
         return False, data.get("message", "Not authenticated")
 
     def ensure(self) -> Tuple[bool, str]:
-        """check() + auto-refresh from disk + auto-login if needed."""
-        # Always try disk first on a fresh process
-        if not self.is_session_fresh():
-            self.refresh()  # loads from disk if present
+        """check() + auto-refresh via ticket cookies, no disk I/O."""
         ok, reason = self.check()
         if ok:
             return True, reason
-        if self.username and self.password:
-            try:
-                self.login_password(self.username, self.password)
-                return self.check()
-            except Exception as e:
-                return False, f"Auto-refresh failed: {e}"
-        return False, reason
+        # Try refresh via ticket cookies
+        self._refresh()
+        return self.check()
 
     # ── Direct login (RSA + token) ────────────────────────────────────────────
 
@@ -164,8 +145,7 @@ class PMSAuth(Authorizer):
 
         # Pull OSESSIONID (and any other auth cookies) into the in-memory cache
         cookies_dict = {c.name: c.value for c in sess.cookies}
-        self.set_session(cookies_dict)
-        self._save_session()
+        self._set_session(cookies_dict)
 
         result = out.get("result") or {}
         return result.get("szTrueName", username)
@@ -210,8 +190,7 @@ class PMSAuth(Authorizer):
                     break
 
             cookies = {c["name"]: c["value"] for c in ctx.cookies(PMS_BASE)}
-            self.set_session(cookies)
-            self._save_session()
+            self._set_session(cookies)
 
             ok, msg = self.check()
             if not ok:
@@ -221,35 +200,17 @@ class PMSAuth(Authorizer):
             browser.close()
             pw.stop()
 
-    # ── Persistence ──────────────────────────────────────────────────────────
-
-    def _save_session(self) -> None:
-        self.submodule_dir.mkdir(parents=True, exist_ok=True)
-        payload = {
-            "saved_at": time.time(),
-            "cookies": self.session_cache,
-        }
-        self.session_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+    # ── Refresh ────────────────────────────────────────────────────────────────
 
     def refresh(self) -> bool:
-        """Load saved session from disk into in-memory cache.
-
-        Returns True if a saved session was found, False otherwise.
-        """
-        sf = self.session_file
-        if not sf.exists():
-            return False
-        payload = json.loads(sf.read_text())
-        cookies = payload.get("cookies") or {}
-        if cookies:
-            self.set_session(cookies)
-        return True
+        """Refresh session via ticket cookies (no disk)."""
+        return self._refresh()
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
     def _api_session(self) -> requests.Session:
         """A requests.Session pre-loaded with the in-memory cookies + JSON headers."""
-        sess = self.requests_session  # uses apply_cookies() internally
+        sess = self.session
         sess.headers.update({
             "Accept": "application/json, text/javascript, */*; q=0.01",
             "X-Requested-With": "XMLHttpRequest",

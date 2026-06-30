@@ -369,7 +369,7 @@ def test_fetch_next_exam_returns_nearest_exam():
          "JXLMC": "二教", "JXCDMC": "201", "XIAOQUBMC": "一期校区",
          "KSSJDMC": "期末考试", "XQJMC": "周一", "XQJMC_EN": "Monday"},
     ]
-    with patch("sustech_survival.tis.exams.auth", return_value={"route": "x", "JSESSIONID": "y"}), \
+    with patch("sustech_survival.sso.TISAuth.ensure", return_value=(True, "")), \
          patch("sustech_survival.tis.exams.fetch_exams", return_value=fake_exams):
         result = fetch_next_exam()
 
@@ -388,7 +388,7 @@ def test_fetch_next_exam_returns_nearest_exam():
 def test_fetch_next_exam_returns_none_when_empty():
     """Empty exam list → None (matches fetch_next_deadline behavior)."""
     from sustech_survival.context import fetch_next_exam
-    with patch("sustech_survival.tis.exams.auth", return_value={"route": "x", "JSESSIONID": "y"}), \
+    with patch("sustech_survival.sso.TISAuth.ensure", return_value=(True, "")), \
          patch("sustech_survival.tis.exams.fetch_exams", return_value=[]):
         assert fetch_next_exam() is None
 
@@ -405,7 +405,7 @@ def test_fetch_next_exam_sorts_by_date():
          "KSJTSJ": "09:00-11:00", "KSJC": "1", "JSJC": "2",
          "JXLMC": "A", "JXCDMC": "1"},
     ]
-    with patch("sustech_survival.tis.exams.auth", return_value={"route": "x", "JSESSIONID": "y"}), \
+    with patch("sustech_survival.sso.TISAuth.ensure", return_value=(True, "")), \
          patch("sustech_survival.tis.exams.fetch_exams", return_value=fake_exams):
         result = fetch_next_exam()
     assert result["name"] == "Earlier Exam"
@@ -415,9 +415,7 @@ def test_fetch_next_exam_returns_auth_error_on_session_expired():
     """SessionExpired → {"error": "auth", "hint": ...} like fetch_next_deadline."""
     from sustech_survival.context import fetch_next_exam
     from sustech_survival.exceptions import SessionExpired
-    def fake_auth_raises():
-        raise SessionExpired("TIS auth failed: no session")
-    with patch("sustech_survival.tis.exams.auth", side_effect=fake_auth_raises):
+    with patch("sustech_survival.sso.TISAuth.ensure", return_value=(False, "TISAuth session not available")):
         result = fetch_next_exam()
     assert result is not None
     assert result["error"] == "auth"

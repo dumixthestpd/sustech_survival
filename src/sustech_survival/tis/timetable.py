@@ -21,20 +21,6 @@ from sustech_survival.sso import TISAuth
 
 SKILL_ROOT = _Path(__file__).resolve().parent.parent.parent.parent
 
-# ── Login ─────────────────────────────────────────────────────────────────────
-tis_auth_singleton = None  # TISAuth singleton (in-memory session, auto-refresh on expiry)
-
-def auth():
-    """Return valid cookies from TISAuth, or None if auth fails."""
-    global tis_auth_singleton
-    if tis_auth_singleton is None:
-        tis_auth_singleton = TISAuth(skill_dir=str(SKILL_ROOT))
-    ok, reason = tis_auth_singleton.ensure()
-    if not ok:
-        return None
-    return tis_auth_singleton.cookies
-
-
 # ── Slot parser (uses pkjgmx_en — English HTML, much cleaner) ─────────────────
 _EN_DAY_MAP = {"Mon": 0, "Tue": 1, "Wed": 2, "Thu": 3, "Fri": 4, "Sat": 5, "Sun": 6}
 
@@ -155,26 +141,18 @@ def section_conflict(s1: dict, s2: dict) -> bool:
 
 
 # ── Fetch sections from TIS ───────────────────────────────────────────────────
-def fetch_sections(codes: list[str], cookies: dict, xn: str, xq: str) -> dict[str, list[dict]]:
-    import requests
-
-    h = {
-        "User-Agent": "Mozilla/5.0",
-        "X-Requested-With": "XMLHttpRequest",
-        "Cookie": f"route={cookies['route']}; JSESSIONID={cookies['JSESSIONID']}",
-    }
-
+def fetch_sections(codes: list[str], auth, xn: str, xq: str) -> dict[str, list[dict]]:
     result = {}
     for code in codes:
-        r = requests.post(
-            "https://tis.sustech.edu.cn/Xsxktz/queryRwxxcxList",
+        r = auth.post(
+            "/Xsxktz/queryRwxxcxList",
             data={
                 "p_xn": xn, "p_xq": xq,
                 "p_chaxunpylx": "1",
                 "p_gjz": code,
                 "pageNum": 1, "pageSize": 500,
             },
-            headers=h, timeout=15
+            timeout=15
         )
         # Use pkjgmx_en (English) for clean parsing
         raw_list = r.json().get("rwList", {}).get("list", [])
@@ -330,8 +308,9 @@ def main():
     xn, xq = parts[0], parts[1]
 
     print(f"🔑 Checking session...", file=sys.stderr)
-    cookies = _auth()
-    if not cookies:
+    auth = TISAuth(skill_dir=str(SKILL_ROOT))
+    ok, reason = auth.ensure()
+    if not ok:
         print("❌ Login failed", file=sys.stderr)
         sys.exit(1)
 
@@ -339,7 +318,7 @@ def main():
     for code in codes:
         print(f"  {code}: ", file=sys.stderr, end="", flush=True)
 
-    sections = fetch_sections(codes, cookies, xn, xq)
+    sections = fetch_sections(codes, auth, xn, xq)
 
     for code in codes:
         n = len(sections.get(code, []))

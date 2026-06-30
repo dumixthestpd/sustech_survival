@@ -25,18 +25,18 @@ from sustech_survival.exceptions import SessionExpired, NetworkError
 from sustech_survival.tis.grades import _get_grades, _calc_gpa, _format_grade_row
 
 # Shared auth instance — refreshed once per CLI invocation
-auth_singleton = None
+_auth_singleton = None
 
 
 def auth_or_exit():
-    global _auth
-    if _auth is None:
-        auth_singleton = TISAuth()
-    ok, reason = auth_singleton.ensure()
+    global _auth_singleton
+    if _auth_singleton is None:
+        _auth_singleton = TISAuth()
+    ok, reason = _auth_singleton.ensure()
     if not ok:
         click.secho(f"❌  Session invalid: {reason}", fg="red")
         sys.exit(1)
-    return _auth
+    return _auth_singleton
 
 
 def em(s):
@@ -115,7 +115,7 @@ def courses_cmd(semester):
     click.secho("📚 Fetching courses...", fg="cyan")
     try:
         from sustech_survival.tis.courses import _get_courses
-        courses = get_courses(auth.requests_session, semester=semester)
+        courses = get_courses(auth.session, semester=semester)
     except (SessionExpired, NetworkError) as e:
         click.secho(f"❌  {e}", fg="red")
         sys.exit(1)
@@ -171,7 +171,7 @@ def grades_cmd(semester, export_path):
 
     click.secho("📊 Fetching grades...", fg="cyan")
     try:
-        grades = get_grades(auth.requests_session, semester=semester)
+        grades = get_grades(auth.session, semester=semester)
     except (SessionExpired, NetworkError) as e:
         click.secho(f"❌  {e}", fg="red")
         sys.exit(1)
@@ -236,10 +236,8 @@ def evals_cmd(pending):
         click.secho(f"❌  {e}", fg="red")
         sys.exit(1)
 
-    sess = auth.requests_session
-
-    r = sess.get(
-        f"{auth.BASE_URL}/personnelEvaluation/listObtainPersonnelEvaluationTasks",
+    r = auth.get(
+        "/personnelEvaluation/listObtainPersonnelEvaluationTasks",
         params={"yhdm": auth.username, "rwmc": "", "sfyp": "0",
                 "pageNum": "1", "pageSize": "20"},
         timeout=15,
@@ -268,8 +266,8 @@ def evals_cmd(pending):
         rwid = task["rwid"]
         firstwjid = task["firstwjid"]
 
-        cr = sess.get(
-            f"{auth.BASE_URL}/personnelEvaluation/listEcaluationRalationshipEnriry",
+        cr = auth.get(
+            "/personnelEvaluation/listEcaluationRalationshipEnriry",
             params={"pjrdm": auth.username, "wjid": firstwjid, "bpmc": "",
                     "sfyp": "0", "xnxq": xnxq, "pageNum": "1", "pageSize": "50",
                     "zc": "", "xqj": "", "jc": "", "skdd": "", "kkyxdm": "",
@@ -348,9 +346,9 @@ def query_cmd(path, params, method):
         click.echo(f"   params: {param_dict}")
 
     if method == "GET":
-        r = auth.requests_session.get(url, params=param_dict, timeout=15)
+        r = auth.get(path, params=param_dict, timeout=15)
     else:
-        r = auth.requests_session.post(url, json=param_dict, timeout=15)
+        r = auth.post(path, json=param_dict, timeout=15)
 
     click.secho(f"← {r.status_code}", fg="cyan")
     try:

@@ -88,10 +88,6 @@ class SpringerAuth(Authorizer):
             return {"results": [], "count": 0, "note": "Response not parseable as JSON"}
 
     @property
-    def session_file(self):
-        return self.skill_root / "springer" / "session.json"
-
-    @property
     def submodule_dir(self):
         return self.skill_root / "springer"
 

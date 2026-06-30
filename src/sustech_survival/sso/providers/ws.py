@@ -93,16 +93,10 @@ class WSProvider(Authorizer):
 
     cookie_names = ["ASP.NET_SessionId", "SUserCode", "SUserRole"]
 
-    SESSION_SUBDIR = "ws"
-
     @property
     def cas_url(self) -> str:
         encoded = quote(self.SERVICE_URL, safe="")
         return f"{CAS_BASE}?service={encoded}"
-
-    @property
-    def session_file(self):
-        return self.submodule_dir / "session.json"
 
     # ── Auth ─────────────────────────────────────────────────────────────────
 
@@ -183,21 +177,31 @@ class WSProvider(Authorizer):
             username, password = self.read_creds()
         except AuthorizerError:
             raise
-        cookies = self.get_ticket_cookies(username, password)
-        self.save(cookies)
+        cookies = self._get_ticket_cookies(username, password)
+        self._set_session(cookies)
         return True
 
     # ── Session ───────────────────────────────────────────────────────────────
 
-    @property
-    def session(self) -> requests.Session:
+    def _build_session(self) -> requests.Session:
         """
         A requests.Session with LegacyAdapter so TLS session resumption works
         reliably against ws.sustech.edu.cn.
         """
-        raw = self.load()
-        sess = sess()
-        self.apply_cookies(sess, raw)
+        import ssl
+        from requests.adapters import HTTPAdapter
+
+        _OP_LEGACY = getattr(ssl, 'OP_LEGACY_SERVER_CONNECT', 0x4)
+        legacy_ctx = ssl.create_default_context()
+        legacy_ctx.options |= _OP_LEGACY
+
+        class LegacyAdapter(HTTPAdapter):
+            pass  # uses the base context
+
+        raw = self._session_cache
+        sess = requests.Session()
+        sess.mount("https://", LegacyAdapter())
+        self._apply_cookies(sess, raw)
         return sess
 
     def check(self) -> tuple[bool, str]:

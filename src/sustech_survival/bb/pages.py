@@ -105,8 +105,11 @@ bb_auth = BBAuth()
 
 def playwright_cookies():
     """Load BB session in Playwright list format for ctx.add_cookies()."""
-    raw = bb_auth.load()
-    return [{"name": k, "value": v, "domain": ".bb.sustech.edu.cn", "path": "/"} for k, v in raw.items() if v]
+    ok, reason = bb_auth.ensure()
+    if not ok:
+        raise RuntimeError(f"BB auth failed: {reason}")
+    return [{"name": c.name, "value": c.value, "domain": ".bb.sustech.edu.cn", "path": "/"}
+            for c in bb_auth.session.cookies if c.value]
 
 
 def scrape_page(course_id: str, content_id: str,
