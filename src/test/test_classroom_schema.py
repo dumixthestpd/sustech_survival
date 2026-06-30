@@ -12,7 +12,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from sustech_survival.classroom.schema import (
+from sustech_survival.tis.classroom.schema import (
     Room, ScheduleSlot,
     parse_kcxx_slot, parse_kcxx,
     expand_weeks, day_char_to_int,

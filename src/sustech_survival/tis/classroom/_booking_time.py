@@ -1,5 +1,5 @@
 """
-sustech_survival.classroom._booking_time — Typed time descriptors for booking.
+sustech_survival.tis.classroom._booking_time — Typed time descriptors for booking.
 
 Follows the existing ScheduleSlot convention: int weekday, int periods,
 List[int] weeks. No strings. No WeeklyTime/SpecificTime proliferation.
@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Optional, Union
 
-from sustech_survival.classroom.live import PERIOD_TIMES
+from sustech_survival.tis.classroom.live import PERIOD_TIMES
 
 
 # ── Simple descriptors ────────────────────────────────────────────────────────

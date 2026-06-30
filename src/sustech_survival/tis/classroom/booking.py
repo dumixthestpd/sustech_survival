@@ -49,9 +49,9 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from sustech_survival.classroom.live import LiveOccupancyClient, TIS_BASE
+from sustech_survival.tis.classroom.live import LiveOccupancyClient, TIS_BASE
 from sustech_survival.semester import Semester
-from sustech_survival.classroom._booking_time import BookingTime, Schedule
+from sustech_survival.tis.classroom._booking_time import BookingTime, Schedule
 from .booking_schema import (
     AuditStatus,
     BorrowApplication,
@@ -308,7 +308,7 @@ def book(
     ::
 
         from sustech_survival.tis.classroom.booking import book
-        from sustech_survival.classroom._booking_time import BookingTime
+        from sustech_survival.tis.classroom._booking_time import BookingTime
 
         # Simple: Tuesday period 3-4, weeks 5-8, ~30 people
         app = book(
@@ -340,7 +340,7 @@ def book(
     if semester is None:
         c = venue_borrow()
         sess = c.ensure_session()
-        from sustech_survival.classroom.live import current_semester
+        from sustech_survival.tis.classroom.live import current_semester
         semester = current_semester(sess)
     elif isinstance(semester, str):
         semester = Semester(semester)

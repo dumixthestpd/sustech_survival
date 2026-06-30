@@ -1,5 +1,5 @@
 """
-Tests for sustech_survival.classroom.live — TIS 场地课表 (per-room schedule).
+Tests for sustech_survival.tis.classroom.live — TIS 场地课表 (per-room schedule).
 
 These tests cover offline parsing + integration with the live client.
 The integration tests use a mock session that returns canned API responses,
@@ -21,7 +21,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from sustech_survival.classroom.live import (
+from sustech_survival.tis.classroom.live import (
     LiveOccupancyClient,
     RoomScheduleEntry,
     _first_full_week_start,
@@ -33,7 +33,7 @@ from sustech_survival.classroom.live import (
     parse_key,
     parse_sksj,
 )
-from sustech_survival.classroom.classroom import (
+from sustech_survival.tis.classroom.classroom import (
     BUILDING_ALIASES,
     ClassroomOccupancy,
     normalize_room_name,
