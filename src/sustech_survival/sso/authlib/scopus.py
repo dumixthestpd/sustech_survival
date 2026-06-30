@@ -51,10 +51,6 @@ class ScopusAuth(Authorizer):
         return {"results": [], "count": 0, "note": "Scopus HTML search not yet parsed"} if r.status_code == 200 else {"error": f"HTTP {r.status_code}", "results": []}
 
     @property
-    def session_file(self):
-        return self.skill_root / "scopus" / "session.json"
-
-    @property
     def submodule_dir(self):
         return self.skill_root / "scopus"
 

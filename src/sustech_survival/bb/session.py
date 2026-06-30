@@ -24,20 +24,22 @@ from sustech_survival.sso import BBAuth
 # Module-level singleton
 auth_singleton = BBAuth(skill_dir=str(SKILL_ROOT))
 
-# ── Convenience wrappers ─────────────────────────────────────────────────────
-
-from sustech_survival.sso.authorizer import Authorizer
-
-Authorizer.username = property(lambda self: auth_singleton.username, lambda self, v: setattr(auth_singleton, 'username', v))
-Authorizer.password = property(lambda self: auth_singleton.password, lambda self, v: setattr(auth_singleton, 'password', v))
+# ── Backward-compat stubs ─────────────────────────────────────────────────────
+# These delegate to auth_singleton. New code should call BBAuth() directly.
 
 
 def session(*, force: bool = False):
     """
     Return a requests.Session with BB cookies attached.
     Auto-refreshes if the session is expired.
+
+    Note: 'force' parameter is accepted for backward compatibility but
+    is ignored — the new Authorizer API uses .ensure() for freshness.
     """
-    return auth_singleton.session(force=force)
+    ok, reason = auth_singleton.ensure()
+    if not ok:
+        raise RuntimeError(f"BB auth failed: {reason}")
+    return auth_singleton.session
 
 
 def login(*, headless: bool = False):

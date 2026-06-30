@@ -9,7 +9,6 @@
 # represent the IEEE application session (not CAS).
 # =============================================================================
 
-import json
 import time
 from pathlib import Path
 from typing import Optional
@@ -107,10 +106,6 @@ class IEEEAuth(Authorizer):
             return False
         Path(output_path).write_bytes(r.content)
         return True
-
-    @property
-    def session_file(self):
-        return self.skill_root / "ieee" / "session.json"
 
     @property
     def submodule_dir(self):

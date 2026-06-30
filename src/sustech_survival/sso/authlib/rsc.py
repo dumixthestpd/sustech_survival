@@ -46,9 +46,6 @@ class RSCAuthorizer(ShibbolethAuthorizer):
     WAYF_SEARCH_TERM = "Southern University"
     LOGIN_TIMEOUT = 90
 
-    # No session file — login fresh each time
-    SESSION_SUBDIR = None
-
     @property
     def creds(self):
         """Return (username, password) via Credentials class."""

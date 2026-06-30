@@ -29,19 +29,6 @@ from pathlib import Path as _Path
 SKILL_ROOT = _Path(__file__).resolve().parent.parent.parent.parent
 from sustech_survival.sso import TISAuth
 
-tis_auth_singleton = None  # TISAuth singleton (in-memory session, auto-refresh on expiry)
-
-
-def get_session():
-    """Return valid cookies from TISAuth, or raise RuntimeError."""
-    global tis_auth_singleton
-    if tis_auth_singleton is None:
-        tis_auth_singleton = TISAuth(skill_dir=str(SKILL_ROOT))
-    ok, reason = tis_auth_singleton.ensure()
-    if not ok:
-        raise RuntimeError(f"TIS auth failed: {reason}")
-    return tis_auth_singleton.cookies
-
 
 def get_campus_schedule(xn="2025-2026", xq="2", page_size=500, page_num=1, full=False, **kwargs):
     """Fetch campus course schedule (one page).
@@ -59,13 +46,11 @@ def get_campus_schedule(xn="2025-2026", xq="2", page_size=500, page_num=1, full=
     Returns:
         dict with keys: total, pageSize, rwList (list of course dicts)
     """
-    cookies = getsession()
-    h = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-        "X-Requested-With": "XMLHttpRequest",
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Cookie": f"route={cookies['route']}; JSESSIONID={cookies['JSESSIONID']}",
-    }
+    auth = TISAuth(skill_dir=str(SKILL_ROOT))
+    ok, reason = auth.ensure()
+    if not ok:
+        raise RuntimeError(f"TIS auth failed: {reason}")
+
     params = {
         "p_xn": xn,
         "p_xq": xq,
@@ -84,13 +69,12 @@ def get_campus_schedule(xn="2025-2026", xq="2", page_size=500, page_num=1, full=
 
     if full:
         # Paginate through all pages
-        import requests
         all_items = []
         for pg in range(1, 100):
             params["pageNum"] = str(pg)
-            r = requests.post(
-                "https://tis.sustech.edu.cn/Xsxktz/queryRwxxcxList",
-                data=params, headers=h, timeout=30,
+            r = auth.post(
+                "/Xsxktz/queryRwxxcxList",
+                data=params, timeout=30,
             )
             r.raise_for_status()
             d = r.json()
@@ -101,10 +85,9 @@ def get_campus_schedule(xn="2025-2026", xq="2", page_size=500, page_num=1, full=
         d["rwList"]["list"] = all_items
         return d
 
-    import requests
-    r = requests.post(
-        "https://tis.sustech.edu.cn/Xsxktz/queryRwxxcxList",
-        data=params, headers=h, timeout=30,
+    r = auth.post(
+        "/Xsxktz/queryRwxxcxList",
+        data=params, timeout=30,
     )
     r.raise_for_status()
     return r.json()

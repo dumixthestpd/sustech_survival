@@ -51,10 +51,10 @@ def load_session_or_exit():
         if not ok:
             click.secho(f"\n❌  Session invalid: {reason}", fg="red")
             sys.exit(1)
-        # Get cookies from in-memory cache
-        raw = bb_auth.cookies
-        return [{"name": k, "value": v, "domain": ".bb.sustech.edu.cn", "path": "/"}
-                for k, v in raw.items() if v]
+        # Get cookies from the Authorizer's session
+        session = bb_auth.session
+        return [{"name": c.name, "value": c.value, "domain": ".bb.sustech.edu.cn", "path": "/"}
+                for c in session.cookies if c.value]
     except AuthorizerError as e:
         click.secho(f"\n❌  Session error: {e}", fg="red")
         sys.exit(1)

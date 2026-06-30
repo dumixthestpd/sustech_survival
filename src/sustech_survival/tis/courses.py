@@ -18,7 +18,7 @@ def make_session():
         ok = auth.refresh()
     if not ok:
         raise SessionExpired(f"TIS auth failed: {msg}")
-    return auth.requests_session
+    return auth.session
 
 
 def get_courses(session, semester: str = None):

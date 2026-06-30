@@ -23,10 +23,9 @@ auth_singleton = LibAuth(skill_dir=_PKG_ROOT)
 
 def main():
     print(f"=== SUSTech Library Login ===")
-    print(f"Session file: {auth_singleton.session_file}")
 
-    # Step 1: Check
-    ok, reason = auth_singleton.check()
+    # Step 1: Ensure
+    ok, reason = auth_singleton.ensure()
     if ok:
         print("✓ Already logged in.")
         return
@@ -43,7 +42,7 @@ def main():
     auth_singleton.login()
 
     # Verify
-    ok, reason = auth_singleton.check()
+    ok, reason = auth_singleton.ensure()
     print("✓ Logged in successfully!" if ok else f"⚠ {reason}")
 
 

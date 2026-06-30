@@ -81,10 +81,6 @@ class JSTORAuth(Authorizer):
         return {"results": [{"query": query, "count": len(titles)}]}
 
     @property
-    def session_file(self):
-        return self.skill_root / "jstor" / "session.json"
-
-    @property
     def submodule_dir(self):
         return self.skill_root / "jstor"
 

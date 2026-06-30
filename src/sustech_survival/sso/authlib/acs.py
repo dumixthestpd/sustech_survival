@@ -62,10 +62,6 @@ class ACSAuth(Authorizer):
         return {"results": [], "count": 0, "note": "ACS HTML search not yet parsed"}
 
     @property
-    def session_file(self):
-        return self.skill_root / "acs" / "session.json"
-
-    @property
     def submodule_dir(self):
         return self.skill_root / "acs"
 

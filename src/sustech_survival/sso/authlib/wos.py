@@ -41,10 +41,6 @@ class WoSAuth(ShibbolethAuthorizer):
     def submodule_dir(self):
         return self.skill_root / "wos"
 
-    @property
-    def session_file(self):
-        return self.skill_root / "wos" / "session.json"
-
     def find_institution_link(self, page):
         return None
 

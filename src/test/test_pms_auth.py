@@ -76,13 +76,6 @@ class TestPMSAuthConstruction:
     def test_base_url(self):
         auth = PMSAuth()
         assert auth.BASE_URL == PMS_BASE
-        assert auth.domain == "pms.sustech.edu.cn"
-
-    def test_paths(self):
-        auth = PMSAuth()
-        # session.json goes under <skill_root>/pms/
-        assert auth.session_file.name == "session.json"
-        assert "pms" in str(auth.session_file)
 
     def test_singleton_registration(self):
         from sustech_survival.sso.authorizer import _auth_registry
@@ -113,7 +106,8 @@ class TestPMSAuthOffCampus:
         auth = PMSAuth()
 
         r = self._make_response(403, "Access forbidden, please contact administrator.")
-        sess = auth.requests_session  # just need any session object
+        auth._session_cache = {"test": "value"}  # prime session cache
+        sess = auth.session  # just need any session object
         # Patch _api_session to return a session whose .post returns our r.
         class FakeSess:
             def post(self, *a, **kw): return r
@@ -178,10 +172,10 @@ class TestPMSAuthLive:
         ok, _ = auth.check()
         assert ok
 
-    def test_requests_session_has_osessionid(self):
+    def test_session_has_osessionid(self):
         auth = PMSAuth()
         auth.ensure()
-        sess = auth.requests_session
+        sess = auth.session
         # OSESSIONID is the primary auth cookie for PMS
         osess = sess.cookies.get("OSESSIONID")
         assert osess is not None

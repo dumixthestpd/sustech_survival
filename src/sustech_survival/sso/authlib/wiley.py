@@ -48,10 +48,6 @@ class WileyAuth(Authorizer):
         return {"results": [], "count": 0, "note": "Wiley HTML search not yet parsed"} if r.status_code == 200 else {"error": f"HTTP {r.status_code}", "results": []}
 
     @property
-    def session_file(self):
-        return self.skill_root / "wiley" / "session.json"
-
-    @property
     def submodule_dir(self):
         return self.skill_root / "wiley"
 
