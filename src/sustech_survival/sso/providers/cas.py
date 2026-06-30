@@ -98,33 +98,16 @@ class CASAuthorizer(Authorizer):
         return cookies
 
     def _build_cas_session(self) -> requests.Session:
-        """Build a requests Session with LegacyAdapter for OP_LEGACY_SERVER_CONNECT."""
+        """Build a requests Session for CAS login. Uses LegacyAdapter for older SSL."""
         legacy_ctx = ssl.create_default_context()
         legacy_ctx.options |= _OP_LEGACY
 
         from requests.adapters import HTTPAdapter
-        from requests.adapters import (
-            _urllib3_request_context, prepend_scheme_if_needed,
-            select_proxy, parse_url
-        )
 
         class LegacyAdapter(HTTPAdapter):
-            def get_connection_with_tls_context(self, request, verify, proxies=None, cert=None, poolmanager=None):
-                proxy = select_proxy(request.url, proxies)
-                host_params, pool_kwargs = _urllib3_request_context(
-                    request, verify, cert, self.poolmanager,
-                )
-                pool_kwargs["ssl_context"] = legacy_ctx
-                pool_kwargs["ssl_context"].check_hostname = False
-                if proxy:
-                    proxy = prepend_scheme_if_needed(proxy, "http")
-                    proxy_url = parse_url(proxy)
-                    if not proxy_url.host:
-                        from requests.exceptions import InvalidProxyURL
-                        raise InvalidProxyURL("Malformed proxy URL")
-                    proxy_manager = self.proxy_manager_for(proxy)
-                    return proxy_manager.connection_from_host(**host_params, pool_kwargs=pool_kwargs)
-                return self.poolmanager.connection_from_host(**host_params, pool_kwargs=pool_kwargs)
+            def init_poolmanager(self, *args, **kwargs):
+                kwargs["ssl_context"] = legacy_ctx
+                return super().init_poolmanager(*args, **kwargs)
 
         sess = requests.Session()
         sess.mount("https://", LegacyAdapter())
