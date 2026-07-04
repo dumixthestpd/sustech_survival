@@ -154,17 +154,15 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
     <div id="tab-grid" class="tabpane">
       <div class="grid-wrap">
         <div class="palette" id="grid-legend"></div>
-        <div style="display:flex;gap:12px">
-          <div style="flex:1;min-width:0">
-            <div style="font-size:.78rem;color:var(--accent);font-weight:500;margin-bottom:4px">Odd Weeks</div>
-            <table class="grid"><thead><tr><th>Pd</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th></tr></thead>
-              <tbody id="grid-body-odd"></tbody></table>
-          </div>
-          <div style="flex:1;min-width:0">
-            <div style="font-size:.78rem;color:var(--accent);font-weight:500;margin-bottom:4px">Even Weeks</div>
-            <table class="grid"><thead><tr><th>Pd</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th></tr></thead>
-              <tbody id="grid-body-even"></tbody></table>
-          </div>
+        <div style="margin-bottom:14px">
+          <div style="font-size:.78rem;color:var(--accent);font-weight:500;margin-bottom:4px">Odd Weeks</div>
+          <table class="grid"><thead><tr><th>Pd</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th></tr></thead>
+            <tbody id="grid-body-odd"></tbody></table>
+        </div>
+        <div>
+          <div style="font-size:.78rem;color:var(--accent);font-weight:500;margin-bottom:4px">Even Weeks</div>
+          <table class="grid"><thead><tr><th>Pd</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th></tr></thead>
+            <tbody id="grid-body-even"></tbody></table>
         </div>
       </div>
     </div>
@@ -423,6 +421,23 @@ function formatSchedule(slots) {
   }).join('; ');
 }
 
+function formatScheduleHTML(slots) {
+  if (!slots || !slots.length) return '';
+  var parts = [];
+  for (var i = 0; i < slots.length; i++) {
+    var s = slots[i];
+    var d = dayName(s.day);
+    var r = s.room ? ' ' + escapeHtml(s.room) : '';
+    var w = '';
+    if (s.weeks && s.weeks.length) {
+      if (s.weeks.length <= 6) w = ' w' + escapeHtml(s.weeks.join(','));
+      else w = ' w' + s.weeks[0] + '-' + s.weeks[s.weeks.length - 1];
+    }
+    parts.push(escapeHtml(d + ' ' + s.period_start + '-' + s.period_end + r + w));
+  }
+  return parts.join('<br>');
+}
+
 function parseBlockedInput(str) {
   if (!str.trim()) return [];
   var parts = str.split('/');
@@ -487,13 +502,13 @@ function loadInfo() {
 
 function populateSelect(sel, items) {
   var val = sel.value;
-  while (sel.options.length > 1) sel.remove(1);
+  var html = '<option value="">All</option>';
   for (var i = 0; i < items.length; i++) {
-    var o = document.createElement('option');
-    o.value = items[i];
-    o.textContent = items[i];
-    sel.appendChild(o);
+    var v = items[i];
+    var e = v.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    html += '<option value="' + e + '">' + e + '</option>';
   }
+  sel.innerHTML = html;
   sel.value = val;
 }
 
@@ -642,6 +657,7 @@ function renderCard(c) {
   if (c.rwh === ACTIVE_RWH) card.classList.add('active');
 
   var schedStr = c.schedule || formatSchedule(c.slots);
+  var schedHTML = c.slots && c.slots.length ? formatScheduleHTML(c.slots) : '';
   var teachers = c.teachers && c.teachers.length ? c.teachers.join(', ') : '';
 
   card.innerHTML =
@@ -655,7 +671,7 @@ function renderCard(c) {
       (c.credits ? '<span><b>Credits</b> ' + c.credits + '</span>' : '') +
       (c.capacity ? '<span><b>Capacity</b> ' + c.capacity + '</span>' : '') +
       (teachers ? '<span><b>Teacher</b> ' + escapeHtml(teachers) + '</span>' : '') +
-      (schedStr ? '<span><b>Schedule</b> ' + escapeHtml(schedStr) + '</span>' : '') +
+      (schedHTML ? '<span><b>Schedule</b> ' + schedHTML + '</span>' : '') +
     '</div>' +
     '<div class="actions">' +
       (PICKED[c.rwh]
@@ -786,6 +802,7 @@ function renderPickItem(c) {
 
   var enrolled = ENROLLED_RWH.has(c.rwh);
   var schedStr = c.schedule || formatSchedule(c.slots);
+  var schedHTML = c.slots && c.slots.length ? formatScheduleHTML(c.slots) : '';
   var teachers = c.teachers && c.teachers.length ? c.teachers.join(', ') : '';
 
   div.innerHTML =
@@ -795,7 +812,7 @@ function renderPickItem(c) {
     '<div class="pm">' +
       '<b>' + escapeHtml(c.code) + '</b>' +
       (c.class_group ? ' · ' + escapeHtml(c.class_group) : '') +
-      (schedStr ? ' · ' + escapeHtml(schedStr) : '') +
+      (schedHTML ? '<br>' + schedHTML : '') +
       (teachers ? ' · ' + escapeHtml(teachers) : '') +
     '</div>' +
     '<div class="acts">' +
@@ -835,7 +852,7 @@ function updateSolveCodes() {
   SOLVE_CODES.textContent = codeList.length ? codeList.join(', ') : 'none';
 }
 
-// ── Weekly Grid (odd/even split) ────────────────────────────────────────
+// ── Weekly Grid (strip-packing column layout) ──────────────────────────
 
 function renderGrid() {
   GRID_ODD.innerHTML = '';
@@ -915,101 +932,53 @@ function renderGrid() {
     GRID_LEGEND.appendChild(sl);
   }
 
-  // Build per-period cell map for each parity
-  function buildParityMap(blocks, isOdd) {
-    var map = {};  // "day:period" → [{block, colIndex, total}]
-    // First pass: determine which blocks have at least one week of this parity
+  // Build per-cell map: (day:period) → list of blocks covering that cell
+  function buildCellMap(blocks, isOdd) {
+    var result = {};
     var parityBlocks = [];
     for (var i = 0; i < blocks.length; i++) {
       var b = blocks[i];
-      var hasParity = false;
-      for (var wi = 0; wi < b.weeks.length; wi++) {
-        if ((b.weeks[wi] % 2 === 1) === isOdd) { hasParity = true; break; }
-      }
-      if (!hasParity) continue;
-      parityBlocks.push(b);
+      var hasParity = b.weeks.some(function(w) { return (w % 2 === 1) === isOdd; });
+      if (hasParity) parityBlocks.push(b);
     }
-    if (!parityBlocks.length) return { map: map, empty: true };
+    if (!parityBlocks.length) return null;
 
-    // Second pass: for each (day, period), count blocks covering it
-    var cellCounts = {}; // "day:period" → count
     for (var i = 0; i < parityBlocks.length; i++) {
       var b = parityBlocks[i];
       for (var p = b.periodStart; p <= b.periodEnd; p++) {
         var key = b.day + ':' + p;
-        if (!cellCounts[key]) cellCounts[key] = [];
-        cellCounts[key].push(b);
+        if (!result[key]) result[key] = [];
+        var dup = result[key].some(function(e) { return e.rwh === b.rwh; });
+        if (!dup) result[key].push(b);
       }
     }
-    // Assign each block a stable column index per day
-    var dayCols = {}; // "day:rwh" → colIndex
-    for (var key in cellCounts) {
-      var parts = key.split(':');
-      var day = parseInt(parts[0], 10);
-      var blocksAtCell = cellCounts[key];
-      for (var ci = 0; ci < blocksAtCell.length; ci++) {
-        var bk = blocksAtCell[ci];
-        var dk = day + ':' + bk.rwh;
-        if (dayCols[dk] === undefined) {
-          // Find the max column currently used for this day
-          var maxCol = -1;
-          for (var dk2 in dayCols) {
-            if (dk2.startsWith(day + ':')) {
-              maxCol = Math.max(maxCol, dayCols[dk2]);
-            }
-          }
-          dayCols[dk] = maxCol + 1;
-        }
-      }
-    }
-    // Final map: each cell has list of {block, colIndex, total}
-    for (var key in cellCounts) {
-      var blocksHere = cellCounts[key];
-      map[key] = blocksHere.map(function(b) {
-        var parts = key.split(':');
-        var day = parseInt(parts[0], 10);
-        var dk = day + ':' + b.rwh;
-        return { block: b, col: dayCols[dk] };
-      });
-      // Count total distinct columns for this cell
-      var colSet = {};
-      for (var ci = 0; ci < map[key].length; ci++) {
-        colSet[map[key][ci].col] = true;
-      }
-      var totalCols = Object.keys(colSet).length;
-      for (var ci = 0; ci < map[key].length; ci++) {
-        map[key][ci].total = totalCols;
-      }
-    }
-    return { map: map, empty: false };
+    return result;
   }
 
-  var oddData = buildParityMap(allBlocks, true);
-  var evenData = buildParityMap(allBlocks, false);
+  var oddMap = buildCellMap(allBlocks, true);
+  var evenMap = buildCellMap(allBlocks, false);
 
-  function renderTable(tbody, data) {
-    if (data.empty) {
+  function renderTable(tbody, cellMap) {
+    if (!cellMap) {
       tbody.innerHTML = '<tr><td colspan="8" class="empty" style="padding:2rem 0">No courses in this week group.</td></tr>';
       return;
     }
-    var map = data.map;
     var h = '';
     for (var row = 1; row <= PERIODS; row++) {
       h += '<tr><th>' + row + '</th>';
       for (var day = 1; day <= DAYS; day++) {
         var key = day + ':' + row;
-        var entries = map[key];
-        if (entries && entries.length) {
+        var blocks = cellMap[key];
+        if (blocks && blocks.length) {
           h += '<td class="cell" style="padding:0;position:relative;height:' + ROW_HEIGHT + 'px">';
-          for (var ci = 0; ci < entries.length; ci++) {
-            var e = entries[ci];
-            var b = e.block;
-            var w = 100 / e.total;
-            var l = e.col * w;
+          for (var ci = 0; ci < blocks.length; ci++) {
+            var b = blocks[ci];
             h += '<div class="blk' + (b.conflict ? ' conf' : '') + '" style="' +
               'background:' + b.color + ';' +
-              'width:' + w + '%;left:' + l + '%;' +
-              'height:' + ROW_HEIGHT + 'px;top:0" ' +
+              'width:100%;left:0;' +
+              'height:' + ROW_HEIGHT + 'px;top:0;' +
+              (ci > 0 ? 'z-index:' + (ci + 1) + ';' : '') +
+              '" ' +
               'title="' + escapeHtml(b.code + ' ' + (b.course.class_group || '') + ' ' + dayName(b.day) + ' ' + b.periodStart + '-' + b.periodEnd + (b.conflict ? ' ⚠ CONFLICT' : '')) + '" ' +
               'data-rwh="' + b.rwh + '">' +
               '<span class="t">' + escapeHtml(b.code) + '</span>' +
@@ -1025,7 +994,6 @@ function renderGrid() {
     }
     tbody.innerHTML = h;
 
-    // Attach click handlers (delegated)
     tbody.addEventListener('click', function(e) {
       var blk = e.target.closest('.blk');
       if (blk) {
@@ -1035,8 +1003,8 @@ function renderGrid() {
     });
   }
 
-  renderTable(GRID_ODD, oddData);
-  renderTable(GRID_EVEN, evenData);
+  renderTable(GRID_ODD, oddMap);
+  renderTable(GRID_EVEN, evenMap);
 }
 
 // ── Enrolled ──────────────────────────────────────────────────────────────
