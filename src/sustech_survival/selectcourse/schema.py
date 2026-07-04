@@ -40,6 +40,9 @@ class Course:
     rooms: List[str] = field(default_factory=list)         # distinct rooms in kcxx
     teachers: List[str] = field(default_factory=list)      # from kcxx 教师 list
     slots_raw: List[dict] = field(default_factory=list)    # parsed ScheduleSlot dicts
+    task_type: str = ""               # rwlxmc — "专业任务" / "通识必修选课" / etc.
+    language: str = ""                # skyymc — "中文" / "英文" / "双语"
+    college_code: str = ""            # kkyx — college ID code (e.g. "010030" for 化学系)
 
     @property
     def has_schedule(self) -> bool:
@@ -101,8 +104,11 @@ class Course:
             capacity=_int(raw.get("zrl")),
             undergrad_seats=_int(raw.get("bksrl")),
             grad_seats=_int(raw.get("yjsrl")),
-            cultivation=raw.get("pylx_label") or raw.get("pylx") or "",
+            cultivation=raw.get("pylx_label") or {"1": "本科", "2": "研究生"}.get(raw.get("pylx", "")) or raw.get("pylx") or "",
             rooms=rooms,
             teachers=teachers,
             slots_raw=slot_dicts,
+            task_type=raw.get("rwlxmc") or raw.get("rwlx") or "",
+            language=raw.get("skyymc") or "",
+            college_code=raw.get("kkyx") or "",
         )

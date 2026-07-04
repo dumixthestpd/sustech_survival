@@ -143,7 +143,7 @@ class TestRealCall:
         sess.post.return_value = resp
         return sess
 
-    @patch("sustech_survival.selectcourse.selectcourse._tis_login")
+    @patch("sustech_survival.selectcourse.selectcourse._tis_session")
     def test_add_course_real_call_success(self, mock_login):
         mock_login.return_value = self._make_session({"jg": "1", "message": "选课成功"})
         sc = SelectCourseClient()
@@ -153,7 +153,7 @@ class TestRealCall:
         call_url = mock_login.return_value.post.call_args[0][0]
         assert call_url == TIS_ADD_XUANKE_URL
 
-    @patch("sustech_survival.selectcourse.selectcourse._tis_login")
+    @patch("sustech_survival.selectcourse.selectcourse._tis_session")
     def test_add_course_real_call_failure_raises(self, mock_login):
         mock_login.return_value = self._make_session({"jg": "0", "message": "已选满"})
         sc = SelectCourseClient()
@@ -164,7 +164,7 @@ class TestRealCall:
         assert exc_info.value.endpoint == TIS_ADD_XUANKE_URL
         assert exc_info.value.rwh == "TEST-RWH"
 
-    @patch("sustech_survival.selectcourse.selectcourse._tis_login")
+    @patch("sustech_survival.selectcourse.selectcourse._tis_session")
     def test_drop_course_real_call_success(self, mock_login):
         mock_login.return_value = self._make_session({"jg": "1", "message": "退课成功"})
         sc = SelectCourseClient()
@@ -173,7 +173,7 @@ class TestRealCall:
         call_url = mock_login.return_value.post.call_args[0][0]
         assert call_url == TIS_TUIKE_URL
 
-    @patch("sustech_survival.selectcourse.selectcourse._tis_login")
+    @patch("sustech_survival.selectcourse.selectcourse._tis_session")
     def test_add_to_cart_real_call(self, mock_login):
         mock_login.return_value = self._make_session({"jg": "1", "message": "已加入购物车"})
         sc = SelectCourseClient()
@@ -186,7 +186,7 @@ class TestRealCall:
         payload = call_kwargs.kwargs.get("data") or call_kwargs[1].get("data")
         assert payload["p_xktjz"] == XKTJZ_TASK_TO_CART
 
-    @patch("sustech_survival.selectcourse.selectcourse._tis_login")
+    @patch("sustech_survival.selectcourse.selectcourse._tis_session")
     def test_jg_minus_one_means_not_allowed(self, mock_login):
         """jg='-1' is a special TIS code meaning 'not allowed to select'."""
         mock_login.return_value = self._make_session({"jg": "-1", "message": "您不在选课阶段"})

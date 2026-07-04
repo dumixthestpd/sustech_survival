@@ -32,8 +32,9 @@ def login_to_wos():
     page = ctx.new_page()
     page.set_default_timeout(30000)
 
-    creds = open(f"{skill_dir}/bb/credentials.txt").read().strip().split(':')
-    username, password = creds[0], creds[1]
+    from sustech_survival.sso import Authorizer
+    _auth = Authorizer()
+    username, password = _auth.read_creds()
 
     page.goto("https://www.webofscience.com/wos/woscc/summary/basic",
                wait_until="domcontentloaded", timeout=30000)

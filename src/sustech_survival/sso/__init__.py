@@ -85,6 +85,29 @@ class TISAuth(CASAuthorizer):
     XHR_MODE = True
     SUBMIT_VALUE = ""
 
+    # Uniform minimum interval (seconds) between TIS requests.
+    # TIS rate-lips rapid successive calls ("查询请求频率过高").
+    # Enforced here at the session owner so every caller is throttled
+    # automatically — no per-call-site sleeps or wrappers needed.
+    REQUEST_INTERVAL = 0.5
+    _last_request_at: float = 0.0
+
+    def _throttle(self) -> None:
+        import time as _time
+        if self.REQUEST_INTERVAL > 0:
+            elapsed = _time.monotonic() - type(self)._last_request_at
+            if elapsed < self.REQUEST_INTERVAL:
+                _time.sleep(self.REQUEST_INTERVAL - elapsed)
+        type(self)._last_request_at = _time.monotonic()
+
+    def get(self, path: str, **kwargs) -> _requests.Response:
+        self._throttle()
+        return super().get(path, **kwargs)
+
+    def post(self, path: str, **kwargs) -> _requests.Response:
+        self._throttle()
+        return super().post(path, **kwargs)
+
     def _build_session(self) -> _requests.Session:
         """
         TIS needs a raw Cookie header (not cookie jar) because Set-Cookie
@@ -193,5 +216,11 @@ ensured = Authorizer.ensured
 
 
 # ── Auto-register external authlib services ────────────────────────────────────
+# PMSAuth needs pycryptodome (optional dep). Lazy-import so the SSO
+# package doesn't hard-fail without it.
 from . import authlib  # noqa: F401
-from .authlib.pms import PMSAuth as PMSAuth  # noqa: F401
+def __getattr__(name):
+    if name == "PMSAuth":
+        from .authlib.pms import PMSAuth as _PMSAuth
+        return _PMSAuth
+    raise AttributeError(name)

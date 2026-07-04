@@ -21,9 +21,9 @@ API endpoints used (see `references/ehall-booking-venue-2026-06-15.md`):
     CancelMeeting                   cancel a booking
     GetMeetingCalendar              schedule view
 
-Auth: handled by `sustech_survival.sso.authlib.booking.BookingAuth`. The
-singleton auto-auths on first call. Token lives in `booking/token.json`,
-cookies in `booking/session.json`.
+"Auth: handled by `sustech_survival.sso.authlib.booking.BookingAuth`. The
+singleton auto-auths on first call. Session + token are in-memory only
+(iron law #12 — no disk-persisted session.json)."
 """
 from __future__ import annotations
 

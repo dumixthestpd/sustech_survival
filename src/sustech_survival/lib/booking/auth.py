@@ -180,7 +180,7 @@ class LibBookingAuth(CASAuthorizer):
                 )
 
             self.set_session(cookies)
-            self._save_session(user_info=self._fetch_user_info())
+            self._user_info = self._fetch_user_info()
             print(
                 f"✅ LibBookingAuth session refreshed "
                 f"({len(cookies)} cookies, ic-cookie ✓)"
@@ -207,11 +207,10 @@ class LibBookingAuth(CASAuthorizer):
         return True, f"Session has {len(self.session_cache)} cookies"
 
     def ensure(self) -> Tuple[bool, str]:
-        """check() + auto-refresh from disk + auto-login if needed."""
-        if self.refresh_from_disk():
-            ok, reason = self.check()
-            if ok:
-                return True, reason
+        """check() + auto-refresh if needed. In-memory only — no disk I/O."""
+        ok, reason = self.check()
+        if ok:
+            return True, reason
         if self.username and self.password:
             try:
                 self.refresh()
@@ -257,52 +256,12 @@ class LibBookingAuth(CASAuthorizer):
     # ── Persistence ─────────────────────────────────────────────────────────
 
     def _save_session(self, user_info: Optional[dict] = None) -> None:
-        """Persist cookies + user info to lib/booking/session.json.
-
-        Sensitive fields in user_info (idCard, cardNo, cardId, handPhone,
-        email, token, uuid) are redacted before write.
-        """
-        try:
-            self.submodule_dir.mkdir(parents=True, exist_ok=True)
-            payload = {
-                "saved_at": time.time(),
-                "cookies": self.session_cache,
-            }
-            self.session_file.write_text(
-                json.dumps(payload, ensure_ascii=False, indent=2)
-            )
-            if user_info:
-                redacted = _redact_user_info(user_info)
-                (self.submodule_dir / "user_info.json").write_text(
-                    json.dumps(redacted, ensure_ascii=False, indent=2)
-                )
-        except OSError:
-            pass
+        """No-op — in-memory only (iron law #12). Kept for backward compat."""
+        pass
 
     def refresh_from_disk(self) -> bool:
-        """Load saved session (cookies + user info) from disk.
-
-        Returns True if at least the cookies were loaded. user_info
-        loading is best-effort.
-        """
-        ok = False
-        sf = self.session_file
-        if sf.exists():
-            try:
-                payload = json.loads(sf.read_text())
-                cookies = payload.get("cookies") or {}
-                if cookies and "ic-cookie" in cookies:
-                    self.set_session(cookies)
-                    ok = True
-            except (OSError, json.JSONDecodeError):
-                pass
-        uif = self.submodule_dir / "user_info.json"
-        if uif.exists():
-            try:
-                self._user_info = json.loads(uif.read_text())
-            except (OSError, json.JSONDecodeError):
-                self._user_info = None
-        return ok
+        """No-op — in-memory only (iron law #12). Kept for backward compat."""
+        return False
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

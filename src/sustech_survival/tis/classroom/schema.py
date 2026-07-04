@@ -59,8 +59,10 @@ def day_char_to_int(c: str) -> int:
 #   "1-15周,星期一第3-4节 一教324"
 #   "3,7,9,13周,星期日第1-4节 校外活动场所"
 #   "1-9,11-15周,星期二第3-4节 一教326"
+#   "1-15单周,星期三第3-4节 一教125"  (odd weeks only)
+#   "2-16双周,星期三第3-4节 一教426"  (even weeks only)
 _SLOT_RE = re.compile(
-    r"^(?P<weeks>[\d,\-]+)周,"
+    r"^(?P<weeks>[\d,\\-]+)(?P<parity>单|双)?周,"
     r"星期(?P<day>[一二三四五六日])"
     r"第(?P<pstart>\d+)(?:-(?P<pend>\d+))?节"
     r"\s+(?P<room>.+)$"
@@ -112,6 +114,8 @@ def parse_kcxx_slot(line: str) -> Optional[dict]:
 
     Returned dict keys: weeks (List[int]), day (int), period_start (int),
     period_end (int), room (str).
+
+    Handles 单周 (odd weeks only) and 双周 (even weeks only) parity.
     """
     line = line.strip()
     m = _SLOT_RE.match(line)
@@ -119,8 +123,14 @@ def parse_kcxx_slot(line: str) -> Optional[dict]:
         return None
     pstart = int(m.group("pstart"))
     pend = int(m.group("pend") or m.group("pstart"))
+    weeks = expand_weeks(m.group("weeks"))
+    parity = m.group("parity")
+    if parity == "单":
+        weeks = [w for w in weeks if w % 2 == 1]
+    elif parity == "双":
+        weeks = [w for w in weeks if w % 2 == 0]
     return {
-        "weeks": expand_weeks(m.group("weeks")),
+        "weeks": weeks,
         "day": day_char_to_int(m.group("day")),
         "period_start": pstart,
         "period_end": pend,
@@ -133,15 +143,25 @@ def parse_kcxx(kcxx_html: str) -> List[dict]:
 
     Returns a list of slot dicts (see parse_kcxx_slot for shape).
     Non-schedule paragraphs (e.g. "选课要求:本课程只面向...") are skipped.
+
+    The kcxx can have multiple <p> blocks inside a single
+    <span class="ivu-tag-text"> — extract all of them, not just the first.
     """
     slots: List[dict] = []
-    for m in _P_RE.finditer(kcxx_html or ""):
-        line = m.group(1).strip()
-        # Unescape HTML entities (common in kcxx content).
-        line = line.replace("&nbsp;", " ").replace("&amp;", "&")
-        slot = parse_kcxx_slot(line)
-        if slot:
-            slots.append(slot)
+    span_re = re.compile(
+        r'<span class="ivu-tag-text">(.*?)</span>',
+        re.DOTALL,
+    )
+    p_re = re.compile(r'<p>([^<]*)</p>')
+    for span_m in span_re.finditer(kcxx_html or ""):
+        span_content = span_m.group(1)
+        for p_m in p_re.finditer(span_content):
+            line = p_m.group(1).strip()
+            # Unescape HTML entities (common in kcxx content).
+            line = line.replace("&nbsp;", " ").replace("&amp;", "&")
+            slot = parse_kcxx_slot(line)
+            if slot:
+                slots.append(slot)
     return slots
 
 

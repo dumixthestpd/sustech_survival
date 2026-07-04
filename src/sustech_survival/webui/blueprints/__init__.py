@@ -1,0 +1,1 @@
+"""Web UI blueprints — one per submodule. Registered lazily by app.py."""
