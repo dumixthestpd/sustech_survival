@@ -744,6 +744,10 @@ function fetchEval(code) {
 }
 
 function renderEval(d) {
+  if (d.direct_url) {
+    EVAL_OUT.innerHTML = '<div class="ncn">View evaluations on <a href="' + escapeHtml(d.direct_url) + '" target="_blank" rel="noopener">NCES</a> ↗</div>';
+    return;
+  }
   if (!d.available) {
     EVAL_OUT.innerHTML = '<div class="ncn">' + escapeHtml(d.reason || 'NCES evaluation not available for this course.') + '</div>';
     return;
