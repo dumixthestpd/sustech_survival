@@ -403,20 +403,58 @@ def api_remove_cart():
 # ── NCES community eval overlay ──────────────────────────────────────────────
 @bp.route("/api/tis/nces")
 def api_nces():
-    """NCES community course-eval lookup.
-
-    The NCES module is incomplete upstream (requires browser-based auth
-    at cas-proxy.cra.moe). Returns static unavailable for now.
-    """
+    """Fetch course evaluations from ncesnext.com (no auth needed for search)."""
     code = (request.args.get("code") or "").strip()
     if not code:
         return jsonify({"available": False, "reason": "no course code provided"})
-    return jsonify({
-        "available": False,
-        "reason": "NCES community evaluation not yet implemented. "
-                  "The nces module requires Playwright-based browser auth "
-                  "at cas-proxy.cra.moe and is incomplete upstream.",
-    })
+    import urllib.request, urllib.parse, json
+    url = f"https://ncesnext.com/search?q={urllib.parse.quote(code)}"
+    try:
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+        })
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            html = resp.read().decode("utf-8", errors="replace")
+    except Exception as e:
+        return jsonify({"available": False, "reason": f"fetch failed: {e}"})
+
+    # Parse the HTML — extract course cards with their rating info
+    import re
+    results = []
+    # Each course card pattern: course name + code + semester + rating
+    # <div class="course-card"> or similar containers
+    # NCES renders each course as: 课程名 （老师） CODE SEMESTER \n N.N (N人评价) \n 难度/作业/给分/收获
+    # Simple extraction: find all course entries by splitting on known patterns
+    lines = html.split("\n")
+    current = {}
+    for line in lines:
+        line = line.strip()
+        # Match course lines: e.g. "数据结构与算法分析 （唐博, 沈昀） CS203 2020秋..."
+        m = re.match(r'^(.+?)\s*（(.+?)）\s+(\w+\d+[A-Z]?)\s+(\d{4}\S*).*', line)
+        if m:
+            if current.get("code"):
+                results.append(current)
+            current = {"name": m.group(1).strip(), "professor": m.group(2).strip(),
+                       "code": m.group(3).strip(), "semester": m.group(4).strip()}
+        # Match rating: e.g. "8.2 (4 人评价)"
+        rm = re.match(r'^(\d+\.?\d*)\s*\((\d+)\s*人评价\)', line)
+        if rm and current.get("code"):
+            current["rating"] = float(rm.group(1))
+            current["review_count"] = int(rm.group(2))
+        # Match dimension: "课程难度 中等" etc.
+        dm = re.match(r'^\s*[★]*\s*(课程难度|作业多少|给分好坏|收获大小)\s+(\S+)', line)
+        if dm and current.get("code"):
+            dim = {"课程难度": "difficulty", "作业多少": "workload",
+                   "给分好坏": "grading", "收获大小": "value"}.get(dm.group(1), dm.group(1))
+            current[dim] = dm.group(2)
+
+    if current.get("code"):
+        results.append(current)
+
+    if not results:
+        return jsonify({"available": False, "reason": "no evaluations found"})
+
+    return jsonify({"available": True, "results": results, "count": len(results)})
 
 
 # ── Selection course types (xkfsdm codes) ───────────────────────────────────
