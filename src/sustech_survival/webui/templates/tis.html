@@ -1,0 +1,1269 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>TIS Course Selector · SUSTech Survival</title>
+<style>
+:root{--bg:#0f1216;--panel:#161b22;--panel2:#1a212b;--border:#262d3a;--txt:#e7e9ee;--mut:#8a93a3;--accent:#5b9dff;--ok:#3fb950;--warn:#e3b341;--bad:#f85149}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--txt);font-size:14px;overflow:hidden}
+a{color:var(--accent);text-decoration:none}
+header{display:flex;align-items:center;gap:1rem;padding:.9rem 1.4rem;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg);z-index:20;flex-shrink:0}
+header h1{font-size:1.1rem;font-weight:600}
+header .crumb{color:var(--mut);font-size:.85rem;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+header .grow{flex:1}
+header .sem{display:flex;gap:.4rem;align-items:center}
+header select,input,button{font:inherit;color:var(--txt);background:var(--panel2);border:1px solid var(--border);border-radius:6px;padding:.32rem .5rem}
+button{cursor:pointer;white-space:nowrap}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:500}
+button.danger{color:var(--bad);border-color:var(--bad)}
+button.ghost{background:transparent;border-color:transparent}
+button.ghost:hover{border-color:var(--border)}
+select{min-width:80px}
+.wrap{display:grid;grid-template-columns:380px 1fr 300px;gap:1px;background:var(--border);height:calc(100vh - 53px)}
+.col{background:var(--bg);overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column}
+.sub{padding:.7rem 1rem;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:.5rem;background:var(--panel);flex-shrink:0}
+.sub h2{font-size:.82rem;text-transform:uppercase;letter-spacing:.6px;color:var(--mut);font-weight:500}
+.row{display:flex;gap:.4rem;flex-wrap:wrap;align-items:center}
+.row .lbl{color:var(--mut);font-size:.78rem;min-width:3.5rem;flex-shrink:0}
+input[type=text],input[type=search]{flex:1;min-width:60px}
+select.filter{flex:1;min-width:60px}
+.stat{padding:.4rem .8rem;color:var(--mut);font-size:.78rem;border-bottom:1px solid #1a2030;background:var(--panel)}
+.results{overflow-y:auto;flex:1}
+.c-card{padding:.55rem 1rem;border-bottom:1px solid #1a1f29;cursor:pointer;position:relative}
+.c-card:hover{background:var(--panel)}
+.c-card.active{background:#1d2a3d;border-left:3px solid var(--accent);padding-left:calc(1rem - 3px)}
+.c-card .top{display:flex;gap:.5rem;align-items:baseline}
+.c-card .code{font-family:ui-monospace,Menlo,monospace;color:var(--accent);font-size:.82rem;font-weight:600}
+.c-card .grp{color:var(--mut);font-size:.75rem}
+.c-card .nm{font-weight:600;margin-top:.15rem;font-size:.88rem}
+.c-card .meta{margin-top:.2rem;color:var(--mut);font-size:.76rem;display:flex;gap:.6rem;flex-wrap:wrap}
+.c-card .meta b{color:#c2c8d0;font-weight:500}
+.c-card .actions{position:absolute;top:.45rem;right:.7rem;display:flex;gap:.25rem}
+.badge{font-size:.68rem;padding:.08rem .35rem;border-radius:4px;background:#1e2733;color:var(--mut);display:inline-block}
+.badge.must{color:var(--ok)} .badge.opt{color:#c084fc}
+.empty,.loading{padding:2rem 1rem;color:var(--mut);text-align:center;font-size:.85rem}
+
+/* schedule grid */
+.grid-wrap{padding:.7rem 1rem}
+table.grid{border-collapse:collapse;width:100%;font-size:.74rem;table-layout:fixed}
+table.grid th,table.grid td{border:1px solid #1a2030;padding:0;vertical-align:top}
+table.grid th{background:var(--panel);color:var(--mut);padding:.3rem;position:sticky;top:0;z-index:2;font-weight:500;text-align:center}
+table.grid th:first-child{width:2.6rem}
+table.grid td{height:38px;position:relative}
+.cell{padding:0;height:38px;position:relative}
+.blk{position:absolute;left:1px;right:1px;z-index:1;border-radius:4px;padding:.15rem .25rem;color:#fff;font-size:.65rem;line-height:1.25;overflow:hidden;cursor:pointer;min-height:20px;border:1px solid rgba(255,255,255,.15)}
+.blk .t{font-weight:600}
+.blk:hover{outline:2px solid rgba(255,255,255,.6);z-index:3}
+.blk.conf{outline:2px solid var(--bad);box-shadow:0 0 6px var(--bad)}
+.palette{display:flex;gap:.3rem;flex-wrap:wrap;align-items:center;padding:.3rem 0}
+.palette .sw{display:inline-block;width:12px;height:12px;border-radius:3px;flex-shrink:0}
+.palette .sl{font-size:.72rem;color:var(--mut)}
+
+/* tabs */
+.tabs{display:flex;gap:.3rem;padding:.6rem 1rem;border-bottom:1px solid var(--border);background:var(--panel);position:sticky;top:0;z-index:5}
+.tabs button{background:transparent;border:none;color:var(--mut);border-bottom:2px solid transparent;border-radius:0;padding:.25rem .6rem;font-size:.82rem;cursor:pointer}
+.tabs button:hover{color:var(--txt)}
+.tabs button.active{color:var(--txt);border-color:var(--accent)}
+.tabpane{overflow-y:auto;flex:1}
+
+/* picked / my selection -- FIX for overlap bug */
+.picked{display:flex;flex-direction:column}
+.pick{position:relative;padding:.6rem .7rem;border-bottom:1px solid #1a2030;clear:both;margin-bottom:0;overflow:visible}
+.pick .pn{font-weight:600;font-size:.84rem}
+.pick .pm{color:var(--mut);font-size:.72rem;margin-top:.1rem}
+.pick .pm b{color:#c2c8d0;font-weight:500}
+.pick .acts{margin-top:.35rem;display:flex;gap:.25rem;flex-shrink:0}
+.pick .acts button{font-size:.7rem;padding:.15rem .4rem;border-radius:4px}
+.pick .pick-enrolled{display:inline-block;font-size:.65rem;padding:.1rem .3rem;border-radius:3px;background:rgba(63,185,80,.15);color:var(--ok);margin-left:.3rem}
+details summary{cursor:pointer;padding:.5rem .7rem;color:var(--mut);font-size:.8rem}
+pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);border-radius:6px;font-size:.7rem;color:#c2c8d0;overflow:auto;max-height:200px;margin:.4rem 0;white-space:pre-wrap;word-break:break-all}
+.ncn{padding:.5rem .8rem;font-size:.78rem;color:var(--mut);border-bottom:1px solid #1a2030}
+.ncn.ok{color:var(--ok)}
+.flash{padding:.5rem .8rem;font-size:.78rem;border-bottom:1px solid var(--border)}
+.flash.ok{color:var(--ok)} .flash.err{color:var(--bad)}
+
+/* solve */
+.solve-card{padding:.5rem .7rem;border:1px solid var(--border);border-radius:6px;margin:.4rem 0;background:var(--panel)}
+.solve-card .sc-title{font-size:.78rem;color:var(--mut);margin-bottom:.2rem}
+.solve-card .sc-sec{font-size:.76rem;padding:.15rem 0;display:flex;gap:.4rem;align-items:center}
+.solve-card .sc-sec .code{font-family:ui-monospace,monospace;color:var(--accent)}
+.solve-card .sc-apply{margin-top:.3rem}
+
+/* eval */
+.eval-item{padding:.5rem .7rem;border-bottom:1px solid #1a2030;font-size:.78rem}
+.eval-item .ei-t{font-weight:600}
+.eval-item .ei-m{color:var(--mut);margin-top:.15rem;font-size:.74rem}
+
+/* scrollbar */
+.col::-webkit-scrollbar,.tabpane::-webkit-scrollbar,.results::-webkit-scrollbar{width:6px}
+.col::-webkit-scrollbar-track,.tabpane::-webkit-scrollbar-track,.results::-webkit-scrollbar-track{background:transparent}
+.col::-webkit-scrollbar-thumb,.tabpane::-webkit-scrollbar-thumb,.results::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+</style>
+</head>
+<body>
+<header>
+  <a href="/">← Home</a>
+  <h1>Course Selector</h1>
+  <div class="crumb" id="crumb">loading…</div>
+  <div class="sem">
+    <select id="sem-select"></select>
+    <button class="ghost" id="btn-info" title="Load catalog info">⟳ Load</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <!-- LEFT: search & filters -->
+  <div class="col" id="search-col">
+    <div class="sub">
+      <h2>Catalog</h2>
+      <div style="display:flex;gap:.3rem;margin-bottom:.4rem">
+        <button class="ghost mode-btn active" data-mode="campus" style="flex:1;font-size:.78rem;text-align:center;padding:.25rem;border-radius:6px;border:1px solid var(--accent);background:rgba(91,157,255,.1)">📋 Catalog</button>
+        <button class="ghost mode-btn" data-mode="personal" style="flex:1;font-size:.78rem;text-align:center;padding:.25rem;border-radius:6px">🎯 Selection</button>
+      </div>
+      <div class="stat" id="stat">Ready.</div>
+      <div class="row"><input type="text" id="kw" placeholder="code / name / teacher"/></div>
+      <div class="row"><span class="lbl">College/Dept</span><select class="filter" id="f-college"><option value="">All</option></select></div>
+      <div class="row"><span class="lbl">Task Type</span><select class="filter" id="f-tasktype"><option value="">All</option></select></div>
+      <div class="row"><span class="lbl">Category</span><select class="filter" id="f-cat"><option value="">All</option></select></div>
+      <div class="row"><span class="lbl">Campus</span><select class="filter" id="f-campus"><option value="">All</option></select></div>
+      <div class="row"><span class="lbl">Language</span><select class="filter" id="f-lang"><option value="">All</option></select></div>
+      <div class="row"><span class="lbl">Level</span><select class="filter" id="f-cult"><option value="">All</option><option value="本科">Undergrad</option><option value="研究生">Graduate</option></select></div>
+      <div class="row"><span class="lbl">Teacher</span><input type="text" id="f-teacher" placeholder="teacher name"/></div>
+      <!-- personal-mode filters (hidden in campus mode) -->
+      <div class="personal-only" style="display:none">
+        <div class="row"><span class="lbl">Type</span><select class="filter" id="f-xkfsdm"><option value="">Type</option></select></div>
+        <div class="row"><label style="font-size:.76rem;color:var(--mut);display:flex;align-items:center;gap:.3rem"><input type="checkbox" id="f-ign-conf"/> Ignore conflicts</label><label style="font-size:.76rem;color:var(--mut);display:flex;align-items:center;gap:.3rem;margin-left:.6rem"><input type="checkbox" id="f-ign-zero"/> Ignore zero cap</label></div>
+        <div class="row" style="gap:.6rem"><span class="lbl" style="min-width:auto">Free Day</span><input type="text" id="f-wday" placeholder="1-7" style="width:45px;font-size:.78rem;text-align:center"/><span class="lbl" style="min-width:auto">Per.</span><input type="text" id="f-ps" placeholder="start" style="width:55px;font-size:.78rem;text-align:center"/><span style="color:var(--mut);font-size:.78rem">–</span><input type="text" id="f-pe" placeholder="end" style="width:45px;font-size:.78rem;text-align:center"/></div>
+      </div>
+      <div class="row"><label style="font-size:.76rem;color:var(--mut);display:flex;align-items:center;gap:.3rem"><input type="checkbox" id="f-sched"/> Only with schedule</label></div>
+      <div class="row"><button class="primary" id="btn-search">Search</button><button class="ghost" id="btn-refresh" title="Force re-fetch from TIS">Refresh catalog</button></div>
+    </div>
+    <div class="results" id="results"><div class="loading">Loading course catalog…</div></div>
+  </div>
+
+  <!-- CENTER: grid / solver / eval -->
+  <div class="col" id="center-col">
+    <div class="tabs" id="tabs">
+      <button class="active" data-tab="grid">Weekly Grid</button>
+      <button data-tab="solve">Conflict-free Scheduler</button>
+      <button data-tab="eval">NCES Course Eval</button>
+    </div>
+    <div id="tab-grid" class="tabpane">
+      <div class="grid-wrap">
+        <div class="palette" id="grid-legend"></div>
+        <table class="grid"><thead><tr><th>Period</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th></tr></thead>
+          <tbody id="grid-body"></tbody></table>
+      </div>
+    </div>
+    <div id="tab-solve" class="tabpane" style="display:none">
+      <div style="padding:1rem">
+        <p style="color:var(--mut);font-size:.84rem;margin-bottom:.6rem">Generates non-conflicting section combinations from your picked course codes.</p>
+        <div style="color:var(--mut);font-size:.82rem;margin-bottom:.5rem">
+          <b style="color:var(--txt)">Codes to solve:</b> <span id="solve-codes">none</span>
+        </div>
+        <div class="row" style="margin-bottom:.6rem">
+          <span class="lbl" style="min-width:auto">Blocked</span>
+          <input type="text" id="blocked-input" placeholder="e.g. 1,3-4 / 3,7-8 (day,periods)" style="flex:1;font-size:.78rem"/>
+        </div>
+        <button class="primary" id="btn-solve">Solve combinations</button>
+        <div id="solve-out" style="margin-top:.6rem"></div>
+      </div>
+    </div>
+    <div id="tab-eval" class="tabpane" style="display:none">
+      <div style="padding:1rem">
+        <p style="color:var(--mut);font-size:.84rem;margin-bottom:.5rem">Select a course card on the left to fetch NCES evaluations.</p>
+        <div id="eval-out" class="mut" style="font-size:.8rem"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: picked sections / My Selection -->
+  <div class="col picked" id="picked-col" style="overflow-y:auto">
+    <div class="stat" id="pick-stat">0 sections · 0 Credits</div>
+    <div id="pick-list"><div class="loading">No sections picked.</div></div>
+    <details><summary>Enrollment status</summary>
+      <div style="padding:.4rem .7rem"><button id="btn-enrolled">Load my enrolled</button></div>
+      <div id="enrolled-out" class="ncn"></div>
+    </details>
+  </div>
+</div>
+
+<script>
+(function() {
+'use strict';
+
+// ── DOM refs ──────────────────────────────────────────────────────────────
+var SEM_SEL = document.getElementById('sem-select');
+var KW = document.getElementById('kw');
+var F_COL = document.getElementById('f-college');
+var F_TASK = document.getElementById('f-tasktype');
+var F_CAT = document.getElementById('f-cat');
+var F_CAM = document.getElementById('f-campus');
+var F_LANG = document.getElementById('f-lang');
+var F_CULT = document.getElementById('f-cult');
+var F_SCH = document.getElementById('f-sched');
+var F_TEACHER = document.getElementById('f-teacher');
+var STAT = document.getElementById('stat');
+var RESULTS = document.getElementById('results');
+var GRID = document.getElementById('grid-body');
+var PICK_STAT = document.getElementById('pick-stat');
+var PICK_LIST = document.getElementById('pick-list');
+var ENROLLED_OUT = document.getElementById('enrolled-out');
+var CRUMB = document.getElementById('crumb');
+var SOLVE_OUT = document.getElementById('solve-out');
+var SOLVE_CODES = document.getElementById('solve-codes');
+var EVAL_OUT = document.getElementById('eval-out');
+var GRID_LEGEND = document.getElementById('grid-legend');
+
+// ── State ─────────────────────────────────────────────────────────────────
+var CAT = [];               // full course list from latest server fetch
+var ALL_CAT = [];           // cached full catalog for client-side filtering
+var PICKED = {};            // { rwh: courseDict }
+var ACTIVE_RWH = null;      // last clicked card rwh (for eval)
+var EVAL_CACHE = {};        // { code: evalResponse }
+var ENROLLED_RWH = new Set(); // rwhs currently enrolled
+var COLORS_CACHE = {};      // { code: color }
+var SEMESTER_INFO = null;   // cached /api/tis/info response
+var MODE = 'campus';        // 'campus' or 'personal'
+
+var PERIODS = 12;
+var DAYS = 7;
+var DAY_NAMES = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+var ROW_HEIGHT = 38;
+
+// ── Semester helpers ─────────────────────────────────────────────────────
+
+function semesterLabel(xn, xq) {
+  var season = xq === '1' ? 'Fall' : xq === '2' ? 'Spring' : 'Summer';
+  // Fall uses the end_year (first half of xn), Spring/Summer use the cohort_year (second half)
+  var yr = xq === '1' ? xn.substring(0,4) : xn.substring(5,9);
+  return season + ' ' + yr + ' (' + xn + ' Semester ' + xq + ')';
+}
+
+function buildSemesterOptions() {
+  // Generate 5 semesters: current + 2 back + 2 ahead
+  // Current: Fall 2026 (xn=2025-2026, xq=1) for course-selecting season
+  var baseYear = 2025; // 2025-2026
+  var semesters = [];
+  // Fall 2024 (Sem 1) -> 2024-2025, xq=1
+  // Spring 2025 (Sem 2) -> 2024-2025, xq=2
+  // Summer 2025 (Sem 3) -> 2024-2025, xq=3
+  // Fall 2025 (Sem 1) -> 2025-2026, xq=1
+  // Spring 2026 (Sem 2) -> 2025-2026, xq=2
+  // Summer 2026 (Sem 3) -> 2025-2026, xq=3
+  // Fall 2026 (Sem 1) -> 2026-2027, xq=1
+  // pattern: each academic year YYYY-YYYY+1 has xq 1,2,3
+
+  // Start from 2024-2025 (Fall 2024) through 2026-2027 (Summer 2027)
+  // That gives us 3 academic years * 3 semesters = 9 semesters, but we want 5.
+  // Let's do: from 2024-2025 Semester 3 (Summer 2025) to 2026-2027 Semester 1 (Fall 2026)
+  // That covers 5 semesters centered around Fall 2026
+  
+  // Actually, simpler: position Fall 2026 as index 2 (0-based), then go 2 back, 2 ahead
+  // Semester order: SEASON_CYCLE = [Fall, Spring, Summer] per academic year
+  // Fall 2025 = (2025-2026, 1) index 0
+  // Spring 2026 = (2025-2026, 2) index 1
+  // Summer 2026 = (2025-2026, 3) index 2
+  // Fall 2026 = (2026-2027, 1) index 3
+  // Spring 2027 = (2026-2027, 2) index 4
+
+  var all = [];
+  var acYear = 2024;
+  for (var ay = 0; ay < 6; ay++) {
+    var xn = acYear + '-' + (acYear + 1);
+    all.push({ xn: xn, xq: '1' }); // Fall
+    all.push({ xn: xn, xq: '2' }); // Spring
+    all.push({ xn: xn, xq: '3' }); // Summer
+    acYear++;
+  }
+  // Find index of Fall 2026 (2026-2027, 1)
+  var centerIdx = -1;
+  for (var i = 0; i < all.length; i++) {
+    if (all[i].xn === '2026-2027' && all[i].xq === '1') {
+      centerIdx = i;
+      break;
+    }
+  }
+  // Take 5 centered around centerIdx
+  var startIdx = Math.max(0, centerIdx - 2);
+  var endIdx = Math.min(all.length, centerIdx + 3);
+  for (var j = startIdx; j < endIdx; j++) {
+    semesters.push(all[j]);
+  }
+
+  SEM_SEL.innerHTML = '';
+  for (var k = 0; k < semesters.length; k++) {
+    var opt = document.createElement('option');
+    opt.value = semesters[k].xn + '|' + semesters[k].xq;
+    opt.textContent = semesterLabel(semesters[k].xn, semesters[k].xq);
+    SEM_SEL.appendChild(opt);
+  }
+
+  // URL params take priority, fallback to Fall 2026
+  var m = location.search.match(/[?&]xn=([^&]+)/);
+  var qm = location.search.match(/[?&]xq=([^&]+)/);
+  var urlXn = m ? m[1] : '{{ xn }}';
+  var urlXq = qm ? qm[1] : '{{ xq }}';
+
+  // Try to find a match
+  var found = false;
+  for (var l = 0; l < SEM_SEL.options.length; l++) {
+    var parts = SEM_SEL.options[l].value.split('|');
+    if (parts[0] === urlXn && parts[1] === urlXq) {
+      SEM_SEL.selectedIndex = l;
+      found = true;
+      break;
+    }
+  }
+  if (!found) {
+    // Default to Fall 2026 (index where xn=2026-2027, xq=1)
+    for (var p = 0; p < SEM_SEL.options.length; p++) {
+      var p2 = SEM_SEL.options[p].value.split('|');
+      if (p2[0] === '2026-2027' && p2[1] === '1') {
+        SEM_SEL.selectedIndex = p;
+        break;
+      }
+    }
+  }
+}
+
+function sem() {
+  var parts = SEM_SEL.value.split('|');
+  return '?xn=' + encodeURIComponent(parts[0]) + '&xq=' + encodeURIComponent(parts[1]);
+}
+
+function currentXn() { return SEM_SEL.value.split('|')[0]; }
+function currentXq() { return SEM_SEL.value.split('|')[1]; }
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+
+function getJSON(url) {
+  return fetch(url).then(function(r) { return r.json(); });
+}
+
+function postJSON(url, body) {
+  return fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  }).then(function(r) { return r.json(); });
+}
+
+var PALETTE = ['#3a7ade','#3fb950','#d29922','#a371f7','#f07178','#2cb89e','#e3b341','#6cc6ff','#ff7b72','#56d364','#bc8cff','#ffa657'];
+
+function colorFor(code) {
+  if (COLORS_CACHE[code]) return COLORS_CACHE[code];
+  var h = 0;
+  for (var i = 0; i < code.length; i++) {
+    h = ((h << 5) - h) + code.charCodeAt(i);
+    h = h & h;
+  }
+  var idx = Math.abs(h) % PALETTE.length;
+  COLORS_CACHE[code] = PALETTE[idx];
+  return PALETTE[idx];
+}
+
+function dayName(d) {
+  return DAY_NAMES[d - 1] || '?';
+}
+
+function slotsOverlap(a, b) {
+  if (a.day !== b.day) return false;
+  var aStart = a.period_start, aEnd = a.period_end;
+  var bStart = b.period_start, bEnd = b.period_end;
+  if (aEnd < bStart || bEnd < aStart) return false;
+  var aw = a.weeks || [];
+  var bw = b.weeks || [];
+  if (aw.length && bw.length) {
+    var ws = {};
+    for (var wi = 0; wi < aw.length; wi++) ws[aw[wi]] = true;
+    var intersect = false;
+    for (var wj = 0; wj < bw.length; wj++) {
+      if (ws[bw[wj]]) { intersect = true; break; }
+    }
+    if (!intersect) return false;
+  }
+  return true;
+}
+
+function sectionsConflict(slotsA, slotsB) {
+  for (var i = 0; i < slotsA.length; i++) {
+    for (var j = 0; j < slotsB.length; j++) {
+      if (slotsOverlap(slotsA[i], slotsB[j])) return true;
+    }
+  }
+  return false;
+}
+
+function formatSchedule(slots) {
+  if (!slots || !slots.length) return '';
+  return slots.map(function(s) {
+    var d = dayName(s.day);
+    var r = s.room ? ' ' + s.room : '';
+    var w = '';
+    if (s.weeks && s.weeks.length) {
+      if (s.weeks.length <= 6) w = ' w' + s.weeks.join(',');
+      else w = ' w' + s.weeks[0] + '-' + s.weeks[s.weeks.length - 1];
+    }
+    return d + ' ' + s.period_start + '-' + s.period_end + r + w;
+  }).join('; ');
+}
+
+function parseBlockedInput(str) {
+  if (!str.trim()) return [];
+  var parts = str.split('/');
+  var result = [];
+  for (var pi = 0; pi < parts.length; pi++) {
+    var p = parts[pi].trim();
+    if (!p) continue;
+    var commaIdx = p.indexOf(',');
+    if (commaIdx < 0) continue;
+    var dayStr = p.substring(0, commaIdx).trim();
+    var periodsStr = p.substring(commaIdx + 1).trim();
+    var day = parseInt(dayStr, 10);
+    if (isNaN(day) || day < 1 || day > 7) continue;
+    var periods = [];
+    var rangeParts = periodsStr.split('-');
+    if (rangeParts.length === 2) {
+      var ps = parseInt(rangeParts[0], 10);
+      var pe = parseInt(rangeParts[1], 10);
+      if (!isNaN(ps) && !isNaN(pe)) {
+        for (var pp = ps; pp <= pe; pp++) periods.push(pp);
+      }
+    } else {
+      var pn = parseInt(periodsStr, 10);
+      if (!isNaN(pn)) periods.push(pn);
+    }
+    if (periods.length) result.push([day, periods]);
+  }
+  return result;
+}
+
+// ── Semester dropdown init ────────────────────────────────────────────────
+buildSemesterOptions();
+
+// ── API callers ───────────────────────────────────────────────────────────
+
+function loadInfo() {
+  var qs = sem();
+  CRUMB.textContent = 'loading…';
+  getJSON('/api/tis/info' + qs).then(function(d) {
+    if (d.error) {
+      CRUMB.textContent = 'Error: ' + d.error;
+      return;
+    }
+    SEMESTER_INFO = d;
+    var xn = currentXn();
+    var xq = currentXq();
+    CRUMB.textContent = d.count + ' courses · ' + semesterLabel(xn, xq);
+    // Colleges: d.colleges is [(code, name), ...] — show name, store name
+    populateSelect(F_COL, d.colleges.map(function(p) { return p[1]; }));
+    populateSelect(F_TASK, d.task_types);
+    populateSelect(F_CAT, d.categories);
+    populateSelect(F_CAM, d.campuses);
+    populateSelect(F_LANG, d.languages);
+    STAT.textContent = d.count + ' courses available.';
+    // Auto-load all courses after loading info
+    loadCourses(true);
+  })['catch'](function(e) {
+    CRUMB.textContent = 'Network error';
+    STAT.textContent = 'Error loading info: ' + e.message;
+  });
+}
+
+function populateSelect(sel, items) {
+  var val = sel.value;
+  while (sel.options.length > 1) sel.remove(1);
+  for (var i = 0; i < items.length; i++) {
+    var o = document.createElement('option');
+    o.value = items[i];
+    o.textContent = items[i];
+    sel.appendChild(o);
+  }
+  sel.value = val;
+}
+
+function populateCourseTypes(types, currentType) {
+  // types is [{xkfsdm, xkfsmc, lcmc, ...}]
+  var sel = document.getElementById('f-xkfsdm');
+  var val = sel.value;
+  // Keep the "Type" option at index 0, remove the rest
+  while (sel.options.length > 1) sel.remove(1);
+  for (var i = 0; i < types.length; i++) {
+    var r = types[i];
+    if (r.xkfsdm === 'yixuan' || r.xkfsdm === 'gouwuche') continue; // skip built-in tabs
+    var o = document.createElement('option');
+    o.value = r.xkfsdm;
+    o.textContent = (r.xkfsmc || r.lcmc || r.xkfsdm);
+    sel.appendChild(o);
+  }
+  // Auto-select first type if no selection
+  if (!val && sel.options.length > 1) {
+    sel.selectedIndex = 1;
+  } else if (val) {
+    sel.value = val;
+  }
+}
+
+function loadCourses(isInitialLoad) {
+  var qs = sem();
+  qs += '&mode=' + MODE;
+  qs += '&keyword=' + encodeURIComponent(KW.value);
+  qs += '&college=' + encodeURIComponent(F_COL.value);
+  qs += '&task_type=' + encodeURIComponent(F_TASK.value);
+  qs += '&category=' + encodeURIComponent(F_CAT.value);
+  qs += '&campus=' + encodeURIComponent(F_CAM.value);
+  qs += '&language=' + encodeURIComponent(F_LANG.value);
+  qs += '&cultivation=' + encodeURIComponent(F_CULT.value);
+  qs += '&teacher=' + encodeURIComponent(F_TEACHER.value);
+  qs += '&scheduled=' + (F_SCH.checked ? '1' : '0');
+  if (MODE === 'personal') {
+    qs += '&xkfsdm=' + encodeURIComponent(document.getElementById('f-xkfsdm').value);
+    qs += '&ignore_conflicts=' + (document.getElementById('f-ign-conf').checked ? '1' : '');
+    qs += '&ignore_zero_capacity=' + (document.getElementById('f-ign-zero').checked ? '1' : '');
+    qs += '&weekday=' + encodeURIComponent(document.getElementById('f-wday').value);
+    qs += '&period_start=' + encodeURIComponent(document.getElementById('f-ps').value);
+    qs += '&period_end=' + encodeURIComponent(document.getElementById('f-pe').value);
+  }
+
+  if (!isInitialLoad) {
+    RESULTS.innerHTML = '<div class="loading">Searching…</div>';
+  }
+
+  getJSON('/api/tis/courses' + qs).then(function(d) {
+    if (d.error) {
+      RESULTS.innerHTML = '<div class="flash err">' + escapeHtml(d.error) + '</div><div class="empty">Check TIS credentials or try refreshing the catalog.</div>';
+      CAT = [];
+      return;
+    }
+    if (d.mode === 'personal') {
+      CAT = d.courses || [];
+      ALL_CAT = CAT.slice();
+      // Populate type dropdown from API response if course_types available
+      if (d.course_types && d.course_types.length) {
+        populateCourseTypes(d.course_types, d.current_type);
+      }
+      var msg = d.message || '';
+      if (!d.ok) {
+        STAT.textContent = 'Selection: ' + (msg || 'unavailable');
+        RESULTS.innerHTML = '<div class="empty">' + escapeHtml(msg || 'Course selection system not available (period may be closed).') + '</div>';
+        return;
+      }
+      STAT.textContent = 'Selection: ' + d.total + ' course(s) available' + (msg ? ' · ' + msg : '');
+    } else {
+      CAT = d.courses || [];
+      ALL_CAT = CAT.slice();
+      STAT.textContent = 'Catalog: ' + (d.count || CAT.length) + ' course(s)';
+    }
+    if (!CAT.length) {
+      RESULTS.innerHTML = '<div class="empty">No courses found matching the filters.</div>';
+      return;
+    }
+    renderResults(CAT);
+  })['catch'](function(e) {
+    RESULTS.innerHTML = '<div class="flash err">Network error: ' + escapeHtml(e.message) + '</div>';
+    CAT = [];
+  });
+}
+
+function filterResultsClientSide() {
+  var kw = KW.value.trim().toLowerCase();
+  var college = F_COL.value;
+  var taskType = F_TASK.value;
+  var category = F_CAT.value;
+  var campus = F_CAM.value;
+  var language = F_LANG.value;
+  var cult = F_CULT.value;
+  var teacher = F_TEACHER.value.trim().toLowerCase();
+  var onlySched = F_SCH.checked;
+
+  var filtered = ALL_CAT.filter(function(c) {
+    if (college && c.college !== college) return false;
+    if (taskType && c.task_type !== taskType) return false;
+    if (category && c.category !== category) return false;
+    if (campus && c.campus !== campus) return false;
+    if (language && c.language !== language) return false;
+    if (cult && c.cultivation !== cult) return false;
+    if (onlySched && (!c.slots || !c.slots.length)) return false;
+    if (teacher) {
+      var t = (c.teachers || []).join(' ').toLowerCase();
+      if (t.indexOf(teacher) === -1) return false;
+    }
+    if (kw) {
+      var name = (c.name || '').toLowerCase();
+      var code = (c.code || '').toLowerCase();
+      var teachers = (c.teachers || []).join(' ').toLowerCase();
+      if (name.indexOf(kw) === -1 && code.indexOf(kw) === -1 && teachers.indexOf(kw) === -1) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  CAT = filtered;
+  STAT.textContent = 'Catalog: ' + ALL_CAT.length + ' course(s)' + (filtered.length < ALL_CAT.length ? ' (showing ' + filtered.length + ')' : '');
+  if (!CAT.length) {
+    RESULTS.innerHTML = '<div class="empty">No courses match the current filters.</div>';
+    return;
+  }
+  renderResults(CAT);
+}
+
+function renderResults(courses) {
+  RESULTS.innerHTML = '';
+  for (var i = 0; i < courses.length; i++) {
+    RESULTS.appendChild(renderCard(courses[i]));
+  }
+}
+
+function escapeHtml(s) {
+  if (typeof s !== 'string') s = String(s);
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');
+}
+
+function renderCard(c) {
+  var card = document.createElement('div');
+  card.className = 'c-card';
+  card.dataset.rwh = c.rwh;
+  if (c.rwh === ACTIVE_RWH) card.classList.add('active');
+
+  var schedStr = c.schedule || formatSchedule(c.slots);
+  var teachers = c.teachers && c.teachers.length ? c.teachers.join(', ') : '';
+
+  card.innerHTML =
+    '<div class="top">' +
+      '<span class="code">' + escapeHtml(c.code) + '</span>' +
+      (c.class_group ? '<span class="grp">' + escapeHtml(c.class_group) + '</span>' : '') +
+      (PICKED[c.rwh] ? '<span style="color:var(--accent);font-size:.7rem;margin-left:auto">✓ picked</span>' : '') +
+    '</div>' +
+    '<div class="nm">' + escapeHtml(c.name || c.name_en || '') + '</div>' +
+    '<div class="meta">' +
+      (c.credits ? '<span><b>Credits</b> ' + c.credits + '</span>' : '') +
+      (c.capacity ? '<span><b>Capacity</b> ' + c.capacity + '</span>' : '') +
+      (teachers ? '<span><b>Teacher</b> ' + escapeHtml(teachers) + '</span>' : '') +
+      (schedStr ? '<span><b>Schedule</b> ' + escapeHtml(schedStr) + '</span>' : '') +
+    '</div>' +
+    '<div class="actions">' +
+      (PICKED[c.rwh]
+        ? '<button class="ghost pick-btn" data-action="remove" style="color:var(--bad);font-size:.7rem;padding:.1rem .35rem">✕ Remove</button>'
+        : '<button class="ghost pick-btn" data-action="add" style="color:var(--accent);font-size:.7rem;padding:.1rem .35rem">+ Pick</button>') +
+    '</div>';
+
+  card.addEventListener('click', function(e) {
+    if (e.target.closest('.pick-btn')) return;
+    selectCourse(c.rwh);
+  });
+
+  var pickBtn = card.querySelector('.pick-btn');
+  if (pickBtn) {
+    pickBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      if (pickBtn.dataset.action === 'add') {
+        addPicked(c);
+      } else {
+        removePicked(c.rwh);
+      }
+    });
+  }
+
+  return card;
+}
+
+// ── Course selection (for eval) ───────────────────────────────────────────
+
+function selectCourse(rwh) {
+  ACTIVE_RWH = rwh;
+  var cards = RESULTS.querySelectorAll('.c-card');
+  for (var i = 0; i < cards.length; i++) {
+    cards[i].classList.toggle('active', cards[i].dataset.rwh === rwh);
+  }
+  var course = null;
+  for (var j = 0; j < CAT.length; j++) {
+    if (CAT[j].rwh === rwh) { course = CAT[j]; break; }
+  }
+  if (!course) {
+    EVAL_OUT.innerHTML = '<div class="ncn">Course not found in current results.</div>';
+    return;
+  }
+  fetchEval(course.code);
+}
+
+function fetchEval(code) {
+  if (EVAL_CACHE[code]) {
+    renderEval(EVAL_CACHE[code]);
+    return;
+  }
+  EVAL_OUT.innerHTML = '<div class="ncn">Loading NCES evaluation…</div>';
+  getJSON('/api/tis/nces?code=' + encodeURIComponent(code)).then(function(d) {
+    EVAL_CACHE[code] = d;
+    renderEval(d);
+  })['catch'](function(e) {
+    EVAL_OUT.innerHTML = '<div class="flash err">Error: ' + escapeHtml(e.message) + '</div>';
+  });
+}
+
+function renderEval(d) {
+  if (!d.available) {
+    EVAL_OUT.innerHTML = '<div class="ncn">' + escapeHtml(d.reason || 'NCES evaluation not available for this course.') + '</div>';
+    return;
+  }
+  var results = d.results;
+  if (!results || !results.length) {
+    EVAL_OUT.innerHTML = '<div class="ncn">No NCES evaluations found for this course.</div>';
+    return;
+  }
+  var html = '';
+  for (var i = 0; i < results.length; i++) {
+    var r = results[i];
+    html += '<div class="eval-item">' +
+      '<div class="ei-t">' + escapeHtml(r.course || r.name || '') + (r.professor ? ' · ' + escapeHtml(r.professor) : '') + '</div>' +
+      (r.rating ? '<div class="ncn" style="padding:0;border:none">Rating: ' + escapeHtml(String(r.rating)) + '</div>' : '') +
+      (r.summary ? '<div class="ei-m">' + escapeHtml(r.summary) + '</div>' : '') +
+    '</div>';
+  }
+  EVAL_OUT.innerHTML = html;
+}
+
+// ── Picked sections ───────────────────────────────────────────────────────
+
+function addPicked(course) {
+  PICKED[course.rwh] = JSON.parse(JSON.stringify(course));
+  var cards = RESULTS.querySelectorAll('.c-card');
+  for (var i = 0; i < cards.length; i++) {
+    if (cards[i].dataset.rwh === course.rwh) {
+      cards[i].querySelector('.actions').innerHTML =
+        '<button class="ghost pick-btn" data-action="remove" style="color:var(--bad);font-size:.7rem;padding:.1rem .35rem">✕ Remove</button>';
+      var newBtn = cards[i].querySelector('.pick-btn');
+      newBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        removePicked(course.rwh);
+      });
+      var topEl = cards[i].querySelector('.top');
+      if (!topEl.querySelector('.picked-indicator')) {
+        var ind = document.createElement('span');
+        ind.className = 'picked-indicator';
+        ind.style.cssText = 'color:var(--accent);font-size:.7rem;margin-left:auto';
+        ind.textContent = '✓ picked';
+        topEl.appendChild(ind);
+      }
+      break;
+    }
+  }
+  renderPicked();
+  renderGrid();
+}
+
+function removePicked(rwh) {
+  delete PICKED[rwh];
+  var cards = RESULTS.querySelectorAll('.c-card');
+  for (var i = 0; i < cards.length; i++) {
+    if (cards[i].dataset.rwh === rwh) {
+      var actions = cards[i].querySelector('.actions');
+      actions.innerHTML = '<button class="ghost pick-btn" data-action="add" style="color:var(--accent);font-size:.7rem;padding:.1rem .35rem">+ Pick</button>';
+      var newBtn = cards[i].querySelector('.pick-btn');
+      newBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        for (var ci = 0; ci < CAT.length; ci++) {
+          if (CAT[ci].rwh === rwh) { addPicked(CAT[ci]); break; }
+        }
+      });
+      var ind = cards[i].querySelector('.picked-indicator');
+      if (ind) ind.remove();
+      break;
+    }
+  }
+  if (ACTIVE_RWH === rwh) {
+    ACTIVE_RWH = null;
+  }
+  renderPicked();
+  renderGrid();
+}
+
+function renderPicked() {
+  var keys = Object.keys(PICKED);
+  var totalCredits = 0;
+  for (var i = 0; i < keys.length; i++) {
+    totalCredits += parseFloat(PICKED[keys[i]].credits) || 0;
+  }
+  PICK_STAT.textContent = keys.length + ' sections · ' + totalCredits.toFixed(1) + ' Credits';
+
+  if (!keys.length) {
+    PICK_LIST.innerHTML = '<div class="loading">No sections picked.</div>';
+    return;
+  }
+
+  PICK_LIST.innerHTML = '';
+  for (var j = 0; j < keys.length; j++) {
+    PICK_LIST.appendChild(renderPickItem(PICKED[keys[j]]));
+  }
+  updateSolveCodes();
+}
+
+function renderPickItem(c) {
+  var div = document.createElement('div');
+  div.className = 'pick';
+  div.dataset.rwh = c.rwh;
+
+  var enrolled = ENROLLED_RWH.has(c.rwh);
+  var schedStr = c.schedule || formatSchedule(c.slots);
+  var teachers = c.teachers && c.teachers.length ? c.teachers.join(', ') : '';
+
+  div.innerHTML =
+    '<div class="pn">' + escapeHtml(c.name || c.name_en || '') +
+      (enrolled ? '<span class="pick-enrolled">enrolled</span>' : '') +
+    '</div>' +
+    '<div class="pm">' +
+      '<b>' + escapeHtml(c.code) + '</b>' +
+      (c.class_group ? ' · ' + escapeHtml(c.class_group) : '') +
+      (schedStr ? ' · ' + escapeHtml(schedStr) : '') +
+      (teachers ? ' · ' + escapeHtml(teachers) : '') +
+    '</div>' +
+    '<div class="acts">' +
+      '<button class="ghost act-add" title="Dry-run add to enrollment">Add (dry-run)</button>' +
+      '<button class="ghost act-cart" title="Dry-run add to cart">Cart (dry-run)</button>' +
+      '<button class="ghost act-drop" title="Dry-run drop">Drop (dry-run)</button>' +
+      '<button class="ghost act-remove" style="color:var(--bad)" title="Remove from selection">✕ Remove</button>' +
+    '</div>';
+
+  div.querySelector('.act-add').addEventListener('click', function() {
+    dryRunAction('/api/tis/add', c.rwh, div);
+  });
+  div.querySelector('.act-cart').addEventListener('click', function() {
+    dryRunAction('/api/tis/add-to-cart', c.rwh, div);
+  });
+  div.querySelector('.act-drop').addEventListener('click', function() {
+    dryRunAction('/api/tis/drop', c.rwh, div);
+  });
+  div.querySelector('.act-remove').addEventListener('click', function() {
+    removePicked(c.rwh);
+  });
+
+  return div;
+}
+
+function dryRunAction(url, rwh, div) {
+  var existing = div.querySelector('.wire');
+  if (existing) existing.remove();
+  postJSON(url, { rwh: rwh, dry_run: true }).then(function(d) {
+    var pre = document.createElement('pre');
+    pre.className = 'wire';
+    pre.textContent = JSON.stringify(d, null, 2);
+    div.appendChild(pre);
+  })['catch'](function(e) {
+    var pre = document.createElement('pre');
+    pre.className = 'wire';
+    pre.textContent = 'Error: ' + e.message;
+    div.appendChild(pre);
+  });
+}
+
+function updateSolveCodes() {
+  var codes = {};
+  var keys = Object.keys(PICKED);
+  for (var i = 0; i < keys.length; i++) {
+    codes[PICKED[keys[i]].code] = true;
+  }
+  var codeList = Object.keys(codes);
+  SOLVE_CODES.textContent = codeList.length ? codeList.join(', ') : 'none';
+}
+
+// ── Weekly Grid ───────────────────────────────────────────────────────────
+
+function renderGrid() {
+  GRID.innerHTML = '';
+  GRID_LEGEND.innerHTML = '';
+
+  var keys = Object.keys(PICKED);
+  if (!keys.length) {
+    GRID.innerHTML = '<tr><td colspan="8" class="empty" style="padding:2rem 0">No picked sections to display.</td></tr>';
+    return;
+  }
+
+  var allBlocks = [];
+  var pickedArr = [];
+  for (var ki = 0; ki < keys.length; ki++) {
+    pickedArr.push(PICKED[keys[ki]]);
+  }
+
+  for (var pi = 0; pi < pickedArr.length; pi++) {
+    var c = pickedArr[pi];
+    var slots = c.slots || [];
+    var color = colorFor(c.code);
+    for (var si = 0; si < slots.length; si++) {
+      var s = slots[si];
+      var weeks = s.weeks || [];
+      if (typeof weeks === 'string') {
+        weeks = weeks.split(',').map(function(x) { return parseInt(x, 10); });
+      }
+      allBlocks.push({
+        day: s.day,
+        periodStart: s.period_start,
+        periodEnd: s.period_end,
+        weeks: weeks,
+        course: c,
+        rwh: c.rwh,
+        code: c.code,
+        color: color
+      });
+    }
+  }
+
+  if (!allBlocks.length) {
+    GRID.innerHTML = '<tr><td colspan="8" class="empty" style="padding:2rem 0">None of the picked sections have schedule data.</td></tr>';
+    return;
+  }
+
+  for (var bi = 0; bi < allBlocks.length; bi++) {
+    allBlocks[bi].conflict = false;
+    for (var bj = bi + 1; bj < allBlocks.length; bj++) {
+      if (allBlocks[bi].rwh === allBlocks[bj].rwh) continue;
+      if (slotsOverlap(
+        { day: allBlocks[bi].day, period_start: allBlocks[bi].periodStart, period_end: allBlocks[bi].periodEnd, weeks: allBlocks[bi].weeks },
+        { day: allBlocks[bj].day, period_start: allBlocks[bj].periodStart, period_end: allBlocks[bj].periodEnd, weeks: allBlocks[bj].weeks }
+      )) {
+        allBlocks[bi].conflict = true;
+        allBlocks[bj].conflict = true;
+      }
+    }
+  }
+
+  var seenCodes = {};
+  for (var li = 0; li < allBlocks.length; li++) {
+    var code = allBlocks[li].code;
+    if (seenCodes[code]) continue;
+    seenCodes[code] = true;
+    var sw = document.createElement('span');
+    sw.className = 'sw';
+    sw.style.background = allBlocks[li].color;
+    var sl = document.createElement('span');
+    sl.className = 'sl';
+    sl.textContent = code;
+    GRID_LEGEND.appendChild(sw);
+    GRID_LEGEND.appendChild(sl);
+  }
+
+  var cellMap = {};
+  for (var bi2 = 0; bi2 < allBlocks.length; bi2++) {
+    var b = allBlocks[bi2];
+    var key = b.day + ':' + b.periodStart;
+    if (!cellMap[key]) cellMap[key] = [];
+    cellMap[key].push(b);
+  }
+
+  for (var row = 1; row <= PERIODS; row++) {
+    var tr = document.createElement('tr');
+    var th = document.createElement('th');
+    th.textContent = row;
+    tr.appendChild(th);
+
+    for (var day = 1; day <= DAYS; day++) {
+      var td = document.createElement('td');
+      td.className = 'cell';
+      td.dataset.day = day;
+      td.dataset.period = row;
+
+      var blocksHere = cellMap[day + ':' + row];
+      if (blocksHere) {
+        var n = blocksHere.length;
+        for (var bi3 = 0; bi3 < n; bi3++) {
+          var blk = blocksHere[bi3];
+          var span = blk.periodEnd - blk.periodStart + 1;
+          var blkDiv = document.createElement('div');
+          blkDiv.className = 'blk' + (blk.conflict ? ' conf' : '');
+          blkDiv.style.cssText =
+            'background:' + blk.color + ';' +
+            'width:' + (100 / n) + '%;' +
+            'left:' + (bi3 * (100 / n)) + '%;' +
+            'height:' + (span * ROW_HEIGHT) + 'px;' +
+            'top:0';
+          blkDiv.title = blk.code + ' ' + (blk.course.class_group || '') + ' ' + dayName(blk.day) + ' ' + blk.periodStart + '-' + blk.periodEnd + (blk.conflict ? ' ⚠ CONFLICT' : '');
+          blkDiv.innerHTML = '<span class="t">' + escapeHtml(blk.code) + '</span>';
+          blkDiv.addEventListener('click', function(b) {
+            return function() { removePicked(b.rwh); };
+          }(blk));
+          td.appendChild(blkDiv);
+        }
+      }
+
+      tr.appendChild(td);
+    }
+    GRID.appendChild(tr);
+  }
+}
+
+// ── Enrolled ──────────────────────────────────────────────────────────────
+
+function loadEnrolled() {
+  ENROLLED_OUT.innerHTML = '<div class="ncn">Loading…</div>';
+  getJSON('/api/tis/enrolled' + sem()).then(function(d) {
+    ENROLLED_RWH = new Set();
+    if (d.error) {
+      ENROLLED_OUT.innerHTML = '<div class="flash err">' + escapeHtml(d.error) + '</div>';
+      return;
+    }
+    var list = d.enrolled || [];
+    if (!list.length) {
+      ENROLLED_OUT.innerHTML = '<div class="ncn">No enrolled courses found.</div>';
+      return;
+    }
+    var html = '';
+    for (var i = 0; i < list.length; i++) {
+      var item = list[i];
+      var rwh = item.rwh || '';
+      ENROLLED_RWH.add(rwh);
+      var isPicked = !!PICKED[rwh];
+      html += '<div class="ncn' + (isPicked ? ' ok' : '') + '">' +
+        escapeHtml(item.code || item.name || '') +
+        (item.class_group ? ' ' + escapeHtml(item.class_group) : '') +
+        (isPicked ? ' ✓ in picked' : '') +
+      '</div>';
+    }
+    ENROLLED_OUT.innerHTML = html;
+    renderPicked();
+  })['catch'](function(e) {
+    ENROLLED_OUT.innerHTML = '<div class="flash err">' + escapeHtml(e.message) + '</div>';
+  });
+}
+
+// ── Solver ────────────────────────────────────────────────────────────────
+
+function solve() {
+  var codes = {};
+  var keys = Object.keys(PICKED);
+  for (var i = 0; i < keys.length; i++) {
+    codes[PICKED[keys[i]].code] = true;
+  }
+  var codeList = Object.keys(codes);
+  if (!codeList.length) {
+    SOLVE_OUT.innerHTML = '<div class="flash err">No courses picked to solve for.</div>';
+    return;
+  }
+
+  var blockedInput = document.getElementById('blocked-input').value;
+  var blocked = parseBlockedInput(blockedInput);
+
+  SOLVE_OUT.innerHTML = '<div class="ncn">Solving…</div>';
+
+  postJSON('/api/tis/solve' + sem(), {
+    codes: codeList,
+    blocked: blocked,
+    max: 30
+  }).then(function(d) {
+    var solutions = d.solutions || [];
+    var count = d.count || 0;
+    if (!solutions.length) {
+      SOLVE_OUT.innerHTML = '<div class="ncn">No valid non-conflicting combinations found. Try removing some courses or adjusting blocked slots.</div>';
+      return;
+    }
+    var html = '<div style="color:var(--mut);font-size:.78rem;margin-bottom:.4rem">Found ' + count + ' solution(s).</div>';
+    for (var si = 0; si < solutions.length; si++) {
+      var sol = solutions[si];
+      html += '<div class="solve-card">' +
+        '<div class="sc-title">Solution ' + (si + 1) + ' (' + sol.length + ' sections)</div>';
+      for (var sci = 0; sci < sol.length; sci++) {
+        var sec = sol[sci];
+        var schedStr = sec.schedule || formatSchedule(sec.slots);
+        html += '<div class="sc-sec">' +
+          '<span class="code">' + escapeHtml(sec.code) + '</span>' +
+          (sec.class_group ? ' ' + escapeHtml(sec.class_group) : '') +
+          ' · ' + escapeHtml(sec.name || '') +
+          (schedStr ? ' · ' + escapeHtml(schedStr) : '') +
+        '</div>';
+      }
+      html += '<div class="sc-apply"><button class="ghost primary" data-sol="' + si + '" style="font-size:.72rem">Apply</button></div>' +
+      '</div>';
+    }
+    SOLVE_OUT.innerHTML = html;
+    var applyBtns = SOLVE_OUT.querySelectorAll('[data-sol]');
+    for (var ai = 0; ai < applyBtns.length; ai++) {
+      (function(idx) {
+        applyBtns[ai].addEventListener('click', function() {
+          applySolution(solutions[idx]);
+        });
+      })(parseInt(applyBtns[ai].dataset.sol, 10));
+    }
+  })['catch'](function(e) {
+    SOLVE_OUT.innerHTML = '<div class="flash err">Error: ' + escapeHtml(e.message) + '</div>';
+  });
+}
+
+function applySolution(solution) {
+  PICKED = {};
+  for (var i = 0; i < solution.length; i++) {
+    var sec = solution[i];
+    PICKED[sec.rwh] = JSON.parse(JSON.stringify(sec));
+  }
+  renderPicked();
+  renderGrid();
+  var cards = RESULTS.querySelectorAll('.c-card');
+  for (var ci = 0; ci < cards.length; ci++) {
+    var rwh = cards[ci].dataset.rwh;
+    var actions = cards[ci].querySelector('.actions');
+    var top = cards[ci].querySelector('.top');
+    var ind = top.querySelector('.picked-indicator');
+    if (PICKED[rwh]) {
+      if (!ind) {
+        var newInd = document.createElement('span');
+        newInd.className = 'picked-indicator';
+        newInd.style.cssText = 'color:var(--accent);font-size:.7rem;margin-left:auto';
+        newInd.textContent = '✓ picked';
+        top.appendChild(newInd);
+      }
+      actions.innerHTML =
+        '<button class="ghost pick-btn" data-action="remove" style="color:var(--bad);font-size:.7rem;padding:.1rem .35rem">✕ Remove</button>';
+    } else {
+      if (ind) ind.remove();
+      actions.innerHTML =
+        '<button class="ghost pick-btn" data-action="add" style="color:var(--accent);font-size:.7rem;padding:.1rem .35rem">+ Pick</button>';
+    }
+    var newBtn = cards[ci].querySelector('.pick-btn');
+    if (newBtn) {
+      newBtn.addEventListener('click', function(rwh) {
+        return function(e) {
+          e.stopPropagation();
+          if (PICKED[rwh]) { removePicked(rwh); }
+          else { for (var cj = 0; cj < CAT.length; cj++) { if (CAT[cj].rwh === rwh) { addPicked(CAT[cj]); break; } } }
+        };
+      }(rwh));
+    }
+  }
+  SOLVE_OUT.innerHTML = '<div class="flash ok">Solution applied: ' + Object.keys(PICKED).length + ' sections.</div>';
+  switchTab('grid');
+}
+
+// ── Tab switching ─────────────────────────────────────────────────────────
+
+function switchTab(name) {
+  var tabs = document.querySelectorAll('.tabs button');
+  for (var i = 0; i < tabs.length; i++) {
+    tabs[i].classList.toggle('active', tabs[i].dataset.tab === name);
+  }
+  document.getElementById('tab-grid').style.display = name === 'grid' ? '' : 'none';
+  document.getElementById('tab-solve').style.display = name === 'solve' ? '' : 'none';
+  document.getElementById('tab-eval').style.display = name === 'eval' ? '' : 'none';
+}
+
+// ── Event binding ─────────────────────────────────────────────────────────
+
+document.addEventListener('DOMContentLoaded', function() {
+
+  // Tab buttons
+  var tabBtns = document.querySelectorAll('.tabs button');
+  for (var i = 0; i < tabBtns.length; i++) {
+    tabBtns[i].addEventListener('click', function() {
+      switchTab(this.dataset.tab);
+    });
+  }
+
+  // Load info (this also triggers auto-load of all courses)
+  document.getElementById('btn-info').addEventListener('click', loadInfo);
+
+  // Semester change — reload everything
+  SEM_SEL.addEventListener('change', function() {
+    ALL_CAT = [];
+    CAT = [];
+    loadInfo();
+  });
+
+  // Search button: trigger client-side filtering if we have full data, else server fetch
+  document.getElementById('btn-search').addEventListener('click', function() {
+    if (ALL_CAT.length) {
+      filterResultsClientSide();
+    } else {
+      loadCourses();
+    }
+  });
+
+  // Mode switch
+  document.querySelectorAll('.mode-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var newMode = btn.dataset.mode;
+      if (newMode === MODE) return;
+      MODE = newMode;
+      document.querySelectorAll('.mode-btn').forEach(function(b) {
+        b.classList.toggle('active', b.dataset.mode === MODE);
+        if (b.dataset.mode === MODE) {
+          b.style.border = '1px solid var(--accent)';
+          b.style.background = 'rgba(91,157,255,.1)';
+        } else {
+          b.style.border = 'none';
+          b.style.background = 'transparent';
+        }
+      });
+      // Show/hide personal-only filters
+      document.querySelectorAll('.personal-only').forEach(function(el) {
+        el.style.display = MODE === 'personal' ? 'block' : 'none';
+      });
+      // Show/hide task_type and scheduled (campus-only)
+      var taskRow = document.getElementById('f-tasktype').closest('.row');
+      var schedRow = document.getElementById('f-sched').closest('.row');
+      if (taskRow) taskRow.style.display = MODE === 'campus' ? 'flex' : 'none';
+      if (schedRow) schedRow.style.display = MODE === 'campus' ? 'flex' : 'none';
+      // Reload
+      ALL_CAT = []; CAT = [];
+      if (MODE === 'personal') {
+        var self = this;
+        getJSON('/api/tis/course-types' + sem()).then(function(d) {
+          if (d.course_types && d.course_types.length) populateCourseTypes(d.course_types);
+          loadInfo();
+        })['catch'](function() { loadInfo(); });
+      } else {
+        loadInfo();
+        loadCourses();   // re-populate ALL_CAT so client-side filter works
+      }
+    });
+  });
+
+  // Client-side filter when any filter changes (if full data loaded)
+  var filterEls = [KW, F_COL, F_TASK, F_CAT, F_CAM, F_LANG, F_CULT, F_TEACHER, F_SCH];
+  for (var fi = 0; fi < filterEls.length; fi++) {
+    filterEls[fi].addEventListener('change', function() {
+      if (ALL_CAT.length) filterResultsClientSide();
+    });
+    filterEls[fi].addEventListener('input', function() {
+      if (ALL_CAT.length) filterResultsClientSide();
+    });
+  }
+
+  // Refresh catalog
+  document.getElementById('btn-refresh').addEventListener('click', function() {
+    postJSON('/api/tis/refresh' + sem(), {}).then(function(d) {
+      if (d.ok) {
+        STAT.textContent = 'Refreshed: ' + d.count + ' courses.';
+        loadInfo();
+      } else {
+        STAT.textContent = 'Refresh failed: ' + (d.error || 'unknown');
+      }
+    })['catch'](function(e) {
+      STAT.textContent = 'Refresh error: ' + e.message;
+    });
+  });
+
+  // Enter key on search input
+  KW.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      if (ALL_CAT.length) {
+        filterResultsClientSide();
+      } else {
+        loadCourses();
+      }
+    }
+  });
+
+  // Enrolled
+  document.getElementById('btn-enrolled').addEventListener('click', loadEnrolled);
+
+  // Solve
+  document.getElementById('btn-solve').addEventListener('click', solve);
+
+  // Auto-load: load info + courses on page load
+  loadInfo();
+
+});
+})();
+</script>
+</body>
+</html>

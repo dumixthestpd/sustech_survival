@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -46,6 +47,7 @@ TIS_BASE = "https://tis.sustech.edu.cn"
 TIS_CAMPUS_SCHEDULE_URL = f"{TIS_BASE}/Xsxktz/queryRwxxcxList"
 TIS_PERSONAL_SCHEDULE_URL = f"{TIS_BASE}/xszykb/queryxszykbzong"
 TIS_PERSONAL_WEEK_URL = f"{TIS_BASE}/xszykb/queryxszykbzhou"
+TIS_QUERY_KXRW_URL = f"{TIS_BASE}/Xsxk/queryKxrw"  # 选课 search (personal selection)
 TIS_ADD_XUANKE_URL = f"{TIS_BASE}/Xsxk/addXuanke"
 TIS_TUIKE_URL = f"{TIS_BASE}/Xsxk/tuike"
 TIS_ADD_GOUWUCHE_URL = f"{TIS_BASE}/Xsxk/addGouwuche"
@@ -66,34 +68,6 @@ class EnrollmentError(RuntimeError):
         self.rwh = rwh
         super().__init__(f"[{endpoint}] rwh={rwh} jg={jg}: {message}")
 
-
-def _tis_login(username: str, password: str) -> requests.Session:
-    """Manual TIS CAS login (avoids the LegacyAdapter urllib3 bug)."""
-    sess = requests.Session()
-    sess.headers["User-Agent"] = (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    )
-    SERVICE = f"{TIS_BASE}/cas"
-    r = sess.get("https://cas.sustech.edu.cn/cas/login",
-                 params={"service": SERVICE}, timeout=10)
-    m = re.search(r'name="execution" value="([^"]+)"', r.text)
-    if not m:
-        raise RuntimeError("No execution token at CAS login page.")
-    exec_token = m.group(1)
-    r = sess.post("https://cas.sustech.edu.cn/cas/login",
-                  params={"service": SERVICE},
-                  data={"username": username, "password": password,
-                        "execution": exec_token, "_eventId": "submit",
-                        "submit": ""},
-                  allow_redirects=False, timeout=10)
-    if r.status_code not in (301, 302):
-        raise RuntimeError(f"CAS POST failed: HTTP {r.status_code}")
-    ticket_url = r.headers.get("Location", "")
-    if "ticket=" not in ticket_url:
-        raise RuntimeError("CAS did not return a ticket.")
-    sess.get(ticket_url, allow_redirects=True, timeout=10)
-    return sess
 
 
 class SelectCourseClient:
@@ -125,6 +99,10 @@ class SelectCourseClient:
         self.cache_dir = self.skill_root / "selectcourse" / "cache"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._courses: Optional[List[Course]] = None
+        # TISAuth — Authorizer subclass that hides all HTTP.
+        # Use self._auth.post(path, ...) — never access .session directly.
+        from sustech_survival.sso import TISAuth
+        self._auth = TISAuth()
 
     # ── Cache management ─────────────────────────────────────────────────────
 
@@ -184,11 +162,7 @@ class SelectCourseClient:
 
     def _fetch_catalog(self) -> List[Course]:
         """Pull the full campus schedule for this xn/xq and parse as Courses."""
-        from sustech_survival.sso import Authorizer
-        creds = Authorizer(skill_dir=str(self.skill_root))
-        uname, pw = creds.read_creds()
-        sess = _tis_login(uname, pw)
-        sess.headers["X-Requested-With"] = "XMLHttpRequest"
+        self._auth.ensure()
 
         all_items: List[dict] = []
         page_size = 500
@@ -199,7 +173,8 @@ class SelectCourseClient:
                 "p_kcxz": "", "p_chaxunpylx": "3",
                 "pageNum": str(pg), "pageSize": str(page_size),
             }
-            r = sess.post(TIS_CAMPUS_SCHEDULE_URL, data=params, timeout=30)
+            r = self._auth.post("/Xsxktz/queryRwxxcxList", data=params,
+                          timeout=30, headers={"X-Requested-With": "XMLHttpRequest"})
             r.raise_for_status()
             d = r.json()
             items = d.get("rwList", {}).get("list") or []
@@ -261,6 +236,204 @@ class SelectCourseClient:
             out.append(c)
         return out
 
+
+    def search_campus(self, *,
+                      keyword: str = "",
+                      cultivation: Optional[str] = None,
+                      college: Optional[str] = None,
+                      college_code: Optional[str] = None,
+                      campus: Optional[str] = None,
+                      category: Optional[str] = None,
+                      task_type: Optional[str] = None,
+                      language: Optional[str] = None,
+                      teacher: Optional[str] = None,
+                      scheduled_only: bool = False,
+                      ) -> List[Course]:
+        """Search the campus-wide course catalog (全校课表).
+
+        All filters are case-insensitive substring matches on the cached
+        catalog data.
+        """
+        courses = self._ensure_loaded()
+        out: List[Course] = []
+        kw = keyword.lower().strip() if keyword else ""
+        tc = teacher.lower().strip() if teacher else ""
+        for c in courses:
+            if kw:
+                hay = " ".join([c.code, c.name, c.name_en, c.rwh,
+                                c.college, c.category, c.task_type]).lower()
+                if kw not in hay:
+                    continue
+            if tc:
+                tc_hay = " ".join(c.teachers).lower()
+                if tc not in tc_hay:
+                    continue
+            if cultivation and cultivation not in c.cultivation:
+                continue
+            if college and college.lower() not in c.college.lower():
+                continue
+            if college_code and college_code != c.college_code:
+                continue
+            if campus and campus not in c.campus:
+                continue
+            if category and category not in c.category:
+                continue
+            if task_type and task_type not in c.task_type:
+                continue
+            if language and language not in c.language:
+                continue
+            if scheduled_only and not c.has_schedule:
+                continue
+            out.append(c)
+        return out
+
+    def search_courses(self, **kw) -> List[Course]:
+        """Deprecated — use search_campus() instead."""
+        return self.search_campus(**kw)
+
+    def search_personal(self, *,
+                        keyword: str = "",
+                        teacher: str = "",
+                        college: Optional[str] = None,
+                        campus: Optional[str] = None,
+                        category: Optional[str] = None,
+                        language: Optional[str] = None,
+                        cultivation: Optional[str] = None,
+                        ignore_conflicts: bool = False,
+                        ignore_zero_capacity: bool = False,
+                        weekday: Optional[int] = None,
+                        period_start: Optional[int] = None,
+                        period_end: Optional[int] = None,
+                        xkfsdm: Optional[str] = None,     # course type code (xkfsdm)
+                        page: int = 1,
+                        page_size: int = 50,
+                        ) -> dict:
+        """Search courses available for YOUR registration (选课 via Xsxk/queryKxrw).
+
+        Returns dict with: ok, courses, total, enrolled, cart, message,
+        course_types, current_type.
+        """
+        queryform = {
+            "p_xn": self._sem.xn,
+            "p_xq": self._sem.xq,
+            "p_xnxq": "",
+            "p_gjz": keyword or "",
+            "p_kc_gjz": "",
+            "p_kcdm_js": "",
+            "p_kclb": category or "",
+            "p_kkxnxq": "",
+            "p_kkyx": college or "",
+            "p_ksjc": str(period_start) if period_start else "",
+            "p_jsjc": str(period_end) if period_end else "",
+            "p_kxsj_ksjc": "",
+            "p_kxsj_jsjc": "",
+            "p_kxsj_xqj": str(weekday) if weekday else "",
+            "p_pylx": {"本科": "1", "研究生": "2", "": ""}.get(cultivation or "", cultivation or ""),
+            "p_sfgldjr": "",
+            "p_sfhlctkc": "1" if ignore_conflicts else "",
+            "p_sfhllrlkc": "1" if ignore_zero_capacity else "",
+            "p_sfmxzj": "",
+            "p_sfredis": "",
+            "p_sfsyxkgwc": "",
+            "p_sfxsgwckb": "",
+            "p_skjs": teacher or "",
+            "p_skyy": language or "",
+            "p_xiaoqu": campus or "",
+            "p_xkfsdm": xkfsdm or "",
+            "p_chaxunxkfsdm": xkfsdm or "",
+            "p_xqj": "",
+            "p_xzcxtjz_bj": "",
+            "p_xzcxtjz_nj": "",
+            "p_xzcxtjz_yx": "",
+            "p_xzcxtjz_zy": "",
+            "p_xzcxtjz_zyfx": "",
+            "pageNum": str(page),
+            "pageSize": str(page_size),
+        }
+        self._auth.ensure()
+        r = self._auth.post("/Xsxk/queryKxrw", data=queryform,
+                            timeout=30, headers={"X-Requested-With": "XMLHttpRequest"})
+        r.raise_for_status()
+        d = r.json()
+        jg = d.get("jg", "-1")
+        if jg != "1":
+            return {
+                "ok": False,
+                "courses": [],
+                "total": 0,
+                "enrolled": [],
+                "cart": [],
+                "message": d.get("message", "Course selection unavailable (jg={})".format(jg)),
+                "course_types": d.get("xkgzszList") or d.get("xsxkPage", {}).get("xkgzszList") or [],
+                "current_type": d.get("xkgzszOne") or d.get("xsxkPage", {}).get("xkgzszOne") or {},
+            }
+        kxrw = d.get("kxrwList") or {}
+        raw_list = kxrw.get("list") or []
+        courses = [Course.from_api(item) for item in raw_list]
+        return {
+            "ok": True,
+            "courses": courses,
+            "total": kxrw.get("total", len(courses)),
+            "enrolled": d.get("yxkcList") or [],
+            "cart": d.get("xkgwcList") or [],
+            "message": d.get("message", ""),
+            "course_types": d.get("xkgzszList") or d.get("xsxkPage", {}).get("xkgzszList") or [],
+            "current_type": d.get("xkgzszOne") or d.get("xsxkPage", {}).get("xkgzszOne") or {},
+        }
+
+    def course_types(self) -> list:
+        """Get available selection course types (xkfsdm codes/names) from TIS.
+
+        Uses queryYxkc which always returns the type config regardless of
+        whether the user has enrolled courses or selection is active.
+        Cached per (xn, xq) to avoid hitting TIS on every request.
+        """
+        cache_key = f"{self._sem.xn}_{self._sem.xq}"
+        if not hasattr(self, '_course_types_cache'):
+            self._course_types_cache = {}
+        if cache_key in self._course_types_cache:
+            return self._course_types_cache[cache_key]
+        self._auth.ensure()
+        r = self._auth.post("/Xsxk/queryYxkc",
+                            data={"p_xn": self._sem.xn, "p_xq": self._sem.xq},
+                            timeout=30, headers={"X-Requested-With": "XMLHttpRequest"})
+        r.raise_for_status()
+        d = r.json()
+        types = d.get("xkgzszList") or []
+        self._course_types_cache[cache_key] = types
+        return types
+
+    def filter_options(self) -> dict:
+        """Distinct filter option values from the cached catalog."""
+        courses = self._ensure_loaded()
+        colleges: dict = {}
+        cats: set = set()
+        tasks: set = set()
+        langs: set = set()
+        camps: set = set()
+        cults: dict = {}
+        for c in courses:
+            if c.college and c.college_code:
+                colleges[c.college_code] = c.college
+            if c.category:
+                cats.add(c.category)
+            if c.task_type:
+                tasks.add(c.task_type)
+            if c.language:
+                langs.add(c.language)
+            if c.campus:
+                camps.add(c.campus)
+            if c.cultivation:
+                cults[c.cultivation] = True
+        return {
+            "colleges": sorted((code, name) for code, name in colleges.items()),
+            "categories": sorted(cats),
+            "task_types": sorted(tasks),
+            "languages": sorted(langs),
+            "campuses": sorted(camps),
+            "cultivation_levels": sorted(cults),
+        }
+
     def by_code(self, code: str, class_group: str = "") -> Optional[Course]:
         """Find a course by code (and optionally class_group)."""
         code_l = code.strip().lower()
@@ -292,14 +465,10 @@ class SelectCourseClient:
         else:
             xn, xq = self._sem.xn, self._sem.xq
 
-        from sustech_survival.sso import Authorizer
-        creds = Authorizer(skill_dir=str(self.skill_root))
-        uname, pw = creds.read_creds()
-        sess = _tis_login(uname, pw)
-        sess.headers["X-Requested-With"] = "XMLHttpRequest"
-
-        r = sess.post(TIS_PERSONAL_SCHEDULE_URL,
-                      data={"xn": xn, "xq": xq}, timeout=15)
+        self._auth.ensure()
+        r = self._auth.post("/xszykb/queryxszykbzong",
+                            data={"xn": xn, "xq": xq}, timeout=15,
+                            headers={"X-Requested-With": "XMLHttpRequest"})
         r.raise_for_status()
         data = r.json()
         return data if isinstance(data, list) else []
@@ -404,9 +573,9 @@ class SelectCourseClient:
                 "jg": None, "message": "(dry_run: no request sent)",
             }
 
-        sess = self._login_for_write()
-        sess.headers["X-Requested-With"] = "XMLHttpRequest"
-        r = sess.post(endpoint, data=payload, timeout=30)
+        self._auth.ensure()
+        r = self._auth.post(endpoint, data=payload, timeout=30,
+                            headers={"X-Requested-With": "XMLHttpRequest"})
         r.raise_for_status()
         res = r.json() if r.content else {}
         jg = str(res.get("jg", ""))
@@ -414,13 +583,6 @@ class SelectCourseClient:
             raise EnrollmentError(jg, res.get("message", "(no message)"),
                                   endpoint=endpoint, rwh=rwh)
         return res
-
-    def _login_for_write(self) -> requests.Session:
-        """Fresh TIS login for a write-side call."""
-        from sustech_survival.sso import Authorizer
-        creds = Authorizer(skill_dir=str(self.skill_root))
-        uname, pw = creds.read_creds()
-        return _tis_login(uname, pw)
 
     def add_course(self, rwh: str, *,
                    dry_run: bool = True,

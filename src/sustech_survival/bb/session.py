@@ -14,7 +14,10 @@ BB_DIR = _Path(__file__).resolve().parent
 BB_BASE = "https://bb.sustech.edu.cn"
 SKILL_ROOT = BB_DIR.parent.parent.parent
 
-SESSION_FILE = BB_DIR / "session.json"
+# Legacy file paths — auth no longer reads/writes these (BBAuth uses
+# in-memory TTL via the Authorizer base class, iron law #12). Kept for
+# backward compat with code that may reference them.
+SESSION_FILE = BB_DIR / "session.json"  # legacy — not used for auth
 COURSES_FILE = BB_DIR / "courses.json"
 STRUCTURE_FILE = BB_DIR / "structure.json"
 

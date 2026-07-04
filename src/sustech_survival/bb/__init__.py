@@ -24,7 +24,16 @@ __all__ = ["ddl", "query", "download", "submit_file", "submit_assignment", "chec
 
 from sustech_survival.bb import query, download
 from sustech_survival.bb.ddl import run as _ddl_run
-from sustech_survival.bb.submit import submit_file, submit_assignment, check_attempts, find_assignment, list_upcoming
+
+# submit requires playwright (optional dependency). Lazy-import so the
+# package loads without playwright installed — submit funcs raise on call
+# if playwright is truly needed.
+def __getattr__(name):
+    if name in ("submit_file", "submit_assignment", "check_attempts",
+                "find_assignment", "list_upcoming"):
+        from sustech_survival.bb import submit as _submit
+        return getattr(_submit, name)
+    raise AttributeError(name)
 
 # Note (2026-06-08): we used to do `from .submit import submit, ...` here,
 # but that bound the `submit` function to the `bb` package namespace and

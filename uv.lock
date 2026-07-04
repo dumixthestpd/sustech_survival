@@ -708,22 +708,26 @@ flask = [
 playwright = [
     { name = "playwright" },
 ]
+webui = [
+    { name = "flask" },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "beautifulsoup4", specifier = ">=4.12" },
     { name = "click", marker = "extra == 'cli'", specifier = ">=8.1" },
     { name = "flask", marker = "extra == 'flask'", specifier = ">=2.3" },
+    { name = "flask", marker = "extra == 'webui'", specifier = ">=2.3" },
     { name = "lxml", specifier = ">=4.9" },
     { name = "playwright", marker = "extra == 'playwright'", specifier = ">=1.40" },
     { name = "python-dateutil", specifier = ">=2.8" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "requests", specifier = ">=2.28" },
     { name = "rich", marker = "extra == 'cli'", specifier = ">=13.0" },
-    { name = "sustech-survival", extras = ["cli", "playwright", "flask"], marker = "extra == 'all'" },
+    { name = "sustech-survival", extras = ["cli", "playwright", "flask", "webui"], marker = "extra == 'all'" },
     { name = "urllib3", specifier = ">=2.0" },
 ]
-provides-extras = ["cli", "playwright", "flask", "all"]
+provides-extras = ["cli", "playwright", "flask", "webui", "all"]
 
 [[package]]
 name = "typing-extensions"

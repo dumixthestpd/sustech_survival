@@ -6,11 +6,36 @@ import json, sys, os
 from pathlib import Path
 
 def load_rsc_session(cookie_path: str = None) -> list:
-    """Load RSC session cookies from JSON file. Returns list of cookie dicts."""
+    """Load RSC session cookies.
+
+    Prefers the RSCAuth authorizer's in-memory session (iron law #12).
+    Falls back to a JSON file if the authorizer has no cached session.
+    Returns list of cookie dicts suitable for Playwright context injection.
+    """
+    # Try the canonical path first: RSCAuth in-memory session
+    try:
+        from sustech_survival.sso.authlib.rsc import RSCAuth
+        auth = RSCAuth()
+        ok, reason = auth.ensure()
+        if ok and auth._session_cache:
+            cookies = []
+            for name, val in auth._session_cache.items():
+                if isinstance(val, dict):
+                    cookies.append({"name": name, **val})
+                else:
+                    cookies.append({"name": name, "value": val})
+            return cookies
+    except Exception:
+        pass  # RSCAuth not available or no session — fall through to file
+
+    # Legacy fallback: read from session.json (disk-persisted cookies)
     if cookie_path is None:
         cookie_path = Path(__file__).parent.parent.parent / "rsc" / "session.json"
-    with open(cookie_path) as f:
-        data = json.load(f)
+    try:
+        with open(cookie_path) as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []  # no file → no cookies (graceful degrade)
     # Handle both {"name": "val"} and {"name": {"value": "val", ...}} formats
     cookies = []
     for name, val in data.items():

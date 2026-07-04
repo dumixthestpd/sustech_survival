@@ -59,11 +59,15 @@ playwright = [
     "playwright>=1.40",
 ]
 flask = [
-    # Required for tis.grid_server (the course-grid SPA backend).
+    # Required for the unified web UI (sustech_survival.webui).
+    "flask>=2.3",
+]
+webui = [
+    # Required for the unified web UI (sustech_survival.webui).
     "flask>=2.3",
 ]
 all = [
-    "sustech-survival[cli,playwright,flask]",
+    "sustech-survival[cli,playwright,flask,webui]",
 ]
 
 [project.urls]
@@ -89,6 +93,9 @@ include = [
     "src/sustech_survival/resources/**/*",
     "src/sustech_survival/references/**/*.md",
     "src/sustech_survival/docs/**/*.md",
+    # Web UI assets (templates + transit frontend).
+    "src/sustech_survival/webui/templates/**/*.html",
+    "src/sustech_survival/transit/web/**/*",
 ]
 exclude = [
     "src/sustech_survival/**/__pycache__",

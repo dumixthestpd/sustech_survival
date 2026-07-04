@@ -257,8 +257,18 @@ def cmd_export(args) -> int:
 
 
 def cmd_serve(args) -> int:
-    """Start the web UI server."""
-    import threading
+    """Start the web UI server.
+
+    DEPRECATED: the standalone transit web UI on its own port is now part
+    of the unified ``sustech_survival.webui`` app (single port 61019). This
+    command delegates to it, passing along --port and the exported data dir
+    so the existing campus-map frontend keeps working at /transit.
+    """
+    import sys
+    print("⚠ `transit serve` is deprecated → launching unified web UI",
+          file=sys.stderr)
+    from sustech_survival.webui.app import run as _run
+    return _run(port=args.port, transit_data_dir=args.data_dir, debug=False)
     out_dir = Path(args.data_dir)
     if not out_dir.exists():
         print(f"❌ data dir not found: {out_dir}", file=sys.stderr)

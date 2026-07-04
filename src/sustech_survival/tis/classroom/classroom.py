@@ -90,39 +90,36 @@ DEFAULT_TTL = 3600  # 1 hour
 
 
 def _tis_login(username: str, password: str) -> Tuple[requests.Session, dict]:
-    """Perform a fresh CAS login for TIS and return (session, cookies)."""
-    sess = requests.Session()
-    sess.headers["User-Agent"] = (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    )
+    """Deprecated thin wrapper around TISAuth.
 
-    SERVICE = f"{TIS_BASE}/cas"
-    r = sess.get("https://cas.sustech.edu.cn/cas/login",
-                 params={"service": SERVICE}, timeout=10)
-    m = re.search(r'name="execution" value="([^"]+)"', r.text)
-    if not m:
-        raise RuntimeError("No execution token at CAS login page.")
-    exec_token = m.group(1)
-
-    r = sess.post("https://cas.sustech.edu.cn/cas/login",
-                  params={"service": SERVICE},
-                  data={"username": username, "password": password,
-                        "execution": exec_token, "_eventId": "submit",
-                        "submit": ""},
-                  allow_redirects=False, timeout=10)
-    if r.status_code not in (301, 302):
-        raise RuntimeError(f"CAS POST failed: HTTP {r.status_code}")
-    ticket_url = r.headers.get("Location", "")
-    if "ticket=" not in ticket_url:
-        raise RuntimeError("CAS did not return a ticket.")
-    sess.get(ticket_url, allow_redirects=True, timeout=10)
-
+    Kept for backward compat. New code should call ``TISAuth().ensure()``
+    + ``auth.session`` directly.
+    """
+    from sustech_survival.sso import TISAuth
+    auth = TISAuth()
+    ok, msg = auth.ensure()
+    if not ok:
+        raise RuntimeError(f"TISAuth.ensure() failed: {msg or 'unknown'}")
+    sess = auth.session
     cookies = {c.name: c.value for c in sess.cookies}
     return sess, cookies
 
 
 # ── Client ───────────────────────────────────────────────────────────────────
+
+
+def _tis_session() -> "requests.Session":
+    """Get a logged-in TIS Session via the canonical SSO path (TISAuth).
+
+    Replaces the old ``Authorizer(...).read_creds()`` → ``_tis_login()``
+    sequence. No ``Path.home()`` hardcoding, no hand-rolled CAS POST.
+    """
+    from sustech_survival.sso import TISAuth
+    auth = TISAuth()
+    ok, msg = auth.ensure()
+    if not ok:
+        raise RuntimeError(f"TISAuth.ensure() failed: {msg or 'unknown'}")
+    return auth.session
 
 
 class ClassroomOccupancy:
@@ -139,9 +136,9 @@ class ClassroomOccupancy:
         else:
             self._sem = Semester(xn, xq)
         self.max_age = max_age
-        self.skill_root = skill_root or (
-            Path.home() / ".openclaw" / "workspace" / "skills" / "sustech_survival"
-        )
+        # skill_root is used only for the local cache dir, not auth.
+        # Auth goes through TISAuth which resolves skill_dir itself.
+        self.skill_root = skill_root or Path(__file__).resolve().parent.parent.parent.parent
         self.cache_dir = self.skill_root / "classroom" / "cache"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._slots: Optional[List[ScheduleSlot]] = None
@@ -200,10 +197,7 @@ class ClassroomOccupancy:
 
         Uses raw TIS CAS login (bypassing the LegacyAdapter in CASAuthorizer).
         """
-        from sustech_survival.sso import Authorizer
-        creds = Authorizer(skill_dir=str(self.skill_root))
-        uname, pw = creds.read_creds()
-        sess, _ = _tis_login(uname, pw)
+        sess = _tis_session()
         sess.headers["X-Requested-With"] = "XMLHttpRequest"
 
         # Paginate the full campus list (p_chaxunpylx='3' for ~1499 courses).
