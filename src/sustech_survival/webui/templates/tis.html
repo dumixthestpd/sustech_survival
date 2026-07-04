@@ -154,8 +154,18 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
     <div id="tab-grid" class="tabpane">
       <div class="grid-wrap">
         <div class="palette" id="grid-legend"></div>
-        <table class="grid"><thead><tr><th>Period</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th></tr></thead>
-          <tbody id="grid-body"></tbody></table>
+        <div style="display:flex;gap:12px">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:.78rem;color:var(--accent);font-weight:500;margin-bottom:4px">Odd Weeks</div>
+            <table class="grid"><thead><tr><th>Pd</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th></tr></thead>
+              <tbody id="grid-body-odd"></tbody></table>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:.78rem;color:var(--accent);font-weight:500;margin-bottom:4px">Even Weeks</div>
+            <table class="grid"><thead><tr><th>Pd</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th></tr></thead>
+              <tbody id="grid-body-even"></tbody></table>
+          </div>
+        </div>
       </div>
     </div>
     <div id="tab-solve" class="tabpane" style="display:none">
@@ -208,7 +218,8 @@ var F_SCH = document.getElementById('f-sched');
 var F_TEACHER = document.getElementById('f-teacher');
 var STAT = document.getElementById('stat');
 var RESULTS = document.getElementById('results');
-var GRID = document.getElementById('grid-body');
+var GRID_ODD = document.getElementById('grid-body-odd');
+var GRID_EVEN = document.getElementById('grid-body-even');
 var PICK_STAT = document.getElementById('pick-stat');
 var PICK_LIST = document.getElementById('pick-list');
 var ENROLLED_OUT = document.getElementById('enrolled-out');
@@ -731,50 +742,16 @@ function renderEval(d) {
 
 function addPicked(course) {
   PICKED[course.rwh] = JSON.parse(JSON.stringify(course));
-  var cards = RESULTS.querySelectorAll('.c-card');
-  for (var i = 0; i < cards.length; i++) {
-    if (cards[i].dataset.rwh === course.rwh) {
-      cards[i].querySelector('.actions').innerHTML =
-        '<button class="ghost pick-btn" data-action="remove" style="color:var(--bad);font-size:.7rem;padding:.1rem .35rem">✕ Remove</button>';
-      var newBtn = cards[i].querySelector('.pick-btn');
-      newBtn.addEventListener('click', function(e) {
-        e.stopPropagation();
-        removePicked(course.rwh);
-      });
-      var topEl = cards[i].querySelector('.top');
-      if (!topEl.querySelector('.picked-indicator')) {
-        var ind = document.createElement('span');
-        ind.className = 'picked-indicator';
-        ind.style.cssText = 'color:var(--accent);font-size:.7rem;margin-left:auto';
-        ind.textContent = '✓ picked';
-        topEl.appendChild(ind);
-      }
-      break;
-    }
-  }
+  // Re-render search results so cards reflect the new pick state
+  renderResults(CAT);
   renderPicked();
   renderGrid();
 }
 
 function removePicked(rwh) {
   delete PICKED[rwh];
-  var cards = RESULTS.querySelectorAll('.c-card');
-  for (var i = 0; i < cards.length; i++) {
-    if (cards[i].dataset.rwh === rwh) {
-      var actions = cards[i].querySelector('.actions');
-      actions.innerHTML = '<button class="ghost pick-btn" data-action="add" style="color:var(--accent);font-size:.7rem;padding:.1rem .35rem">+ Pick</button>';
-      var newBtn = cards[i].querySelector('.pick-btn');
-      newBtn.addEventListener('click', function(e) {
-        e.stopPropagation();
-        for (var ci = 0; ci < CAT.length; ci++) {
-          if (CAT[ci].rwh === rwh) { addPicked(CAT[ci]); break; }
-        }
-      });
-      var ind = cards[i].querySelector('.picked-indicator');
-      if (ind) ind.remove();
-      break;
-    }
-  }
+  // Re-render search results so cards reflect the unpicked state
+  renderResults(CAT);
   if (ACTIVE_RWH === rwh) {
     ACTIVE_RWH = null;
   }
@@ -822,21 +799,9 @@ function renderPickItem(c) {
       (teachers ? ' · ' + escapeHtml(teachers) : '') +
     '</div>' +
     '<div class="acts">' +
-      '<button class="ghost act-add" title="Dry-run add to enrollment">Add (dry-run)</button>' +
-      '<button class="ghost act-cart" title="Dry-run add to cart">Cart (dry-run)</button>' +
-      '<button class="ghost act-drop" title="Dry-run drop">Drop (dry-run)</button>' +
       '<button class="ghost act-remove" style="color:var(--bad)" title="Remove from selection">✕ Remove</button>' +
     '</div>';
 
-  div.querySelector('.act-add').addEventListener('click', function() {
-    dryRunAction('/api/tis/add', c.rwh, div);
-  });
-  div.querySelector('.act-cart').addEventListener('click', function() {
-    dryRunAction('/api/tis/add-to-cart', c.rwh, div);
-  });
-  div.querySelector('.act-drop').addEventListener('click', function() {
-    dryRunAction('/api/tis/drop', c.rwh, div);
-  });
   div.querySelector('.act-remove').addEventListener('click', function() {
     removePicked(c.rwh);
   });
@@ -870,15 +835,17 @@ function updateSolveCodes() {
   SOLVE_CODES.textContent = codeList.length ? codeList.join(', ') : 'none';
 }
 
-// ── Weekly Grid ───────────────────────────────────────────────────────────
+// ── Weekly Grid (odd/even split) ────────────────────────────────────────
 
 function renderGrid() {
-  GRID.innerHTML = '';
+  GRID_ODD.innerHTML = '';
+  GRID_EVEN.innerHTML = '';
   GRID_LEGEND.innerHTML = '';
 
   var keys = Object.keys(PICKED);
   if (!keys.length) {
-    GRID.innerHTML = '<tr><td colspan="8" class="empty" style="padding:2rem 0">No picked sections to display.</td></tr>';
+    GRID_ODD.innerHTML = '<tr><td colspan="8" class="empty" style="padding:2rem 0">No picked sections.</td></tr>';
+    GRID_EVEN.innerHTML = '<tr><td colspan="8" class="empty" style="padding:2rem 0">No picked sections.</td></tr>';
     return;
   }
 
@@ -912,10 +879,12 @@ function renderGrid() {
   }
 
   if (!allBlocks.length) {
-    GRID.innerHTML = '<tr><td colspan="8" class="empty" style="padding:2rem 0">None of the picked sections have schedule data.</td></tr>';
+    GRID_ODD.innerHTML = '<tr><td colspan="8" class="empty" style="padding:2rem 0">No schedule data.</td></tr>';
+    GRID_EVEN.innerHTML = '<tr><td colspan="8" class="empty" style="padding:2rem 0">No schedule data.</td></tr>';
     return;
   }
 
+  // Detect week-aware conflicts
   for (var bi = 0; bi < allBlocks.length; bi++) {
     allBlocks[bi].conflict = false;
     for (var bj = bi + 1; bj < allBlocks.length; bj++) {
@@ -930,6 +899,7 @@ function renderGrid() {
     }
   }
 
+  // Legend
   var seenCodes = {};
   for (var li = 0; li < allBlocks.length; li++) {
     var code = allBlocks[li].code;
@@ -945,53 +915,128 @@ function renderGrid() {
     GRID_LEGEND.appendChild(sl);
   }
 
-  var cellMap = {};
-  for (var bi2 = 0; bi2 < allBlocks.length; bi2++) {
-    var b = allBlocks[bi2];
-    var key = b.day + ':' + b.periodStart;
-    if (!cellMap[key]) cellMap[key] = [];
-    cellMap[key].push(b);
-  }
+  // Build per-period cell map for each parity
+  function buildParityMap(blocks, isOdd) {
+    var map = {};  // "day:period" → [{block, colIndex, total}]
+    // First pass: determine which blocks have at least one week of this parity
+    var parityBlocks = [];
+    for (var i = 0; i < blocks.length; i++) {
+      var b = blocks[i];
+      var hasParity = false;
+      for (var wi = 0; wi < b.weeks.length; wi++) {
+        if ((b.weeks[wi] % 2 === 1) === isOdd) { hasParity = true; break; }
+      }
+      if (!hasParity) continue;
+      parityBlocks.push(b);
+    }
+    if (!parityBlocks.length) return { map: map, empty: true };
 
-  for (var row = 1; row <= PERIODS; row++) {
-    var tr = document.createElement('tr');
-    var th = document.createElement('th');
-    th.textContent = row;
-    tr.appendChild(th);
-
-    for (var day = 1; day <= DAYS; day++) {
-      var td = document.createElement('td');
-      td.className = 'cell';
-      td.dataset.day = day;
-      td.dataset.period = row;
-
-      var blocksHere = cellMap[day + ':' + row];
-      if (blocksHere) {
-        var n = blocksHere.length;
-        for (var bi3 = 0; bi3 < n; bi3++) {
-          var blk = blocksHere[bi3];
-          var span = blk.periodEnd - blk.periodStart + 1;
-          var blkDiv = document.createElement('div');
-          blkDiv.className = 'blk' + (blk.conflict ? ' conf' : '');
-          blkDiv.style.cssText =
-            'background:' + blk.color + ';' +
-            'width:' + (100 / n) + '%;' +
-            'left:' + (bi3 * (100 / n)) + '%;' +
-            'height:' + (span * ROW_HEIGHT) + 'px;' +
-            'top:0';
-          blkDiv.title = blk.code + ' ' + (blk.course.class_group || '') + ' ' + dayName(blk.day) + ' ' + blk.periodStart + '-' + blk.periodEnd + (blk.conflict ? ' ⚠ CONFLICT' : '');
-          blkDiv.innerHTML = '<span class="t">' + escapeHtml(blk.code) + '</span>';
-          blkDiv.addEventListener('click', function(b) {
-            return function() { removePicked(b.rwh); };
-          }(blk));
-          td.appendChild(blkDiv);
+    // Second pass: for each (day, period), count blocks covering it
+    var cellCounts = {}; // "day:period" → count
+    for (var i = 0; i < parityBlocks.length; i++) {
+      var b = parityBlocks[i];
+      for (var p = b.periodStart; p <= b.periodEnd; p++) {
+        var key = b.day + ':' + p;
+        if (!cellCounts[key]) cellCounts[key] = [];
+        cellCounts[key].push(b);
+      }
+    }
+    // Assign each block a stable column index per day
+    var dayCols = {}; // "day:rwh" → colIndex
+    for (var key in cellCounts) {
+      var parts = key.split(':');
+      var day = parseInt(parts[0], 10);
+      var blocksAtCell = cellCounts[key];
+      for (var ci = 0; ci < blocksAtCell.length; ci++) {
+        var bk = blocksAtCell[ci];
+        var dk = day + ':' + bk.rwh;
+        if (dayCols[dk] === undefined) {
+          // Find the max column currently used for this day
+          var maxCol = -1;
+          for (var dk2 in dayCols) {
+            if (dk2.startsWith(day + ':')) {
+              maxCol = Math.max(maxCol, dayCols[dk2]);
+            }
+          }
+          dayCols[dk] = maxCol + 1;
         }
       }
-
-      tr.appendChild(td);
     }
-    GRID.appendChild(tr);
+    // Final map: each cell has list of {block, colIndex, total}
+    for (var key in cellCounts) {
+      var blocksHere = cellCounts[key];
+      map[key] = blocksHere.map(function(b) {
+        var parts = key.split(':');
+        var day = parseInt(parts[0], 10);
+        var dk = day + ':' + b.rwh;
+        return { block: b, col: dayCols[dk] };
+      });
+      // Count total distinct columns for this cell
+      var colSet = {};
+      for (var ci = 0; ci < map[key].length; ci++) {
+        colSet[map[key][ci].col] = true;
+      }
+      var totalCols = Object.keys(colSet).length;
+      for (var ci = 0; ci < map[key].length; ci++) {
+        map[key][ci].total = totalCols;
+      }
+    }
+    return { map: map, empty: false };
   }
+
+  var oddData = buildParityMap(allBlocks, true);
+  var evenData = buildParityMap(allBlocks, false);
+
+  function renderTable(tbody, data) {
+    if (data.empty) {
+      tbody.innerHTML = '<tr><td colspan="8" class="empty" style="padding:2rem 0">No courses in this week group.</td></tr>';
+      return;
+    }
+    var map = data.map;
+    var h = '';
+    for (var row = 1; row <= PERIODS; row++) {
+      h += '<tr><th>' + row + '</th>';
+      for (var day = 1; day <= DAYS; day++) {
+        var key = day + ':' + row;
+        var entries = map[key];
+        if (entries && entries.length) {
+          h += '<td class="cell" style="padding:0;position:relative;height:' + ROW_HEIGHT + 'px">';
+          for (var ci = 0; ci < entries.length; ci++) {
+            var e = entries[ci];
+            var b = e.block;
+            var w = 100 / e.total;
+            var l = e.col * w;
+            h += '<div class="blk' + (b.conflict ? ' conf' : '') + '" style="' +
+              'background:' + b.color + ';' +
+              'width:' + w + '%;left:' + l + '%;' +
+              'height:' + ROW_HEIGHT + 'px;top:0" ' +
+              'title="' + escapeHtml(b.code + ' ' + (b.course.class_group || '') + ' ' + dayName(b.day) + ' ' + b.periodStart + '-' + b.periodEnd + (b.conflict ? ' ⚠ CONFLICT' : '')) + '" ' +
+              'data-rwh="' + b.rwh + '">' +
+              '<span class="t">' + escapeHtml(b.code) + '</span>' +
+              '<span style="font-size:.6rem;opacity:.8;display:block">' + escapeHtml(b.course.name || '') + '</span>' +
+            '</div>';
+          }
+          h += '</td>';
+        } else {
+          h += '<td style="height:' + ROW_HEIGHT + 'px"></td>';
+        }
+      }
+      h += '</tr>';
+    }
+    tbody.innerHTML = h;
+
+    // Attach click handlers (delegated)
+    tbody.addEventListener('click', function(e) {
+      var blk = e.target.closest('.blk');
+      if (blk) {
+        var rwh = blk.dataset.rwh;
+        if (rwh) removePicked(rwh);
+      }
+    });
+  }
+
+  renderTable(GRID_ODD, oddData);
+  renderTable(GRID_EVEN, evenData);
 }
 
 // ── Enrolled ──────────────────────────────────────────────────────────────
@@ -1096,45 +1141,11 @@ function applySolution(solution) {
     var sec = solution[i];
     PICKED[sec.rwh] = JSON.parse(JSON.stringify(sec));
   }
+  renderResults(CAT);
   renderPicked();
   renderGrid();
-  var cards = RESULTS.querySelectorAll('.c-card');
-  for (var ci = 0; ci < cards.length; ci++) {
-    var rwh = cards[ci].dataset.rwh;
-    var actions = cards[ci].querySelector('.actions');
-    var top = cards[ci].querySelector('.top');
-    var ind = top.querySelector('.picked-indicator');
-    if (PICKED[rwh]) {
-      if (!ind) {
-        var newInd = document.createElement('span');
-        newInd.className = 'picked-indicator';
-        newInd.style.cssText = 'color:var(--accent);font-size:.7rem;margin-left:auto';
-        newInd.textContent = '✓ picked';
-        top.appendChild(newInd);
-      }
-      actions.innerHTML =
-        '<button class="ghost pick-btn" data-action="remove" style="color:var(--bad);font-size:.7rem;padding:.1rem .35rem">✕ Remove</button>';
-    } else {
-      if (ind) ind.remove();
-      actions.innerHTML =
-        '<button class="ghost pick-btn" data-action="add" style="color:var(--accent);font-size:.7rem;padding:.1rem .35rem">+ Pick</button>';
-    }
-    var newBtn = cards[ci].querySelector('.pick-btn');
-    if (newBtn) {
-      newBtn.addEventListener('click', function(rwh) {
-        return function(e) {
-          e.stopPropagation();
-          if (PICKED[rwh]) { removePicked(rwh); }
-          else { for (var cj = 0; cj < CAT.length; cj++) { if (CAT[cj].rwh === rwh) { addPicked(CAT[cj]); break; } } }
-        };
-      }(rwh));
-    }
-  }
-  SOLVE_OUT.innerHTML = '<div class="flash ok">Solution applied: ' + Object.keys(PICKED).length + ' sections.</div>';
-  switchTab('grid');
+  SOLVE_OUT.innerHTML = '<div class="ncn" style="color:var(--ok)">Solution applied — ' + solution.length + ' sections picked.</div>';
 }
-
-// ── Tab switching ─────────────────────────────────────────────────────────
 
 function switchTab(name) {
   var tabs = document.querySelectorAll('.tabs button');
