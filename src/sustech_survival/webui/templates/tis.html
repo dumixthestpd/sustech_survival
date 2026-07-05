@@ -41,6 +41,8 @@ select.filter{flex:1;min-width:60px}
 .c-card .nm{font-weight:600;margin-top:.15rem;font-size:.88rem}
 .c-card .meta{margin-top:.2rem;color:var(--mut);font-size:.76rem;display:flex;gap:.6rem;flex-wrap:wrap}
 .c-card .meta b{color:#c2c8d0;font-weight:500}
+.c-card .sched{margin-top:.3rem;font-size:.74rem;color:var(--mut);line-height:1.5}
+.c-card .sched .sched-lbl{display:block;color:var(--txt);font-weight:600;font-size:.7rem;margin-bottom:.15rem}
 .c-card .actions{position:absolute;top:.45rem;right:.7rem;display:flex;gap:.25rem}
 .badge{font-size:.68rem;padding:.08rem .35rem;border-radius:4px;background:#1e2733;color:var(--mut);display:inline-block}
 .badge.must{color:var(--ok)} .badge.opt{color:#c084fc}
@@ -472,16 +474,23 @@ function sectionsConflict(slotsA, slotsB) {
   return false;
 }
 
+function formatWeeks(weeks) {
+  if (!weeks || !weeks.length) return '';
+  var suffix = '';
+  if (weeks.every(function(w) { return w % 2 === 1; })) suffix = '单周';
+  else if (weeks.every(function(w) { return w % 2 === 0; })) suffix = '双周';
+  var w;
+  if (weeks.length <= 6) w = weeks.join(',');
+  else w = weeks[0] + '-' + weeks[weeks.length - 1];
+  return ' ' + w + suffix;
+}
+
 function formatSchedule(slots) {
   if (!slots || !slots.length) return '';
   return slots.map(function(s) {
     var d = dayName(s.day);
     var r = s.room ? ' ' + s.room : '';
-    var w = '';
-    if (s.weeks && s.weeks.length) {
-      if (s.weeks.length <= 6) w = ' w' + s.weeks.join(',');
-      else w = ' w' + s.weeks[0] + '-' + s.weeks[s.weeks.length - 1];
-    }
+    var w = formatWeeks(s.weeks);
     return d + ' ' + s.period_start + '-' + s.period_end + r + w;
   }).join('; ');
 }
@@ -493,12 +502,8 @@ function formatScheduleHTML(slots) {
     var s = slots[i];
     var d = dayName(s.day);
     var r = s.room ? ' ' + escapeHtml(s.room) : '';
-    var w = '';
-    if (s.weeks && s.weeks.length) {
-      if (s.weeks.length <= 6) w = ' w' + escapeHtml(s.weeks.join(','));
-      else w = ' w' + s.weeks[0] + '-' + s.weeks[s.weeks.length - 1];
-    }
-    parts.push(escapeHtml(d + ' ' + s.period_start + '-' + s.period_end + r + w));
+    var w = formatWeeks(s.weeks);
+    parts.push(escapeHtml(d + ' ' + s.period_start + '-' + s.period_end + r) + w);
   }
   return parts.join('<br>');
 }
@@ -729,16 +734,16 @@ function renderCard(c) {
   card.innerHTML =
     '<div class="top">' +
       '<span class="code">' + escapeHtml(c.code) + '</span>' +
+      '<span class="nm">' + escapeHtml(c.name || c.name_en || '') + '</span>' +
       (c.class_group ? '<span class="grp">' + escapeHtml(c.class_group) + '</span>' : '') +
       (PICKED[c.rwh] ? '<span style="color:var(--accent);font-size:.7rem;margin-left:auto;cursor:pointer" class="unpick-badge" data-rwh="' + c.rwh + '">✕ picked</span>' : '') +
     '</div>' +
-    '<div class="nm">' + escapeHtml(c.name || c.name_en || '') + '</div>' +
     '<div class="meta">' +
-      (c.credits ? '<span><b>Credits</b> ' + c.credits + '</span>' : '') +
-      (c.capacity ? '<span><b>Capacity</b> ' + c.capacity + '</span>' : '') +
-      '<span><b>Teacher</b> ' + escapeHtml(teachers) + '</span>' +
-      (schedHTML ? '<span><b>Schedule</b> ' + schedHTML + '</span>' : '') +
+      (hasRealTeacher ? '<b>Teacher</b> ' + escapeHtml(teachers) : '<span style="color:var(--mut)"><b>Teacher</b> TBD</span>') +
+      (c.credits ? ' · <b>Credits</b> ' + c.credits : '') +
+      (c.capacity ? ' · <b>Capacity</b> ' + c.capacity : '') +
     '</div>' +
+    (schedHTML ? '<div class="sched"><span class="sched-lbl">Schedule</span>' + schedHTML + '</div>' : '') +
     '<div class="actions">' +
       (PICKED[c.rwh]
         ? ''
@@ -1038,10 +1043,10 @@ function renderPickItem(c) {
       (conflictMsg ? '<span style="float:right;color:var(--bad);font-size:.65rem">⚠ conflicted</span>' : '') +
     '</div>' +
     '<div class="pm">' +
-      '<b>' + escapeHtml(c.code) + '</b>' +
+      '<b>Teacher</b> ' + teachers +
       (c.class_group ? ' · ' + escapeHtml(c.class_group) : '') +
-      (schedHTML ? '<br>' + schedHTML : '') +
-      ' · ' + teachers +
+      ' · <b>' + escapeHtml(c.code) + '</b>' +
+      (schedHTML ? ' · ' + schedHTML : '') +
       (conflictMsg ? '<br><span style="color:var(--bad);font-size:.68rem">' + conflictMsg + '</span>' : '') +
     '</div>' +
     '<div class="acts">' +
