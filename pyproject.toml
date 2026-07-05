@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sustech-survival"
-version = "0.1.0"
+version = "0.2.0b1"
 description = "SUSTech academic toolkit — Blackboard, TIS, Library, PMS, transit, papers, course eval, faculty, classroom booking, and SSO for the entire sustech.edu.cn ecosystem."
 readme = "README.md"
 license = "MIT"
@@ -26,7 +26,7 @@ keywords = [
     "papers",
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Education",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
@@ -49,25 +49,22 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# The full set of optional integrations. Each maps to one submodule.
+# Each group adds one capability on top of the core library.
 cli = [
+    # `sustech-<submodule>` CLI scripts (bb, tis, ws, context).
     "click>=8.1",
     "rich>=13.0",
 ]
 playwright = [
-    # Required for bb._playwright (file-download scraping, legacy submitter).
+    # Legacy Blackboard file-download scraper / submitter (bb._playwright).
     "playwright>=1.40",
 ]
-flask = [
-    # Required for the unified web UI (sustech_survival.webui).
-    "flask>=2.3",
-]
 webui = [
-    # Required for the unified web UI (sustech_survival.webui).
+    # Unified web UI at / — TIS course selector + transit map + future submodules.
     "flask>=2.3",
 ]
 all = [
-    "sustech-survival[cli,playwright,flask,webui]",
+    "sustech-survival[cli,playwright,webui]",
 ]
 
 [project.urls]
