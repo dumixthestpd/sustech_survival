@@ -1,25 +1,23 @@
-"""NCES listing scraper — Anubis-aware + JSON cache.
+"""
+sustech_survival.nces.scraper — Live NCES scraper (no caching).
 
-NCES public listing pages (`/course/?sort_by=rating`) return clean HTML
-with all the structured data the hover card needs:
-  - course name (Chinese), teacher, course code (badge)
-  - NCES internal ID (in /course/<id>/ link)
-  - overall rating (0-10), review count
-  - 4 dimensions × (label, pct): 课程难度 / 作业多少 / 给分好坏 / 收获大小
+Fetches course rating + dimensions + review text live from NCES by
+searching for a course code, finding the detail page, and parsing it.
 
-The pages are behind Anubis PoW. We solve it inline (10-line hashlib loop)
-and cache the `techaro.lol-anubis-auth` cookie for 7 days.
+Supports **teacher disambiguation** via ``teacher='周秀梅'`` and
+**semester-aware matching** via ``xn='2026-2027', xq='1'``.
 
-Cache lives at `~/.cache/sustech_survival/nces_index.json`, refreshed
-every 24h or on-demand via `sustech nces refresh`.
+When the exact teacher isn't found, returns alternatives (other sections
+of the same code) so the UI can show them.
+
+Anubis PoW is solved once per session (cookie lasts 7 days).
 """
 from __future__ import annotations
 
 import hashlib
-import json
 import re
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -28,63 +26,66 @@ import requests
 
 @dataclass
 class NCESCourse:
-    """One course record parsed from the NCES listing."""
+    """One course record parsed from the NCES course detail page."""
     nces_id: int
-    code: str                       # TIS-style code, e.g. "HUM032"
-    name: str                       # Chinese course name
-    teacher: str                    # teacher display name
-    semester: str                   # e.g. "2026秋"
-    rating: float                   # 0–10 aggregate rating
-    review_count: int               # how many student reviews
-    difficulty: tuple               # (label, pct) — 课程难度
-    workload: tuple                 # (label, pct) — 作业多少
-    grading: tuple                  # (label, pct) — 给分好坏
-    takeaways: tuple                # (label, pct) — 收获大小
-    direct_url: str                 # https://ncesnext.com/course/<id>/
+    code: str
+    name: str
+    teacher: str
+    semester: str                     # first matched semester (e.g. "2026秋")
+    semesters: list[str]              # all semesters this section was offered
+    rating: float
+    review_count: int
+    difficulty: tuple[str, float]
+    workload: tuple[str, float]
+    grading: tuple[str, float]
+    takeaways: tuple[str, float]
+    direct_url: str
 
 
-# Label maps — convert Chinese to English for the UI.
 LABEL_EN = {
-    "简单": "Easy",
-    "中等": "Medium",
-    "困难": "Hard",
-    "很少": "Light",
-    "一般": "Average",
-    "很多": "Heavy",
-    "超好": "Excellent",
-    "好": "Good",
-    "差": "Poor",
+    "简单": "Easy", "中等": "Medium", "困难": "Hard",
+    "很少": "Light", "一般": "Average", "很多": "Heavy",
+    "超好": "Excellent", "好": "Good", "差": "Poor",
 }
 
 
+def _tis_semester_to_nces(xn: str, xq: str) -> str:
+    """Convert TIS xn/xq to NCES semester label.
+
+    TIS: xn='2026-2027', xq='1' (Fall) → '2026秋'
+    TIS: xn='2025-2026', xq='2' (Spring) → '2026春'
+    TIS: xn='2025-2026', xq='3' (Summer) → '2026夏'
+    """
+    parts = xn.split("-")
+    if xq == "1":
+        return f"{parts[0]}秋"
+    elif xq == "2":
+        return f"{parts[1]}春"
+    else:  # xq == "3" or summer
+        return f"{parts[1]}夏"
+
+
 class NCESScraper:
-    """Anubis-aware paginated scraper for the NCES course listing."""
+    """Live NCES data fetcher — no cache, fetches per-course on demand."""
 
     BASE = "https://ncesnext.com"
     ANUBIS_SUBMIT = (
         "https://ncesnext.com/.within.website/x/cmd/anubis/api/pass-challenge"
     )
-    CACHE_FILE = Path("~/.cache/sustech_survival/nces_index.json").expanduser()
-    CACHE_TTL = 24 * 3600  # 24h
+    TTL = 300  # 5 min in-memory TTL
     USER_AGENT = (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/120.0.0.0 Safari/537.36"
     )
 
-    def __init__(self, *, use_cache: bool = True, session: Optional[requests.Session] = None):
-        self.use_cache = use_cache
+    def __init__(self, *, session: Optional[requests.Session] = None):
         self.session = session or requests.Session()
         self.session.headers["User-Agent"] = self.USER_AGENT
+        self._course_cache: dict[str, tuple[float, NCESCourse]] = {}
 
     # ── Anubis PoW ─────────────────────────────────────────────────────────
     def _solve_anubis(self) -> None:
-        """GET a page, parse challenge, solve PoW, submit, get cookie.
-
-        Anubis 'fast' algorithm: find nonce where SHA256(randomData + nonce)
-        has `difficulty` leading hex zeros. At difficulty=2, ~256 hashes.
-        Cookie `techaro.lol-anubis-auth` valid for 7 days.
-        """
         r = self.session.get(f"{self.BASE}/course/?sort_by=rating")
         m = re.search(
             r'"id":"([0-9a-f-]{36})"[^}]*"randomData":"([0-9a-f]+)"'
@@ -93,7 +94,7 @@ class NCESScraper:
         )
         if not m:
             if "anubis" not in r.text.lower():
-                return  # already past Anubis (cookie still valid)
+                return
             raise RuntimeError("Anubis challenge format changed")
         ch_id, ch_data, diff = m.group(1), m.group(2), int(m.group(3))
         prefix = "0" * diff
@@ -106,169 +107,299 @@ class NCESScraper:
         self.session.get(
             self.ANUBIS_SUBMIT,
             params={
-                "id": ch_id,
-                "response": h,
-                "nonce": n,
+                "id": ch_id, "response": h, "nonce": n,
                 "redir": f"{self.BASE}/course/?sort_by=rating",
                 "elapsedTime": 50,
             },
         )
 
-    # ── Page fetch + parse ─────────────────────────────────────────────────
-    def _fetch_page(self, page: int, sort: str = "rating") -> str:
-        url = f"{self.BASE}/course/?page={page}&sort_by={sort}"
-        r = self.session.get(url)
-        # Re-solve if Anubis challenged (cookie expired or first hit)
+    def _ensure_anubis(self) -> None:
+        r = self.session.get(f"{self.BASE}/course/?sort_by=rating")
         if 'id="anubis_challenge"' in r.text or len(r.text) < 5000:
             self._solve_anubis()
-            r = self.session.get(url)
-        r.raise_for_status()
+
+    # ── Search: find NCES sections for a course code ───────────────────────
+    def _search_candidates(self, code: str) -> list[tuple[int, str]]:
+        """Search NCES and return all (nces_id, teacher_name) with this code."""
+        code = code.strip().upper()
+        search_url = f"{self.BASE}/search/?q={code}"
+        r = self.session.get(search_url, timeout=15)
+        if 'id="anubis_challenge"' in r.text or len(r.text) < 2000:
+            self._solve_anubis()
+            r = self.session.get(search_url, timeout=15)
+
+        candidates: list[tuple[int, str]] = []
+        for m in re.finditer(
+            r'<a class="px16" href="/course/(\d+)/">(.*?)</a>',
+            r.text,
+        ):
+            card_html = m.group(0)
+            m_code = re.search(
+                r'<span class="badge[^>]*>([A-Za-z0-9]+)</span>', card_html
+            )
+            if not m_code or m_code.group(1).upper() != code:
+                continue
+            nces_id = int(m.group(1))
+            m_teacher = re.search(r'（([^）]+)）', card_html)
+            nces_teacher = m_teacher.group(1).strip() if m_teacher else ""
+            candidates.append((nces_id, nces_teacher))
+        return candidates
+
+    def _teachers_overlap(self, tis_teachers: list[str], nces_teacher: str) -> bool:
+        """Check if any TIS teacher name overlaps with the NCES teacher name."""
+        for t in tis_teachers:
+            if t in nces_teacher or nces_teacher in t:
+                return True
+        return False
+
+    def _parse_semesters(self, html: str) -> list[str]:
+        """Extract semester labels from a course detail page.
+
+        Pattern: ``2026秋 2026春 2025秋 ...`` inside a <span> in the header area.
+        """
+        # Semester block looks like: <span class="small grey ...">2026秋 2026春 ...</span>
+        # Find any span containing the semester pattern
+        m_sem_block = re.search(
+            r'<span[^>]*class="[^"]*(?:small|grey)[^"]*"[^>]*>'
+            r'((?:\d{4}[春秋]\s*)+)',
+            html,
+        )
+        if m_sem_block:
+            sems = re.findall(r'\d{4}[春秋]', m_sem_block.group(1))
+            # Deduplicate while preserving order
+            seen = set()
+            unique = []
+            for s in sems:
+                if s not in seen:
+                    seen.add(s)
+                    unique.append(s)
+            return unique
+        return []
+
+    # ── Main search API ────────────────────────────────────────────────────
+    def search_course(
+        self, code: str, teacher: str = "",
+        xn: str = "", xq: str = "",
+    ) -> tuple[Optional[NCESCourse], bool, list[dict]]:
+        """Search NCES for a course and return (course, exact_match, alternatives).
+
+        ``exact_match`` is True when the teacher name matched an NCES section.
+        ``alternatives`` is a list of other sections {nces_id, teacher, name}
+        with the same code when exact match failed (empty list on exact match).
+
+        Semester matching: when ``xn``/``xq`` are provided, sections whose
+        semester list includes the TIS semester are preferred.
+        """
+        code = code.strip().upper()
+        teacher = teacher.strip()
+        cache_key = f"{code}::{' '.join(sorted(teacher.replace('，', ',').split(',')))}"
+        now = time.time()
+
+        if cache_key in self._course_cache:
+            ts, course = self._course_cache[cache_key]
+            if now - ts < self.TTL:
+                return (course, True, [])
+
+        self._ensure_anubis()
+        candidates = self._search_candidates(code)
+        if not candidates:
+            return (None, False, [])
+
+        tis_teachers_list = (
+            [t.strip() for t in teacher.replace("，", ",").split(",") if t.strip()]
+            if teacher else []
+        )
+
+        # Rank candidates: 0=teacher match, 1=code only (fallback)
+        ranked: list[tuple[int, int]] = []  # (nces_id, rank)
+
+        for nces_id, nces_teacher in candidates:
+            if tis_teachers_list and self._teachers_overlap(tis_teachers_list, nces_teacher):
+                ranked.append((nces_id, 0))
+            elif not tis_teachers_list:
+                ranked.append((nces_id, 1))
+
+        # No teacher match at all — fallback to first candidate
+        if not ranked and tis_teachers_list and candidates:
+            ranked = [(candidates[0][0], 1)]
+
+        if not ranked:
+            return (None, False, [])
+
+        # Best ranked
+        ranked.sort(key=lambda x: x[1])
+        best_nces_id, best_rank = ranked[0]
+
+        # Fetch the best course page
+        best_course = self._parse_course_page(best_nces_id, code)
+        if best_course is None:
+            return (None, False, [])
+
+        exact_match = best_rank == 0
+
+        # Build alternatives: other sections of same code (always include)
+        seen_ids = {best_nces_id}
+        alternatives = []
+        for nces_id, nces_teacher in candidates:
+            if nces_id not in seen_ids:
+                seen_ids.add(nces_id)
+                try:
+                    alt_html = self._fetch_course_page_raw(nces_id)
+                    m_t = re.search(r'<title>NCES\s*-\s*([^（]+)（([^）]+)）', alt_html)
+                    alt_name = m_t.group(1).strip() if m_t else ""
+                    alt_teacher = m_t.group(2).strip() if m_t else nces_teacher
+                except Exception:
+                    alt_name = ""
+                    alt_teacher = nces_teacher
+                alternatives.append({
+                    "name": alt_name,
+                    "teacher": alt_teacher,
+                    "nces_id": nces_id,
+                })
+
+        self._course_cache[cache_key] = (time.time(), best_course)
+        return (best_course, exact_match, alternatives)
+
+    def _fetch_course_page_raw(self, nces_id: int) -> str:
+        url = f"{self.BASE}/course/{nces_id}/"
+        r = self.session.get(url, timeout=15)
+        if 'id="anubis_challenge"' in r.text or len(r.text) < 5000:
+            self._solve_anubis()
+            r = self.session.get(url, timeout=15)
         return r.text
 
-    def _parse_listing(self, html: str) -> list[NCESCourse]:
-        """Parse course cards from one listing page."""
-        courses: list[NCESCourse] = []
-        # Split on the per-course container — each block starts with the link
-        blocks = re.split(r'<div class="ud-pd-md dashed">', html)
-        for block in blocks[1:]:
-            # Course link: /course/<id>/ then NAME (TEACHER) <badge>CODE</badge>
-            m_link = re.search(
-                r'<a class="px16" href="/course/(\d+)/">([^<（]+)（([^）]+)）\s*'
-                r'<span class="badge[^>]+>([A-Z]{2,4}\d{3}[A-Z]?)</span>',
-                block,
-            )
-            if not m_link:
-                continue
-            nces_id = int(m_link.group(1))
-            name = m_link.group(2).strip()
-            teacher = m_link.group(3).strip()
-            code = m_link.group(4)
+    def _parse_course_page(self, nces_id: int, code: str) -> Optional[NCESCourse]:
+        url = f"{self.BASE}/course/{nces_id}/"
+        r = self.session.get(url, timeout=15)
+        if 'id="anubis_challenge"' in r.text or len(r.text) < 5000:
+            self._solve_anubis()
+            r = self.session.get(url, timeout=15)
+        html = r.text
 
-            # Rating + review count
-            m_rating = re.search(
-                r'<span class="rl-pd-sm h4 mono-font">([\d.]+)</span>'
-                r'\s*<span class="text-body-secondary px12">\((\d+) 人评价\)',
-                block,
-            )
-            rating = float(m_rating.group(1)) if m_rating else 0.0
-            review_count = int(m_rating.group(2)) if m_rating else 0
+        m_title = re.search(r'<title>NCES\s*-\s*([^（]+)（([^）]+)）', html)
+        name = m_title.group(1).strip() if m_title else ""
+        teacher = m_title.group(2).strip() if m_title else ""
 
-            # Semester
-            m_sem = re.search(
-                r'<span class="small text-body-secondary">\s*(\d{4}[春秋])', block
-            )
-            semester = m_sem.group(1) if m_sem else ""
+        semesters = self._parse_semesters(html)
+        semester = semesters[0] if semesters else ""
 
-            # 4 dimension progress bars
-            dims = {}
-            for cn_label, key in [
-                ("课程难度", "difficulty"),
-                ("作业多少", "workload"),
-                ("给分好坏", "grading"),
-                ("收获大小", "takeaways"),
-            ]:
-                m_d = re.search(
-                    rf'{re.escape(cn_label)}'
-                    r'.*?<div class="progress-bar[^"]*"[^>]*style="width:\s*([\d.]+)%;"'
-                    r'[^>]*>\s*([^<]+?)\s*</div>',
-                    block,
-                    re.DOTALL,
-                )
-                if m_d:
-                    pct = float(m_d.group(1))
-                    val = m_d.group(2).strip()
-                else:
-                    pct, val = 0.0, ""
-                dims[key] = (LABEL_EN.get(val, val), pct)
-
-            courses.append(NCESCourse(
-                nces_id=nces_id,
-                code=code,
-                name=name,
-                teacher=teacher,
-                semester=semester,
-                rating=rating,
-                review_count=review_count,
-                difficulty=dims["difficulty"],
-                workload=dims["workload"],
-                grading=dims["grading"],
-                takeaways=dims["takeaways"],
-                direct_url=f"{self.BASE}/course/{nces_id}/",
-            ))
-        return courses
-
-    # ── Index management ───────────────────────────────────────────────────
-    def refresh_index(self, *, sort: str = "rating", max_pages: int = 6,
-                      progress: bool = False) -> int:
-        """Fetch all listing pages, parse, save to cache. Returns count."""
-        all_courses: dict[str, NCESCourse] = {}
-        for page in range(1, max_pages + 1):
-            try:
-                html = self._fetch_page(page, sort=sort)
-                page_courses = self._parse_listing(html)
-            except Exception as e:  # noqa: BLE001
-                if progress:
-                    print(f"  page {page}: error {e}")
-                continue
-            for c in page_courses:
-                all_courses[c.code] = c
-            if progress:
-                print(f"  page {page}: +{len(page_courses)} courses "
-                      f"(total {len(all_courses)})")
-            time.sleep(0.4)  # be polite
-
-        self.CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        cache_data = {
-            "fetched_at": time.time(),
-            "sort": sort,
-            "courses": {
-                c.code: asdict(c) for c in all_courses.values()
-            },
-        }
-        self.CACHE_FILE.write_text(
-            json.dumps(cache_data, ensure_ascii=False, indent=2)
+        m_rating = re.search(
+            r'class="rl-pd-sm h4 mono-font"[^>]*>([\d.]+)</span>'
+            r'\s*<span[^>]*>\s*\((\d+)人评价\)',
+            html,
         )
-        return len(all_courses)
+        rating = float(m_rating.group(1)) if m_rating else 0.0
+        review_count = int(m_rating.group(2)) if m_rating else 0
 
-    def lookup(self, code: str) -> Optional[NCESCourse]:
-        """Case-insensitive code lookup. Uses cache if fresh, else refreshes."""
+        dims: dict[str, tuple[str, float]] = {}
+        for cn_label, key in [
+            ("课程难度", "difficulty"), ("作业多少", "workload"),
+            ("给分好坏", "grading"), ("收获大小", "takeaways"),
+        ]:
+            m_d = re.search(
+                rf'{re.escape(cn_label)}'
+                r'.*?<div class="progress-bar[^"]*"[^>]*style="width:\s*([\d.]+)%;"'
+                r'[^>]*>\s*([^<]+?)\s*</div>',
+                html, re.DOTALL,
+            )
+            if m_d:
+                pct = float(m_d.group(1))
+                val = m_d.group(2).strip()
+                dims[key] = (LABEL_EN.get(val, val), pct)
+            else:
+                m_d2 = re.search(rf'{re.escape(cn_label)}[：:]\s*([^<\n]+)', html)
+                if m_d2:
+                    dims[key] = (LABEL_EN.get(m_d2.group(1).strip(), m_d2.group(1).strip()), 0.0)
+                else:
+                    dims[key] = ("—", 0.0)
+
+        return NCESCourse(
+            nces_id=nces_id, code=code, name=name, teacher=teacher,
+            semester=semester, semesters=semesters,
+            rating=rating, review_count=review_count,
+            difficulty=dims.get("difficulty", ("—", 0.0)),
+            workload=dims.get("workload", ("—", 0.0)),
+            grading=dims.get("grading", ("—", 0.0)),
+            takeaways=dims.get("takeaways", ("—", 0.0)),
+            direct_url=url,
+        )
+
+    # ── Reviews ────────────────────────────────────────────────────────────
+    def fetch_reviews(self, code: str, teacher: str = "") -> Optional[list[dict]]:
         code = code.strip().upper()
+        teacher = teacher.strip()
 
-        if self.use_cache and self.CACHE_FILE.exists():
-            try:
-                data = json.loads(self.CACHE_FILE.read_text())
-                age = time.time() - data.get("fetched_at", 0)
-                if age < self.CACHE_TTL and code in data.get("courses", {}):
-                    return NCESCourse(**data["courses"][code])
-            except (json.JSONDecodeError, KeyError, TypeError):
-                pass  # corrupt cache → refresh
+        self._ensure_anubis()
+        candidates = self._search_candidates(code)
+        if not candidates:
+            return None
 
-        # Cache miss or stale — refresh and retry
-        self.refresh_index()
-        if self.CACHE_FILE.exists():
-            data = json.loads(self.CACHE_FILE.read_text())
-            if code in data.get("courses", {}):
-                return NCESCourse(**data["courses"][code])
-        return None
+        tis_teachers_list = (
+            [t.strip() for t in teacher.replace("，", ",").split(",") if t.strip()]
+            if teacher else []
+        )
 
+        # Pick first matching teacher, or first candidate
+        target_id = candidates[0][0]
+        for nces_id, nces_teacher in candidates:
+            if not tis_teachers_list:
+                target_id = nces_id
+                break
+            if self._teachers_overlap(tis_teachers_list, nces_teacher):
+                target_id = nces_id
+                break
+
+        url = f"{self.BASE}/course/{target_id}/"
+        r = self.session.get(url, timeout=15)
+        if 'id="anubis_challenge"' in r.text or len(r.text) < 5000:
+            self._solve_anubis()
+            r = self.session.get(url, timeout=15)
+        html = r.text
+        return self._parse_reviews(html)
+
+    def _parse_reviews(self, html: str) -> list[dict]:
+        reviews: list[dict] = []
+        blocks = re.split(
+            r'<div class="card small-padding-card mb-3 shadow-sm review review-content[^"]*"',
+            html,
+        )
+        for block in blocks[1:]:
+            m_user = re.search(r'href="/user/\d+/?"[^>]*>([^<]+)</a>', block)
+            username = m_user.group(1).strip() if m_user else ""
+            m_sem = re.search(r'class="text-body-secondary"[^>]*>\s*(\d{4}[春秋])\s*<', block)
+            semester = m_sem.group(1) if m_sem else ""
+            dims = {}
+            for short_label, key in [("难度", "difficulty"), ("作业", "workload"),
+                                      ("给分", "grading"), ("收获", "takeaways")]:
+                m_d = re.search(rf'{re.escape(short_label)}[：:]\s*([^<]+)', block)
+                if m_d:
+                    dims[key] = m_d.group(1).strip()
+            m_body = re.search(r'<div class="card-body">(.*?)<div class="card-footer">', block, re.DOTALL)
+            review_text = ""
+            if m_body:
+                body_html = m_body.group(1)
+                body_html = re.sub(r'<ul[^>]*>.*?</ul>', '', body_html, flags=re.DOTALL)
+                review_text = re.sub(r'<[^>]+>', '', body_html).strip()
+                review_text = re.sub(r'\s+', ' ', review_text).strip()
+            m_date = re.search(r'class="small localtime"[^>]*>\s*(\d{1,2}/\d{1,2}/\d{4}\s+\d{1,2}:\d{2}:\d{2})', block)
+            date = m_date.group(1) if m_date else ""
+            m_likes = re.search(r'id="review-upvote-count-\d+"[^>]*>(\d+)', block)
+            likes = int(m_likes.group(1)) if m_likes else 0
+            if username or review_text:
+                reviews.append({
+                    "username": username, "semester": semester,
+                    "text": review_text, "date": date, "likes": likes,
+                    "dimensions": dims,
+                })
+        return reviews
+
+    # ── CLI compat ─────────────────────────────────────────────────────────
     def status(self) -> dict:
-        """Cache freshness info for status display."""
-        if not self.CACHE_FILE.exists():
-            return {"cached": False}
-        try:
-            data = json.loads(self.CACHE_FILE.read_text())
-            return {
-                "cached": True,
-                "age_hours": (time.time() - data.get("fetched_at", 0)) / 3600,
-                "count": len(data.get("courses", {})),
-                "sort": data.get("sort"),
-                "path": str(self.CACHE_FILE),
-            }
-        except Exception:
-            return {"cached": False, "corrupt": True}
+        return {"cached": False, "mode": "live"}
+
+    def refresh_index(self, **kw) -> int:
+        return 0
 
     def clear_cache(self) -> bool:
-        if self.CACHE_FILE.exists():
-            self.CACHE_FILE.unlink()
-            return True
-        return False
+        self._course_cache.clear()
+        return True
