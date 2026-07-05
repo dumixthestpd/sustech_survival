@@ -393,6 +393,67 @@ class NCESScraper:
                 })
         return reviews
 
+    # ── Domain response shape (UI-agnostic payload) ─────────────────────────
+    def brief(self, code: str, *, teacher: str = "", xn: str = "", xq: str = "") -> dict | None:
+        """Structured hover-brief data for one course code.
+
+        Returns the exact shape the UI consumes, or None if the course
+        isn't in NCES (callers should use ``not_found(code)`` for that case).
+
+        Domain decisions owned here (not in the webui):
+          - top-N reviews by likes (3)
+          - excerpt length (200 chars)
+          - dimension shape {label, pct}
+          - alternatives included even on exact match (UI hides them)
+        """
+        course, exact_match, alternatives = self.search_course(
+            code, teacher=teacher, xn=xn, xq=xq,
+        )
+        if course is None:
+            return None
+
+        reviews = self.fetch_reviews(code, teacher=teacher) or []
+        top = sorted(reviews, key=lambda r: r.get("likes", 0), reverse=True)[:3]
+        excerpts = [
+            {
+                "username": r.get("username", ""),
+                "semester": r.get("semester", ""),
+                "likes": r.get("likes", 0),
+                "excerpt": (r.get("text", "") or "")[:200],
+            }
+            for r in top
+        ]
+
+        return {
+            "available": True,
+            "code": course.code,
+            "name": course.name,
+            "teacher": course.teacher,
+            "semester": course.semester,
+            "semesters": course.semesters,
+            "rating": course.rating,
+            "review_count": course.review_count,
+            "dimensions": {
+                "difficulty": {"label": course.difficulty[0], "pct": course.difficulty[1]},
+                "workload":   {"label": course.workload[0],   "pct": course.workload[1]},
+                "grading":    {"label": course.grading[0],    "pct": course.grading[1]},
+                "takeaways":  {"label": course.takeaways[0],  "pct": course.takeaways[1]},
+            },
+            "detail_url": course.direct_url,
+            "review_excerpts": excerpts,
+            "exact_match": exact_match,
+            "nces_teacher": course.teacher,
+            "alternatives": alternatives,
+        }
+
+    def not_found(self, code: str) -> dict:
+        """Standard 'course not in NCES' payload — keeps callers dumb."""
+        return {
+            "available": False,
+            "reason": "course not found in NCES",
+            "search_url": f"{self.BASE}/search?q={code}",
+        }
+
     # ── CLI compat ─────────────────────────────────────────────────────────
     def status(self) -> dict:
         return {"cached": False, "mode": "live"}
