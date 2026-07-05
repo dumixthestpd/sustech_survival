@@ -96,3 +96,12 @@ docs/ui-verification/cookies.json
 docs/ui-verification/*/cookies.json
 docs/ui-verification/*/*.html
 docs/ui-verification/*/live-data.json
+
+# Hermes plans — personal, not for public release
+.hermes/
+
+# Root-level dev tools (old pre-unified-CLI scripts)
+/bb/README.md
+/bb/cli.py
+/bb/query.py
+/docs/dir-analyzer.py
