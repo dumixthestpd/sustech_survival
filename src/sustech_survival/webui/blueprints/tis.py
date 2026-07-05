@@ -479,19 +479,8 @@ def api_remove_cart():
 
 
 # ── NCES community eval overlay ──────────────────────────────────────────────
-@bp.route("/api/tis/nces")
-def api_nces():
-    """Fetch course evaluations from ncesnext.com."""
-    code = (request.args.get("code") or "").strip()
-    if not code:
-        return jsonify({"available": False, "reason": "no course code provided"})
-    # NCES uses JS rendering + bot protection — server-side fetch blocked.
-    # Provide the direct URL so the frontend can open it in a new tab.
-    return jsonify({
-        "available": True,
-        "direct_url": f"https://ncesnext.com/search?q={code}",
-        "results": [{"source": "ncesnext.com", "url": f"https://ncesnext.com/search?q={code}"}],
-    })
+# Moved to blueprints/nces.py — NCES is its own submodule parallel to TIS,
+# not a feature of TIS. See sustech_survival/nces/. Endpoint paths: /api/nces/*.
 
 
 # ── Selection course types (xkfsdm codes) ───────────────────────────────────
