@@ -49,6 +49,7 @@ TIS queryform mapping (Xsxk/queryKxrw POST → our personal-mode params):
 """
 from __future__ import annotations
 
+import itertools
 import json
 import threading
 from typing import Dict, List, Optional
@@ -281,7 +282,7 @@ def api_enrolled():
     return jsonify({"semester": sem, "enrolled": items})
 
 
-# ── Solver: non-conflicting section combinations ────────────────────────────
+# ── Solver: non-conflicting section combinations with priority dropping ─────
 def _slots_overlap(a: dict, b: dict) -> bool:
     if a.get("day") != b.get("day"):
         return False
@@ -300,12 +301,38 @@ def _sections_conflict(slots_a: List[dict], slots_b: List[dict]) -> bool:
     return any(_slots_overlap(x, y) for x in slots_a for y in slots_b)
 
 
+def _conflicts_blocked(slots, blocked_slots):
+    for bd, bps in blocked_slots:
+        for s in slots:
+            if s.get("day") == bd and set(range(int(s["period_start"]),
+                      int(s["period_end"]) + 1)) & bps:
+                return True
+    return False
+
+
 @bp.route("/api/tis/solve", methods=["POST"])
 def api_solve():
+    """Solve for non-conflicting combinations with priority dropping.
+
+    Like c.x-d.fun: operates on the user's **picked sections** (by RWH),
+    groups them by course code, and tries all section combinations.
+    If no full schedule works, it tries dropping entire course codes
+    (lower priority first).
+
+    Request body:
+      codes    — list of course codes (deduplicated)
+      priority — same codes in priority order (most important first)
+      rwhs     — list of RWH strings the user actually picked
+      blocked  — list of [day, [periods]] to exclude
+      max      — max solutions total (default 30)
+    """
     body = request.get_json(silent=True) or {}
-    codes = body.get("codes", [])
-    blocked = body.get("blocked", [])
+    codes: list = body.get("codes", [])
+    priority: list = body.get("priority", codes)
+    rwhs: list = body.get("rwhs", [])
+    blocked: list = body.get("blocked", [])
     max_res = int(body.get("max", 30))
+
     xn, xq = _parse_sem(request.args)
     try:
         c = _client(xn, xq)
@@ -313,44 +340,95 @@ def api_solve():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+    # Build a lookup from rwh → course, then group by code
+    by_rwh = {x.rwh: x for x in all_courses}
+    # Only use the specific sections the user picked
     by_code: Dict[str, list] = {}
-    for x in all_courses:
-        if x.code in codes:
-            by_code.setdefault(x.code, []).append(x)
+    for rwh in rwhs:
+        course = by_rwh.get(rwh)
+        if course:
+            by_code.setdefault(course.code, []).append(course)
+
     if not by_code:
         return jsonify({"solutions": [], "count": 0})
 
     blocked_slots = [(b[0], set(b[1])) for b in blocked]
-    codes_order = list(by_code)
-    solutions: List[List[dict]] = []
 
-    def conflicts_blocked(slots):
-        for bd, bps in blocked_slots:
-            for s in slots:
-                if s.get("day") == bd and set(range(int(s["period_start"]),
-                          int(s["period_end"]) + 1)) & bps:
-                    return True
-        return False
+    # Build priority index for sorting subsets
+    pidx = {code: i for i, code in enumerate(priority)}
 
-    def backtrack(i, current):
-        if len(solutions) >= max_res:
-            return
-        if i == len(codes_order):
-            solutions.append([_course_to_dict(x) for x in current])
-            return
-        for sec in by_code[codes_order[i]]:
-            if not sec.has_schedule:
-                continue
-            if conflicts_blocked(sec.slots_raw):
-                continue
-            if any(_sections_conflict(sec.slots_raw, y.slots_raw) for y in current):
-                continue
-            current.append(sec)
-            backtrack(i + 1, current)
-            current.pop()
+    # Only codes that have at least one picked section
+    active_codes = [co for co in codes if co in by_code]
+    if not active_codes:
+        return jsonify({"solutions": [], "count": 0})
 
-    backtrack(0, [])
-    return jsonify({"solutions": solutions, "count": len(solutions)})
+    def _solve_subset(subset_codes: List[str], _limit: int) -> list:
+        """Backtrack to find non-conflicting combos for this subset (max _limit).
+        Tries each section option (bundle) per course code group."""
+        result: list = []
+
+        def backtrack(i: int, current: list):
+            if len(result) >= _limit:
+                return
+            if i == len(subset_codes):
+                result.append([_course_to_dict(x) for x in current])
+                return
+            for sec in by_code[subset_codes[i]]:
+                if not sec.has_schedule:
+                    continue
+                if _conflicts_blocked(sec.slots_raw, blocked_slots):
+                    continue
+                if any(_sections_conflict(sec.slots_raw, y.slots_raw) for y in current):
+                    continue
+                current.append(sec)
+                backtrack(i + 1, current)
+                current.pop()
+
+        backtrack(0, [])
+        return result
+
+    n = len(active_codes)
+    final_solutions: list = []
+    remaining_budget = max_res
+
+    # Try sizes from n down to 1 — like c.x-d.fun's dfsWithSkips
+    for size in range(n, 0, -1):
+        if remaining_budget <= 0:
+            break
+        # All subsets of this size, sorted by priority (higher priority = better)
+        subsets: List[tuple] = list(itertools.combinations(active_codes, size))
+        subsets.sort(key=lambda s: sum(pidx.get(c, 999) for c in s))
+        for subset in subsets:
+            if remaining_budget <= 0:
+                break
+            subset_list = list(subset)
+            solutions = _solve_subset(subset_list, remaining_budget)
+            if solutions:
+                kept_codes = set(s["code"] for s in solutions[0])
+                dropped = [c for c in active_codes if c not in kept_codes]
+                dropped.sort(key=lambda c: pidx.get(c, 999))
+                for sol in solutions:
+                    final_solutions.append({
+                        "sections": sol,
+                        "covered": len(sol),
+                        "total": n,
+                        "dropped": dropped,
+                        "size": size,
+                    })
+                remaining_budget -= len(solutions)
+
+    # Sort: higher coverage first, then by priority (lower sum = better priority kept)
+    final_solutions.sort(key=lambda s: (
+        -s["covered"],
+        sum(pidx.get(c, 999) for c in {x["code"] for x in s["sections"]})
+    ))
+
+    return jsonify({
+        "solutions": final_solutions[:max_res],
+        "count": len(final_solutions),
+        "codes": active_codes,
+        "priority": priority,
+    })
 
 
 # ── Write side (dry-run by default; commit is opt-in) ───────────────────────

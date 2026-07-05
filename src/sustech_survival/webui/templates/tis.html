@@ -53,11 +53,13 @@ table.grid th,table.grid td{border:1px solid #1a2030;padding:0;vertical-align:to
 table.grid th{background:var(--panel);color:var(--mut);padding:.3rem;position:sticky;top:0;z-index:2;font-weight:500;text-align:center}
 table.grid th:first-child{width:2.6rem}
 table.grid td{height:38px;position:relative}
-.cell{padding:0;height:38px;position:relative}
-.blk{position:absolute;left:1px;right:1px;z-index:1;border-radius:4px;padding:.15rem .25rem;color:#fff;font-size:.65rem;line-height:1.25;overflow:hidden;cursor:pointer;min-height:20px;border:1px solid rgba(255,255,255,.15)}
-.blk .t{font-weight:600}
-.blk:hover{outline:2px solid rgba(255,255,255,.6);z-index:3}
+.cell{padding:0;height:38px;position:relative;overflow:visible;isolation:isolate}
+.cell-inner{position:relative;width:100%;height:0}
+.blk{position:absolute;left:1px;right:1px;z-index:1;border-radius:4px;padding:.15rem .25rem;color:#fff;font-size:.65rem;line-height:1.25;overflow:hidden;cursor:pointer;min-height:20px;border:1px solid rgba(255,255,255,.15);pointer-events:auto}
+.blk:hover{outline:2px solid rgba(255,255,255,.6);z-index:10}
 .blk.conf{outline:2px solid var(--bad);box-shadow:0 0 6px var(--bad)}
+.blk.conflict-overlay{position:absolute;top:0;right:0;width:16px;height:16px;background:var(--bad);border-radius:50%;font-size:9px;display:flex;align-items:center;justify-content:center;color:#fff;z-index:6}
+.blk .t{font-weight:600}
 .palette{display:flex;gap:.3rem;flex-wrap:wrap;align-items:center;padding:.3rem 0}
 .palette .sw{display:inline-block;width:12px;height:12px;border-radius:3px;flex-shrink:0}
 .palette .sl{font-size:.72rem;color:var(--mut)}
@@ -91,6 +93,16 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
 .solve-card .sc-sec{font-size:.76rem;padding:.15rem 0;display:flex;gap:.4rem;align-items:center}
 .solve-card .sc-sec .code{font-family:ui-monospace,monospace;color:var(--accent)}
 .solve-card .sc-apply{margin-top:.3rem}
+.solve-nav{display:flex;align-items:center;justify-content:center;gap:.8rem;padding:.5rem 0;border-bottom:1px solid var(--border);margin-bottom:.5rem}
+.solve-nav .nav-btn{background:var(--panel2);border:1px solid var(--border);border-radius:6px;padding:.25rem .6rem;cursor:pointer;font-size:.85rem;color:var(--txt);min-width:2rem;text-align:center}
+.solve-nav .nav-btn:hover{border-color:var(--accent);background:var(--panel)}
+.solve-nav .nav-btn:disabled{opacity:.3;cursor:default}
+.solve-nav .nav-pos{font-size:.82rem;color:var(--mut)}
+.solve-nav .nav-pos b{color:var(--txt)}
+.solve-coverage{font-size:.8rem;color:var(--mut);text-align:center;padding:.3rem 0}
+.solve-coverage b{color:var(--accent)}
+.solve-coverage .dropped{color:var(--bad)}
+.solve-sec-code{font-family:ui-monospace,monospace;color:var(--accent);font-weight:500}
 
 /* eval */
 .eval-item{padding:.5rem .7rem;border-bottom:1px solid #1a2030;font-size:.78rem}
@@ -171,12 +183,12 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
     </div>
     <div id="tab-solve" class="tabpane" style="display:none">
       <div style="padding:1rem">
-        <p style="color:var(--mut);font-size:.84rem;margin-bottom:.6rem">Generates non-conflicting section combinations from your picked course codes.</p>
+        <p style="color:var(--mut);font-size:.84rem;margin-bottom:.6rem">Generates non-conflicting section combinations from <b>course codes</b> in your picked list. Select different sections of the same course codes to resolve conflicts.</p>
         <div style="color:var(--mut);font-size:.82rem;margin-bottom:.5rem">
           <b style="color:var(--txt)">Codes to solve:</b> <span id="solve-codes">none</span>
         </div>
         <div class="row" style="margin-bottom:.6rem">
-          <span class="lbl" style="min-width:auto">Blocked</span>
+          <span class="lbl" style="min-width:auto">Blocked time</span>
           <input type="text" id="blocked-input" placeholder="e.g. 1,3-4 / 3,7-8 (day,periods)" style="flex:1;font-size:.78rem"/>
         </div>
         <button class="primary" id="btn-solve">Solve combinations</button>
@@ -661,7 +673,8 @@ function renderCard(c) {
 
   var schedStr = c.schedule || formatSchedule(c.slots);
   var schedHTML = c.slots && c.slots.length ? formatScheduleHTML(c.slots) : '';
-  var teachers = c.teachers && c.teachers.length ? c.teachers.join(', ') : '';
+  var teachers = c.teachers && c.teachers.length ? c.teachers.join(', ') : 'TBD';
+  var hasRealTeacher = c.teachers && c.teachers.length > 0;
 
   card.innerHTML =
     '<div class="top">' +
@@ -673,7 +686,7 @@ function renderCard(c) {
     '<div class="meta">' +
       (c.credits ? '<span><b>Credits</b> ' + c.credits + '</span>' : '') +
       (c.capacity ? '<span><b>Capacity</b> ' + c.capacity + '</span>' : '') +
-      (teachers ? '<span><b>Teacher</b> ' + escapeHtml(teachers) + '</span>' : '') +
+      '<span><b>Teacher</b> ' + escapeHtml(teachers) + '</span>' +
       (schedHTML ? '<span><b>Schedule</b> ' + schedHTML + '</span>' : '') +
     '</div>' +
     '<div class="actions">' +
@@ -816,19 +829,33 @@ function renderPickItem(c) {
   div.dataset.rwh = c.rwh;
 
   var enrolled = ENROLLED_RWH.has(c.rwh);
-  var schedStr = c.schedule || formatSchedule(c.slots);
   var schedHTML = c.slots && c.slots.length ? formatScheduleHTML(c.slots) : '';
-  var teachers = c.teachers && c.teachers.length ? c.teachers.join(', ') : '';
+  var teachers = c.teachers && c.teachers.length ? escapeHtml(c.teachers.join(', ')) : '<span style="color:var(--mut)">TBD</span>';
+
+  // Check if this picked course conflicts with any other picked course
+  var conflictMsg = '';
+  var keys = Object.keys(PICKED);
+  var slotsA = c.slots || [];
+  for (var pi = 0; pi < keys.length; pi++) {
+    if (PICKED[keys[pi]].rwh === c.rwh) continue;
+    var slotsB = PICKED[keys[pi]].slots || [];
+    if (sectionsConflict(slotsA, slotsB)) {
+      conflictMsg = ' ⚠ conflicts with ' + escapeHtml(PICKED[keys[pi]].code);
+      break;
+    }
+  }
 
   div.innerHTML =
     '<div class="pn">' + escapeHtml(c.name || c.name_en || '') +
       (enrolled ? '<span class="pick-enrolled">enrolled</span>' : '') +
+      (conflictMsg ? '<span style="float:right;color:var(--bad);font-size:.65rem">⚠ conflicted</span>' : '') +
     '</div>' +
     '<div class="pm">' +
       '<b>' + escapeHtml(c.code) + '</b>' +
       (c.class_group ? ' · ' + escapeHtml(c.class_group) : '') +
       (schedHTML ? '<br>' + schedHTML : '') +
-      (teachers ? ' · ' + escapeHtml(teachers) : '') +
+      ' · ' + teachers +
+      (conflictMsg ? '<br><span style="color:var(--bad);font-size:.68rem">' + conflictMsg + '</span>' : '') +
     '</div>' +
     '<div class="acts">' +
       '<button class="ghost act-remove" style="color:var(--bad)" title="Remove from selection">✕ Remove</button>' +
@@ -869,26 +896,12 @@ function updateSolveCodes() {
 
 // ── Weekly Grid (merged multi-period blocks, per-cell column packing) ──
 
-function renderGrid() {
-  GRID_ODD.innerHTML = '';
-  GRID_EVEN.innerHTML = '';
-  GRID_LEGEND.innerHTML = '';
+// ── Weekly Grid (reusable: sections → blocks → tables) ─────────────────
 
-  var keys = Object.keys(PICKED);
-  if (!keys.length) {
-    GRID_ODD.innerHTML = '<tr><td colspan="8" class="empty" style="padding:2rem 0">No picked sections.</td></tr>';
-    GRID_EVEN.innerHTML = '<tr><td colspan="8" class="empty" style="padding:2rem 0">No picked sections.</td></tr>';
-    return;
-  }
-
+function sectionsToBlocks(sections) {
   var allBlocks = [];
-  var pickedArr = [];
-  for (var ki = 0; ki < keys.length; ki++) {
-    pickedArr.push(PICKED[keys[ki]]);
-  }
-
-  for (var pi = 0; pi < pickedArr.length; pi++) {
-    var c = pickedArr[pi];
+  for (var pi = 0; pi < sections.length; pi++) {
+    var c = sections[pi];
     var slots = c.slots || [];
     var color = colorFor(c.code);
     for (var si = 0; si < slots.length; si++) {
@@ -898,25 +911,15 @@ function renderGrid() {
         weeks = weeks.split(',').map(function(x) { return parseInt(x, 10); });
       }
       allBlocks.push({
-        day: s.day,
-        periodStart: s.period_start,
-        periodEnd: s.period_end,
-        weeks: weeks,
-        course: c,
-        rwh: c.rwh,
-        code: c.code,
-        color: color
+        day: s.day, periodStart: s.period_start, periodEnd: s.period_end,
+        weeks: weeks, course: c, rwh: c.rwh, code: c.code, color: color
       });
     }
   }
+  return allBlocks;
+}
 
-  if (!allBlocks.length) {
-    GRID_ODD.innerHTML = '<tr><td colspan="8" class="empty" style="padding:2rem 0">No schedule data.</td></tr>';
-    GRID_EVEN.innerHTML = '<tr><td colspan="8" class="empty" style="padding:2rem 0">No schedule data.</td></tr>';
-    return;
-  }
-
-  // Detect week-aware conflicts
+function detectConflicts(allBlocks) {
   for (var bi = 0; bi < allBlocks.length; bi++) {
     allBlocks[bi].conflict = false;
     for (var bj = bi + 1; bj < allBlocks.length; bj++) {
@@ -930,185 +933,202 @@ function renderGrid() {
       }
     }
   }
+}
+
+function buildPackedItems(blocks, isOdd) {
+  var parity = [];
+  for (var i = 0; i < blocks.length; i++) {
+    var b = blocks[i];
+    if (b.weeks && b.weeks.length && b.weeks.some(function(w) { return (w % 2 === 1) === isOdd; })) {
+      parity.push(b);
+    }
+  }
+  if (!parity.length) return null;
+
+  var dayGroups = {};
+  parity.forEach(function(b) {
+    if (!dayGroups[b.day]) dayGroups[b.day] = [];
+    dayGroups[b.day].push(b);
+  });
+
+  var result = [];
+  for (var d = 1; d <= 7; d++) {
+    var blks = dayGroups[d];
+    if (!blks || !blks.length) continue;
+    blks.sort(function(a, b) { return a.periodStart - b.periodStart; });
+
+    var cols = [];
+    var colFor = {};
+    blks.forEach(function(b) {
+      var pds = [];
+      for (var p = b.periodStart; p <= b.periodEnd; p++) pds.push(p);
+      var placed = false;
+      for (var ci = 0; ci < cols.length; ci++) {
+        if (!pds.some(function(p) { return cols[ci][p]; })) {
+          pds.forEach(function(p) { cols[ci][p] = true; });
+          colFor[b.rwh] = ci;
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) {
+        var nc = {};
+        pds.forEach(function(p) { nc[p] = true; });
+        cols.push(nc);
+        colFor[b.rwh] = cols.length - 1;
+      }
+    });
+
+    var total = cols.length || 1;
+    blks.forEach(function(b) {
+      result.push({ block: b, col: colFor[b.rwh], total: total });
+    });
+  }
+  return result;
+}
+
+function renderGridTable(tbody, items) {
+  if (!items || !items.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty" style="padding:2rem 0">No courses in this week group.</td></tr>';
+    return;
+  }
+
+  var cellMap = {};
+  items.forEach(function(item) {
+    var b = item.block;
+    var span = b.periodEnd - b.periodStart + 1;
+    for (var p = b.periodStart; p <= b.periodEnd; p++) {
+      var key = b.day + ':' + p;
+      if (!cellMap[key]) cellMap[key] = [];
+      var dup = cellMap[key].some(function(e) { return e.rwh === b.rwh; });
+      if (!dup) {
+        cellMap[key].push({
+          block: b, col: item.col, total: item.total,
+          span: span, isStart: (p === b.periodStart), rwh: b.rwh
+        });
+      }
+    }
+  });
+
+  var h = '';
+  for (var row = 1; row <= PERIODS; row++) {
+    h += '<tr><th>' + row + '</th>';
+    for (var day = 1; day <= DAYS; day++) {
+      var key = day + ':' + row;
+      var entries = cellMap[key];
+      if (entries && entries.length) {
+        var hasStart = entries.some(function(e) { return e.isStart; });
+        if (hasStart) {
+          h += '<td class="cell" style="padding:0;position:relative;height:' + ROW_HEIGHT + 'px">' +
+               '<div class="cell-inner" style="position:absolute;left:0;top:0;right:0;bottom:0">';
+          entries.forEach(function(e) {
+            if (!e.isStart) return;
+            var b = e.block;
+            var w = 100 / e.total;
+            var l = e.col * w;
+            var z = 10 - e.col;
+            var spanH = e.span * ROW_HEIGHT;
+            h += '<div class="blk' + (b.conflict ? ' conf' : '') + '" style="' +
+              'background:' + b.color + ';' +
+              'width:' + w + '%;left:' + l + '%;' +
+              'height:' + spanH + 'px;top:0;' +
+              'z-index:' + z + ';' +
+              '" ' +
+              'title="' + escapeHtml(b.code + ' ' + (b.course.class_group || '') + ' ' + dayName(b.day) + ' ' + b.periodStart + '-' + b.periodEnd + (b.conflict ? ' ⚠ CONFLICT' : '')) + '" ' +
+              'data-rwh="' + b.rwh + '">' +
+              '<span class="t">' + escapeHtml(b.code) + '</span>' +
+              '<span style="font-size:.6rem;opacity:.8;display:block">' + escapeHtml(b.course.name || '') + '</span>' +
+            '</div>';
+          });
+          h += '</div></td>';
+        } else {
+          h += '<td class="cell" style="padding:0;position:relative;height:' + ROW_HEIGHT + 'px">' +
+               '<div class="cell-inner" style="position:absolute;left:0;top:0;right:0;bottom:0">';
+          entries.forEach(function(e) {
+            if (e.isStart) return;
+            var b = e.block;
+            if (b.conflict) {
+              var w = 100 / e.total;
+              h += '<div class="blk conf" style="' +
+                'top:0;left:' + (e.col * w) + '%;width:' + w + '%;height:100%;z-index:1;' +
+                'background:transparent;border:none;outline:none;' +
+                'border-left:3px solid var(--bad);opacity:.5"></div>';
+            }
+          });
+          h += '</div></td>';
+        }
+      } else {
+        h += '<td class="cell" style="padding:0;position:relative;height:' + ROW_HEIGHT + 'px">' +
+             '<div class="cell-inner"></div></td>';
+      }
+    }
+    h += '</tr>';
+  }
+  tbody.innerHTML = h;
+}
+
+function renderGridBlocks(allBlocks, targetOdd, targetEven, legendTarget) {
+  targetOdd.innerHTML = '';
+  targetEven.innerHTML = '';
+  if (legendTarget) legendTarget.innerHTML = '';
+
+  if (!allBlocks.length) {
+    targetOdd.innerHTML = '<tr><td colspan="8" class="empty" style="padding:2rem 0">No schedule data.</td></tr>';
+    targetEven.innerHTML = '<tr><td colspan="8" class="empty" style="padding:2rem 0">No schedule data.</td></tr>';
+    return;
+  }
+
+  detectConflicts(allBlocks);
 
   // Legend
-  var seenCodes = {};
-  for (var li = 0; li < allBlocks.length; li++) {
-    var code = allBlocks[li].code;
-    if (seenCodes[code]) continue;
-    seenCodes[code] = true;
-    var sw = document.createElement('span');
-    sw.className = 'sw';
-    sw.style.background = allBlocks[li].color;
-    var sl = document.createElement('span');
-    sl.className = 'sl';
-    sl.textContent = code;
-    GRID_LEGEND.appendChild(sw);
-    GRID_LEGEND.appendChild(sl);
+  if (legendTarget) {
+    var seenCodes = {};
+    for (var li = 0; li < allBlocks.length; li++) {
+      var code = allBlocks[li].code;
+      if (seenCodes[code]) continue;
+      seenCodes[code] = true;
+      var sw = document.createElement('span');
+      sw.className = 'sw';
+      sw.style.background = allBlocks[li].color;
+      var sl = document.createElement('span');
+      sl.className = 'sl';
+      sl.textContent = code;
+      legendTarget.appendChild(sw);
+      legendTarget.appendChild(sl);
+    }
   }
 
-  // Per-day column packing + merged block data
-  // Returns an array of "render items": { block, col, total, span }
-  function buildRenderItems(blocks, isOdd) {
-    var parityBlocks = [];
-    for (var i = 0; i < blocks.length; i++) {
-      var b = blocks[i];
-      if (b.weeks.some(function(w) { return (w % 2 === 1) === isOdd; })) {
-        parityBlocks.push(b);
-      }
-    }
-    if (!parityBlocks.length) return null;
+  renderGridTable(targetOdd, buildPackedItems(allBlocks, true));
+  renderGridTable(targetEven, buildPackedItems(allBlocks, false));
+}
 
-    // Group by day, pack columns per day (like the Timetables library)
-    var dayGroups = {};
-    parityBlocks.forEach(function(b) {
-      if (!dayGroups[b.day]) dayGroups[b.day] = [];
-      dayGroups[b.day].push(b);
-    });
-
-    var items = []; // { block, col, total }
-
-    for (var d = 1; d <= 7; d++) {
-      var blks = dayGroups[d];
-      if (!blks || !blks.length) continue;
-
-      // Sort by periodStart
-      blks.sort(function(a, b) { return a.periodStart - b.periodStart; });
-
-      // For each block, find the set of periods it occupies
-      // Greedy column assignment: first-fit (lowest column that has no overlap)
-      var cols = []; // each col tracks occupied periods: { period: true }
-      var colFor = {}; // rwh → col index
-
-      blks.forEach(function(b) {
-        var pds = [];
-        for (var p = b.periodStart; p <= b.periodEnd; p++) pds.push(p);
-
-        var placed = false;
-        for (var ci = 0; ci < cols.length; ci++) {
-          if (!pds.some(function(p) { return cols[ci][p]; })) {
-            pds.forEach(function(p) { cols[ci][p] = true; });
-            colFor[b.rwh] = ci;
-            placed = true;
-            break;
-          }
-        }
-        if (!placed) {
-          var nc = {};
-          pds.forEach(function(p) { nc[p] = true; });
-          cols.push(nc);
-          colFor[b.rwh] = cols.length - 1;
-        }
-      });
-
-      var totalCols = cols.length || 1;
-
-      // For each block on this day, determine the MAX column count
-      // in any period it spans — this becomes the render total for that block
-      // So a block that spans periods 1-3 gets a consistent width
-      blks.forEach(function(b) {
-        var maxCnt = 0;
-        for (var p = b.periodStart; p <= b.periodEnd; p++) {
-          var cnt = 0;
-          blks.forEach(function(other) {
-            if (other.periodStart <= p && other.periodEnd >= p) cnt++;
-          });
-          if (cnt > maxCnt) maxCnt = cnt;
-        }
-        items.push({
-          block: b,
-          col: colFor[b.rwh],
-          total: Math.max(totalCols, maxCnt)
-        });
-      });
-    }
-
-    return items;
+function renderGrid() {
+  var keys = Object.keys(PICKED);
+  if (!keys.length) {
+    GRID_ODD.innerHTML = '<tr><td colspan="8" class="empty" style="padding:2rem 0">No picked sections.</td></tr>';
+    GRID_EVEN.innerHTML = '<tr><td colspan="8" class="empty" style="padding:2rem 0">No picked sections.</td></tr>';
+    return;
   }
 
-  function renderTable(tbody, items) {
-    if (!items || !items.length) {
-      tbody.innerHTML = '<tr><td colspan="8" class="empty" style="padding:2rem 0">No courses in this week group.</td></tr>';
-      return;
-    }
-
-    // Build cell lookup: (day:period) → [{rwh, col, total, span, block}]
-    var cellMap = {};
-    items.forEach(function(item) {
-      var b = item.block;
-      var span = b.periodEnd - b.periodStart + 1;
-      for (var p = b.periodStart; p <= b.periodEnd; p++) {
-        var key = b.day + ':' + p;
-        if (!cellMap[key]) cellMap[key] = [];
-        var dup = cellMap[key].some(function(e) { return e.rwh === b.rwh; });
-        if (!dup) {
-          cellMap[key].push({
-            rwh: b.rwh,
-            col: item.col,
-            total: item.total,
-            span: span,
-            block: b,
-            isStart: (p === b.periodStart)
-          });
-        }
-      }
-    });
-
-    var h = '';
-    for (var row = 1; row <= PERIODS; row++) {
-      h += '<tr><th>' + row + '</th>';
-      for (var day = 1; day <= DAYS; day++) {
-        var key = day + ':' + row;
-        var entries = cellMap[key];
-        if (entries && entries.length) {
-          // Check if any block starts here
-          var hasStart = entries.some(function(e) { return e.isStart; });
-          if (hasStart) {
-            h += '<td class="cell" style="padding:0;position:relative;height:' + ROW_HEIGHT + 'px">';
-            // Only render blocks that START in this cell
-            entries.forEach(function(e) {
-              if (!e.isStart) return;
-              var b = e.block;
-              var w = 100 / e.total;
-              var l = e.col * w;
-              var spanH = e.span * ROW_HEIGHT;
-              h += '<div class="blk' + (b.conflict ? ' conf' : '') + '" style="' +
-                'background:' + b.color + ';' +
-                'width:' + w + '%;left:' + l + '%;' +
-                'height:' + spanH + 'px;top:0;' +
-                'z-index:5;' +
-                '" ' +
-                'title="' + escapeHtml(b.code + ' ' + (b.course.class_group || '') + ' ' + dayName(b.day) + ' ' + b.periodStart + '-' + b.periodEnd + (b.conflict ? ' ⚠ CONFLICT' : '')) + '" ' +
-                'data-rwh="' + b.rwh + '">' +
-                '<span class="t">' + escapeHtml(b.code) + '</span>' +
-                '<span style="font-size:.6rem;opacity:.8;display:block">' + escapeHtml(b.course.name || '') + '</span>' +
-              '</div>';
-            });
-            h += '</td>';
-          } else {
-            // Cell is covered by blocks that started above (merged span)
-            // Still need a cell to maintain table grid, but no content
-            h += '<td style="height:' + ROW_HEIGHT + 'px"></td>';
-          }
-        } else {
-          h += '<td style="height:' + ROW_HEIGHT + 'px"></td>';
-        }
-      }
-      h += '</tr>';
-    }
-    tbody.innerHTML = h;
-
-    tbody.addEventListener('click', function(e) {
-      var blk = e.target.closest('.blk');
-      if (blk) {
-        var rwh = blk.dataset.rwh;
-        if (rwh) removePicked(rwh);
-      }
-    });
+  var pickedArr = [];
+  for (var ki = 0; ki < keys.length; ki++) {
+    pickedArr.push(PICKED[keys[ki]]);
   }
+  var allBlocks = sectionsToBlocks(pickedArr);
+  renderGridBlocks(allBlocks, GRID_ODD, GRID_EVEN, GRID_LEGEND);
 
-  renderTable(GRID_ODD, buildRenderItems(allBlocks, true));
-  renderTable(GRID_EVEN, buildRenderItems(allBlocks, false));
+  // Update conflict count on the solve button
+  var conflictCount = allBlocks.filter(function(b) { return b.conflict; }).length;
+  var conflictCodes = {};
+  allBlocks.forEach(function(b) { if (b.conflict) conflictCodes[b.code] = true; });
+  var btn = document.getElementById('grid-solve');
+  if (conflictCount > 0) {
+    btn.textContent = '⚠ ' + Object.keys(conflictCodes).length + ' courses conflict — Solve';
+    btn.style.color = 'var(--bad)';
+  } else {
+    btn.textContent = '✅ No conflicts — Solve combinations';
+    btn.style.color = '';
+  }
 }
 
 // ── Enrolled ──────────────────────────────────────────────────────────────
@@ -1145,16 +1165,20 @@ function loadEnrolled() {
   });
 }
 
-// ── Solver ────────────────────────────────────────────────────────────────
+// ── Solver (priority-based course dropping) ──────────────────────────────
 
 function solve() {
   var codes = {};
+  var codeOrder = [];
   var keys = Object.keys(PICKED);
   for (var i = 0; i < keys.length; i++) {
-    codes[PICKED[keys[i]].code] = true;
+    var c = PICKED[keys[i]].code;
+    if (!codes[c]) {
+      codes[c] = true;
+      codeOrder.push(c);
+    }
   }
-  var codeList = Object.keys(codes);
-  if (!codeList.length) {
+  if (!codeOrder.length) {
     SOLVE_OUT.innerHTML = '<div class="flash err">No courses picked to solve for.</div>';
     return;
   }
@@ -1162,61 +1186,121 @@ function solve() {
   var blockedInput = document.getElementById('blocked-input').value;
   var blocked = parseBlockedInput(blockedInput);
 
-  SOLVE_OUT.innerHTML = '<div class="ncn">Solving…</div>';
+  SOLVE_OUT.innerHTML = '<div class="ncn">Solving — trying all combinations…</div>';
 
   postJSON('/api/tis/solve' + sem(), {
-    codes: codeList,
+    codes: codeOrder,
+    priority: codeOrder,
+    rwhs: Object.keys(PICKED),
     blocked: blocked,
     max: 30
   }).then(function(d) {
     var solutions = d.solutions || [];
-    var count = d.count || 0;
+
     if (!solutions.length) {
-      SOLVE_OUT.innerHTML = '<div class="ncn">No valid non-conflicting combinations found. Try removing some courses or adjusting blocked slots.</div>';
+      SOLVE_OUT.innerHTML = '<div class="ncn">No valid non-conflicting combinations found. ' +
+        'Try removing some courses or adjusting blocked slots.</div>';
       return;
     }
-    var html = '<div style="color:var(--mut);font-size:.78rem;margin-bottom:.4rem">Found ' + count + ' solution(s).</div>';
-    for (var si = 0; si < solutions.length; si++) {
-      var sol = solutions[si];
-      html += '<div class="solve-card">' +
-        '<div class="sc-title">Solution ' + (si + 1) + ' (' + sol.length + ' sections)</div>';
-      for (var sci = 0; sci < sol.length; sci++) {
-        var sec = sol[sci];
+
+    // Flatten: all solutions in order (already sorted by coverage then priority)
+    var flat = solutions;
+    var total = flat.length;
+    var idx = 0;
+    var totalCodes = codeOrder.length;
+
+    function renderSolveItem() {
+      var sol = flat[idx];
+      // Build section rows + total credits
+      var secHtml = '';
+      var totalCredits = 0;
+      for (var si = 0; si < sol.sections.length; si++) {
+        var sec = sol.sections[si];
         var schedStr = sec.schedule || formatSchedule(sec.slots);
-        html += '<div class="sc-sec">' +
-          '<span class="code">' + escapeHtml(sec.code) + '</span>' +
-          (sec.class_group ? ' ' + escapeHtml(sec.class_group) : '') +
+        totalCredits += parseFloat(sec.credits) || 0;
+        secHtml += '<div class="sc-sec">' +
+          '<span class="solve-sec-code">' + escapeHtml(sec.code) + '</span>' +
+          (sec.class_group ? ' <span style="color:var(--mut)">' + escapeHtml(sec.class_group) + '</span>' : '') +
           ' · ' + escapeHtml(sec.name || '') +
-          (schedStr ? ' · ' + escapeHtml(schedStr) : '') +
+          (sec.teachers && sec.teachers[0] ? ' · ' + escapeHtml(sec.teachers.join(', ')) : '') +
+          (sec.credits ? ' · <b>' + sec.credits + '</b> cr' : '') +
+          (schedStr ? ' · <span style="color:var(--mut);font-size:.72rem">' + escapeHtml(schedStr) + '</span>' : '') +
         '</div>';
       }
-      html += '<div class="sc-apply"><button class="ghost primary" data-sol="' + si + '" style="font-size:.72rem">Apply</button></div>' +
-      '</div>';
+
+      var coverage = sol.covered;
+      var droppedStr = (sol.dropped && sol.dropped.length)
+        ? ' <span class="dropped">Dropped: ' + escapeHtml(sol.dropped.join(', ')) + '</span>'
+        : '';
+
+      var h =
+        '<div class="solve-nav">' +
+          '<button class="nav-btn" id="solve-prev"' + (idx === 0 ? ' disabled' : '') + '>◀</button>' +
+          '<span class="nav-pos">Solution <b>' + (idx + 1) + '</b>/' + total + '</span>' +
+          '<button class="nav-btn" id="solve-next"' + (idx >= total - 1 ? ' disabled' : '') + '>▶</button>' +
+        '</div>' +
+        '<div class="solve-coverage">' +
+          '<b>' + coverage + '/' + totalCodes + '</b> courses · ' +
+          '<b>' + totalCredits.toFixed(1) + '</b> credits' +
+          droppedStr +
+        '</div>' +
+        '<div class="solve-card" style="border:none;background:transparent;padding:0;margin-bottom:.3rem">' +
+          secHtml +
+          '<div class="sc-apply" style="margin-top:.5rem">' +
+            '<button class="primary" id="solve-apply" style="width:100%;padding:.4rem">Apply This Schedule</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="grid-wrap" style="border-top:1px solid var(--border);margin-top:.6rem;padding-top:.6rem;font-size:.68rem">' +
+          '<div style="margin-bottom:8px">' +
+            '<div style="font-size:.7rem;color:var(--accent);font-weight:500;margin-bottom:2px">Odd Weeks</div>' +
+            '<table class="grid" style="font-size:.65rem"><thead><tr><th>Pd</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th></tr></thead>' +
+              '<tbody id="solve-grid-odd"></tbody></table>' +
+          '</div>' +
+          '<div>' +
+            '<div style="font-size:.7rem;color:var(--accent);font-weight:500;margin-bottom:2px">Even Weeks</div>' +
+            '<table class="grid" style="font-size:.65rem"><thead><tr><th>Pd</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th></tr></thead>' +
+              '<tbody id="solve-grid-even"></tbody></table>' +
+          '</div>' +
+        '</div>';
+
+      SOLVE_OUT.innerHTML = h;
+
+      // Render the schedule grid for this solution
+      var solveBlocks = sectionsToBlocks(sol.sections);
+      renderGridBlocks(
+        solveBlocks,
+        document.getElementById('solve-grid-odd'),
+        document.getElementById('solve-grid-even'),
+        null  // no legend in solver grid
+      );
+
+      // Wire nav buttons
+      var prev = document.getElementById('solve-prev');
+      var next = document.getElementById('solve-next');
+      if (prev) prev.addEventListener('click', function() { if (idx > 0) { idx--; renderSolveItem(); } });
+      if (next) next.addEventListener('click', function() { if (idx < total - 1) { idx++; renderSolveItem(); } });
+      document.getElementById('solve-apply').addEventListener('click', function() { applySolution(flat[idx]); });
     }
-    SOLVE_OUT.innerHTML = html;
-    var applyBtns = SOLVE_OUT.querySelectorAll('[data-sol]');
-    for (var ai = 0; ai < applyBtns.length; ai++) {
-      (function(idx) {
-        applyBtns[ai].addEventListener('click', function() {
-          applySolution(solutions[idx]);
-        });
-      })(parseInt(applyBtns[ai].dataset.sol, 10));
-    }
+
+    renderSolveItem();
   })['catch'](function(e) {
     SOLVE_OUT.innerHTML = '<div class="flash err">Error: ' + escapeHtml(e.message) + '</div>';
   });
 }
 
-function applySolution(solution) {
+function applySolution(sol) {
   PICKED = {};
-  for (var i = 0; i < solution.length; i++) {
-    var sec = solution[i];
+  for (var i = 0; i < sol.sections.length; i++) {
+    var sec = sol.sections[i];
     PICKED[sec.rwh] = JSON.parse(JSON.stringify(sec));
   }
   renderResults(CAT);
   renderPicked();
   renderGrid();
-  SOLVE_OUT.innerHTML = '<div class="ncn" style="color:var(--ok)">Solution applied — ' + solution.length + ' sections picked.</div>';
+  SOLVE_OUT.innerHTML = '<div class="ncn" style="color:var(--ok)">Solution applied — ' +
+    sol.sections.length + ' sections picked.' +
+    (sol.dropped && sol.dropped.length ? ' <span style="color:var(--bad)">Dropped: ' + escapeHtml(sol.dropped.join(', ')) + '</span>' : '') +
+    '</div>';
 }
 
 function switchTab(name) {
