@@ -6,10 +6,7 @@
 
 通过在代码层面打通这些服务，我们简化了校园系统的使用，提供了一条通往个性化校园体验的捷径，更重要的是 —— 接入并欢迎 AI 助手进入你的校园生活。
 
-```bash
-pip install git+https://github.com/dumixthestpd/sustech-survival.git
-```
-
+[![GitHub](https://img.shields.io/badge/github-repo-blue.svg)](https://github.com/dumixthestpd/sustech-survival)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm--Noncommercial--1.0.0-orange.svg)](./LICENSE)
 
@@ -41,41 +38,44 @@ pip install git+https://github.com/dumixthestpd/sustech-survival.git
 
 ---
 
-## 安装 / Installation
-
-```bash
-pip install git+https://github.com/dumixthestpd/sustech-survival.git
-```
-
-可选扩展 / Optional extras：
-
-```bash
-pip install "sustech-survival[cli]"        # `sustech` 统一 CLI 调度器
-pip install "sustech-survival[webui]"      # Flask 单页应用（TIS + transit + NCES）
-pip install "sustech-survival[playwright]" # 旧版 BB 文件爬虫
-pip install "sustech-survival[all]"         # 全部
-```
-
----
-
 ## 快速开始 / Quick start
 
 ### 1. 安装 / Install
 
+按需选择扩展：
+
+| 扩展 / Extra | 提供能力 | 适用场景 |
+|---|---|---|
+| (无) | 仅 Python 模块 | 你写自己的脚本 |
+| `cli` | `sustech bb`、`sustech tis`、`sustech nces` 等统一调度器 | 你想要终端工作流 |
+| `webui` | Flask 单页应用：TIS 选课界面 + 公交地图 + NCES 悬浮卡片 | 你想要浏览器界面 |
+| `playwright` | 旧版 BB 文件下载爬虫 | 你在无头服务器上 |
+| `all` | 以上全部 | 你不想思考 |
+
 ```bash
-pip install "sustech-survival[webui]"
+# 任选其一：
+pip install "sustech-survival[cli]"          # 仅 CLI
+pip install "sustech-survival[webui]"        # 仅 web UI
+pip install "sustech-survival[all]"          # 全部
 ```
 
-### 2. 首次导入 —— 验证认证 / First import — verify auth
+### 2. 身份认证（计划中 —— 暂未实现）
 
-```python
-import sustech_survival as sustech
+> 计划是在 `sustech_survival/sso/authorizer.py` 中提供一个直接对接
+> 南科大 CAS 的统一基类：
+>
+> - CAS 端点：`https://cas.sustech.edu.cn/cas/login`
+> - 统一调用：`sustech.sso.Authorizer().ensure()`
+>
+> 上线后，每个系统（BB、TIS、NCES 等）的登录都将合并为一次调用。
+> 在此之前，各子模块有各自的 authorizer，请按对应子模块的具体
+> 说明进行设置。进展见 Todo 章节。
 
-sustech.sso.BBAuth().ensure()   # 首次运行会提示输入凭据
-print("Blackboard session OK")
-```
+### 3. 示例用法 / Example use
 
-### 3. 每日快照（为 AI 助手设计）/ Daily-use snapshot
+设置完成后的两个常用工作流：
+
+**每日快照（为 AI 助手设计）：**
 
 ```python
 from sustech_survival.context import Context
@@ -87,16 +87,14 @@ print(ctx.to_str())
 # → Next TIS exam: [...final...]
 ```
 
-### 4. 启动 Web 界面 / Start the web UI
+**Web 界面（最常用的工作流）：**
 
 ```bash
 python -m sustech_survival.webui
 ```
 
-浏览器打开 `http://localhost:61019`。你将获得：
-- TIS 选课界面（含冲突求解）
-- 校园巴士地图（实时 GPS）
-- 每个课程的 NCES 悬浮卡片
+浏览器打开 `http://localhost:61019` —— TIS 选课界面（含冲突求解）、
+校园巴士地图（实时 GPS）、每个课程的 NCES 悬浮卡片。
 
 ---
 
@@ -151,17 +149,16 @@ python -m pytest tests/ -v --live
 
 ## 待办 / Todo
 
-- [ ] 更好的本地化（清晰区分中英文）Better localization (cleanly differentiate EN vs CN)
+- [ ] 更好的本地化（清晰区分中英文）Better localization
 - [ ] 校园食堂每日菜单通知 Campus canteen daily food notice
-- [ ] NCES 评论摘要（配置 API key 时可用；也可通过 skill 文档实现）NCES comment summarization
+- [ ] NCES 评论摘要（配置 API key 时可用；也可通过 skill 文档实现）
+- [ ] 统一的 `sustech.sso.Authorizer().ensure()` —— 把各系统的认证合并为一次 CAS 调用（`https://cas.sustech.edu.cn/cas/login`）
 
 ---
 
 ## 关于开发者 / About the dev
 
 本模块由 **dumixthestpd**（南科大非计算机专业本科生，学号 12413021）开发，他仅负责宏观设计。本模块 99% 的代码由 AI 助手编写，我们清楚地意识到由此带来的代码质量问题。我们欢迎更多同学加入开发 —— 通过南科大教育邮箱联系，会进一步提供加入开发的相关信息。也欢迎直接提 PR。
-
-This module is developed by **dumixthestpd**, a non-CS undergraduate student (ID 12413021) at SUSTech, who only controls the macroscopic design. 99% of this module is agent-written and we're aware of the problematic code quality. We welcome more students to join us and contribute — contact via SUSTech edu mail. PRs are also welcome.
 
 ---
 
@@ -181,5 +178,3 @@ This module is developed by **dumixthestpd**, a non-CS undergraduate student (ID
 ## 许可证 / License
 
 [PolyForm Noncommercial License 1.0.0](./LICENSE) — 仅限非商业使用，相同方式共享，保留署名。
-
-Non-commercial use only, share-alike, preserve attribution.
