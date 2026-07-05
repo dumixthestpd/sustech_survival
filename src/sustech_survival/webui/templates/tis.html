@@ -477,8 +477,11 @@ function sectionsConflict(slotsA, slotsB) {
 function formatWeeks(weeks) {
   if (!weeks || !weeks.length) return '';
   var suffix = '';
-  if (weeks.every(function(w) { return w % 2 === 1; })) suffix = '单周';
-  else if (weeks.every(function(w) { return w % 2 === 0; })) suffix = '双周';
+  if (weeks.length > 1) {
+    // Only label parity when it's actually informative (more than one week)
+    if (weeks.every(function(w) { return w % 2 === 1; })) suffix = '单周';
+    else if (weeks.every(function(w) { return w % 2 === 0; })) suffix = '双周';
+  }
   var w;
   if (weeks.length <= 6) w = weeks.join(',');
   else w = weeks[0] + '-' + weeks[weeks.length - 1];
