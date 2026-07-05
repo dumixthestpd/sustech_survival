@@ -49,6 +49,30 @@ def _mount(module: str, target: click.Group) -> None:
         target.add_command(sub_cli, name="run")
 
 
+def _mount_into(parent: click.Group, child_name: str, module: str) -> click.Group:
+    """Create a child Click group under ``parent`` named ``child_name`` by
+    importing ``<module>.cli:cli``. Returns the new (or existing) child group,
+    which the caller can mount more sub-commands onto if needed.
+    """
+    child = click.Group(name=child_name)
+    try:
+        mod = __import__(f"sustech_survival.{module}.cli", fromlist=["cli"])
+        sub_cli = getattr(mod, "cli", None)
+    except Exception as e:
+        child.help = f"(unavailable: {e})"
+        child.short_help = f"{child_name} (unavailable)"
+    else:
+        if isinstance(sub_cli, click.Group):
+            for name, cmd in sub_cli.commands.items():
+                child.add_command(cmd, name=name)
+        elif sub_cli is not None:
+            child.add_command(sub_cli, name="run")
+        else:
+            child.help = f"(unavailable: no `cli` symbol in sustech_survival.{module}.cli)"
+    parent.add_command(child)
+    return child
+
+
 # ── Module groups ────────────────────────────────────────────────────────
 
 @click.group(name="bb")
@@ -80,6 +104,10 @@ _mount("bb", bb_cmd)
 _mount("tis", tis_cmd)
 _mount("ws", ws_cmd)
 _mount("transit", transit_cmd)
+
+
+# Nested subcommands — modules that live under another module's namespace.
+_mount_into(tis_cmd, "classroom", "tis.classroom")
 
 
 # ── context: terse/normal/verbose snapshot ────────────────────────────────
