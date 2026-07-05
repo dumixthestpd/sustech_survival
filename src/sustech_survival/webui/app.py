@@ -50,6 +50,13 @@ def create_app(*, transit_data_dir: Optional[str] = None) -> Flask:
     from .blueprints.transit import bp as transit_bp
     app.register_blueprint(transit_bp, transit_data_dir=transit_data_dir)
 
+    # NCES is optional — only register if the [nces] extra is installed.
+    try:
+        from .blueprints.nces import bp as nces_bp
+        app.register_blueprint(nces_bp)
+    except ImportError as e:
+        app.logger.info(f"NCES blueprint not registered: {e}")
+
     return app
 
 

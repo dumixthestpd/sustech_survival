@@ -110,6 +110,16 @@ _mount("transit", transit_cmd)
 _mount_into(tis_cmd, "classroom", "tis.classroom")
 
 
+# ── nces: community course evaluation ─────────────────────────────────────
+
+@click.group(name="nces", help="NCES — community course eval (optional [nces] extra).")
+def nces_cmd() -> None:
+    pass
+
+
+_mount("nces", nces_cmd)
+
+
 # ── context: terse/normal/verbose snapshot ────────────────────────────────
 
 @click.command(name="context")
@@ -177,6 +187,7 @@ cli.add_command(ws_cmd)
 cli.add_command(transit_cmd)
 cli.add_command(context_cmd)
 cli.add_command(webui_cmd)
+cli.add_command(nces_cmd)
 
 
 if __name__ == "__main__":

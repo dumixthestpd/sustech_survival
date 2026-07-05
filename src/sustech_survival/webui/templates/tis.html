@@ -109,6 +109,44 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
 .eval-item .ei-t{font-weight:600}
 .eval-item .ei-m{color:var(--mut);margin-top:.15rem;font-size:.74rem}
 
+/* hover brief card (NCES structured) */
+.brief-card{position:absolute;z-index:1000;width:380px;background:var(--panel2);
+  border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,.55);
+  overflow:hidden;opacity:0;pointer-events:none;transition:opacity .14s ease;
+  display:flex;flex-direction:column}
+.brief-card.show{opacity:1;pointer-events:auto}
+.brief-card .bc-head{padding:.55rem .8rem .45rem;border-bottom:1px solid var(--border)}
+.brief-card .bc-head .bc-name{font-size:.92rem;font-weight:600;color:var(--txt);line-height:1.25;
+  margin-bottom:.15rem}
+.brief-card .bc-head .bc-meta{font-size:.74rem;color:var(--mut);display:flex;gap:.4rem;align-items:center}
+.brief-card .bc-head .bc-meta .bc-code{font-family:ui-monospace,monospace;
+  color:var(--mut);font-size:.7rem;background:#1a2030;padding:.05rem .35rem;border-radius:3px}
+.brief-card .bc-head .bc-meta .bc-sem{font-size:.7rem}
+.brief-card .bc-rating{padding:.55rem .8rem;border-bottom:1px solid var(--border);
+  display:flex;align-items:baseline;gap:.4rem}
+.brief-card .bc-rating .bc-score{font-size:1.5rem;font-weight:700;color:var(--accent)}
+.brief-card .bc-rating .bc-out{color:var(--mut);font-size:.78rem}
+.brief-card .bc-rating .bc-rev{color:var(--mut);font-size:.7rem;margin-left:auto}
+.brief-card .bc-dims{padding:.5rem .8rem;border-bottom:1px solid var(--border)}
+.brief-card .bc-dim-row{display:flex;align-items:center;gap:.5rem;margin:.18rem 0}
+.brief-card .bc-dim-name{width:78px;color:var(--mut);font-size:.72rem}
+.brief-card .bc-bar{flex:1;height:7px;background:#1a2030;border-radius:4px;overflow:hidden}
+.brief-card .bc-bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),#9ad67f)}
+.brief-card .bc-bar-fill.low{background:linear-gradient(90deg,#e7c75a,#e76f6f)}
+.brief-card .bc-dim-val{width:78px;text-align:right;font-size:.7rem;color:var(--txt)}
+.brief-card .bc-dim-val .lbl{display:block;font-size:.68rem;color:var(--mut)}
+.brief-card .bc-foot{padding:.45rem .8rem;border-top:1px solid var(--border);background:var(--panel);
+  display:flex;justify-content:space-between;align-items:center;font-size:.72rem}
+.brief-card .bc-foot .bc-hint{color:var(--mut)}
+.brief-card .bc-foot a{color:var(--accent);text-decoration:none;padding:.2rem .55rem;
+  border:1px solid var(--accent);border-radius:4px;font-size:.72rem}
+.brief-card .bc-foot a:hover{background:rgba(91,157,255,.12)}
+.brief-card .bc-empty{padding:1rem .8rem;text-align:center;color:var(--mut);font-size:.78rem}
+.brief-card .bc-empty .bce-detail{margin-top:.4rem;font-size:.7rem}
+.brief-card .bc-loading{padding:1rem .8rem;text-align:center;color:var(--mut);font-size:.78rem}
+.brief-card .bc-loading::after{content:'…';animation:bc-dots 1.2s steps(4,end) infinite}
+@keyframes bc-dots{0%,20%{content:'.'}40%{content:'..'}60%,100%{content:'...'}}
+
 /* scrollbar */
 .col::-webkit-scrollbar,.tabpane::-webkit-scrollbar,.results::-webkit-scrollbar{width:6px}
 .col::-webkit-scrollbar-track,.tabpane::-webkit-scrollbar-track,.results::-webkit-scrollbar-track{background:transparent}
@@ -240,6 +278,18 @@ var CRUMB = document.getElementById('crumb');
 var SOLVE_OUT = document.getElementById('solve-out');
 var SOLVE_CODES = document.getElementById('solve-codes');
 var EVAL_OUT = document.getElementById('eval-out');
+var BRIEF_CARD = document.createElement('div');
+BRIEF_CARD.className = 'brief-card';
+BRIEF_CARD.id = 'brief-card';
+BRIEF_CARD.innerHTML = '<div class="bc-loading" id="bc-body">Loading NCES</div>';
+document.body.appendChild(BRIEF_CARD);
+var BRIEF_BODY = document.getElementById('bc-body');
+var BRIEF_OPEN = null;  // set when populated
+var BRIEF_HINT = null;
+var BRIEF_ACTIVE_CODE = null;
+var BRIEF_CACHE = {};   // code → response (avoid re-fetching on rapid hover)
+var BRIEF_INFLIGHT = null;  // current fetch XHR
+var BRIEF_HOVER_TIMER = null;
 var GRID_LEGEND = document.getElementById('grid-legend');
 
 // ── State ─────────────────────────────────────────────────────────────────
@@ -720,8 +770,145 @@ function renderCard(c) {
     });
   }
 
+  // Hover preview — NCES ratings + dimensions + reviews
+  var nm = card.querySelector('.nm');
+  if (nm) {
+    nm.addEventListener('mouseenter', function(e) { briefShow(c, e); });
+    nm.addEventListener('mouseleave', function() { briefHide(); });
+  }
+
   return card;
 }
+
+// ── Hover brief card (NCES structured) ─────────────────────────────────────
+function briefRender(d) {
+  if (!d.available) {
+    var reason = escapeHtml(d.reason || 'not in NCES index');
+    var searchUrl = d.search_url || ('https://ncesnext.com/search?q=' +
+                                     encodeURIComponent(d.code || ''));
+    return '<div class="bc-empty">' +
+             '<div>No NCES data yet</div>' +
+             '<div class="bce-detail">' + reason + '</div>' +
+             '<div class="bce-detail" style="margin-top:.6rem">' +
+               '<a href="' + escapeHtml(searchUrl) + '" target="_blank" rel="noopener" ' +
+                  'style="color:var(--accent);text-decoration:none">Search NCES ↗</a>' +
+             '</div>' +
+           '</div>';
+  }
+  // Display priority: name (top, large) > teacher+class > code (small, muted)
+  var cls = d.code && d.code.match(/^\D+\d+\D?$/);  // not really used yet
+  var html = '<div class="bc-head">' +
+    '<div class="bc-name">' + escapeHtml(d.name) + '</div>' +
+    '<div class="bc-meta">' +
+      '<span>' + escapeHtml(d.teacher) + '</span>' +
+      (d.semester ? '<span class="bc-sem">· ' + escapeHtml(d.semester) + '</span>' : '') +
+      '<span class="bc-code">' + escapeHtml(d.code) + '</span>' +
+    '</div>' +
+  '</div>' +
+  '<div class="bc-rating">' +
+    '<span class="bc-score">' + (d.rating || 0).toFixed(1) + '</span>' +
+    '<span class="bc-out">/ 10</span>' +
+    '<span class="bc-rev">' + (d.review_count || 0) + ' reviews</span>' +
+  '</div>' +
+  '<div class="bc-dims">';
+  var dims = [
+    ['Difficulty', d.dimensions.difficulty],
+    ['Workload',   d.dimensions.workload],
+    ['Grading',    d.dimensions.grading],
+    ['Takeaways',  d.dimensions.takeaways],
+  ];
+  for (var i = 0; i < dims.length; i++) {
+    var dim = dims[i][1] || {label: '—', pct: 0};
+    var pct = Math.round(dim.pct || 0);
+    var isLow = pct < 50;
+    html += '<div class="bc-dim-row">' +
+      '<span class="bc-dim-name">' + dims[i][0] + '</span>' +
+      '<div class="bc-bar"><div class="bc-bar-fill' + (isLow ? ' low' : '') +
+        '" style="width:' + pct + '%"></div></div>' +
+      '<span class="bc-dim-val">' +
+        '<span class="lbl">' + escapeHtml(dim.label || '—') + '</span>' +
+        pct + '%' +
+      '</span>' +
+    '</div>';
+  }
+  html += '</div>' +
+  '<div class="bc-foot">' +
+    '<span class="bc-hint">community-sourced · ' + escapeHtml(d.code) + '</span>' +
+    '<a href="' + escapeHtml(d.detail_url) + '" target="_blank" rel="noopener">Full NCES page ↗</a>' +
+  '</div>';
+  return html;
+}
+
+function briefFetch(code, evt) {
+  // Cancel any in-flight request
+  if (BRIEF_INFLIGHT && BRIEF_INFLIGHT.abort) BRIEF_INFLIGHT.abort();
+  BRIEF_INFLIGHT = $.ajax({
+    url: '/api/nces/code/' + encodeURIComponent(code),
+    dataType: 'json',
+    success: function(d) {
+      BRIEF_CACHE[code] = d;
+      // Only update DOM if this is still the active hover
+      if (BRIEF_ACTIVE_CODE === code) {
+        BRIEF_CARD.innerHTML = briefRender(d);
+      }
+    },
+    error: function(xhr) {
+      if (xhr.statusText === 'abort') return;
+      if (BRIEF_ACTIVE_CODE === code) {
+        BRIEF_CARD.innerHTML =
+          '<div class="bc-empty">NCES unavailable<div class="bce-detail">' +
+            escapeHtml(xhr.responseText || xhr.statusText || 'request failed') +
+          '</div></div>';
+      }
+    }
+  });
+}
+
+function briefShow(c, evt) {
+  if (!c.code) return;
+  clearTimeout(BRIEF_HOVER_TIMER);
+  BRIEF_HOVER_TIMER = setTimeout(function() {
+    BRIEF_ACTIVE_CODE = c.code;
+    // Position the card relative to viewport
+    var rect = (evt.currentTarget || evt.target).getBoundingClientRect();
+    var cardW = 380, cardH = 360;
+    var left = rect.right + 8 + window.pageXOffset;
+    var top = rect.top + window.pageYOffset;
+    // Flip to left if would overflow right edge
+    if (left + cardW > window.pageXOffset + window.innerWidth - 8) {
+      left = rect.left + window.pageXOffset - cardW - 8;
+    }
+    // Clamp to viewport bottom + top
+    if (top + cardH > window.pageYOffset + window.innerHeight - 8) {
+      top = window.pageYOffset + window.innerHeight - cardH - 8;
+    }
+    if (top < window.pageYOffset + 8) top = window.pageYOffset + 8;
+    BRIEF_CARD.style.left = left + 'px';
+    BRIEF_CARD.style.top = top + 'px';
+    BRIEF_CARD.classList.add('show');
+    // Render cached result if any, else fetch
+    if (BRIEF_CACHE[c.code]) {
+      BRIEF_CARD.innerHTML = briefRender(BRIEF_CACHE[c.code]);
+    } else {
+      BRIEF_CARD.innerHTML = '<div class="bc-loading">Loading NCES</div>';
+      briefFetch(c.code, evt);
+    }
+  }, 280);
+}
+
+function briefHide() {
+  clearTimeout(BRIEF_HOVER_TIMER);
+  BRIEF_HOVER_TIMER = setTimeout(function() {
+    BRIEF_CARD.classList.remove('show');
+    // Don't blank the iframe — keep it loaded so re-hover is instant
+  }, 140);
+}
+
+// Keep card open when mouse enters it (give user time to scroll iframe)
+BRIEF_CARD.addEventListener('mouseenter', function() {
+  clearTimeout(BRIEF_HOVER_TIMER);
+});
+BRIEF_CARD.addEventListener('mouseleave', function() { briefHide(); });
 
 // ── Course selection (for eval) ───────────────────────────────────────────
 

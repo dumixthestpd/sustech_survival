@@ -3,6 +3,18 @@ revision = 3
 requires-python = ">=3.10"
 
 [[package]]
+name = "anubis-solver"
+version = "0.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/86/8b/937c5547aa0cd385da8960009d1beb1441fe6e8158906dfebe5b3f6cb0b7/anubis_solver-0.1.1.tar.gz", hash = "sha256:b49668d36f34c9a33cfb99cf3a6961800fba7e91bd80a938afbc022e1fb3099b", size = 3289, upload-time = "2025-09-14T09:58:44.195Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5e/4b/7d0398f28e33566b104e9081d05ae4a9d67c9369215303f0a25c08fb50eb/anubis_solver-0.1.1-py3-none-any.whl", hash = "sha256:d730a3914c758a2b74ca3c204a8bff6b3c44382aecce6bf7f17c6d5960fc37d5", size = 3734, upload-time = "2025-09-14T09:58:43.335Z" },
+]
+
+[[package]]
 name = "beautifulsoup4"
 version = "4.15.0"
 source = { registry = "https://pypi.org/simple" }
@@ -693,6 +705,7 @@ dependencies = [
 
 [package.optional-dependencies]
 all = [
+    { name = "anubis-solver" },
     { name = "click" },
     { name = "flask" },
     { name = "playwright" },
@@ -701,6 +714,9 @@ all = [
 cli = [
     { name = "click" },
     { name = "rich" },
+]
+nces = [
+    { name = "anubis-solver" },
 ]
 playwright = [
     { name = "playwright" },
@@ -711,6 +727,7 @@ webui = [
 
 [package.metadata]
 requires-dist = [
+    { name = "anubis-solver", marker = "extra == 'nces'", specifier = ">=0.1" },
     { name = "beautifulsoup4", specifier = ">=4.12" },
     { name = "click", marker = "extra == 'cli'", specifier = ">=8.1" },
     { name = "flask", marker = "extra == 'webui'", specifier = ">=2.3" },
@@ -720,10 +737,10 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "requests", specifier = ">=2.28" },
     { name = "rich", marker = "extra == 'cli'", specifier = ">=13.0" },
-    { name = "sustech-survival", extras = ["cli", "playwright", "webui"], marker = "extra == 'all'" },
+    { name = "sustech-survival", extras = ["cli", "playwright", "webui", "nces"], marker = "extra == 'all'" },
     { name = "urllib3", specifier = ">=2.0" },
 ]
-provides-extras = ["cli", "playwright", "webui", "all"]
+provides-extras = ["cli", "playwright", "webui", "nces", "all"]
 
 [[package]]
 name = "typing-extensions"

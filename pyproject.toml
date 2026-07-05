@@ -63,8 +63,12 @@ webui = [
     # Unified web UI at / — TIS course selector + transit map + future submodules.
     "flask>=2.3",
 ]
+nces = [
+    # NCES community course eval — Anubis PoW solver for listing scrape.
+    "anubis-solver>=0.1",
+]
 all = [
-    "sustech-survival[cli,playwright,webui]",
+    "sustech-survival[cli,playwright,webui,nces]",
 ]
 
 [project.urls]
