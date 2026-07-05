@@ -38,7 +38,10 @@ Use it from Python or from the CLI. The same authentication, the same request se
 ## Installation
 
 ```bash
-# Core (REST-only, ~5 MB)
+# Directly from GitHub (latest)
+pip install git+https://github.com/dumixthestpd/sustech-survival.git
+
+# Or from PyPI
 pip install sustech-survival
 
 # With the legacy BB Playwright submitter + file downloader

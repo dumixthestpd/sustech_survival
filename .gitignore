@@ -42,6 +42,13 @@ __pycache__/
 *.mp3
 *.mp4
 
+# Committed cookie files — revoke these sessions NOW
+src/cookies/cnki_cookies.json
+src/cookies/rsc_cookies.json
+
+# Personal booking data
+lib/booking/user_info.json
+
 # Build artifacts (PyPI packaging)
 dist/
 build/
