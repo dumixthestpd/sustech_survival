@@ -1,39 +1,45 @@
 """
-sustech_survival.nces — NCES (南科大课程评价社区) client stub.
+sustech_survival.nces — NCES (Niuwa Curriculum Evaluation System) client.
 
-This submodule is intentionally minimal — the legacy ``auth`` and ``eval``
-modules were lost in a refactor and not yet reimplemented. Most users
-should go through the unified web UI's ``/api/tis/nces?code=X`` endpoint,
-which serves direct URLs to ncesnext.com.
+NCES is a student-built community course evaluation platform at ncesnext.com.
+Parallel to tis/bb/lib — has its own CAS-based SSO via cas-proxy.cra.moe.
 
-If you need programmatic NCES access, the legacy code path is to scrape
-ncesnext.com directly — it's a JS-rendered site with bot protection, so
-server-side fetching is unreliable. Use a headless browser instead.
+Public data (course names, ratings, dimension aggregates) is accessible
+without login via the listing pages, which are behind Anubis PoW.
+We solve Anubis server-side and cache the data locally for fast lookup.
 
-Submodule CLI / public symbols are lazy-imported so importing this package
-doesn't break unrelated code.
+Login-only reviews (per-user review text) require full CAS auth via the
+cas-proxy.cra.moe redirect — scaffolded but not yet implemented.
+
+Install:
+    pip install sustech-survival[nces]   # adds anubis-solver dep
 """
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-__all__ = ["NCESAuthorizer", "NCESSurvey"]
+__all__ = ["NCESAuth", "NCESScraper", "NCESCourse"]
 
 
 def __getattr__(name: str):
-    """PEP 562 lazy attribute access — raise a clear error if anything tries
-    to use the not-yet-reimplemented NCES classes."""
-    if name in __all__:
-        raise NotImplementedError(
-            f"sustech_survival.nces.{name} is not implemented yet. "
-            "Use the web UI at /api/tis/nces?code=X for now, or scrape "
-            "ncesnext.com directly via a headless browser."
-        )
+    """PEP 562 lazy attribute access — real classes live in submodules.
+
+    Loading nces.<X> pulls in anubis-solver (heavy optional dep) plus
+    bs4/regex deps. Lazy-load so plain `import sustech_survival.nces`
+    doesn't break code paths that don't need it.
+    """
+    if name == "NCESAuth":
+        from .auth import NCESAuth
+        return NCESAuth
+    if name == "NCESCourse":
+        from .scraper import NCESCourse
+        return NCESCourse
+    if name == "NCESScraper":
+        from .scraper import NCESScraper
+        return NCESScraper
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 if TYPE_CHECKING:  # pragma: no cover
-    from typing import Any
-
-    NCESAuthorizer: Any
-    NCESSurvey: Any
+    from .auth import NCESAuth
+    from .scraper import NCESScraper, NCESCourse
