@@ -7,7 +7,7 @@ name = "sustech-survival"
 version = "0.2.0b1"
 description = "SUSTech academic toolkit — Blackboard, TIS, Library, PMS, transit, papers, course eval, faculty, classroom booking, and SSO for the entire sustech.edu.cn ecosystem."
 readme = "README.md"
-license = "MIT"
+license = "PolyForm-Noncommercial-1.0.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.10"
 authors = [
