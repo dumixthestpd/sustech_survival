@@ -44,15 +44,13 @@ pip install git+https://github.com/dumixthestpd/sustech-survival.git
 # Or from PyPI
 pip install sustech-survival
 
-# With the legacy BB Playwright submitter + file downloader
-pip install "sustech-survival[playwright]"
-playwright install chromium
+# Optional groups — pick what you need:
+#   [cli]      `sustech-bb`, `sustech-tis`, `sustech-ws`, `sustech-context` scripts
+#   [playwright] Legacy BB file-download scraper (bb._playwright)
+#   [webui]    Unified Flask web UI (TIS + transit) at `python -m sustech_survival.webui`
+#   [all]      Everything
 
-# With the TIS course-grid SPA backend
-pip install "sustech-survival[flask]"
-
-# With everything
-pip install "sustech-survival[all]"
+pip install "sustech-survival[webui]"     # most common — TIS + transit SPA
 ```
 
 The package is **one module** by design. Submodules (bb, tis, lib, sso, papers, pms, transit, faculty, classroom, booking, selectcourse, ws, context, nces, quickcontext) are *equal* in priority — none is more important. Pick the ones you need; ignore the rest.
