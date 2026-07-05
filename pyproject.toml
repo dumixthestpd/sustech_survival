@@ -74,12 +74,16 @@ Issues = "https://github.com/dumixthestpd/sustech-survival/issues"
 Changelog = "https://github.com/dumixthestpd/sustech-survival/blob/main/CHANGELOG.md"
 
 [project.scripts]
-# One CLI entry point per submodule that ships a CLI. All dispatch to
-# `python -m sustech_survival.<submodule>` under the hood.
-sustech-bb = "sustech_survival.bb.cli:main"
-sustech-tis = "sustech_survival.tis.cli:main"
-sustech-ws = "sustech_survival.ws.cli:main"
-sustech-context = "sustech_survival.context:cli"
+# Unified subcommand dispatcher — `sustech bb`, `sustech tis`, etc.
+# Each <sub> mounts the existing `sustech_survival.<sub>.cli:cli` Click group.
+sustech = "sustech_survival.cli:cli"
+
+# Legacy flat entry points (kept for backward compat).
+# Each points at the Click group `cli` in the submodule (not `main`,
+# which doesn't exist on these modules).
+sustech-bb = "sustech_survival.bb.cli:cli"
+sustech-tis = "sustech_survival.tis.cli:cli"
+sustech-ws = "sustech_survival.ws.cli:cli"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/sustech_survival"]
