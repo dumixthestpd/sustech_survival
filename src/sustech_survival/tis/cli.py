@@ -22,7 +22,7 @@ sys.path.insert(0, str(CLI_DIR.parent.parent))
 import click
 from sustech_survival.sso import TISAuth
 from sustech_survival.exceptions import SessionExpired, NetworkError
-from sustech_survival.tis.grades import _get_grades, _calc_gpa, _format_grade_row
+from sustech_survival.tis.grades import get_grades, calc_gpa, format_grade_row
 
 # Shared auth instance — refreshed once per CLI invocation
 _auth_singleton = None
