@@ -43,11 +43,20 @@ select.filter{flex:1;min-width:60px}
 .c-card .sect .sect-en{opacity:.7}
 .c-card .meta{margin-top:.2rem;color:var(--mut);font-size:.76rem;display:flex;gap:.6rem;flex-wrap:wrap}
 .c-card .meta b{color:#c2c8d0;font-weight:500}
-.c-card .sched{margin-top:.3rem;font-size:.74rem;color:var(--mut);line-height:1.5}
-.c-card .sched .sched-lbl{display:block;color:var(--txt);font-weight:600;font-size:.7rem;margin-bottom:.15rem}
+.c-card .sched{margin-top:.3rem;font-size:.74rem;color:var(--mut);line-height:1.8;display:flex;flex-wrap:wrap;gap:.3rem}
+.c-card .sched .sched-lbl{display:block;color:var(--txt);font-weight:600;font-size:.7rem;margin-bottom:.15rem;width:100%;flex-basis:100%}
+.slot-tag{display:inline-block;padding:.08rem .4rem;border-radius:4px;background:#1a2230;font-size:.7rem;color:#b0b8c8;white-space:nowrap;line-height:1.6}
 .c-card .actions{position:absolute;top:.45rem;right:.7rem;display:flex;gap:.25rem}
 .badge{font-size:.68rem;padding:.08rem .35rem;border-radius:4px;background:#1e2733;color:var(--mut);display:inline-block}
 .badge.must{color:var(--ok)} .badge.opt{color:#c084fc}
+/* filter pills */
+#filter-pills{display:flex;flex-wrap:wrap;gap:.35rem;margin-bottom:.5rem;min-height:0}
+.filter-pill{display:inline-flex;align-items:center;gap:.25rem;padding:.15rem .5rem;border-radius:12px;
+             background:#1e2733;color:#c0c7d4;font-size:.72rem;cursor:pointer;border:1px solid transparent;transition:border-color .12s}
+.filter-pill:hover{border-color:#5b9dff}
+.filter-pill .fp-x{color:#7b8393;font-size:.7rem;margin-left:.1rem;line-height:1}
+.filter-pill:hover .fp-x{color:#ff6b6b}
+.filter-pill.fp-empty{opacity:0;pointer-events:none;height:0;margin:0;padding:0;overflow:hidden}
 .empty,.loading{padding:2rem 1rem;color:var(--mut);text-align:center;font-size:.85rem}
 
 /* schedule grid */
@@ -242,6 +251,7 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
       <div class="row"><label style="font-size:.76rem;color:var(--mut);display:flex;align-items:center;gap:.3rem"><input type="checkbox" id="f-sched"/> Only with schedule</label></div>
       <div class="row"><button class="primary" id="btn-search">Search</button><button class="ghost" id="btn-refresh" title="Force re-fetch from TIS">Refresh catalog</button></div>
     </div>
+    <div id="filter-pills"></div>
     <div class="results" id="results"><div class="loading">Loading course catalog…</div></div>
   </div>
 
@@ -583,9 +593,9 @@ function formatScheduleHTML(slots) {
     var d = dayName(s.day);
     var r = s.room ? ' ' + escapeHtml(s.room) : '';
     var w = formatWeeks(s.weeks);
-    parts.push(escapeHtml(d + ' ' + s.period_start + '-' + s.period_end + r) + w);
+    parts.push('<span class="slot-tag">' + escapeHtml(d + ' ' + s.period_start + '-' + s.period_end) + r + w + '</span>');
   }
-  return parts.join('<br>');
+  return parts.join('');
 }
 
 function parseBlockedInput(str) {
@@ -755,6 +765,7 @@ function loadCourses(isInitialLoad) {
       return;
     }
     renderResults(CAT);
+    renderFilterPills();
   })['catch'](function(e) {
     RESULTS.innerHTML = '<div class="flash err">Network error: ' + escapeHtml(e.message) + '</div>';
     CAT = [];
@@ -882,6 +893,84 @@ function renderCard(c) {
   }
 
   return card;
+}
+
+// ── Filter pills ──────────────────────────────────────────────────────────
+function renderFilterPills() {
+  var pills = [];
+  var clearAll = false;
+
+  function addPill(label, value) {
+    if (!value) return;
+    clearAll = true;
+    pills.push('<span class="filter-pill" data-filter="' + escapeHtml(label) + '">' +
+               escapeHtml(value) + '<span class="fp-x">✕</span></span>');
+  }
+
+  addPill('keyword', KW.value.trim());
+  var fNames = {
+    'f-college': 'College',
+    'f-tasktype': 'Type',
+    'f-cat': 'Category',
+    'f-campus': 'Campus',
+    'f-lang': 'Language',
+    'f-cult': 'Level',
+    'f-teacher': 'Teacher',
+    'f-xkfsdm': 'Course Type',
+  };
+  for (var id in fNames) {
+    var el = document.getElementById(id);
+    if (el && el.value && el.value !== '') {
+      pills.push('<span class="filter-pill" data-filter="' + fNames[id] + '">' +
+                 escapeHtml(fNames[id]) + ': ' + escapeHtml(el.value) +
+                 '<span class="fp-x">✕</span></span>');
+    }
+  }
+  // Checkboxes
+  if (document.getElementById('f-sched') && document.getElementById('f-sched').checked) {
+    pills.push('<span class="filter-pill" data-filter="scheduled">Only with schedule<span class="fp-x">✕</span></span>');
+  }
+  if (MODE === 'personal') {
+    var ignConf = document.getElementById('f-ign-conf');
+    if (ignConf && ignConf.checked) pills.push('<span class="filter-pill" data-filter="ign-conf">Ignore conflicts<span class="fp-x">✕</span></span>');
+    var ignZero = document.getElementById('f-ign-zero');
+    if (ignZero && ignZero.checked) pills.push('<span class="filter-pill" data-filter="ign-zero">Ignore zero cap<span class="fp-x">✕</span></span>');
+    var wday = document.getElementById('f-wday');
+    if (wday && wday.value) pills.push('<span class="filter-pill" data-filter="wday">Day: ' + escapeHtml(wday.value) + '<span class="fp-x">✕</span></span>');
+  }
+
+  var container = document.getElementById('filter-pills');
+  if (!container) return;
+  if (!clearAll) {
+    container.innerHTML = '';
+    return;
+  }
+  container.innerHTML = pills.join('') +
+    '<span class="filter-pill fp-empty" style="visibility:hidden"></span>';
+
+  // Click handler: clicking ✕ clears that filter and re-searches
+  container.querySelectorAll('.filter-pill').forEach(function(pill) {
+    pill.addEventListener('click', function(e) {
+      if (e.target.closest('.fp-x')) {
+        var filter = pill.dataset.filter;
+        // Clear the corresponding input
+        if (filter === 'keyword') { KW.value = ''; }
+        else if (filter === 'College') { F_COL.value = ''; }
+        else if (filter === 'Type') { F_TASK.value = ''; }
+        else if (filter === 'Category') { F_CAT.value = ''; }
+        else if (filter === 'Campus') { F_CAM.value = ''; }
+        else if (filter === 'Language') { F_LANG.value = ''; }
+        else if (filter === 'Level') { F_CULT.value = ''; }
+        else if (filter === 'Teacher') { F_TEACHER.value = ''; }
+        else if (filter === 'Course Type') { var ctEl = document.getElementById('f-xkfsdm'); if (ctEl) ctEl.value = ''; }
+        else if (filter === 'scheduled') { F_SCH.checked = false; }
+        else if (filter === 'ign-conf') { var ie = document.getElementById('f-ign-conf'); if (ie) ie.checked = false; }
+        else if (filter === 'ign-zero') { var iz = document.getElementById('f-ign-zero'); if (iz) iz.checked = false; }
+        else if (filter && filter.startsWith('Day:')) { var wd = document.getElementById('f-wday'); if (wd) wd.value = ''; }
+        loadCourses();
+      }
+    });
+  });
 }
 
 // ── Hover brief card (NCES structured) ─────────────────────────────────────
@@ -1039,7 +1128,7 @@ function fetchEval(code) {
     return;
   }
   EVAL_OUT.innerHTML = '<div class="ncn">Loading NCES evaluation…</div>';
-  getJSON('/api/tis/nces?code=' + encodeURIComponent(code)).then(function(d) {
+  getJSON('/api/nces/code/' + encodeURIComponent(code) + '?xn=' + encodeURIComponent(currentXn()) + '&xq=' + encodeURIComponent(currentXq())).then(function(d) {
     EVAL_CACHE[code] = d;
     renderEval(d);
   })['catch'](function(e) {
@@ -1048,28 +1137,67 @@ function fetchEval(code) {
 }
 
 function renderEval(d) {
-  if (d.direct_url) {
-    EVAL_OUT.innerHTML = '<div class="ncn">View evaluations on <a href="' + escapeHtml(d.direct_url) + '" target="_blank" rel="noopener">NCES</a> ↗</div>';
-    return;
-  }
   if (!d.available) {
-    EVAL_OUT.innerHTML = '<div class="ncn">' + escapeHtml(d.reason || 'NCES evaluation not available for this course.') + '</div>';
+    EVAL_OUT.innerHTML = '<div class="ncn">' + escapeHtml(d.reason || 'NCES evaluation not available for this course.') + '</div>' +
+      (d.search_url ? '<div style="margin-top:.6rem"><a href="' + escapeHtml(d.search_url) + '" target="_blank" rel="noopener">Search NCES ↗</a></div>' : '');
     return;
   }
-  var results = d.results;
-  if (!results || !results.length) {
-    EVAL_OUT.innerHTML = '<div class="ncn">No NCES evaluations found for this course.</div>';
-    return;
-  }
-  var html = '';
-  for (var i = 0; i < results.length; i++) {
-    var r = results[i];
-    html += '<div class="eval-item">' +
-      '<div class="ei-t">' + escapeHtml(r.course || r.name || '') + (r.professor ? ' · ' + escapeHtml(r.professor) : '') + '</div>' +
-      (r.rating ? '<div class="ncn" style="padding:0;border:none">Rating: ' + escapeHtml(String(r.rating)) + '</div>' : '') +
-      (r.summary ? '<div class="ei-m">' + escapeHtml(r.summary) + '</div>' : '') +
+  var html = '<div class="bc-head">' +
+    '<div class="bc-name">' + escapeHtml(d.name) + '</div>' +
+    '<div class="bc-meta">' +
+      '<span>' + escapeHtml(d.teacher) + '</span>' +
+      (d.semester ? '<span class="bc-sem"> · ' + escapeHtml(d.semester) + '</span>' : '') +
+      '<span class="bc-code">' + escapeHtml(d.code) + '</span>' +
+    '</div>' +
+  '</div>' +
+  '<div class="bc-rating">' +
+    '<span class="bc-score">' + (d.rating || 0).toFixed(1) + '</span>' +
+    '<span class="bc-out">/ 10</span>' +
+    '<span class="bc-rev">' + (d.review_count || 0) + ' reviews</span>' +
+  '</div>' +
+  '<div class="bc-dims" style="margin-bottom:.8rem">';
+  var dims = [
+    ['Difficulty', d.dimensions.difficulty],
+    ['Workload',   d.dimensions.workload],
+    ['Grading',    d.dimensions.grading],
+    ['Takeaways',  d.dimensions.takeaways],
+  ];
+  for (var i = 0; i < dims.length; i++) {
+    var dim = dims[i][1] || {label: '—', pct: 0};
+    var pct = Math.round(dim.pct || 0);
+    var isLow = pct < 50;
+    html += '<div class="bc-dim-row">' +
+      '<span class="bc-dim-name">' + dims[i][0] + '</span>' +
+      '<div class="bc-bar"><div class="bc-bar-fill' + (isLow ? ' low' : '') +
+        '" style="width:' + pct + '%"></div></div>' +
+      '<span class="bc-dim-val">' +
+        '<span class="lbl">' + escapeHtml(dim.label || '—') + '</span>' +
+        pct + '%' +
+      '</span>' +
     '</div>';
   }
+  html += '</div>';
+
+  // Review excerpts
+  var excerpts = d.review_excerpts || [];
+  if (excerpts.length) {
+    html += '<div style="font-size:.82rem;font-weight:600;margin-bottom:.4rem;color:var(--fg)">Top Reviews</div>';
+    for (var i = 0; i < excerpts.length; i++) {
+      var r = excerpts[i];
+      html += '<div class="eval-item">' +
+        '<div class="ei-t">' + escapeHtml(r.username || 'Anonymous') +
+          (r.semester ? ' · ' + escapeHtml(r.semester) : '') +
+          (r.likes ? ' · 👍' + r.likes : '') +
+        '</div>' +
+        (r.excerpt ? '<div class="ei-m">' + escapeHtml(r.excerpt) + (r.excerpt.length >= 200 ? '…' : '') + '</div>' : '') +
+      '</div>';
+    }
+  } else {
+    html += '<div class="ncn">No written reviews for this course.</div>';
+  }
+
+  html += '<div style="margin-top:.8rem"><a href="' + escapeHtml(d.detail_url) + '" target="_blank" rel="noopener">Full NCES page ↗</a></div>';
+
   EVAL_OUT.innerHTML = html;
 }
 
