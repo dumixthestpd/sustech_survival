@@ -317,7 +317,7 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
         <div class="bid-bar" id="bid-bar" style="margin:.6rem 0 .7rem"></div>
         <div class="bid-boxes" id="bid-boxes"></div>
         <div class="bp-submit" style="margin-top:.7rem">
-          <button class="primary" id="bp-submit" title="Sync all bid values to TIS (dry-run by default)">Sync to TIS (dry-run)</button>
+          <button class="primary" id="bp-submit" title="Sync all bid values to TIS">Sync to TIS</button>
         </div>
         <div class="bp-msg" id="bp-msg" style="margin-top:.5rem"></div>
       </div>
@@ -1094,26 +1094,28 @@ function briefRender(d) {
 function briefFetch(code, evt) {
   // Cancel any in-flight request
   if (BRIEF_INFLIGHT && BRIEF_INFLIGHT.abort) BRIEF_INFLIGHT.abort();
-  BRIEF_INFLIGHT = $.ajax({
-    url: '/api/nces/code/' + encodeURIComponent(code),
-    dataType: 'json',
-    success: function(d) {
+  var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  if (ctrl) BRIEF_INFLIGHT = ctrl;
+  var url = '/api/nces/code/' + encodeURIComponent(code) +
+            '?xn=' + encodeURIComponent(currentXn()) +
+            '&xq=' + encodeURIComponent(currentXq());
+  fetch(url, ctrl ? { signal: ctrl.signal } : {})
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
       BRIEF_CACHE[code] = d;
-      // Only update DOM if this is still the active hover
       if (BRIEF_ACTIVE_CODE === code) {
         BRIEF_CARD.innerHTML = briefRender(d);
       }
-    },
-    error: function(xhr) {
-      if (xhr.statusText === 'abort') return;
+    })
+    .catch(function(e) {
+      if (e.name === 'AbortError') return;
       if (BRIEF_ACTIVE_CODE === code) {
         BRIEF_CARD.innerHTML =
           '<div class="bc-empty">NCES unavailable<div class="bce-detail">' +
-            escapeHtml(xhr.responseText || xhr.statusText || 'request failed') +
+            escapeHtml(e.message || 'request failed') +
           '</div></div>';
       }
-    }
-  });
+    });
 }
 
 function briefShow(c, evt) {
@@ -1178,6 +1180,8 @@ function selectCourse(rwh) {
     EVAL_OUT.innerHTML = '<div class="ncn">Course not found in current results.</div>';
     return;
   }
+  // Auto-switch to the eval tab so the user can see the result
+  switchTab('eval');
   fetchEval(course.code);
 }
 
@@ -2170,13 +2174,10 @@ function showTransferOverlay(srcRwh, dstRwh) {
 
 // ── Submit to TIS ───────────────────────────────────────────────────────
 BID_SUBMIT.addEventListener('click', function() {
-  submitBids(true);  // start as dry-run
-});
-BID_SUBMIT.addEventListener('dblclick', function() {
-  submitBids(false); // double-click to commit for real
+  submitBids();
 });
 
-function submitBids(dryRun) {
+function submitBids() {
   var picks = {};
   for (var k in PICKED_BIDS) {
     if (PICKED_BIDS.hasOwnProperty(k) && PICKED[k]) {
@@ -2188,8 +2189,8 @@ function submitBids(dryRun) {
     BID_MSG.className = 'bp-msg err';
     return;
   }
-  BID_MSG.textContent = (dryRun ? 'Dry-run: ' : 'Submitting: ') + 'syncing ' +
-    Object.keys(picks).length + ' bid(s)…';
+  if (!confirm('Sync ' + Object.keys(picks).length + ' bid(s) to TIS? This is a real action.')) return;
+  BID_MSG.textContent = 'Submitting: syncing ' + Object.keys(picks).length + ' bid(s)…';
   BID_MSG.className = 'bp-msg';
   BID_SUBMIT.disabled = true;
   postJSON('/api/tis/bids' + sem(), {
@@ -2197,7 +2198,7 @@ function submitBids(dryRun) {
     xkfsdm: ROUND_INFO.xkfsdm || '',
     where: 'cart',
     jffs_limit: ROUND_INFO.jffs || null,
-    dry_run: dryRun,
+    dry_run: false,
   }).then(function(res) {
     BID_SUBMIT.disabled = false;
     if (res.over_limit) {
@@ -2212,14 +2213,10 @@ function submitBids(dryRun) {
     }
     var okCount = (res.results || []).filter(function(r){return r.ok;}).length;
     var total = (res.results || []).length;
-    BID_MSG.textContent = (dryRun ? 'Dry-run OK: ' : 'Committed: ') +
-      okCount + '/' + total + ' bid(s) would ' + (dryRun ? 'be sent' : 'were sent') +
+    BID_MSG.textContent = 'Committed: ' + okCount + '/' + total + ' bid(s) sent' +
       (res.sum ? ' · total ' + res.sum + ' pts' : '');
     BID_MSG.className = 'bp-msg' + (okCount === total ? '' : ' err');
-    if (!dryRun) {
-      // Refresh round info to show updated jffs
-      loadRound().then(renderBidPanel);
-    }
+    loadRound().then(renderBidPanel);
   })['catch'](function(e) {
     BID_SUBMIT.disabled = false;
     BID_MSG.textContent = 'Network error: ' + e.message;

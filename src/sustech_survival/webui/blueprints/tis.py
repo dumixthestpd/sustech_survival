@@ -456,7 +456,7 @@ def _write(action: str, rwh: str, *, dry_run: bool, **kw):
 def api_add():
     b = request.get_json(silent=True) or {}
     return _write("add", b.get("rwh", ""),
-                  dry_run=b.get("dry_run", True),
+                  dry_run=b.get("dry_run", False),
                   ignore_conflicts=b.get("ignore_conflicts"),
                   ignore_zero_capacity=b.get("ignore_zero_capacity"),
                   pylx=b.get("pylx"))
@@ -465,21 +465,21 @@ def api_add():
 @bp.route("/api/tis/drop", methods=["POST"])
 def api_drop():
     b = request.get_json(silent=True) or {}
-    return _write("drop", b.get("rwh", ""), dry_run=b.get("dry_run", True),
+    return _write("drop", b.get("rwh", ""), dry_run=b.get("dry_run", False),
                   pylx=b.get("pylx"))
 
 
 @bp.route("/api/tis/add-to-cart", methods=["POST"])
 def api_add_cart():
     b = request.get_json(silent=True) or {}
-    return _write("add_to_cart", b.get("rwh", ""), dry_run=b.get("dry_run", True),
+    return _write("add_to_cart", b.get("rwh", ""), dry_run=b.get("dry_run", False),
                   pylx=b.get("pylx"))
 
 
 @bp.route("/api/tis/remove-from-cart", methods=["POST"])
 def api_remove_cart():
     b = request.get_json(silent=True) or {}
-    return _write("remove_from_cart", b.get("rwh", ""), dry_run=b.get("dry_run", True),
+    return _write("remove_from_cart", b.get("rwh", ""), dry_run=b.get("dry_run", False),
                   pylx=b.get("pylx"))
 
 
