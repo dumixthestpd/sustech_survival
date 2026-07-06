@@ -39,6 +39,8 @@ select.filter{flex:1;min-width:60px}
 .c-card .code{font-family:ui-monospace,Menlo,monospace;color:var(--accent);font-size:.82rem;font-weight:600}
 .c-card .grp{color:var(--mut);font-size:.75rem}
 .c-card .nm{font-weight:600;margin-top:.15rem;font-size:.88rem}
+.c-card .sect{color:var(--mut);font-size:.74rem;margin-top:.1rem;line-height:1.4}
+.c-card .sect .sect-en{opacity:.7}
 .c-card .meta{margin-top:.2rem;color:var(--mut);font-size:.76rem;display:flex;gap:.6rem;flex-wrap:wrap}
 .c-card .meta b{color:#c2c8d0;font-weight:500}
 .c-card .sched{margin-top:.3rem;font-size:.74rem;color:var(--mut);line-height:1.5}
@@ -741,6 +743,9 @@ function renderCard(c) {
       (c.class_group ? '<span class="grp">' + escapeHtml(c.class_group) + '</span>' : '') +
       (PICKED[c.rwh] ? '<span style="color:var(--accent);font-size:.7rem;margin-left:auto;cursor:pointer" class="unpick-badge" data-rwh="' + c.rwh + '">✕ picked</span>' : '') +
     '</div>' +
+    (c.section_name && c.section_name !== c.name
+      ? '<div class="sect">' + escapeHtml(c.section_name) + (c.section_name_en ? ' <span class="sect-en">' + escapeHtml(c.section_name_en) + '</span>' : '') + '</div>'
+      : '') +
     '<div class="meta">' +
       (hasRealTeacher ? '<b>Teacher</b> ' + escapeHtml(teachers) : '<span style="color:var(--mut)"><b>Teacher</b> TBD</span>') +
       (c.credits ? ' · <b>Credits</b> ' + c.credits : '') +
@@ -1045,6 +1050,9 @@ function renderPickItem(c) {
       (enrolled ? '<span class="pick-enrolled">enrolled</span>' : '') +
       (conflictMsg ? '<span style="float:right;color:var(--bad);font-size:.65rem">⚠ conflicted</span>' : '') +
     '</div>' +
+    (c.section_name && c.section_name !== c.name
+      ? '<div class="pm" style="margin-top:.15rem">' + escapeHtml(c.section_name) + '</div>'
+      : '') +
     '<div class="pm">' +
       '<b>Teacher</b> ' + teachers +
       (c.class_group ? ' · ' + escapeHtml(c.class_group) : '') +

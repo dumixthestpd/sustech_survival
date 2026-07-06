@@ -87,6 +87,7 @@ def _client(xn: str, xq: str) -> SelectCourseClient:
 def _course_to_dict(c) -> dict:
     return {
         "code": c.code, "name": c.name, "name_en": c.name_en,
+        "section_name": c.section_name, "section_name_en": c.section_name_en,
         "class_group": c.class_group, "rwh": c.rwh,
         "college": c.college, "category": c.category,
         "campus": c.campus,

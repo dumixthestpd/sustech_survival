@@ -260,8 +260,8 @@ class SelectCourseClient:
         tc = teacher.lower().strip() if teacher else ""
         for c in courses:
             if kw:
-                hay = " ".join([c.code, c.name, c.name_en, c.rwh,
-                                c.college, c.category, c.task_type]).lower()
+                hay = " ".join([c.code, c.name, c.name_en, c.section_name, c.section_name_en,
+                                c.rwh, c.college, c.category, c.task_type]).lower()
                 if kw not in hay:
                     continue
             if tc:
