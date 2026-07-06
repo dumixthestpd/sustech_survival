@@ -38,11 +38,13 @@ class Course:
     grad_seats: Optional[int]      # yjsrl — 研究生人数
     cultivation: str               # pylx — "本科" / "研究生"
     rooms: List[str] = field(default_factory=list)         # distinct rooms in kcxx
-    teachers: List[str] = field(default_factory=list)      # from kcxx 教师 list
+    teachers: List[str] = field(default_factory=list)      # from dgjsmc (preferred) or kcxx 教师 list
     slots_raw: List[dict] = field(default_factory=list)    # parsed ScheduleSlot dicts
     task_type: str = ""               # rwlxmc — "专业任务" / "通识必修选课" / etc.
     language: str = ""                # skyymc — "中文" / "英文" / "双语"
     college_code: str = ""            # kkyx — college ID code (e.g. "010030" for 化学系)
+    section_name: str = ""            # rwmc — section name, e.g. "体育I-中文-空手道1班"
+    section_name_en: str = ""         # rwmc_en — section name English
 
     @property
     def has_schedule(self) -> bool:
@@ -84,9 +86,13 @@ class Course:
             if s["room"] and s["room"] not in rooms:
                 rooms.append(s["room"])
 
-        # Name: prefer rwmc (section name) over kcmc (course name)
-        name = raw.get("rwmc") or raw.get("kcmc") or ""
-        name_en = raw.get("rwmc_en") or raw.get("kcmc_en") or ""
+        # Name: kcmc (course, generic — same for every section, used for grouping)
+        # is the canonical title. rwmc (section name — e.g. "体育I-中文-空手道1班")
+        # is the section-specific sub-line, stored separately as section_name.
+        name = raw.get("kcmc") or ""
+        name_en = raw.get("kcmc_en") or ""
+        section_name = raw.get("rwmc") or ""
+        section_name_en = raw.get("rwmc_en") or ""
 
         # Teachers: prefer dgjsmc (clean field), fall back to kcxx anchors
         dgjs = raw.get("dgjsmc") or ""
@@ -133,4 +139,6 @@ class Course:
             task_type=raw.get("rwlxmc") or raw.get("rwlx") or "",
             language=raw.get("skyymc") or "",
             college_code=raw.get("kkyx") or "",
+            section_name=section_name,
+            section_name_en=section_name_en,
         )
