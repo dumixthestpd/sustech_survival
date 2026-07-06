@@ -8,19 +8,20 @@ page + ``/api/<sub>/*`` routes.
 Transit's frontend uses root-absolute asset paths (``/static/``,
 ``/data/``, ``/pmtiles-proxy/``), so the transit blueprint mounts those
 at root (no url_prefix) and only its HTML index lives at ``/transit``.
-The webui's own pages inline their CSS/JS to avoid any static-path
-collision with transit.
+The TIS page serves its JS at ``/static/tis/`` (see ``_tis_static``
+below) to keep both submodules' static assets separate.
 """
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Optional
 
-from flask import Flask
+from flask import Flask, send_from_directory
 
 DEFAULT_PORT = 61019
 HERE = Path(__file__).resolve().parent
 TEMPLATES = HERE / "templates"
+TIS_STATIC = HERE / "static" / "tis"
 
 
 def create_app(*, transit_data_dir: Optional[str] = None) -> Flask:
@@ -36,6 +37,13 @@ def create_app(*, transit_data_dir: Optional[str] = None) -> Flask:
         static_folder=None,   # we inline webui assets; no /static mount
     )
     app.config["TRANSIT_DATA_DIR"] = transit_data_dir
+
+    # ── TIS static assets (extracted from the template) ────────────────
+    # Transit's own blueprint mounts /static at root for its own files;
+    # TIS lives under /static/tis/ to avoid collision.
+    @app.route("/static/tis/<path:filename>")
+    def _tis_static(filename: str):
+        return send_from_directory(str(TIS_STATIC), filename)
 
     # ── Landing page ────────────────────────────────────────────────────
     @app.route("/")
