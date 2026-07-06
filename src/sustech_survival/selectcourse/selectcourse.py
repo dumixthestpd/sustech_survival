@@ -101,6 +101,12 @@ class SelectCourseClient:
         self.cache_dir = self.skill_root / "selectcourse" / "cache"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._courses: Optional[List[Course]] = None
+        # In-memory cache for the queryXkdqXnxq "current TIS active term"
+        # response. The active term does not change during a session, so
+        # caching eliminates the round-trip on every search_personal call —
+        # critical for dodging TIS's "查询请求频率过高" rate limit.
+        self._dq_cache: Optional[dict] = None
+        self._dq_cache_at: float = 0.0
         # TISAuth — Authorizer subclass that hides all HTTP.
         # Use self._auth.post(path, ...) — never access .session directly.
         from sustech_survival.sso import TISAuth
@@ -183,6 +189,11 @@ class SelectCourseClient:
             all_items.extend(items)
             if len(items) < page_size:
                 break
+            # TIS rate-limits ~3-5s between catalog calls. Throttle
+            # paginated fetches so a cold cache does not trigger
+            # "查询请求频率过高". Skip on last page (no further call).
+            if pg < 9:
+                time.sleep(0.6)
 
         courses = [Course.from_api(item) for item in all_items]
         return courses
@@ -294,37 +305,38 @@ class SelectCourseClient:
         return self.search_campus(**kw)
 
     def search_personal(self, *,
-                        keyword: str = "",
-                        teacher: str = "",
-                        college: Optional[str] = None,
-                        campus: Optional[str] = None,
-                        category: Optional[str] = None,
-                        language: Optional[str] = None,
-                        cultivation: Optional[str] = None,
-                        ignore_conflicts: bool = False,
-                        ignore_zero_capacity: bool = False,
-                        weekday: Optional[int] = None,
-                        period_start: Optional[int] = None,
-                        period_end: Optional[int] = None,
-                        xkfsdm: Optional[str] = None,     # course type code (xkfsdm)
-                        page: int = 1,
-                        page_size: int = 50,
-                        ) -> dict:
+                       keyword: str = "",
+                       teacher: str = "",
+                       college: Optional[str] = None,
+                       campus: Optional[str] = None,
+                       category: Optional[str] = None,
+                       language: Optional[str] = None,
+                       cultivation: Optional[str] = None,
+                       ignore_conflicts: bool = False,
+                       ignore_zero_capacity: bool = False,
+                       weekday: Optional[int] = None,
+                       period_start: Optional[int] = None,
+                       period_end: Optional[int] = None,
+                       xkfsdm: Optional[str] = None,     # course type code (xkfsdm)
+                       page: int = 1,
+                       page_size: int = 50,
+                       ) -> dict:
         """Search courses available for YOUR registration (选课 via Xsxk/queryKxrw).
 
         Returns dict with: ok, courses, total, enrolled, cart, message,
-        course_types, current_type.
+        course_types, current_type, round.
 
         Note: TIS rejects with "操作失败" if the queryform is incomplete.
         The full payload (extracted from `pub/xkgl/xsxk/xsxk-*.js`) requires
         not just the target xn/xq + xkfsdm, but also the CURRENT term
         (p_dqxn/p_dqxq/p_dqxnxq) and several behavior flags. We populate
-        those from a queryXkdqXnxq round-trip.
+        those from a queryXkdqXnxq round-trip (cached 5 min).
         """
         self._auth.ensure()
-        # Round-trip: get the current TIS active term for the dq fields
-        dq = self._auth.post("/Xsxk/queryXkdqXnxq", data={},
-                             timeout=15, headers={"X-Requested-With": "XMLHttpRequest"}).json()
+        # Round-trip: get the current TIS active term for the dq fields.
+        # Cached — the term does not change during a session, and re-fetching
+        # on every call is what triggers "查询请求频率过高".
+        dq = self._fetch_dq()
         queryform = {
             "p_pylx": "1",
             "p_sfgldjr": "",
@@ -392,6 +404,7 @@ class SelectCourseClient:
         kxrw = d.get("kxrwList") or {}
         raw_list = kxrw.get("list") or []
         courses = [Course.from_api(item) for item in raw_list]
+        ct = d.get("xkgzszOne") or d.get("xsxkPage", {}).get("xkgzszOne") or {}
         return {
             "ok": True,
             "courses": courses,
@@ -400,7 +413,17 @@ class SelectCourseClient:
             "cart": d.get("xkgwcList") or [],
             "message": d.get("message", ""),
             "course_types": d.get("xkgzszList") or d.get("xsxkPage", {}).get("xkgzszList") or [],
-            "current_type": d.get("xkgzszOne") or d.get("xsxkPage", {}).get("xkgzszOne") or {},
+            "current_type": ct,
+            # Bid-panel fields — extracted from the current_type config so
+            # the bid panel does not need a second TIS call.
+            "round": {
+                "xkfsdm": ct.get("xkfsdm", xkfsdm or ""),
+                "jffs": float(ct.get("jfxs") or 0),
+                "ksrq": ct.get("ksrq", ""),
+                "jsrq": ct.get("jsrq", ""),
+                "lcmc": ct.get("lcmc", ""),
+                "xkms": ct.get("xkms", ""),
+            },
         }
 
     def course_types(self) -> list:
@@ -468,6 +491,26 @@ class SelectCourseClient:
         return None
 
     # ── Personal enrollment ──────────────────────────────────────────────────
+
+    def _fetch_dq(self) -> dict:
+        """Cached queryXkdqXnxq response.
+
+        The "current TIS active term" (`p_dqxn`/`p_dqxq`/`p_dqxnxq`/
+        `cxsfmt`) is the same for every request in a session. Caching it
+        avoids the round-trip on every `search_personal` call, which is
+        what triggers TIS's "查询请求频率过高" rate-limit error.
+        """
+        ttl = 300  # 5 min — semantically stable, but allow a refresh in
+                   # case the user crosses a semester boundary mid-session
+        if self._dq_cache is not None and (time.time() - self._dq_cache_at) < ttl:
+            return self._dq_cache
+        self._auth.ensure()
+        dq = self._auth.post("/Xsxk/queryXkdqXnxq", data={},
+                             timeout=15,
+                             headers={"X-Requested-With": "XMLHttpRequest"}).json()
+        self._dq_cache = dq
+        self._dq_cache_at = time.time()
+        return dq
 
     def my_courses(self, semester: Optional[str] = None) -> List[dict]:
         """Your enrolled courses for a semester.

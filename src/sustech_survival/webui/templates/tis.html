@@ -722,13 +722,29 @@ function loadCourses(isInitialLoad) {
       if (d.course_types && d.course_types.length) {
         populateCourseTypes(d.course_types, d.current_type);
       }
+      // Round info for the bid panel — embedded in the same response,
+      // so we do not need a second TIS call.
+      if (d.round && d.round.xkfsdm) {
+        ROUND_INFO = {
+          ok: !!d.ok,
+          jffs: Number(d.round.jffs) || 0,
+          ksrq: d.round.ksrq || '',
+          jsrq: d.round.jsrq || '',
+          lcmc: d.round.lcmc || '',
+          xkfsdm: d.round.xkfsdm || '',
+          xkms: d.round.xkms || '',
+          message: d.message || '',
+        };
+      }
       var msg = d.message || '';
       if (!d.ok) {
         STAT.textContent = 'Selection: ' + (msg || 'unavailable');
         RESULTS.innerHTML = '<div class="empty">' + escapeHtml(msg || 'Course selection system not available (period may be closed).') + '</div>';
+        renderBidPanel();
         return;
       }
       STAT.textContent = 'Selection: ' + d.total + ' course(s) available' + (msg ? ' · ' + msg : '');
+      renderBidPanel();
     } else {
       CAT = d.courses || [];
       ALL_CAT = CAT.slice();
@@ -2130,18 +2146,19 @@ document.addEventListener('DOMContentLoaded', function() {
   // CSS escape for selector use
   function cssEsc(s) { return String(s).replace(/["\\]/g, '\\$&'); }
 
-  // Reload the round on first load + after switching into personal mode
-  loadRound().then(function() {
-    renderBidPanel();
-  });
+  // ROUND_INFO is now populated by loadCourses (single TIS call),
+  // so we no longer trigger a separate /api/tis/round fetch on mount.
+  // loadRound is kept as a manual refresh hook (post-submit, or if the
+  // user clicks Refresh) — it is NOT called on initial load.
+  renderBidPanel();
 
-  // Hook into the mode toggle so we refresh round info when entering personal
-  // (the existing handler is bound above; we add ours by overriding renderBidPanel
-  //  on tab/personal changes via the observer below)
+  // Hook: after loadInfo → loadCourses completes, the round info is
+  // already embedded in the courses response, so just re-render the
+  // panel. (No second TIS call.)
   var _origLoadInfo = loadInfo;
   loadInfo = function() {
     return _origLoadInfo().then(function() {
-      if (MODE === 'personal') loadRound().then(renderBidPanel);
+      if (MODE === 'personal') renderBidPanel();
     });
   };
 

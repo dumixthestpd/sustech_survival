@@ -226,6 +226,7 @@ def api_courses():
                 "message": msg,
                 "course_types": result["course_types"],
                 "current_type": result["current_type"],
+                "round": result.get("round", {}),
             })
         else:
             # Campus mode (default)
