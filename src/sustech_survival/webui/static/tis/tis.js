@@ -816,7 +816,25 @@ BRIEF_CARD.addEventListener('mouseenter', function() {
 });
 BRIEF_CARD.addEventListener('mouseleave', function() { briefHide(); });
 
-// ── Course selection (for eval) ───────────────────────────────────────────
+// ── NCES Course Eval tab ─────────────────────────────────────────────────
+//
+// Three render modes share the same #eval-out div:
+//   - browse: paginated course list (default), fetched from /api/nces/browse
+//   - detail: one course with full reviews, fetched from /api/nces/course/<id>
+//   - brief:  compact view when a TIS card is clicked (3 top reviews only)
+//
+// State:
+var EVAL_PAGE = 1;
+var EVAL_PER_PAGE = 30;
+var EVAL_SORT = 'rating';        // 'rating' | 'reviews' | 'name'
+var EVAL_SEARCH = '';            // current search query
+var EVAL_TOTAL_PAGES = 1;
+var EVAL_TOTAL = 0;
+var EVAL_MODE = 'browse';        // 'browse' | 'detail' | 'brief'
+var EVAL_BROWSE_LOADING = null;  // AbortController for in-flight browse request
+
+// DOM refs (resolved at init time — see end of file)
+var EVAL_SEARCH_EL, EVAL_SORT_EL, EVAL_PREV_EL, EVAL_NEXT_EL, EVAL_PAGE_INFO_EL;
 
 function selectCourse(rwh) {
   ACTIVE_RWH = rwh;
@@ -828,92 +846,283 @@ function selectCourse(rwh) {
   for (var j = 0; j < CAT.length; j++) {
     if (CAT[j].rwh === rwh) { course = CAT[j]; break; }
   }
-  if (!course) {
-    EVAL_OUT.innerHTML = '<div class="ncn">Course not found in current results.</div>';
-    return;
-  }
-  // Auto-switch to the eval tab so the user can see the result
+  if (!course) return;
   switchTab('eval');
-  fetchEval(course.code);
+  // Try to find the matching NCES id and open the full detail; fall back
+  // to the brief shape (rating + 3 review excerpts) if we can't pin it.
+  fetchEval(course.code, course.teachers && course.teachers.join(','));
 }
 
-function fetchEval(code) {
+// fetchEval: called when a TIS card is clicked. Prefer the full detail
+// (which has all reviews) by looking up the NCES id first via the brief
+// endpoint; if that succeeds, we have an nces_id and switch to detail.
+function fetchEval(code, teacher) {
+  code = String(code || '').trim();
+  if (!code) return;
   if (EVAL_CACHE[code]) {
-    renderEval(EVAL_CACHE[code]);
-    return;
+    var d = EVAL_CACHE[code];
+    if (d.nces_id) { renderEvalDetail(d.nces_id); return; }
+    renderEvalBrief(d); return;
   }
   EVAL_OUT.innerHTML = '<div class="ncn">Loading NCES evaluation…</div>';
-  getJSON('/api/nces/code/' + encodeURIComponent(code) + '?xn=' + encodeURIComponent(currentXn()) + '&xq=' + encodeURIComponent(currentXq())).then(function(d) {
-    EVAL_CACHE[code] = d;
-    renderEval(d);
+  getJSON('/api/nces/code/' + encodeURIComponent(code) +
+          '?xn=' + encodeURIComponent(currentXn()) +
+          '&xq=' + encodeURIComponent(currentXq()) +
+          (teacher ? '&teacher=' + encodeURIComponent(teacher) : ''))
+    .then(function(d) {
+      EVAL_CACHE[code] = d;
+      if (d.nces_id) { renderEvalDetail(d.nces_id); return; }
+      renderEvalBrief(d);
+    })['catch'](function(e) {
+      EVAL_OUT.innerHTML = '<div class="flash err">Error: ' + escapeHtml(e.message) + '</div>';
+    });
+}
+
+// ── Browse list (default view) ───────────────────────────────────────────
+function renderEvalBrowse() {
+  EVAL_MODE = 'browse';
+  if (EVAL_OUT.dataset.mode === 'browse' && !EVAL_OUT.innerHTML) {
+    // first load
+  }
+  EVAL_OUT.dataset.mode = 'browse';
+  // Cancel any in-flight request
+  if (EVAL_BROWSE_LOADING && EVAL_BROWSE_LOADING.abort) EVAL_BROWSE_LOADING.abort();
+  EVAL_BROWSE_LOADING = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+
+  EVAL_OUT.innerHTML = '<div class="ncn" style="padding:1rem">Loading NCES courses…</div>';
+  var url;
+  if (EVAL_SEARCH) {
+    url = '/api/nces/search?q=' + encodeURIComponent(EVAL_SEARCH);
+  } else {
+    url = '/api/nces/browse?page=' + EVAL_PAGE + '&per_page=' + EVAL_PER_PAGE + '&sort=' + EVAL_SORT;
+  }
+  var fetchOpts = EVAL_BROWSE_LOADING ? { signal: EVAL_BROWSE_LOADING.signal } : {};
+  fetch(url, fetchOpts).then(function(r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }).then(function(d) {
+    EVAL_TOTAL = d.total || 0;
+    EVAL_TOTAL_PAGES = d.pages || Math.ceil(d.total / EVAL_PER_PAGE) || 1;
+    var items = d.items || [];
+    if (EVAL_SEARCH) {
+      // search returns no pages info; recompute
+      EVAL_TOTAL_PAGES = 1; EVAL_PAGE = 1;
+    }
+    var html = '<div class="eval-list">';
+    if (!items.length) {
+      html += '<div class="empty" style="padding:1.5rem;text-align:center">No courses found.</div>';
+    } else {
+      for (var i = 0; i < items.length; i++) {
+        html += renderEvalBrowseCard(items[i]);
+      }
+    }
+    html += '</div>';
+    EVAL_OUT.innerHTML = html;
+    updateEvalPager();
+    // wire up card clicks
+    var cards = EVAL_OUT.querySelectorAll('.eval-browse-card');
+    for (var k = 0; k < cards.length; k++) {
+      cards[k].addEventListener('click', function(e) {
+        var id = parseInt(this.dataset.ncesId, 10);
+        if (id) renderEvalDetail(id);
+      });
+    }
+  })['catch'](function(e) {
+    if (e.name === 'AbortError') return;
+    EVAL_OUT.innerHTML = '<div class="flash err">Error: ' + escapeHtml(e.message) + '</div>';
+  });
+}
+
+function renderEvalBrowseCard(c) {
+  var rating = (c.rate_average != null) ? Number(c.rate_average).toFixed(2) : '—';
+  var reviews = c.review_count || 0;
+  var teachers = c.teacher_names || '';
+  var terms = (c.term_ids || []).map(_termIdToDisplay).join(', ');
+  return '<div class="eval-browse-card" data-nces-id="' + (c.id || '') + '">' +
+    '<div class="ev-top">' +
+      '<span class="ev-code">' + escapeHtml(c.course_code || '') + '</span>' +
+      '<span class="ev-name">' + escapeHtml(c.name || '') + '</span>' +
+      '<span class="ev-rating">' + rating + '<span class="ev-out">/10</span></span>' +
+      '<span class="ev-reviews">' + reviews + ' reviews</span>' +
+    '</div>' +
+    (teachers ? '<div class="ev-meta"><b>Teacher</b> ' + escapeHtml(teachers) + '</div>' : '') +
+    (terms ? '<div class="ev-meta"><b>Terms</b> ' + escapeHtml(terms) + '</div>' : '<div class="ev-empty">no term data</div>') +
+  '</div>';
+}
+
+function updateEvalPager() {
+  if (!EVAL_PAGE_INFO_EL) return;
+  var total = EVAL_TOTAL.toLocaleString();
+  var info = EVAL_SEARCH
+    ? total + ' results'
+    : 'Page ' + EVAL_PAGE + ' / ' + EVAL_TOTAL_PAGES + ' (' + total + ' courses)';
+  EVAL_PAGE_INFO_EL.textContent = info;
+  if (EVAL_PREV_EL) EVAL_PREV_EL.disabled = EVAL_PAGE <= 1;
+  if (EVAL_NEXT_EL) EVAL_NEXT_EL.disabled = EVAL_PAGE >= EVAL_TOTAL_PAGES;
+}
+
+function _termIdToDisplay(term_id) {
+  // Reuse the scraper-side logic — kept inline so we don't depend on the
+  // module for tiny display strings. Format: "20252" → "2025春"
+  if (!term_id || term_id.length < 5) return term_id || '';
+  var season = {'1': '秋', '2': '春', '3': '夏'}[term_id[4]] || '';
+  return term_id.slice(0, 4) + season;
+}
+
+// ── Detail view (one course, full reviews) ───────────────────────────────
+function renderEvalDetail(nces_id) {
+  EVAL_MODE = 'detail';
+  EVAL_OUT.dataset.mode = 'detail';
+  EVAL_OUT.innerHTML = '<div class="ncn" style="padding:1rem">Loading course detail…</div>';
+  getJSON('/api/nces/course/' + nces_id).then(function(d) {
+    if (!d.available) {
+      EVAL_OUT.innerHTML = '<div class="empty" style="padding:1.5rem">' +
+        escapeHtml(d.reason || 'Course not found in NCES') + '</div>';
+      return;
+    }
+    EVAL_OUT.innerHTML = renderEvalDetailCard(d);
+    var back = document.getElementById('eval-back');
+    if (back) back.addEventListener('click', renderEvalBrowse);
   })['catch'](function(e) {
     EVAL_OUT.innerHTML = '<div class="flash err">Error: ' + escapeHtml(e.message) + '</div>';
   });
 }
 
-function renderEval(d) {
-  if (!d.available) {
-    EVAL_OUT.innerHTML = '<div class="ncn">' + escapeHtml(d.reason || 'NCES evaluation not available for this course.') + '</div>' +
-      (d.search_url ? '<div style="margin-top:.6rem"><a href="' + escapeHtml(d.search_url) + '" target="_blank" rel="noopener">Search NCES ↗</a></div>' : '');
-    return;
-  }
-  var html = '<div class="bc-head">' +
-    '<div class="bc-name">' + escapeHtml(d.name) + '</div>' +
-    '<div class="bc-meta">' +
-      '<span>' + escapeHtml(d.teacher) + '</span>' +
-      (d.semester ? '<span class="bc-sem"> · ' + escapeHtml(d.semester) + '</span>' : '') +
-      '<span class="bc-code">' + escapeHtml(d.code) + '</span>' +
-    '</div>' +
-  '</div>' +
-  '<div class="bc-rating">' +
-    '<span class="bc-score">' + (d.rating || 0).toFixed(1) + '</span>' +
-    '<span class="bc-out">/ 10</span>' +
-    '<span class="bc-rev">' + (d.review_count || 0) + ' reviews</span>' +
-  '</div>' +
-  '<div class="bc-dims" style="margin-bottom:.8rem">';
-  var dims = [
-    ['Difficulty', d.dimensions.difficulty],
-    ['Workload',   d.dimensions.workload],
-    ['Grading',    d.dimensions.grading],
-    ['Takeaways',  d.dimensions.takeaways],
-  ];
-  for (var i = 0; i < dims.length; i++) {
-    var dim = dims[i][1] || {label: '—', pct: 0};
+function renderEvalDetailCard(d) {
+  var rating = (d.rating || 0).toFixed(2);
+  var semesters = (d.semesters || []).join(', ') || '—';
+  var dims = d.dimensions || {};
+  var dimNames = [['Difficulty', 'difficulty'], ['Workload', 'workload'],
+                  ['Grading', 'grading'], ['Takeaways', 'takeaways']];
+  var dimHtml = '<div class="eval-dims">';
+  for (var i = 0; i < dimNames.length; i++) {
+    var key = dimNames[i][1];
+    var dim = dims[key] || {label: '—', pct: 0};
     var pct = Math.round(dim.pct || 0);
     var isLow = pct < 50;
-    html += '<div class="bc-dim-row">' +
-      '<span class="bc-dim-name">' + dims[i][0] + '</span>' +
-      '<div class="bc-bar"><div class="bc-bar-fill' + (isLow ? ' low' : '') +
+    dimHtml += '<div class="eval-dim-row">' +
+      '<span class="ed-name-lbl">' + dimNames[i][0] + '</span>' +
+      '<div class="ed-bar"><div class="ed-bar-fill' + (isLow ? ' low' : '') +
         '" style="width:' + pct + '%"></div></div>' +
-      '<span class="bc-dim-val">' +
+      '<span class="ed-val">' +
         '<span class="lbl">' + escapeHtml(dim.label || '—') + '</span>' +
         pct + '%' +
       '</span>' +
     '</div>';
   }
-  html += '</div>';
+  dimHtml += '</div>';
 
-  // Review excerpts
-  var excerpts = d.review_excerpts || [];
-  if (excerpts.length) {
-    html += '<div style="font-size:.82rem;font-weight:600;margin-bottom:.4rem;color:var(--fg)">Top Reviews</div>';
-    for (var i = 0; i < excerpts.length; i++) {
-      var r = excerpts[i];
-      html += '<div class="eval-item">' +
+  var reviews = d.reviews || [];
+  var reviewsHtml = '';
+  if (reviews.length) {
+    reviewsHtml = '<div class="eval-reviews-h">All Reviews (' + reviews.length + ')</div>';
+    for (var j = 0; j < reviews.length; j++) {
+      var r = reviews[j];
+      var d_html = '';
+      var dimKeys = [['difficulty', 'difficulty'], ['homework', 'workload'],
+                     ['grading', 'grading'], ['gain', 'takeaways']];
+      for (var di = 0; di < dimKeys.length; di++) {
+        var v = (r.dimensions || {})[dimKeys[di][0]];
+        if (v && v !== '—') {
+          d_html += '<span><b>' + dimKeys[di][1] + '</b> ' + escapeHtml(v) + '</span>';
+        }
+      }
+      reviewsHtml += '<div class="eval-item">' +
         '<div class="ei-t">' + escapeHtml(r.username || 'Anonymous') +
           (r.semester ? ' · ' + escapeHtml(r.semester) : '') +
           (r.likes ? ' · 👍' + r.likes : '') +
         '</div>' +
-        (r.excerpt ? '<div class="ei-m">' + escapeHtml(r.excerpt) + (r.excerpt.length >= 200 ? '…' : '') + '</div>' : '') +
+        (r.text ? '<div class="ei-m">' + escapeHtml(r.text) + '</div>' : '') +
+        (d_html ? '<div class="ei-dims">' + d_html + '</div>' : '') +
       '</div>';
     }
   } else {
-    html += '<div class="ncn">No written reviews for this course.</div>';
+    reviewsHtml = '<div class="ncn">No written reviews for this course.</div>';
   }
 
-  html += '<div style="margin-top:.8rem"><a href="' + escapeHtml(d.detail_url) + '" target="_blank" rel="noopener">Full NCES page ↗</a></div>';
+  return '<div class="eval-detail">' +
+    '<button class="ghost ed-back" id="eval-back">← Back to browse</button>' +
+    '<div class="ed-head">' +
+      '<span class="ed-name">' + escapeHtml(d.name || '') + '</span>' +
+      '<span class="ed-rating">' + rating + '<span class="ed-out">/10</span></span>' +
+      '<span class="ed-reviews">' + (d.review_count || 0) + ' reviews</span>' +
+    '</div>' +
+    '<div class="ed-meta">' +
+      '<span><b>Code</b> ' + escapeHtml(d.code || '') + '</span>' +
+      (d.teacher ? '<span><b>Teacher</b> ' + escapeHtml(d.teacher) + '</span>' : '') +
+      (d.department ? '<span><b>Dept</b> ' + escapeHtml(d.department) + '</span>' : '') +
+      '<span><b>Terms</b> ' + escapeHtml(semesters) + '</span>' +
+    '</div>' +
+    dimHtml +
+    reviewsHtml +
+    '<div style="margin-top:1rem"><a href="' + escapeHtml(d.detail_url) +
+      '" target="_blank" rel="noopener">Full NCES page ↗</a></div>' +
+  '</div>';
+}
 
-  EVAL_OUT.innerHTML = html;
+// ── Brief view (compact — used when a TIS card is clicked) ───────────────
+function renderEvalBrief(d) {
+  EVAL_MODE = 'brief';
+  EVAL_OUT.dataset.mode = 'brief';
+  if (!d.available) {
+    EVAL_OUT.innerHTML = '<div class="empty" style="padding:1.5rem">' +
+      escapeHtml(d.reason || 'NCES evaluation not available for this course.') + '</div>' +
+      (d.search_url ? '<div style="margin:.6rem 1.5rem"><a href="' + escapeHtml(d.search_url) +
+        '" target="_blank" rel="noopener">Search NCES ↗</a></div>' : '');
+    return;
+  }
+  var rating = (d.rating || 0).toFixed(1);
+  var dims = d.dimensions || {};
+  var dimNames = [['Difficulty', 'difficulty'], ['Workload', 'workload'],
+                  ['Grading', 'grading'], ['Takeaways', 'takeaways']];
+  var dimHtml = '';
+  for (var i = 0; i < dimNames.length; i++) {
+    var dim = dims[dimNames[i][1]] || {label: '—', pct: 0};
+    var pct = Math.round(dim.pct || 0);
+    var isLow = pct < 50;
+    dimHtml += '<div class="eval-dim-row">' +
+      '<span class="ed-name-lbl">' + dimNames[i][0] + '</span>' +
+      '<div class="ed-bar"><div class="ed-bar-fill' + (isLow ? ' low' : '') +
+        '" style="width:' + pct + '%"></div></div>' +
+      '<span class="ed-val">' +
+        '<span class="lbl">' + escapeHtml(dim.label || '—') + '</span>' +
+        pct + '%' +
+      '</span>' +
+    '</div>';
+  }
+  var excerpts = d.review_excerpts || [];
+  var exHtml = excerpts.length
+    ? '<div class="eval-reviews-h">Top Reviews</div>' +
+      excerpts.map(function(r) {
+        return '<div class="eval-item">' +
+          '<div class="ei-t">' + escapeHtml(r.username || 'Anonymous') +
+            (r.semester ? ' · ' + escapeHtml(r.semester) : '') +
+            (r.likes ? ' · 👍' + r.likes : '') +
+          '</div>' +
+          (r.excerpt ? '<div class="ei-m">' + escapeHtml(r.excerpt) +
+            (r.excerpt.length >= 200 ? '…' : '') + '</div>' : '') +
+        '</div>';
+      }).join('')
+    : '<div class="ncn">No written reviews for this course.</div>';
+  EVAL_OUT.innerHTML = '<div class="eval-detail">' +
+    '<button class="ghost ed-back" id="eval-back">← Back to browse</button>' +
+    '<div class="ed-head">' +
+      '<span class="ed-name">' + escapeHtml(d.name || '') + '</span>' +
+      '<span class="ed-rating">' + rating + '<span class="ed-out">/10</span></span>' +
+      '<span class="ed-reviews">' + (d.review_count || 0) + ' reviews</span>' +
+    '</div>' +
+    '<div class="ed-meta">' +
+      '<span><b>Code</b> ' + escapeHtml(d.code || '') + '</span>' +
+      (d.teacher ? '<span><b>Teacher</b> ' + escapeHtml(d.teacher) + '</span>' : '') +
+      (d.semester ? '<span><b>Term</b> ' + escapeHtml(d.semester) + '</span>' : '') +
+    '</div>' +
+    '<div class="eval-dims">' + dimHtml + '</div>' +
+    exHtml +
+    '<div style="margin-top:1rem"><a href="' + escapeHtml(d.detail_url) +
+      '" target="_blank" rel="noopener">Full NCES page ↗</a></div>' +
+  '</div>';
+  var back = document.getElementById('eval-back');
+  if (back) back.addEventListener('click', renderEvalBrowse);
 }
 
 // ── Picked sections ───────────────────────────────────────────────────────
@@ -1454,8 +1663,11 @@ function switchTab(name) {
   document.getElementById('tab-solve').style.display = name === 'solve' ? '' : 'none';
   document.getElementById('tab-eval').style.display = name === 'eval' ? '' : 'none';
   document.getElementById('tab-bids').style.display = name === 'bids' ? '' : 'none';
-  // Re-render bid panel when switching to bids tab
   if (name === 'bids') renderBidPanel();
+  // Lazy-load the NCES browse on first eval-tab open
+  if (name === 'eval' && !EVAL_OUT.innerHTML.trim()) {
+    renderEvalBrowse();
+  }
 }
 
 // ── Event binding ─────────────────────────────────────────────────────────
@@ -1907,6 +2119,55 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Load info (this also triggers auto-load of all courses)
   document.getElementById('btn-info').addEventListener('click', loadInfo);
+
+  // ── NCES eval toolbar wiring ───────────────────────────────────────
+  EVAL_SEARCH_EL  = document.getElementById('eval-search');
+  EVAL_SORT_EL    = document.getElementById('eval-sort');
+  EVAL_PREV_EL    = document.getElementById('eval-prev');
+  EVAL_NEXT_EL    = document.getElementById('eval-next');
+  EVAL_PAGE_INFO_EL = document.getElementById('eval-page-info');
+  // Debounce search input (typing 5 chars should fire 1 NCES call, not 5)
+  var _evalSearchTimer = null;
+  if (EVAL_SEARCH_EL) {
+    EVAL_SEARCH_EL.addEventListener('input', function() {
+      if (_evalSearchTimer) clearTimeout(_evalSearchTimer);
+      _evalSearchTimer = setTimeout(function() {
+        _evalSearchTimer = null;
+        EVAL_SEARCH = EVAL_SEARCH_EL.value.trim();
+        EVAL_PAGE = 1;
+        if (EVAL_MODE !== 'browse') {
+          EVAL_MODE = 'browse';
+          EVAL_OUT.innerHTML = '';
+        }
+        renderEvalBrowse();
+      }, 400);
+    });
+    EVAL_SEARCH_EL.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        if (_evalSearchTimer) { clearTimeout(_evalSearchTimer); _evalSearchTimer = null; }
+        EVAL_SEARCH = EVAL_SEARCH_EL.value.trim();
+        EVAL_PAGE = 1;
+        renderEvalBrowse();
+      }
+    });
+  }
+  if (EVAL_SORT_EL) {
+    EVAL_SORT_EL.addEventListener('change', function() {
+      EVAL_SORT = EVAL_SORT_EL.value;
+      EVAL_PAGE = 1;
+      renderEvalBrowse();
+    });
+  }
+  if (EVAL_PREV_EL) {
+    EVAL_PREV_EL.addEventListener('click', function() {
+      if (EVAL_PAGE > 1) { EVAL_PAGE--; renderEvalBrowse(); }
+    });
+  }
+  if (EVAL_NEXT_EL) {
+    EVAL_NEXT_EL.addEventListener('click', function() {
+      if (EVAL_PAGE < EVAL_TOTAL_PAGES) { EVAL_PAGE++; renderEvalBrowse(); }
+    });
+  }
 
   // Semester change — reload everything
   SEM_SEL.addEventListener('change', function() {
