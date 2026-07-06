@@ -436,6 +436,12 @@ class NCESScraper:
         )
         if course is None:
             return None
+        # When a TIS teacher was specified but no NCES section matches it,
+        # don't pretend the data belongs to the TIS teacher — surface a
+        # teacher-mismatch signal so the UI can show the alternatives
+        # instead of misleading ratings from an unrelated section.
+        tis_teachers = _split_teachers(teacher.replace("，", ",")) if teacher else []
+        teacher_mismatch = bool(tis_teachers) and not exact_match
         reviews = self.fetch_reviews(code, teacher=teacher) or []
         top = sorted(reviews, key=lambda r: r.get("likes", 0), reverse=True)[:3]
         return {
@@ -443,6 +449,8 @@ class NCESScraper:
             "code": course.code,
             "name": course.name,
             "teacher": course.teacher,
+            "tis_teacher": teacher,                # what the user actually asked for
+            "teacher_mismatch": teacher_mismatch,  # True when the TIS teacher isn't in NCES
             "semester": course.semester,
             "semesters": course.semesters,
             "rating": course.rating,
