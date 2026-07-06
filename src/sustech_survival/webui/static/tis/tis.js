@@ -871,6 +871,10 @@ function fetchEval(code, teacher) {
           (teacher ? '&teacher=' + encodeURIComponent(teacher) : ''))
     .then(function(d) {
       EVAL_CACHE[code] = d;
+      // If the TIS teacher has no NCES section, keep the brief view (with
+      // mismatch banner + alternatives) instead of silently opening a
+      // detail page that doesn't actually belong to the user's teacher.
+      if (d.available && d.teacher_mismatch) { renderEvalBrief(d); return; }
       if (d.nces_id) { renderEvalDetail(d.nces_id); return; }
       renderEvalBrief(d);
     })['catch'](function(e) {
@@ -1019,8 +1023,8 @@ function renderEvalDetailCard(d) {
     for (var j = 0; j < reviews.length; j++) {
       var r = reviews[j];
       var d_html = '';
-      var dimKeys = [['difficulty', 'difficulty'], ['homework', 'workload'],
-                     ['grading', 'grading'], ['gain', 'takeaways']];
+      var dimKeys = [['difficulty', 'difficulty'], ['workload', 'workload'],
+                     ['grading', 'grading'], ['takeaways', 'takeaways']];
       for (var di = 0; di < dimKeys.length; di++) {
         var v = (r.dimensions || {})[dimKeys[di][0]];
         if (v && v !== '—') {
@@ -1104,8 +1108,39 @@ function renderEvalBrief(d) {
         '</div>';
       }).join('')
     : '<div class="ncn">No written reviews for this course.</div>';
+
+  // Teacher-mismatch banner: when the user clicked a TIS card whose
+  // teacher isn't represented in NCES, surface that clearly. Without
+  // this, the data below would be silently misattributed to the user's
+  // teacher.
+  var mismatchHtml = '';
+  if (d.teacher_mismatch && d.tis_teacher) {
+    var alts = d.alternatives || [];
+    var altHtml = alts.length
+      ? '<div class="tm-alts">' +
+          alts.map(function(a) {
+            return '<button class="tm-alt" data-nces-id="' + (a.nces_id || '') + '">' +
+              '<b>' + escapeHtml(a.teacher || '?') + '</b>' +
+              (a.rating ? ' · ' + a.rating.toFixed(2) + '/10' : '') +
+              (a.review_count ? ' · ' + a.review_count + ' reviews' : '') +
+            '</button>';
+          }).join('') +
+        '</div>'
+      : '';
+    mismatchHtml =
+      '<div class="teacher-mismatch">' +
+        '<div class="tm-h">⚠ Different teacher</div>' +
+        '<div class="tm-b">NCES has no reviews for your teacher <b>' +
+          escapeHtml(d.tis_teacher) + '</b>. Showing the highest-rated ' +
+          'section of <b>' + escapeHtml(d.code) + '</b> instead. Pick a ' +
+          'different section if you prefer:</div>' +
+        altHtml +
+      '</div>';
+  }
+
   EVAL_OUT.innerHTML = '<div class="eval-detail">' +
     '<button class="ghost ed-back" id="eval-back">← Back to browse</button>' +
+    mismatchHtml +
     '<div class="ed-head">' +
       '<span class="ed-name">' + escapeHtml(d.name || '') + '</span>' +
       '<span class="ed-rating">' + rating + '<span class="ed-out">/10</span></span>' +
@@ -1123,6 +1158,15 @@ function renderEvalBrief(d) {
   '</div>';
   var back = document.getElementById('eval-back');
   if (back) back.addEventListener('click', renderEvalBrowse);
+  // Alternatives in the teacher-mismatch banner: clicking one jumps to that
+  // NCES section's full detail (it has its own reviews).
+  var altBtns = EVAL_OUT.querySelectorAll('.tm-alt');
+  for (var ai = 0; ai < altBtns.length; ai++) {
+    altBtns[ai].addEventListener('click', function() {
+      var id = parseInt(this.dataset.ncesId, 10);
+      if (id) renderEvalDetail(id);
+    });
+  }
 }
 
 // ── Picked sections ───────────────────────────────────────────────────────
@@ -1945,7 +1989,60 @@ function startBidEdit(rwh, box) {
   input.select();
   BID_EDIT = { rwh: rwh, originalBid: original, inputEl: input };
   input.addEventListener('keydown', onBidEditKey);
+  input.addEventListener('input', onBidEditInput);
   input.addEventListener('blur', onBidEditBlur);
+}
+
+// onBidEditInput: live-update the bid total + bar + compact summary as
+// the user types. We don't touch the bb-bid div (it's hidden during edit).
+function onBidEditInput() {
+  if (!BID_EDIT) return;
+  var v = parseInt(BID_EDIT.inputEl.value, 10);
+  if (isNaN(v) || v < 1) return;        // keep last valid until user types a real number
+  PICKED_BIDS[BID_EDIT.rwh] = v;
+  updateBidTotals();
+}
+
+// updateBidTotals: refresh the live bits of the bid panel (header total,
+// segment bar, compact right-column summary) without rebuilding the boxes
+// (which would destroy the edit input).
+function updateBidTotals() {
+  var jffs = ROUND_INFO.jffs;
+  var total = bidTotal();
+  if (BID_JFFS) {
+    BID_JFFS.textContent = (jffs ? jffs.toFixed(1) : '—') + ' pts available · using ' + total;
+    if (jffs && total > jffs) BID_JFFS.classList.add('over');
+    else BID_JFFS.classList.remove('over');
+  }
+  if (BID_BAR) {
+    var keys = Object.keys(PICKED);
+    var scale = Math.max(jffs || 0, total, 1);
+    var segs = '';
+    for (var i = 0; i < keys.length; i++) {
+      var bid = Number(PICKED_BIDS[keys[i]]) || 0;
+      var pct = (bid / scale) * 100;
+      segs += '<div class="bid-seg" data-ix="' + (i % 8) + '" data-rwh="' +
+        escapeHtml(keys[i]) + '" style="width:' + pct.toFixed(2) + '%">' + bid + '</div>';
+    }
+    BID_BAR.innerHTML = segs;
+  }
+  updateBidStat();
+}
+
+// updateBidStat: refresh just the compact "X pts used / Y available" summary
+// in the right column. Called live from the bid-edit input listener.
+function updateBidStat() {
+  if (!BID_STAT || !BID_STAT_TEXT) return;
+  var has = Object.keys(PICKED).length > 0;
+  if (!has) { BID_STAT.style.display = 'none'; return; }
+  var jffs = ROUND_INFO.jffs;
+  var total = bidTotal();
+  BID_STAT.style.display = 'block';
+  if (jffs && total > jffs) {
+    BID_STAT_TEXT.innerHTML = '🎯 ' + total + ' pts used · <span style="color:var(--bad)">⚠ over ' + (total - jffs).toFixed(1) + ' pts budget</span> — click to manage';
+  } else {
+    BID_STAT_TEXT.innerHTML = '🎯 ' + total + ' pts used' + (jffs ? ' / ' + jffs.toFixed(1) + ' available' : '') + ' — click to manage';
+  }
 }
 
 function onBidEditKey(evt) {
@@ -1974,6 +2071,7 @@ function onBidEditBlur() {
 function cancelBidEdit() {
   if (!BID_EDIT) return;
   BID_EDIT.inputEl.removeEventListener('keydown', onBidEditKey);
+  BID_EDIT.inputEl.removeEventListener('input', onBidEditInput);
   BID_EDIT.inputEl.removeEventListener('blur', onBidEditBlur);
   var box = BID_EDIT.inputEl.parentNode;
   box.classList.remove('editing');
@@ -1982,13 +2080,17 @@ function cancelBidEdit() {
 }
 
 // ── Transfer overlay (drag-and-release confirmation) ──────────────────
+function _bidBoxName(c) {
+  return c.name || c.name_en || c.section_name || c.code || '';
+}
+
 function showTransferOverlay(srcRwh, dstRwh) {
   var src = PICKED[srcRwh];
   var dst = PICKED[dstRwh];
   var srcBid = Number(PICKED_BIDS[srcRwh]) || 0;
   var dstBid = Number(PICKED_BIDS[dstRwh]) || 0;
-  var srcName = (src.code || srcRwh) + ' (' + (src.class_group || '?') + ')';
-  var dstName = (dst.code || dstRwh) + ' (' + (dst.class_group || '?') + ')';
+  var srcName = _bidBoxName(src) + ' (' + (src.class_group || '?') + ')';
+  var dstName = _bidBoxName(dst) + ' (' + (dst.class_group || '?') + ')';
 
   var overlay = document.createElement('div');
   overlay.className = 'bid-overlay';
@@ -1996,29 +2098,51 @@ function showTransferOverlay(srcRwh, dstRwh) {
   overlay.innerHTML =
     '<div class="bo-box">' +
       '<div class="bo-h">Transfer credits</div>' +
-      '<div class="bo-row"><span class="bo-from">' + escapeHtml(srcName) + ' · ' + srcBid + ' pts</span></div>' +
-      '<div class="bo-row"><span class="bo-to">' + escapeHtml(dstName) + ' · ' + dstBid + ' pts</span></div>' +
+      '<div class="bo-row"><span class="bo-from"></span></div>' +
+      '<div class="bo-row"><span class="bo-to"></span></div>' +
       '<div class="bo-hint">How many to move from source?</div>' +
       '<input class="bo-in" type="number" min="1" max="' + (srcBid - 1) + '" step="1" value="1"/>' +
       '<div class="bo-hint">Enter to confirm · Esc / click-outside to cancel</div>' +
     '</div>';
   document.body.appendChild(overlay);
 
-  var input = overlay.querySelector('.bo-in');
+  var fromSpan = overlay.querySelector('.bo-from');
+  var toSpan   = overlay.querySelector('.bo-to');
+  var input    = overlay.querySelector('.bo-in');
+
+  // paint(amt): re-renders the from/to rows with the projected values
+  // after subtracting/adding `amt` points. Invalid amounts (NaN, <1)
+  // fall back to showing the current state.
+  function paint(amt) {
+    if (isNaN(amt) || amt < 1) {
+      fromSpan.textContent = 'from ' + srcName + ' · ' + srcBid + ' pts';
+      toSpan.textContent   = 'to '   + dstName + ' · ' + dstBid + ' pts';
+      return;
+    }
+    var newSrc = srcBid - amt;
+    var newDst = dstBid + amt;
+    fromSpan.textContent = 'from ' + srcName + ' · ' + srcBid + ' pts → ' + newSrc + ' pts';
+    toSpan.textContent   = 'to '   + dstName + ' · ' + dstBid + ' pts → ' + newDst + ' pts';
+  }
+  paint(1);
   input.focus();
   input.select();
 
   function cleanup() {
     if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
     input.removeEventListener('keydown', onKey);
+    input.removeEventListener('input', onInput);
     overlay.removeEventListener('click', onClickOut);
+  }
+  function onInput() {
+    var amt = parseInt(input.value, 10);
+    paint(amt);
   }
   function onKey(e) {
     if (e.key === 'Escape') { cleanup(); e.preventDefault(); return; }
     if (e.key === 'Enter') {
       var amt = parseInt(input.value, 10);
       if (isNaN(amt) || amt < 1 || amt >= srcBid) {
-        // invalid — flash
         input.style.borderColor = 'var(--bad)';
         return;
       }
@@ -2033,6 +2157,7 @@ function showTransferOverlay(srcRwh, dstRwh) {
     if (e.target === overlay) cleanup();
   }
   input.addEventListener('keydown', onKey);
+  input.addEventListener('input', onInput);
   overlay.addEventListener('click', onClickOut);
 }
 
