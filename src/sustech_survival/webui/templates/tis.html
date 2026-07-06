@@ -2160,8 +2160,24 @@ document.addEventListener('DOMContentLoaded', function() {
     setTimeout(solve, 100);
   });
 
-  // Auto-load: load info + courses on page load
-  loadInfo();
+  // Auto-load: on page load, if we're in personal mode, fetch the
+  // xkfsdm type list FIRST so the dropdown is populated before the
+  // first search fires. Without this, the initial personal search goes
+  // out with xkfsdm="" and TIS returns "not yet open" (the round is
+  // technically open, but the empty xkfsdm makes TIS reject the
+  // queryform). Catalog mode does not need this step.
+  function initialLoad() {
+    if (MODE === 'personal') {
+      getJSON('/api/tis/course-types' + sem()).then(function(d) {
+        if (d.course_types && d.course_types.length) populateCourseTypes(d.course_types);
+        loadInfo();
+      })['catch'](function() { loadInfo(); });
+    } else {
+      loadInfo();
+      loadCourses();
+    }
+  }
+  initialLoad();
 
 
 });
