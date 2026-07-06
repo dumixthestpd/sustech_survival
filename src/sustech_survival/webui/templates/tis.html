@@ -2061,14 +2061,11 @@ document.addEventListener('DOMContentLoaded', function() {
     loadInfo();
   });
 
-  // Search button: trigger client-side filtering if we have full data, else server fetch
-  document.getElementById('btn-search').addEventListener('click', function() {
-    if (ALL_CAT.length) {
-      filterResultsClientSide();
-    } else {
-      loadCourses();
-    }
-  });
+  // Search button: in personal mode always hit the server (each xkfsdm
+  // tab is its own paginated query against TIS, not a slice of a
+  // client-side cache). In catalog mode, do client-side filter on the
+  // full loaded 1503-course cache.
+  document.getElementById('btn-search').addEventListener('click', onFilterChangeImmediate);
 
   // Mode switch
   document.querySelectorAll('.mode-btn').forEach(function(btn) {
@@ -2113,15 +2110,37 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
 
-  // Client-side filter when any filter changes (if full data loaded)
+  // Client-side filter when any filter changes. Catalog mode filters
+  // the full 1503-course cache. Personal mode re-queries TIS because
+  // each xkfsdm is a separate paginated query, not a slice.
+  //
+  // Debounce: typing in the keyword field would otherwise fire 1 TIS
+  // call per keystroke (input + change events). TIS rate-limits at
+  // ~1 call per 3-5s, so we wait 500ms after the last keystroke
+  // before firing.
+  var _searchDebounce = null;
+  function onFilterChange() {
+    if (_searchDebounce) clearTimeout(_searchDebounce);
+    _searchDebounce = setTimeout(function() {
+      _searchDebounce = null;
+      if (MODE === 'campus' && ALL_CAT.length) filterResultsClientSide();
+      else loadCourses();
+    }, 500);
+  }
+  function onFilterChangeImmediate() {
+    if (_searchDebounce) { clearTimeout(_searchDebounce); _searchDebounce = null; }
+    if (MODE === 'campus' && ALL_CAT.length) filterResultsClientSide();
+    else loadCourses();
+  }
   var filterEls = [KW, F_COL, F_TASK, F_CAT, F_CAM, F_LANG, F_CULT, F_TEACHER, F_SCH];
   for (var fi = 0; fi < filterEls.length; fi++) {
-    filterEls[fi].addEventListener('change', function() {
-      if (ALL_CAT.length) filterResultsClientSide();
-    });
-    filterEls[fi].addEventListener('input', function() {
-      if (ALL_CAT.length) filterResultsClientSide();
-    });
+    // Selects / checkboxes: fire on change only (no debounce needed)
+    if (filterEls[fi] === KW) {
+      // Keyword input: debounce so typing doesn't spam TIS
+      filterEls[fi].addEventListener('input', onFilterChange);
+    } else {
+      filterEls[fi].addEventListener('change', onFilterChangeImmediate);
+    }
   }
 
   // Refresh catalog
@@ -2138,15 +2157,9 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
 
-  // Enter key on search input
+  // Enter key on search input — fire immediately, cancel any debounce
   KW.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') {
-      if (ALL_CAT.length) {
-        filterResultsClientSide();
-      } else {
-        loadCourses();
-      }
-    }
+    if (e.key === 'Enter') onFilterChangeImmediate();
   });
 
   // Enrolled
@@ -2159,6 +2172,17 @@ document.addEventListener('DOMContentLoaded', function() {
     switchTab('solve');
     setTimeout(solve, 100);
   });
+
+  // On page load, the personal-mode filter rows (.personal-only) start
+  // hidden. The mode-toggle handler shows them — but on initial load
+  // (when Selection is the default mode and no toggle happens), the
+  // handler never runs. Show them here so the xkfsdm dropdown and
+  // ignore-conflicts checkbox are usable immediately.
+  if (MODE === 'personal') {
+    document.querySelectorAll('.personal-only').forEach(function(el) {
+      el.style.display = 'block';
+    });
+  }
 
   // Auto-load: on page load, if we're in personal mode, fetch the
   // xkfsdm type list FIRST so the dropdown is populated before the
