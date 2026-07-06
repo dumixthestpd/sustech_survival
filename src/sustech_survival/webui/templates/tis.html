@@ -172,10 +172,10 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
   <!-- LEFT: search & filters -->
   <div class="col" id="search-col">
     <div class="sub">
-      <h2>Catalog</h2>
+      <h2 id="mode-h2">Selection</h2>
       <div style="display:flex;gap:.3rem;margin-bottom:.4rem">
-        <button class="ghost mode-btn active" data-mode="campus" style="flex:1;font-size:.78rem;text-align:center;padding:.25rem;border-radius:6px;border:1px solid var(--accent);background:rgba(91,157,255,.1)">📋 Catalog</button>
-        <button class="ghost mode-btn" data-mode="personal" style="flex:1;font-size:.78rem;text-align:center;padding:.25rem;border-radius:6px">🎯 Selection</button>
+        <button class="ghost mode-btn active" data-mode="personal" style="flex:1;font-size:.78rem;text-align:center;padding:.25rem;border-radius:6px;border:1px solid var(--accent);background:rgba(91,157,255,.1)">🎯 Selection</button>
+        <button class="ghost mode-btn" data-mode="campus" style="flex:1;font-size:.78rem;text-align:center;padding:.25rem;border-radius:6px">📋 Catalog</button>
       </div>
       <div class="stat" id="stat">Ready.</div>
       <div class="row"><input type="text" id="kw" placeholder="code / name / teacher"/></div>
@@ -305,7 +305,7 @@ var EVAL_CACHE = {};        // { code: evalResponse }
 var ENROLLED_RWH = new Set(); // rwhs currently enrolled
 var COLORS_CACHE = {};      // { code: color }
 var SEMESTER_INFO = null;   // cached /api/tis/info response
-var MODE = 'campus';        // 'campus' or 'personal'
+var MODE = 'personal';      // 'personal' (我要选课, default) or 'campus' (全校课表, browse-only)
 
 var PERIODS = 12;
 var DAYS = 7;
@@ -1567,6 +1567,9 @@ document.addEventListener('DOMContentLoaded', function() {
       document.querySelectorAll('.personal-only').forEach(function(el) {
         el.style.display = MODE === 'personal' ? 'block' : 'none';
       });
+      // Update h2 to reflect the current mode
+      var h2 = document.getElementById('mode-h2');
+      if (h2) h2.textContent = MODE === 'personal' ? 'Selection' : 'Catalog';
       // Show/hide task_type and scheduled (campus-only)
       var taskRow = document.getElementById('f-tasktype').closest('.row');
       var schedRow = document.getElementById('f-sched').closest('.row');
