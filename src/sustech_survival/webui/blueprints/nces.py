@@ -1,13 +1,23 @@
-"""NCES blueprint — `/api/nces/...`.
+"""
+NCES blueprint — `/api/nces/...`.
 
 Thin HTTP layer over ``sustech_survival.nces.NCESScraper``. All domain
 logic (search, parsing, review ranking, response shaping) lives in
-the module — see ``NCESScraper.brief`` / ``not_found`` / etc.
+the module — see ``NCESScraper.browse`` / ``course_detail`` / etc.
 
 This file owns only:
   - process-wide scraper singleton lifecycle
   - HTTP request parsing (query params)
   - JSON response
+
+Endpoints:
+  GET  /api/nces/code/<code>      — single-course brief (for TIS-card hover/click)
+  GET  /api/nces/course/<id>      — single-course detail (for eval-tab click)
+  GET  /api/nces/browse           — paginated course list (for eval-tab browse)
+  GET  /api/nces/search           — code-search results (for eval-tab search box)
+  GET  /api/nces/status           — cache freshness
+  POST /api/nces/refresh          — force-refresh index
+  GET  /api/nces/reviews/<code>   — full review list for a code
 """
 from __future__ import annotations
 
@@ -43,6 +53,47 @@ def api_nces_code(code: str):
         xq=request.args.get("xq", ""),
     )
     return jsonify(brief if brief is not None else s.not_found(code))
+
+
+@bp.route("/api/nces/course/<int:nces_id>")
+def api_nces_course(nces_id: int):
+    """Single course detail by NCES id — feed for the eval-tab expand."""
+    s = _get_scraper()
+    detail = s.course_detail(nces_id)
+    if detail is None:
+        return jsonify({"available": False, "reason": "course not found in NCES",
+                        "nces_id": nces_id})
+    return jsonify(detail)
+
+
+@bp.route("/api/nces/browse")
+def api_nces_browse():
+    """Paginated NCES course list — feed for the eval-tab browse view.
+
+    Query params:
+      page     — 1-indexed page number (default 1)
+      per_page — 1-50, default 30
+      sort     — "rating" (default) / "reviews" / "name"
+    """
+    s = _get_scraper()
+    page = max(1, int(request.args.get("page", 1)))
+    per_page = max(1, min(50, int(request.args.get("per_page", 30))))
+    sort = request.args.get("sort", "rating")
+    return jsonify(s.browse(page=page, per_page=per_page, sort=sort))
+
+
+@bp.route("/api/nces/search")
+def api_nces_search():
+    """Code-keyword search — used by the eval-tab search box.
+
+    Query params:
+      q — course code fragment (e.g. "BIO", "MA2")
+    """
+    s = _get_scraper()
+    q = request.args.get("q", "").strip()
+    if not q:
+        return jsonify({"items": [], "total": 0})
+    return jsonify(s.search_code(q))
 
 
 @bp.route("/api/nces/status")

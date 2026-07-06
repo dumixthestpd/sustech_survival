@@ -158,6 +158,123 @@ class NCESScraper:
             time.sleep(wait)
         self._last_request_at = time.time()
 
+    # ── Browse / search (NCES API supports these directly) ────────────────
+    def browse(self, *, page: int = 1, per_page: int = 30, sort: str = "rating") -> dict:
+        """Paginated course list, sorted client-side (NCES API ignores sort).
+
+        Returns ``{items, total, page, per_page, pages}``.
+        """
+        per_page = max(1, min(50, per_page))
+        data = self._api_search_for_browse(page=page, per_page=per_page)
+        items = data.get("items", [])
+        # Client-side sort — the NCES API doesn't honor sort_by direction
+        if sort == "rating":
+            items = sorted(items, key=lambda c: float(c.get("rate_average") or 0), reverse=True)
+        elif sort == "reviews":
+            items = sorted(items, key=lambda c: int(c.get("review_count") or 0), reverse=True)
+        elif sort == "name":
+            items = sorted(items, key=lambda c: c.get("name") or "")
+        return {
+            "items": items,
+            "total": data.get("total", 0),
+            "page": page,
+            "per_page": per_page,
+            "pages": data.get("pages", 0),
+        }
+
+    def search_code(self, q: str) -> dict:
+        """Code-keyword search — returns matching course sections."""
+        data = self._api_search(q)
+        return {
+            "items": data.get("courses", {}).get("items", []),
+            "total": data.get("courses", {}).get("total", 0),
+        }
+
+    def course_detail(self, nces_id: int) -> dict | None:
+        """Full course detail (one section) by NCES id, including reviews.
+
+        Uses the direct /api/v1/courses/<id> + /api/v1/courses/<id>/reviews
+        endpoints — no walking required.
+        """
+        self._throttle()
+        r = self.session.get(f"{self.BASE}/api/v1/courses/{nces_id}", timeout=15)
+        if r.status_code == 404:
+            return None
+        r.raise_for_status()
+        c = r.json()
+        # The direct course endpoint nests rating data under "rate"
+        rate = c.get("rate") or {}
+
+        self._throttle()
+        r2 = self.session.get(f"{self.BASE}/api/v1/courses/{nces_id}/reviews", timeout=15)
+        reviews_raw = []
+        if r2.status_code == 200:
+            reviews_raw = r2.json().get("items", []) or []
+        reviews = [self._to_review(rv) for rv in reviews_raw]
+
+        # Direct course endpoint may have different field names — adapt.
+        code = c.get("course_code") or c.get("courseries") or ""
+        name = c.get("name", "")
+        teacher = c.get("teacher_names") or ", ".join(
+            t.get("name", "") for t in (c.get("teachers") or [])
+        )
+        # Normalize term_ids to a flat list of "YYYY1"/"YYYY2"/"YYYY3" strings.
+        # Different endpoints use different shapes:
+        #   - "term_ids": ["20252", "20251", ...]
+        #   - "terms": [{"term": "20252", ...}, ...]
+        #   - "review_term_list": ["20252", "20241", ...]
+        raw_terms = c.get("term_ids")
+        if not raw_terms:
+            t = c.get("terms")
+            if isinstance(t, list) and t and isinstance(t[0], dict):
+                raw_terms = [x.get("term") or x.get("id") or "" for x in t]
+            else:
+                raw_terms = t
+        if not raw_terms:
+            raw_terms = c.get("review_term_list") or []
+        term_ids = [str(x) for x in raw_terms if x]
+        first_term = _term_id_to_display(term_ids[0]) if term_ids else ""
+        rating = float(rate.get("rate_average") or rate.get("average_rate") or 0)
+        review_count = int(rate.get("review_count") or len(reviews))
+        dept = c.get("dept", "")
+        dims = {
+            k: {"label": _score_to_label(k, rate.get(score_key))[0],
+                "pct":    _score_to_label(k, rate.get(score_key))[1]}
+            for k, score_key in [
+                ("difficulty", "difficulty_score"),
+                ("workload",   "homework_score"),
+                ("grading",    "grading_score"),
+                ("takeaways",  "gain_score"),
+            ]
+        }
+
+        return {
+            "available": True,
+            "code": code,
+            "name": name,
+            "teacher": teacher,
+            "department": dept,
+            "semester": first_term,
+            "semesters": [_term_id_to_display(t) for t in term_ids],
+            "rating": rating,
+            "review_count": review_count,
+            "nces_id": nces_id,
+            "dimensions": dims,
+            "detail_url": f"{self.BASE}/course/{nces_id}/",
+            "reviews": reviews,
+        }
+
+    def _api_search_for_browse(self, *, page: int, per_page: int) -> dict:
+        """GET /api/v1/courses?page=N&per_page=M → {items, total, pages, ...}."""
+        self._throttle()
+        r = self.session.get(
+            f"{self.BASE}/api/v1/courses",
+            params={"page": page, "per_page": per_page},
+            timeout=15,
+        )
+        r.raise_for_status()
+        return r.json()
+
     # ── Low-level API call ─────────────────────────────────────────────────
     def _api_search(self, code: str) -> dict:
         """GET /api/v1/search?q=<code> → {courses, reviews} JSON."""
@@ -330,6 +447,7 @@ class NCESScraper:
             "semesters": course.semesters,
             "rating": course.rating,
             "review_count": course.review_count,
+            "nces_id": course.nces_id,
             "dimensions": {
                 "difficulty": {"label": course.difficulty[0], "pct": course.difficulty[1]},
                 "workload":   {"label": course.workload[0],   "pct": course.workload[1]},

@@ -122,9 +122,47 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
 .solve-sec-code{font-family:ui-monospace,monospace;color:var(--accent);font-weight:500}
 
 /* eval */
+.eval-toolbar{display:flex;gap:.5rem;align-items:center;padding:.6rem 1rem;background:var(--panel);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:5;flex-wrap:wrap}
+.eval-toolbar select{font-size:.78rem}
+.eval-pager{display:flex;align-items:center;gap:.3rem;font-size:.78rem;color:var(--mut)}
+.eval-pager button{padding:.15rem .5rem;font-size:.92rem;line-height:1}
+.eval-pager button:disabled{opacity:.3;cursor:default}
+.eval-pager span{min-width:5rem;text-align:center}
+.eval-list{display:flex;flex-direction:column}
+.eval-browse-card{padding:.6rem 1rem;border-bottom:1px solid #1a2030;cursor:pointer;display:flex;flex-direction:column;gap:.25rem}
+.eval-browse-card:hover{background:var(--panel)}
+.eval-browse-card .ev-top{display:flex;gap:.5rem;align-items:baseline}
+.eval-browse-card .ev-code{font-family:ui-monospace,monospace;color:var(--accent);font-weight:600;font-size:.84rem;min-width:5rem}
+.eval-browse-card .ev-name{font-weight:600;font-size:.92rem;flex:1}
+.eval-browse-card .ev-rating{font-size:1.1rem;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums}
+.eval-browse-card .ev-rating .ev-out{font-size:.7rem;color:var(--mut);font-weight:400}
+.eval-browse-card .ev-reviews{font-size:.72rem;color:var(--mut)}
+.eval-browse-card .ev-meta{color:var(--mut);font-size:.74rem;display:flex;gap:.6rem;flex-wrap:wrap}
+.eval-browse-card .ev-meta b{color:#c2c8d0;font-weight:500}
+.eval-browse-card .ev-empty{color:var(--mut);font-size:.72rem;font-style:italic}
+.eval-detail{padding:1rem}
+.eval-detail .ed-head{display:flex;gap:.8rem;align-items:baseline;flex-wrap:wrap;margin-bottom:.4rem}
+.eval-detail .ed-name{font-size:1.1rem;font-weight:700;color:var(--txt);flex:1;min-width:200px}
+.eval-detail .ed-rating{font-size:1.6rem;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums}
+.eval-detail .ed-rating .ed-out{font-size:.8rem;color:var(--mut);font-weight:400}
+.eval-detail .ed-reviews{font-size:.78rem;color:var(--mut)}
+.eval-detail .ed-meta{color:var(--mut);font-size:.78rem;display:flex;gap:.8rem;flex-wrap:wrap;margin-bottom:.6rem}
+.eval-detail .ed-meta b{color:#c2c8d0;font-weight:500}
+.eval-detail .ed-back{font-size:.78rem;margin-bottom:.8rem}
+.eval-dims{padding:.6rem 0;border-bottom:1px solid var(--border);margin-bottom:.6rem}
+.eval-dim-row{display:flex;align-items:center;gap:.5rem;margin:.18rem 0;font-size:.78rem}
+.eval-dim-row .ed-name-lbl{width:78px;color:var(--mut)}
+.eval-dim-row .ed-bar{flex:1;height:8px;background:#1a2030;border-radius:4px;overflow:hidden}
+.eval-dim-row .ed-bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),#9ad67f)}
+.eval-dim-row .ed-bar-fill.low{background:linear-gradient(90deg,#e7c75a,#e76f6f)}
+.eval-dim-row .ed-val{width:90px;text-align:right;color:var(--txt)}
+.eval-dim-row .ed-val .lbl{display:block;font-size:.66rem;color:var(--mut)}
+.eval-reviews-h{font-size:.92rem;font-weight:600;margin:.8rem 0 .4rem;color:var(--txt)}
 .eval-item{padding:.5rem .7rem;border-bottom:1px solid #1a2030;font-size:.78rem}
 .eval-item .ei-t{font-weight:600}
-.eval-item .ei-m{color:var(--mut);margin-top:.15rem;font-size:.74rem}
+.eval-item .ei-m{color:var(--mut);margin-top:.15rem;font-size:.74rem;line-height:1.5}
+.eval-item .ei-dims{color:var(--mut);font-size:.7rem;margin-top:.2rem;display:flex;gap:.6rem;flex-wrap:wrap}
+.eval-item .ei-dims b{color:#c2c8d0;font-weight:500}
 
 /* hover brief card (NCES structured) */
 .brief-card{position:absolute;z-index:1000;width:380px;background:var(--panel2);
@@ -301,10 +339,20 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
       </div>
     </div>
     <div id="tab-eval" class="tabpane" style="display:none">
-      <div style="padding:1rem">
-        <p style="color:var(--mut);font-size:.84rem;margin-bottom:.5rem">Select a course card on the left to fetch NCES evaluations.</p>
-        <div id="eval-out" class="mut" style="font-size:.8rem"></div>
+      <div class="eval-toolbar">
+        <input type="text" id="eval-search" placeholder="Search by code (BIO, MA2, HUM)…" style="flex:1;min-width:120px"/>
+        <select id="eval-sort">
+          <option value="rating">Top rated</option>
+          <option value="reviews">Most reviewed</option>
+          <option value="name">A–Z</option>
+        </select>
+        <div class="eval-pager">
+          <button id="eval-prev" title="Previous page">‹</button>
+          <span id="eval-page-info">— / —</span>
+          <button id="eval-next" title="Next page">›</button>
+        </div>
       </div>
+      <div id="eval-out" style="font-size:.8rem"></div>
     </div>
     <div id="tab-bids" class="tabpane" style="display:none">
       <div style="padding:1rem">
