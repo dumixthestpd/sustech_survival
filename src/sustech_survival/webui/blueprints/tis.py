@@ -13,6 +13,9 @@ API:   GET  /api/tis/info                 → semester + filter options
        POST /api/tis/add-to-cart          → cart add (dry-run default)
        POST /api/tis/remove-from-cart     → cart remove (dry-run default)
        GET  /api/tis/nces?code=X          → NCES community eval for a course
+       GET  /api/tis/course-types         → xkfsdm tabs
+       GET  /api/tis/round                → 剩余积分 + round window (积分选课)
+       POST /api/tis/bids                 → submit bid values for picked courses
 
 All data comes from the existing ``SelectCourseClient`` so this layer
 contains no business logic — it only serializes Course objects and
@@ -499,3 +502,80 @@ def api_course_types():
     except Exception as e:
         return jsonify({"course_types": [], "error": str(e)}), 200
     return jsonify({"course_types": types})
+
+
+# ── Bid panel (积分选课) ─────────────────────────────────────────────────────
+@bp.route("/api/tis/round")
+def api_round():
+    """Return the current selection round's bid-relevant metadata.
+
+    jffs  = 剩余积分 (credits remaining for this student this round)
+    ksrq  = 选课开始时间 (round start)
+    jsrq  = 选课结束时间 (round end)
+    lcmc  = round phase label (预选 / 退补课 / ...)
+    kxrwlbsfxsxkxqxgkc = whether 选课显示结果 (TIS-side UI flag)
+    """
+    xn, xq = _parse_sem(request.args)
+    xkfsdm = request.args.get("xkfsdm", "") or ""
+    try:
+        c = _client(xn, xq)
+        res = c.search_personal(xkfsdm=xkfsdm, page=1, page_size=1)
+        ct = res.get("current_type") or {}
+        return jsonify({
+            "ok": res.get("ok", False),
+            "xkfsdm": ct.get("xkfsdm", xkfsdm),
+            "jffs": float(ct.get("jfxs") or 0),
+            "ksrq": ct.get("ksrq", ""),
+            "jsrq": ct.get("jsrq", ""),
+            "lcmc": ct.get("lcmc", ""),
+            "xkms": ct.get("xkms", ""),
+            "message": res.get("message", ""),
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e), "jffs": 0}), 200
+
+
+@bp.route("/api/tis/bids", methods=["POST"])
+def api_bids():
+    """Submit a batch of bid values for the user's picked courses.
+
+    Body:
+      {
+        "picks":   {rwh: bid, ...},   # the user's desired bid per course
+        "xkfsdm":  "...",              # current round code (informational)
+        "where":   "cart" | "enrolled",
+        "jffs_limit": <float>,         # optional: from /api/tis/round
+        "pylx":   "1" | "2",
+        "dry_run": <bool>              # default True
+      }
+
+    Always returns 200 with structured result. TIS per-course failures
+    are inside `results[*].ok` / `results[*].message`.
+    """
+    b = request.get_json(silent=True) or {}
+    picks = b.get("picks") or {}
+    xkfsdm = b.get("xkfsdm", "") or ""
+    where = b.get("where", "cart") or "cart"
+    pylx = b.get("pylx")
+    dry_run = bool(b.get("dry_run", True))
+    jffs_limit = b.get("jffs_limit")
+    if jffs_limit is not None:
+        try:
+            jffs_limit = float(jffs_limit)
+        except (TypeError, ValueError):
+            jffs_limit = None
+
+    if not isinstance(picks, dict) or not picks:
+        return jsonify({"ok": False, "error": "picks must be a non-empty dict",
+                        "results": [], "sum": 0, "jffs_limit": jffs_limit,
+                        "over_limit": False}), 200
+
+    xn, xq = _parse_sem(request.args)
+    try:
+        c = _client(xn, xq)
+        result = c.submit_bids(picks, xkfsdm=xkfsdm, where=where,
+                               jffs_limit=jffs_limit, pylx=pylx,
+                               dry_run=dry_run)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e), "results": []}), 200

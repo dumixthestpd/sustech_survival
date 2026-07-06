@@ -52,6 +52,8 @@ TIS_ADD_XUANKE_URL = f"{TIS_BASE}/Xsxk/addXuanke"
 TIS_TUIKE_URL = f"{TIS_BASE}/Xsxk/tuike"
 TIS_ADD_GOUWUCHE_URL = f"{TIS_BASE}/Xsxk/addGouwuche"
 TIS_DEL_GOUWUCHE_URL = f"{TIS_BASE}/Xsxk/delGouwuche"
+TIS_UPD_XKXS_BY_YX = f"{TIS_BASE}/Xsxk/updXkxsByyx"
+TIS_UPD_XKXS_BY_GWC = f"{TIS_BASE}/Xsxk/upd_xkxsBygwc"
 DEFAULT_TTL = 3600
 
 # xktjz (选课提交至) values — where the action lands
@@ -534,11 +536,16 @@ class SelectCourseClient:
                          xktjz: Optional[str] = None,
                          pylx: Optional[str] = None,
                          ignore_conflicts: bool = False,
-                         ignore_zero_capacity: bool = False) -> dict:
+                         ignore_zero_capacity: bool = False,
+                         bid: Optional[int] = None) -> dict:
         """Build the TIS `queryform` payload for write-side endpoints.
 
         Mirrors the keys seen in `pub/xkgl/xsxk/xsxk-*.js` queryform
         definition. Values not provided default to safe no-ops.
+
+        `bid` is the 选课系数 (selection coefficient, aka the credit bid
+        in 积分选课). Goes into `p_xkxs`. Leave None to omit (TIS then
+        uses the default 1 — fine for round tables that don't score).
         """
         return {
             "p_pylx": pylx,                          # 1=本科, 2=研究生
@@ -557,7 +564,7 @@ class SelectCourseClient:
             "p_xiaoqu": "",                          # 校区
             "p_kkyx": "",                            # 开课院系
             "p_kclb": "",                            # 课程类别
-            "p_xkxs": None,                          # 选课系数
+            "p_xkxs": bid if bid is not None else None,  # 选课系数 / 积分选课的 bid
             "p_dyc": None,                           # 多语种
             "p_kkxnxq": "",                          # 开课学年学期
             "p_id": rwh,                             # ★ 课程id（任务号rwh）
@@ -605,6 +612,7 @@ class SelectCourseClient:
         return res
 
     def add_course(self, rwh: str, *,
+                   bid: int = 1,
                    dry_run: bool = True,
                    ignore_conflicts: bool = False,
                    ignore_zero_capacity: bool = False,
@@ -613,6 +621,12 @@ class SelectCourseClient:
 
         `rwh`: the 任务号 (task number) from `Course.rwh` or `my_courses()`.
                Used as `p_id` in the POST body.
+
+        `bid`: 选课系数 (the credit bid in 积分选课). 1 = minimum (the
+               default — TIS will use this if `p_xkxs` is missing).
+               Pass higher numbers to outbid others on a popular class;
+               see `references/credit-based-selection.md` for the auction
+               mechanic.
 
         `dry_run=True` (default): returns what would be POSTed without
                                   firing the request. SAFE.
@@ -635,6 +649,7 @@ class SelectCourseClient:
             pylx=pylx,
             ignore_conflicts=ignore_conflicts,
             ignore_zero_capacity=ignore_zero_capacity,
+            bid=bid,
         )
         return self._post_xsxk(TIS_ADD_XUANKE_URL, payload,
                                dry_run=dry_run, rwh=rwh)
@@ -649,7 +664,8 @@ class SelectCourseClient:
         return self._post_xsxk(TIS_TUIKE_URL, payload,
                                dry_run=dry_run, rwh=rwh)
 
-    def add_to_cart(self, rwh: str, *, dry_run: bool = True,
+    def add_to_cart(self, rwh: str, *, bid: int = 1,
+                    dry_run: bool = True,
                     pylx: Optional[str] = None,
                     xktjz: str = XKTJZ_TASK_TO_CART) -> dict:
         """Add a course to your shopping cart (购物车).
@@ -658,9 +674,13 @@ class SelectCourseClient:
         `gwctjzyx` (购物车→已选) to commit the cart in one step
         (equivalent to `add_course`).
 
+        `bid`: 选课系数 (the credit bid). Sent as `p_xkxs`. TIS will
+               reject with 操作失败 if the round uses 积分 mode and the
+               bid is missing/0/non-integer.
+
         Fires `Xsxk/addGouwuche`.
         """
-        payload = self._build_queryform(rwh=rwh, xktjz=xktjz, pylx=pylx)
+        payload = self._build_queryform(rwh=rwh, xktjz=xktjz, pylx=pylx, bid=bid)
         return self._post_xsxk(TIS_ADD_GOUWUCHE_URL, payload,
                                dry_run=dry_run, rwh=rwh)
 
@@ -673,6 +693,132 @@ class SelectCourseClient:
         payload = self._build_queryform(rwh=rwh, pylx=pylx)
         return self._post_xsxk(TIS_DEL_GOUWUCHE_URL, payload,
                                dry_run=dry_run, rwh=rwh)
+
+    # ── Bid (积分 / 选课系数) ────────────────────────────────────────────────
+
+    def update_bid(self, rwh: str, bid: int, *,
+                   where: str = "enrolled",
+                   pylx: Optional[str] = None,
+                   dry_run: bool = True) -> dict:
+        """Update the bid (选课系数) on an already-picked course.
+
+        `where`: "enrolled" (已选 → calls Xsxk/updXkxsByyx)
+                 or  "cart"    (购物车 → calls Xsxk/upd_xkxsBygwc)
+
+        `bid`: positive integer. TIS rejects if the round uses 积分
+               mode and bid is missing / 0 / non-integer.
+
+        For NEW picks (not yet in cart/enrolled), use `add_to_cart(bid=…)`
+        or `add_course(bid=…)` instead — they pass the bid on the create.
+        """
+        bid = int(bid)
+        if bid < 1:
+            raise ValueError(f"bid must be a positive integer, got {bid}")
+        if where == "enrolled":
+            url = TIS_UPD_XKXS_BY_YX
+        elif where == "cart":
+            url = TIS_UPD_XKXS_BY_GWC
+        else:
+            raise ValueError(f"where must be 'enrolled' or 'cart', got {where!r}")
+        payload = self._build_queryform(rwh=rwh, pylx=pylx, bid=bid)
+        return self._post_xsxk(url, payload, dry_run=dry_run, rwh=rwh)
+
+    def submit_bids(self, picks: dict, *,
+                    xkfsdm: str = "",
+                    where: str = "cart",
+                    jffs_limit: Optional[float] = None,
+                    pylx: Optional[str] = None,
+                    dry_run: bool = True) -> dict:
+        """Submit a batch of bid values for the user's picked courses.
+
+        `picks`:  {rwh: bid_int, ...} — the user's desired bid per course.
+        `xkfsdm`: the active round code (informational; not strictly
+                  required by the wire but useful for context).
+        `where`:  "enrolled" (call updXkxsByyx) or "cart" (call
+                  upd_xkxsBygwc) — same as `update_bid`.
+        `jffs_limit`: if provided, validate that `sum(picks.values())`
+                      does not exceed it (the 剩余积分 from the round).
+                      If sum > jffs_limit, return ok=False without any
+                      TIS calls.
+
+        Returns a dict:
+          {
+            "ok": True/False,
+            "results": [{rwh, bid, ok, message}, ...],
+            "sum": N,
+            "jffs_limit": X or None,
+            "over_limit": True/False,
+          }
+
+        Each TIS call still respects `dry_run` — the loop is read+write
+        either way; `dry_run` only controls whether the actual POST
+        fires. Validation (jffs check) always runs.
+
+        If `sum(picks.values()) > jffs_limit`, the function short-circuits
+        BEFORE making any TIS calls (including dry-run). The result
+        includes the picks you asked for so the caller can show them
+        back to the user.
+        """
+        results: list = []
+
+        # Pre-compute the total. If it would blow the budget, return
+        # WITHOUT firing any TIS calls (including dry-run). Build a
+        # synthetic per-pick result so the caller can render what was
+        # rejected.
+        try:
+            coerced = {rwh: int(b) for rwh, b in picks.items()}
+        except (TypeError, ValueError):
+            return {
+                "ok": False, "results": [],
+                "error": "all bid values must be integers",
+                "sum": 0, "jffs_limit": jffs_limit, "over_limit": False,
+                "xkfsdm": xkfsdm, "dry_run": dry_run,
+            }
+        total = sum(max(0, b) for b in coerced.values())
+        if jffs_limit is not None and total > jffs_limit:
+            results = [{"rwh": rwh, "bid": b, "ok": False,
+                        "message": f"over budget ({total} > {jffs_limit})",
+                        "dry_run": dry_run}
+                       for rwh, b in coerced.items() if b >= 1]
+            return {
+                "ok": False,
+                "results": results,
+                "sum": total,
+                "jffs_limit": jffs_limit,
+                "over_limit": True,
+                "xkfsdm": xkfsdm,
+                "dry_run": dry_run,
+            }
+
+        for rwh, bid in coerced.items():
+            if bid < 1:
+                results.append({"rwh": rwh, "bid": bid, "ok": False,
+                                "message": "bid must be ≥ 1",
+                                "dry_run": dry_run})
+                continue
+            try:
+                res = self.update_bid(rwh, bid, where=where, pylx=pylx,
+                                      dry_run=dry_run)
+                results.append({
+                    "rwh": rwh,
+                    "bid": bid,
+                    "ok": res.get("jg") == "1" or res.get("dry_run"),
+                    "message": res.get("message", ""),
+                    "dry_run": res.get("dry_run", False),
+                })
+            except Exception as e:
+                results.append({"rwh": rwh, "bid": bid, "ok": False,
+                                "message": str(e),
+                                "dry_run": dry_run})
+        return {
+            "ok": all(r["ok"] for r in results),
+            "results": results,
+            "sum": total,
+            "jffs_limit": jffs_limit,
+            "over_limit": False,
+            "xkfsdm": xkfsdm,
+            "dry_run": dry_run,
+        }
 
 
 # ── Singleton factory ────────────────────────────────────────────────────────

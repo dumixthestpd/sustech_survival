@@ -155,6 +155,53 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
 .col::-webkit-scrollbar,.tabpane::-webkit-scrollbar,.results::-webkit-scrollbar{width:6px}
 .col::-webkit-scrollbar-track,.tabpane::-webkit-scrollbar-track,.results::-webkit-scrollbar-track{background:transparent}
 .col::-webkit-scrollbar-thumb,.tabpane::-webkit-scrollbar-thumb,.results::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+/* ── Bid panel (积分选课) ─────────────────────────────────────────────── */
+.bid-panel{padding:.6rem .7rem;border-bottom:1px solid var(--border);background:var(--panel2)}
+.bid-panel .bp-h{display:flex;align-items:baseline;gap:.4rem;margin-bottom:.4rem}
+.bid-panel .bp-h .bp-t{font-size:.85rem;font-weight:600;color:var(--accent)}
+.bid-panel .bp-h .bp-meta{font-size:.68rem;color:var(--mut)}
+.bid-panel .bp-h .bp-jffs{margin-left:auto;font-size:.78rem;color:var(--accent);font-weight:600}
+.bid-panel .bp-h .bp-jffs.over{color:var(--bad)}
+.bid-bar{display:flex;height:18px;border:1px solid var(--border);border-radius:4px;overflow:hidden;margin:.4rem 0 .5rem;background:var(--panel)}
+.bid-bar:empty{border-style:dashed;background:transparent}
+.bid-seg{height:100%;border-right:1px solid rgba(0,0,0,.4);position:relative;color:#fff;font-size:.66rem;display:flex;align-items:center;justify-content:center;overflow:hidden;white-space:nowrap;text-shadow:0 0 2px rgba(0,0,0,.85);user-select:none}
+.bid-seg:last-child{border-right:none}
+.bid-seg[data-ix="0"]{background:#1f5b8e}
+.bid-seg[data-ix="1"]{background:#7d4ea0}
+.bid-seg[data-ix="2"]{background:#4d8b59}
+.bid-seg[data-ix="3"]{background:#a06b3b}
+.bid-seg[data-ix="4"]{background:#9e3b3b}
+.bid-seg[data-ix="5"]{background:#3b7d8c}
+.bid-seg[data-ix="6"]{background:#7e6a35}
+.bid-seg[data-ix="7"]{background:#4d3b8c}
+.bid-boxes{display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.3rem}
+.bid-box{flex:1 1 110px;min-width:0;border:1px solid var(--border);background:var(--panel);border-radius:4px;padding:.35rem .45rem;cursor:pointer;position:relative;transition:border-color .12s,background .12s}
+.bid-box:hover{border-color:var(--accent)}
+.bid-box.drag-source{opacity:.5;border-color:var(--warn)}
+.bid-box.drag-target{outline:1px dashed var(--accent);outline-offset:-1px;background:#1d2a3d}
+.bid-box .bb-code{font-family:ui-monospace,Menlo,monospace;color:var(--mut);font-size:.66rem}
+.bid-box .bb-bid{font-size:1.1rem;font-weight:600;color:var(--accent);font-variant-numeric:tabular-nums}
+.bid-box .bb-bid::after{content:" pts";font-size:.62rem;color:var(--mut);font-weight:400;margin-left:.15rem}
+.bid-box .bb-name{font-size:.72rem;color:var(--txt);margin-top:.1rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bid-box .bb-edit{display:none;width:100%;font-size:1.1rem;font-weight:600;color:var(--accent);background:var(--panel);border:1px solid var(--accent);border-radius:3px;padding:0 .2rem;font-variant-numeric:tabular-nums}
+.bid-box.editing .bb-bid,.bid-box.editing .bb-code,.bid-box.editing .bb-name{display:none}
+.bid-box.editing .bb-edit{display:block}
+.bid-arrow{position:fixed;pointer-events:none;z-index:9999;color:var(--accent);font-size:1.2rem;line-height:1}
+.bid-arrow svg{stroke:var(--accent);stroke-width:2;fill:none}
+.bid-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:9998}
+.bid-overlay .bo-box{background:var(--panel);border:1px solid var(--accent);border-radius:8px;padding:1.1rem 1.4rem;min-width:340px;max-width:520px;box-shadow:0 8px 30px rgba(0,0,0,.6)}
+.bid-overlay .bo-h{font-size:.92rem;font-weight:600;margin-bottom:.6rem;color:var(--accent)}
+.bid-overlay .bo-row{font-size:.78rem;color:var(--txt);margin-bottom:.25rem;display:flex;justify-content:space-between;gap:1rem}
+.bid-overlay .bo-row .bo-from{color:var(--warn)}
+.bid-overlay .bo-row .bo-to{color:var(--ok)}
+.bid-overlay .bo-in{width:100%;font-size:1.4rem;font-weight:600;color:var(--accent);background:var(--bg);border:1px solid var(--accent);border-radius:4px;padding:.3rem .5rem;text-align:center;font-variant-numeric:tabular-nums;margin-top:.7rem;margin-bottom:.5rem}
+.bid-overlay .bo-hint{font-size:.7rem;color:var(--mut);text-align:center;margin-top:.4rem}
+.bid-panel .bp-submit{margin-top:.5rem;display:flex;gap:.4rem;align-items:center}
+.bid-panel .bp-submit button{flex:1;font-size:.74rem;padding:.3rem .5rem}
+.bid-panel .bp-empty{font-size:.76rem;color:var(--mut);text-align:center;padding:.6rem 0}
+.bid-panel .bp-msg{font-size:.7rem;color:var(--ok);margin-top:.4rem;min-height:1em}
+.bid-panel .bp-msg.err{color:var(--bad)}
 </style>
 </head>
 <body>
@@ -247,6 +294,19 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
 
   <!-- RIGHT: picked sections / My Selection -->
   <div class="col picked" id="picked-col" style="overflow-y:auto">
+    <div class="bid-panel" id="bid-panel" style="display:none">
+      <div class="bp-h">
+        <span class="bp-t">🎯 Bids</span>
+        <span class="bp-meta" id="bp-meta">积分选课</span>
+        <span class="bp-jffs" id="bp-jffs">— pts</span>
+      </div>
+      <div class="bid-bar" id="bid-bar"></div>
+      <div class="bid-boxes" id="bid-boxes"></div>
+      <div class="bp-submit">
+        <button class="primary" id="bp-submit" title="Sync all bid values to TIS (dry-run by default)">Sync to TIS (dry-run)</button>
+      </div>
+      <div class="bp-msg" id="bp-msg"></div>
+    </div>
     <div class="stat" id="pick-stat">0 sections · 0 Credits</div>
     <div id="pick-list"><div class="loading">No sections picked.</div></div>
     <details><summary>Enrollment status</summary>
@@ -295,6 +355,21 @@ var BRIEF_CACHE = {};   // code → response (avoid re-fetching on rapid hover)
 var BRIEF_INFLIGHT = null;  // current fetch XHR
 var BRIEF_HOVER_TIMER = null;
 var GRID_LEGEND = document.getElementById('grid-legend');
+
+// ── Bid panel refs + state (积分选课) ─────────────────────────────────────
+var BID_PANEL = document.getElementById('bid-panel');
+var BID_BAR = document.getElementById('bid-bar');
+var BID_BOXES = document.getElementById('bid-boxes');
+var BID_META = document.getElementById('bp-meta');
+var BID_JFFS = document.getElementById('bp-jffs');
+var BID_MSG = document.getElementById('bp-msg');
+var BID_SUBMIT = document.getElementById('bp-submit');
+var PICKED_BIDS = {};        // { rwh: bid_int }      parallel to PICKED
+var PICKED_CONFLICTS = {};    // { rwh: bool }        true if this rwh conflicts with another picked rwh
+var ROUND_INFO = { jffs: 0, ksrq: '', jsrq: '', lcmc: '', xkfsdm: '', xkms: '', ok: false, message: '' };
+var BID_DRAG = null;         // { sourceRwh, sourceBox, arrowEl, targetRwh, lastX, lastY }
+var BID_EDIT = null;         // { rwh, originalBid, inputEl }
+
 
 // ── State ─────────────────────────────────────────────────────────────────
 var CAT = [];               // full course list from latest server fetch
@@ -986,14 +1061,18 @@ function renderEval(d) {
 
 function addPicked(course) {
   PICKED[course.rwh] = JSON.parse(JSON.stringify(course));
+  if (!(course.rwh in PICKED_BIDS)) PICKED_BIDS[course.rwh] = 1;
   // Re-render search results so cards reflect the new pick state
   renderResults(CAT);
   renderPicked();
   renderGrid();
+  renderBidPanel();
 }
 
 function removePicked(rwh) {
   delete PICKED[rwh];
+  delete PICKED_BIDS[rwh];
+  delete PICKED_CONFLICTS[rwh];
   // Re-render search results so cards reflect the unpicked state
   renderResults(CAT);
   if (ACTIVE_RWH === rwh) {
@@ -1001,6 +1080,7 @@ function removePicked(rwh) {
   }
   renderPicked();
   renderGrid();
+  renderBidPanel();
 }
 
 function renderPicked() {
@@ -1639,6 +1719,431 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Auto-load: load info + courses on page load
   loadInfo();
+
+  // ── Bid panel (积分选课) ─────────────────────────────────────────────
+  // Visible only in personal mode + when at least one section is picked
+  // + no schedule conflicts. Refreshes the round info on every render.
+  function bidShouldShow() {
+    if (MODE !== 'personal') return false;
+    if (!Object.keys(PICKED).length) return false;
+    return true;
+  }
+
+  function loadRound() {
+    return getJSON('/api/tis/round' + sem())
+      .then(function(d) {
+        ROUND_INFO = {
+          ok: !!d.ok,
+          jffs: Number(d.jffs) || 0,
+          ksrq: d.ksrq || '',
+          jsrq: d.jsrq || '',
+          lcmc: d.lcmc || '',
+          xkfsdm: d.xkfsdm || '',
+          xkms: d.xkms || '',
+          message: d.message || '',
+        };
+        if (!d.ok && d.message) {
+          // Round is closed — still allow the panel to render but show
+          // the message so the user knows why bids won't sync.
+          console.log('[bid] round not active:', d.message);
+        }
+      })['catch'](function(e) {
+        console.warn('[bid] loadRound failed:', e);
+      });
+  }
+
+  function computePickedConflicts() {
+    PICKED_CONFLICTS = {};
+    var keys = Object.keys(PICKED);
+    for (var i = 0; i < keys.length; i++) {
+      var a = PICKED[keys[i]];
+      if (!a || !a.slots) continue;
+      for (var j = 0; j < keys.length; j++) {
+        if (i === j) continue;
+        var b = PICKED[keys[j]];
+        if (!b || !b.slots) continue;
+        if (sectionsConflict(a.slots, b.slots)) {
+          PICKED_CONFLICTS[keys[i]] = true;
+          PICKED_CONFLICTS[keys[j]] = true;
+        }
+      }
+    }
+  }
+
+  function bidTotal() {
+    var s = 0;
+    for (var k in PICKED_BIDS) {
+      if (PICKED_BIDS.hasOwnProperty(k)) s += Number(PICKED_BIDS[k]) || 0;
+    }
+    return s;
+  }
+
+  function renderBidPanel() {
+    if (!bidShouldShow()) {
+      BID_PANEL.style.display = 'none';
+      return;
+    }
+    computePickedConflicts();
+    var hasConflict = Object.keys(PICKED_CONFLICTS).length > 0;
+    var keys = Object.keys(PICKED);
+
+    if (hasConflict) {
+      BID_PANEL.style.display = 'block';
+      BID_PANEL.innerHTML =
+        '<div class="bp-h"><span class="bp-t">🎯 Bids</span></div>' +
+        '<div class="bp-empty">Resolve schedule conflicts first to set bids.</div>';
+      return;
+    }
+
+    BID_PANEL.style.display = 'block';
+    // Header
+    var phaseLabel = ROUND_INFO.lcmc || '积分选课';
+    BID_META.textContent = phaseLabel +
+      (ROUND_INFO.ksrq ? ' · ' + ROUND_INFO.ksrq.slice(5, 16) + ' → ' + ROUND_INFO.jsrq.slice(5, 16) : '');
+    var jffs = ROUND_INFO.jffs;
+    var total = bidTotal();
+    BID_JFFS.textContent = (jffs ? jffs.toFixed(1) : '—') + ' pts available · using ' + total;
+    if (jffs && total > jffs) {
+      BID_JFFS.classList.add('over');
+    } else {
+      BID_JFFS.classList.remove('over');
+    }
+
+    // Bar
+    if (!keys.length) {
+      BID_BAR.innerHTML = '';
+    } else {
+      // Use max(jffs, total) for the scale so over-budget is still visible
+      var scale = Math.max(jffs || 0, total, 1);
+      var segs = '';
+      for (var i = 0; i < keys.length; i++) {
+        var rwh = keys[i];
+        var bid = Number(PICKED_BIDS[rwh]) || 0;
+        var pct = (bid / scale) * 100;
+        var course = PICKED[rwh];
+        segs += '<div class="bid-seg" data-ix="' + (i % 8) + '" data-rwh="' + escapeHtml(rwh) +
+                '" style="width:' + pct.toFixed(2) + '%">' + bid + '</div>';
+      }
+      BID_BAR.innerHTML = segs;
+    }
+
+    // Boxes
+    var boxes = '';
+    for (var j = 0; j < keys.length; j++) {
+      var rwh2 = keys[j];
+      var c = PICKED[rwh2];
+      var bid2 = Number(PICKED_BIDS[rwh2]) || 0;
+      var displayName = c.name || c.name_en || c.section_name || '';
+      boxes += '<div class="bid-box" data-rwh="' + escapeHtml(rwh2) + '">' +
+        '<div class="bb-code">' + escapeHtml(c.code || '') +
+          (c.class_group ? ' · ' + escapeHtml(c.class_group) : '') + '</div>' +
+        '<div class="bb-bid">' + bid2 + '</div>' +
+        '<div class="bb-name" title="' + escapeHtml(displayName) + '">' + escapeHtml(displayName) + '</div>' +
+        '<input class="bb-edit" type="number" min="1" step="1" value="' + bid2 + '"/>' +
+        '</div>';
+    }
+    BID_BOXES.innerHTML = boxes;
+    attachBidBoxHandlers();
+    BID_MSG.textContent = '';
+    BID_MSG.className = 'bp-msg';
+  }
+
+  // ── Click / drag handlers on a bid box ─────────────────────────────────
+  function attachBidBoxHandlers() {
+    var boxes = BID_BOXES.querySelectorAll('.bid-box');
+    for (var i = 0; i < boxes.length; i++) {
+      boxes[i].addEventListener('mousedown', onBidBoxMouseDown);
+    }
+  }
+
+  var BID_CLICK_TIMER = null;
+  var BID_MOUSE_DOWN_AT = null;
+
+  function onBidBoxMouseDown(evt) {
+    // Only primary button
+    if (evt.button !== 0) return;
+    var box = evt.currentTarget;
+    var rwh = box.dataset.rwh;
+    BID_MOUSE_DOWN_AT = { x: evt.clientX, y: evt.clientY, rwh: rwh, t: Date.now() };
+    // Capture so we get mousemove even outside the box
+    document.addEventListener('mousemove', onBidMouseMove);
+    document.addEventListener('mouseup', onBidMouseUp);
+  }
+
+  function onBidMouseMove(evt) {
+    if (!BID_MOUSE_DOWN_AT) return;
+    var dx = Math.abs(evt.clientX - BID_MOUSE_DOWN_AT.x);
+    var dy = Math.abs(evt.clientY - BID_MOUSE_DOWN_AT.y);
+    if (dx + dy < 6) return;  // not a drag yet
+
+    if (!BID_DRAG) {
+      // Start a drag from the source box
+      var srcBox = BID_BOXES.querySelector('[data-rwh="' + cssEsc(BID_MOUSE_DOWN_AT.rwh) + '"]');
+      if (!srcBox) return;
+      BID_DRAG = {
+        sourceRwh: BID_MOUSE_DOWN_AT.rwh,
+        sourceBox: srcBox,
+        arrowEl: document.createElement('div'),
+        targetRwh: null,
+        lastX: evt.clientX,
+        lastY: evt.clientY,
+      };
+      BID_DRAG.arrowEl.className = 'bid-arrow';
+      document.body.appendChild(BID_DRAG.arrowEl);
+      srcBox.classList.add('drag-source');
+    }
+    BID_DRAG.lastX = evt.clientX;
+    BID_DRAG.lastY = evt.clientY;
+    // Highlight nearest box
+    var tgt = nearestBidBox(evt.clientX, evt.clientY, BID_DRAG.sourceRwh);
+    BID_DRAG.targetRwh = tgt;
+    // Update highlight
+    var all = BID_BOXES.querySelectorAll('.bid-box');
+    for (var i = 0; i < all.length; i++) {
+      if (all[i].dataset.rwh === tgt) all[i].classList.add('drag-target');
+      else all[i].classList.remove('drag-target');
+    }
+    drawArrow(BID_DRAG.sourceBox, evt.clientX, evt.clientY);
+  }
+
+  function onBidMouseUp(evt) {
+    document.removeEventListener('mousemove', onBidMouseMove);
+    document.removeEventListener('mouseup', onBidMouseUp);
+
+    if (BID_DRAG) {
+      // End of drag — show transfer overlay if there's a target
+      var srcRwh = BID_DRAG.sourceRwh;
+      var dstRwh = BID_DRAG.targetRwh;
+      cleanupDrag();
+      if (dstRwh && dstRwh !== srcRwh) {
+        showTransferOverlay(srcRwh, dstRwh);
+      }
+    } else if (BID_MOUSE_DOWN_AT) {
+      // Click (no drag) — enter edit mode
+      var rwh = BID_MOUSE_DOWN_AT.rwh;
+      var box = BID_BOXES.querySelector('[data-rwh="' + cssEsc(rwh) + '"]');
+      if (box) startBidEdit(rwh, box);
+    }
+    BID_MOUSE_DOWN_AT = null;
+  }
+
+  function cleanupDrag() {
+    if (!BID_DRAG) return;
+    if (BID_DRAG.arrowEl && BID_DRAG.arrowEl.parentNode) {
+      BID_DRAG.arrowEl.parentNode.removeChild(BID_DRAG.arrowEl);
+    }
+    var all = BID_BOXES.querySelectorAll('.bid-box');
+    for (var i = 0; i < all.length; i++) {
+      all[i].classList.remove('drag-source');
+      all[i].classList.remove('drag-target');
+    }
+    BID_DRAG = null;
+  }
+
+  function nearestBidBox(x, y, excludeRwh) {
+    var boxes = BID_BOXES.querySelectorAll('.bid-box');
+    var best = null;
+    var bestDist = 999999;
+    for (var i = 0; i < boxes.length; i++) {
+      if (boxes[i].dataset.rwh === excludeRwh) continue;
+      var r = boxes[i].getBoundingClientRect();
+      var cx = r.left + r.width / 2;
+      var cy = r.top + r.height / 2;
+      var d = Math.abs(x - cx) + Math.abs(y - cy);
+      if (d < bestDist) { bestDist = d; best = boxes[i].dataset.rwh; }
+    }
+    return best;
+  }
+
+  function drawArrow(srcBox, x, y) {
+    if (!BID_DRAG || !BID_DRAG.arrowEl) return;
+    var r = srcBox.getBoundingClientRect();
+    var sx = r.left + r.width / 2;
+    var sy = r.top + r.height / 2;
+    var svg = '<svg width="200" height="200" style="position:absolute;left:' + (x - 100) +
+              'px;top:' + (y - 100) + 'px"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="var(--accent)"/></marker></defs>' +
+              '<line x1="' + (sx - (x - 100)) + '" y1="' + (sy - (y - 100)) + '" x2="100" y2="100" marker-end="url(#ah)"/></svg>';
+    BID_DRAG.arrowEl.innerHTML = svg;
+  }
+
+  // ── Single-click edit ───────────────────────────────────────────────────
+  function startBidEdit(rwh, box) {
+    if (BID_EDIT) cancelBidEdit();
+    var original = Number(PICKED_BIDS[rwh]) || 0;
+    var input = box.querySelector('.bb-edit');
+    box.classList.add('editing');
+    input.value = String(original);
+    input.focus();
+    input.select();
+    BID_EDIT = { rwh: rwh, originalBid: original, inputEl: input };
+    input.addEventListener('keydown', onBidEditKey);
+    input.addEventListener('blur', onBidEditBlur);
+  }
+
+  function onBidEditKey(evt) {
+    if (!BID_EDIT) return;
+    if (evt.key === 'Escape') {
+      cancelBidEdit();
+      evt.preventDefault();
+    } else if (evt.key === 'Enter') {
+      var v = parseInt(BID_EDIT.inputEl.value, 10);
+      if (!isNaN(v) && v >= 1) {
+        PICKED_BIDS[BID_EDIT.rwh] = v;
+        var rwh = BID_EDIT.rwh;
+        cancelBidEdit();
+        renderBidPanel();
+      } else {
+        cancelBidEdit();
+      }
+      evt.preventDefault();
+    }
+  }
+
+  function onBidEditBlur() {
+    if (BID_EDIT) cancelBidEdit();
+  }
+
+  function cancelBidEdit() {
+    if (!BID_EDIT) return;
+    BID_EDIT.inputEl.removeEventListener('keydown', onBidEditKey);
+    BID_EDIT.inputEl.removeEventListener('blur', onBidEditBlur);
+    var box = BID_EDIT.inputEl.parentNode;
+    box.classList.remove('editing');
+    BID_EDIT.inputEl.value = String(BID_EDIT.originalBid);
+    BID_EDIT = null;
+  }
+
+  // ── Transfer overlay (drag-and-release confirmation) ──────────────────
+  function showTransferOverlay(srcRwh, dstRwh) {
+    var src = PICKED[srcRwh];
+    var dst = PICKED[dstRwh];
+    var srcBid = Number(PICKED_BIDS[srcRwh]) || 0;
+    var dstBid = Number(PICKED_BIDS[dstRwh]) || 0;
+    var srcName = (src.code || srcRwh) + ' (' + (src.class_group || '?') + ')';
+    var dstName = (dst.code || dstRwh) + ' (' + (dst.class_group || '?') + ')';
+
+    var overlay = document.createElement('div');
+    overlay.className = 'bid-overlay';
+    overlay.id = 'bid-transfer-overlay';
+    overlay.innerHTML =
+      '<div class="bo-box">' +
+        '<div class="bo-h">Transfer credits</div>' +
+        '<div class="bo-row"><span class="bo-from">' + escapeHtml(srcName) + ' · ' + srcBid + ' pts</span></div>' +
+        '<div class="bo-row"><span class="bo-to">' + escapeHtml(dstName) + ' · ' + dstBid + ' pts</span></div>' +
+        '<div class="bo-hint">How many to move from source?</div>' +
+        '<input class="bo-in" type="number" min="1" max="' + (srcBid - 1) + '" step="1" value="1"/>' +
+        '<div class="bo-hint">Enter to confirm · Esc / click-outside to cancel</div>' +
+      '</div>';
+    document.body.appendChild(overlay);
+
+    var input = overlay.querySelector('.bo-in');
+    input.focus();
+    input.select();
+
+    function cleanup() {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      input.removeEventListener('keydown', onKey);
+      overlay.removeEventListener('click', onClickOut);
+    }
+    function onKey(e) {
+      if (e.key === 'Escape') { cleanup(); e.preventDefault(); return; }
+      if (e.key === 'Enter') {
+        var amt = parseInt(input.value, 10);
+        if (isNaN(amt) || amt < 1 || amt >= srcBid) {
+          // invalid — flash
+          input.style.borderColor = 'var(--bad)';
+          return;
+        }
+        PICKED_BIDS[srcRwh] = srcBid - amt;
+        PICKED_BIDS[dstRwh] = dstBid + amt;
+        cleanup();
+        renderBidPanel();
+        e.preventDefault();
+      }
+    }
+    function onClickOut(e) {
+      if (e.target === overlay) cleanup();
+    }
+    input.addEventListener('keydown', onKey);
+    overlay.addEventListener('click', onClickOut);
+  }
+
+  // ── Submit to TIS ───────────────────────────────────────────────────────
+  BID_SUBMIT.addEventListener('click', function() {
+    submitBids(true);  // start as dry-run
+  });
+  BID_SUBMIT.addEventListener('dblclick', function() {
+    submitBids(false); // double-click to commit for real
+  });
+
+  function submitBids(dryRun) {
+    var picks = {};
+    for (var k in PICKED_BIDS) {
+      if (PICKED_BIDS.hasOwnProperty(k) && PICKED[k]) {
+        picks[k] = PICKED_BIDS[k];
+      }
+    }
+    if (!Object.keys(picks).length) {
+      BID_MSG.textContent = 'No picks to bid on.';
+      BID_MSG.className = 'bp-msg err';
+      return;
+    }
+    BID_MSG.textContent = (dryRun ? 'Dry-run: ' : 'Submitting: ') + 'syncing ' +
+      Object.keys(picks).length + ' bid(s)…';
+    BID_MSG.className = 'bp-msg';
+    BID_SUBMIT.disabled = true;
+    postJSON('/api/tis/bids' + sem(), {
+      picks: picks,
+      xkfsdm: ROUND_INFO.xkfsdm || '',
+      where: 'cart',
+      jffs_limit: ROUND_INFO.jffs || null,
+      dry_run: dryRun,
+    }).then(function(res) {
+      BID_SUBMIT.disabled = false;
+      if (res.over_limit) {
+        BID_MSG.textContent = 'Over budget: ' + res.sum + ' > ' + res.jffs_limit + ' pts. Adjust bids first.';
+        BID_MSG.className = 'bp-msg err';
+        return;
+      }
+      if (res.error) {
+        BID_MSG.textContent = 'Error: ' + res.error;
+        BID_MSG.className = 'bp-msg err';
+        return;
+      }
+      var okCount = (res.results || []).filter(function(r){return r.ok;}).length;
+      var total = (res.results || []).length;
+      BID_MSG.textContent = (dryRun ? 'Dry-run OK: ' : 'Committed: ') +
+        okCount + '/' + total + ' bid(s) would ' + (dryRun ? 'be sent' : 'were sent') +
+        (res.sum ? ' · total ' + res.sum + ' pts' : '');
+      BID_MSG.className = 'bp-msg' + (okCount === total ? '' : ' err');
+      if (!dryRun) {
+        // Refresh round info to show updated jffs
+        loadRound().then(renderBidPanel);
+      }
+    })['catch'](function(e) {
+      BID_SUBMIT.disabled = false;
+      BID_MSG.textContent = 'Network error: ' + e.message;
+      BID_MSG.className = 'bp-msg err';
+    });
+  }
+
+  // CSS escape for selector use
+  function cssEsc(s) { return String(s).replace(/["\\]/g, '\\$&'); }
+
+  // Reload the round on first load + after switching into personal mode
+  loadRound().then(function() {
+    renderBidPanel();
+  });
+
+  // Hook into the mode toggle so we refresh round info when entering personal
+  // (the existing handler is bound above; we add ours by overriding renderBidPanel
+  //  on tab/personal changes via the observer below)
+  var _origLoadInfo = loadInfo;
+  loadInfo = function() {
+    return _origLoadInfo().then(function() {
+      if (MODE === 'personal') loadRound().then(renderBidPanel);
+    });
+  };
 
 });
 })();
