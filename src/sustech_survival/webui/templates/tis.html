@@ -266,6 +266,7 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
       <button class="active" data-tab="grid">Weekly Grid</button>
       <button data-tab="solve">Conflict-free Scheduler</button>
       <button data-tab="eval">NCES Course Eval</button>
+      <button data-tab="bids">Bid Management</button>
     </div>
     <div id="tab-grid" class="tabpane">
       <div class="grid-wrap">
@@ -305,24 +306,30 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
         <div id="eval-out" class="mut" style="font-size:.8rem"></div>
       </div>
     </div>
+    <div id="tab-bids" class="tabpane" style="display:none">
+      <div style="padding:1rem">
+        <p style="color:var(--mut);font-size:.84rem;margin-bottom:.6rem">Set bid amounts for your picked sections. Click a bid to edit, drag between boxes to transfer. <b>积分选课</b> — use higher bids for competitive sections.</p>
+        <div class="bp-h">
+          <span class="bp-t" style="font-size:1rem;font-weight:600;color:var(--accent)">🎯 Bids</span>
+          <span class="bp-meta" id="bp-meta" style="font-size:.72rem;color:var(--mut)"></span>
+          <span class="bp-jffs" id="bp-jffs" style="margin-left:auto;font-size:.9rem;color:var(--accent);font-weight:600">— pts</span>
+        </div>
+        <div class="bid-bar" id="bid-bar" style="margin:.6rem 0 .7rem"></div>
+        <div class="bid-boxes" id="bid-boxes"></div>
+        <div class="bp-submit" style="margin-top:.7rem">
+          <button class="primary" id="bp-submit" title="Sync all bid values to TIS (dry-run by default)">Sync to TIS (dry-run)</button>
+        </div>
+        <div class="bp-msg" id="bp-msg" style="margin-top:.5rem"></div>
+      </div>
+    </div>
   </div>
 
   <!-- RIGHT: picked sections / My Selection -->
   <div class="col picked" id="picked-col" style="overflow-y:auto">
-    <div class="bid-panel" id="bid-panel" style="display:none">
-      <div class="bp-h">
-        <span class="bp-t">🎯 Bids</span>
-        <span class="bp-meta" id="bp-meta">积分选课</span>
-        <span class="bp-jffs" id="bp-jffs">— pts</span>
-      </div>
-      <div class="bid-bar" id="bid-bar"></div>
-      <div class="bid-boxes" id="bid-boxes"></div>
-      <div class="bp-submit">
-        <button class="primary" id="bp-submit" title="Sync all bid values to TIS (dry-run by default)">Sync to TIS (dry-run)</button>
-      </div>
-      <div class="bp-msg" id="bp-msg"></div>
-    </div>
     <div class="stat" id="pick-stat">0 sections · 0 Credits</div>
+    <div class="stat" id="bid-stat" style="display:none;font-size:.72rem;padding:.15rem .7rem .25rem;color:var(--mut);border-bottom:1px solid var(--border);cursor:pointer" onclick="switchTab('bids');return false;">
+      <span id="bid-stat-text"></span>
+    </div>
     <div id="pick-list"><div class="loading">No sections picked.</div></div>
     <details><summary>Enrollment status</summary>
       <div style="padding:.4rem .7rem"><button id="btn-enrolled">Load my enrolled</button></div>
@@ -372,13 +379,14 @@ var BRIEF_HOVER_TIMER = null;
 var GRID_LEGEND = document.getElementById('grid-legend');
 
 // ── Bid panel refs + state (积分选课) ─────────────────────────────────────
-var BID_PANEL = document.getElementById('bid-panel');
 var BID_BAR = document.getElementById('bid-bar');
 var BID_BOXES = document.getElementById('bid-boxes');
 var BID_META = document.getElementById('bp-meta');
 var BID_JFFS = document.getElementById('bp-jffs');
 var BID_MSG = document.getElementById('bp-msg');
 var BID_SUBMIT = document.getElementById('bp-submit');
+var BID_STAT = document.getElementById('bid-stat');
+var BID_STAT_TEXT = document.getElementById('bid-stat-text');
 var PICKED_BIDS = {};        // { rwh: bid_int }      parallel to PICKED
 var PICKED_CONFLICTS = {};    // { rwh: bool }        true if this rwh conflicts with another picked rwh
 var ROUND_INFO = { jffs: 0, ksrq: '', jsrq: '', lcmc: '', xkfsdm: '', xkms: '', ok: false, message: '' };
@@ -1789,6 +1797,9 @@ function switchTab(name) {
   document.getElementById('tab-grid').style.display = name === 'grid' ? '' : 'none';
   document.getElementById('tab-solve').style.display = name === 'solve' ? '' : 'none';
   document.getElementById('tab-eval').style.display = name === 'eval' ? '' : 'none';
+  document.getElementById('tab-bids').style.display = name === 'bids' ? '' : 'none';
+  // Re-render bid panel when switching to bids tab
+  if (name === 'bids') renderBidPanel();
 }
 
 // ── Event binding ─────────────────────────────────────────────────────────
@@ -1854,7 +1865,9 @@ function bidTotal() {
 
 function renderBidPanel() {
   if (!bidShouldShow()) {
-    BID_PANEL.style.display = 'none';
+    BID_BAR.innerHTML = '';
+    BID_BOXES.innerHTML = '';
+    BID_STAT.style.display = 'none';
     return;
   }
   computePickedConflicts();
@@ -1862,14 +1875,27 @@ function renderBidPanel() {
   var keys = Object.keys(PICKED);
 
   if (hasConflict) {
-    BID_PANEL.style.display = 'block';
-    BID_PANEL.innerHTML =
-      '<div class="bp-h"><span class="bp-t">🎯 Bids</span></div>' +
-      '<div class="bp-empty">Resolve schedule conflicts first to set bids.</div>';
+    BID_BAR.innerHTML = '';
+    BID_BOXES.innerHTML =
+      '<div style="color:var(--warn);font-size:.84rem;padding:.5rem 0">⚠ Resolve schedule conflicts first to set bids.</div>';
+    BID_META.textContent = '';
+    BID_JFFS.textContent = 'conflicts pending';
+    BID_JFFS.className = 'bp-jffs over';
+    BID_STAT.style.display = 'block';
+    BID_STAT_TEXT.innerHTML = '⚠ Conflicts — resolve to bid';
     return;
   }
 
-  BID_PANEL.style.display = 'block';
+  BID_STAT.style.display = 'block';
+  var jffs = ROUND_INFO.jffs;
+  var total = bidTotal();
+  if (jffs && total > jffs) {
+    BID_STAT_TEXT.innerHTML = '🎯 ' + total + ' pts used · <span style="color:var(--bad)">⚠ over ' + (total - jffs).toFixed(1) + ' pts budget</span> — click to manage';
+  } else if (total > 0) {
+    BID_STAT_TEXT.innerHTML = '🎯 ' + total + ' pts used' + (jffs ? ' / ' + jffs.toFixed(1) + ' available' : '') + ' — click to manage';
+  } else {
+    BID_STAT.style.display = 'none';
+  }
   // Header
   var phaseLabel = ROUND_INFO.lcmc || '积分选课';
   BID_META.textContent = phaseLabel +
