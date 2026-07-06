@@ -121,7 +121,13 @@ class Course:
             code=raw.get("kcdm") or "",
             name=name,
             name_en=name_en,
-            class_group=raw.get("kxh") or "",
+            class_group=(
+                raw.get("kxh") or
+                # personal endpoint sometimes leaves kxh null but encodes
+                # the class group in the rwh tail ("...-BIO103-001")
+                (raw.get("rwh", "").rsplit("-", 1)[-1] if raw.get("rwh") and raw.get("rwh").count("-") >= 4 else "")
+                or ""
+            ),
             rwh=raw.get("rwh") or "",
             college=raw.get("kkyxmc") or "",
             category=raw.get("kclbmc") or "",

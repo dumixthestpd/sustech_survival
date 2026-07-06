@@ -312,45 +312,65 @@ class SelectCourseClient:
 
         Returns dict with: ok, courses, total, enrolled, cart, message,
         course_types, current_type.
+
+        Note: TIS rejects with "操作失败" if the queryform is incomplete.
+        The full payload (extracted from `pub/xkgl/xsxk/xsxk-*.js`) requires
+        not just the target xn/xq + xkfsdm, but also the CURRENT term
+        (p_dqxn/p_dqxq/p_dqxnxq) and several behavior flags. We populate
+        those from a queryXkdqXnxq round-trip.
         """
+        self._auth.ensure()
+        # Round-trip: get the current TIS active term for the dq fields
+        dq = self._auth.post("/Xsxk/queryXkdqXnxq", data={},
+                             timeout=15, headers={"X-Requested-With": "XMLHttpRequest"}).json()
         queryform = {
+            "p_pylx": "1",
+            "p_sfgldjr": "",
+            "p_sfredis": "",
+            "p_sfsyxkgwc": "1",          # 是否使用选课购物车
+            "p_xktjz": None,
+            "p_chaxunxh": "",
+            "p_gjz": keyword or "",
+            "p_skjs": teacher or "",
             "p_xn": self._sem.xn,
             "p_xq": self._sem.xq,
             "p_xnxq": "",
-            "p_gjz": keyword or "",
-            "p_kc_gjz": "",
-            "p_kcdm_js": "",
-            "p_kclb": category or "",
-            "p_kkxnxq": "",
-            "p_kkyx": college or "",
-            "p_ksjc": str(period_start) if period_start else "",
-            "p_jsjc": str(period_end) if period_end else "",
-            "p_kxsj_ksjc": "",
-            "p_kxsj_jsjc": "",
-            "p_kxsj_xqj": str(weekday) if weekday else "",
-            "p_pylx": {"本科": "1", "研究生": "2", "": ""}.get(cultivation or "", cultivation or ""),
-            "p_sfgldjr": "",
-            "p_sfhlctkc": "1" if ignore_conflicts else "",
-            "p_sfhllrlkc": "1" if ignore_zero_capacity else "",
-            "p_sfmxzj": "",
-            "p_sfredis": "",
-            "p_sfsyxkgwc": "",
-            "p_sfxsgwckb": "",
-            "p_skjs": teacher or "",
-            "p_skyy": language or "",
-            "p_xiaoqu": campus or "",
+            "p_dqxn": dq.get("p_dqxn", ""),
+            "p_dqxq": dq.get("p_dqxq", ""),
+            "p_dqxnxq": dq.get("p_dqxnxq", ""),
             "p_xkfsdm": xkfsdm or "",
-            "p_chaxunxkfsdm": xkfsdm or "",
-            "p_xqj": "",
-            "p_xzcxtjz_bj": "",
+            "p_xiaoqu": campus or "",
+            "p_kkyx": college or "",
+            "p_kclb": category or "",
+            "p_xkxs": None,
+            "p_dyc": None,
+            "p_kkxnxq": "",
+            "p_id": None,
+            "p_ids": [],
+            "p_sfhlctkc": "1" if ignore_conflicts else "0",
+            "p_sfhllrlkc": "1" if ignore_zero_capacity else "0",
+            "p_kxsj_xqj": str(weekday) if weekday else "",
+            "p_kxsj_ksjc": str(period_start) if period_start else "",
+            "p_kxsj_jsjc": str(period_end) if period_end else "",
+            "p_kcdm_js": "",
+            "p_kcdm_cxrw": "",
+            "p_kcdm_cxrw_zckc": "",
+            "p_kc_gjz": "",
             "p_xzcxtjz_nj": "",
             "p_xzcxtjz_yx": "",
             "p_xzcxtjz_zy": "",
             "p_xzcxtjz_zyfx": "",
+            "p_xzcxtjz_bj": "",
+            "p_sfxsgwckb": "1",
+            "p_skyy": language or "",
+            "p_sfmxzj": "0",
+            "cxsfmt": dq.get("cxsfmt", "0"),
+            "mxpylx": "1",
             "pageNum": str(page),
             "pageSize": str(page_size),
         }
-        self._auth.ensure()
+        # Drop None values (TIS rejects keys with value 'None')
+        queryform = {k: v for k, v in queryform.items() if v is not None}
         r = self._auth.post("/Xsxk/queryKxrw", data=queryform,
                             timeout=30, headers={"X-Requested-With": "XMLHttpRequest"})
         r.raise_for_status()
