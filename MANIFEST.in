@@ -8,6 +8,5 @@ global-exclude *.pyo
 global-exclude .pytest_cache
 global-exclude .DS_Store
 exclude credentials.txt
-exclude bb_session.json
 exclude **/session.json
 exclude **/.cache

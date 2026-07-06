@@ -3,8 +3,6 @@ credentials.txt
 creds.txt
 *.session
 *.json.tmp
-bb_session.json
-bb_session.json.tmp
 session.json
 session.json.tmp
 *_session.json
