@@ -12,10 +12,10 @@ API:   GET  /api/tis/info                 → semester + filter options
        POST /api/tis/drop                 → drop course (dry-run by default)
        POST /api/tis/add-to-cart          → cart add (dry-run default)
        POST /api/tis/remove-from-cart     → cart remove (dry-run default)
-       GET  /api/tis/nces?code=X          → NCES community eval for a course
        GET  /api/tis/course-types         → xkfsdm tabs
        GET  /api/tis/round                → 剩余积分 + round window (积分选课)
        POST /api/tis/bids                 → submit bid values for picked courses
+       (NCES eval data served at /api/nces/code/<code> — see nces blueprint)
 
 All data comes from the existing ``SelectCourseClient`` so this layer
 contains no business logic — it only serializes Course objects and
