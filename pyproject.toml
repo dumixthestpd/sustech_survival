@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "sustech-survival"
 version = "0.2.0b1"
-description = "SUSTech academic toolkit — Blackboard, TIS, Library, PMS, transit, papers, course eval, faculty, classroom booking, and SSO for the entire sustech.edu.cn ecosystem."
+description = "sustech_survival is a Python module that allows API-level SUSTech service calls. It satisfies everyday needs of SUSTech students including BB, TIS, library, PMS, and more."
 readme = "README.md"
 license = "PolyForm-Noncommercial-1.0.0"
 license-files = ["LICENSE"]

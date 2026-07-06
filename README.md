@@ -2,9 +2,9 @@
 
 # sustech-survival
 
-`sustech_survival` is a Python module that allows API-level sustech service calls. it satisfies everyday needs of sustech students including bb, tis, lib, pms and more.
+`sustech_survival` is a Python module that allows API-level SUSTech service calls. It satisfies everyday needs of SUSTech students including BB, TIS, library, PMS, and more.
 
-by connecting the services at code level, we allow a simplification of the campus systems, a shortcut to a personalized campus experience and most importantly, facilitates and invites AI-agent assistance into your campus life.
+By connecting the services at the code level, we simplify the campus systems, offer a shortcut to a personalized campus experience, and — most importantly — welcome AI agents into your campus life.
 
 [![GitHub](https://img.shields.io/badge/github-repo-blue.svg)](https://github.com/dumixthestpd/sustech-survival)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
