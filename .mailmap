@@ -1,0 +1,5 @@
+# Rewrite every commit author to the canonical public form.
+# Using a placeholder email signals "no real address here" to anyone
+# reading git log. Combined with the GitHub-private-email setting, this
+# keeps the user out of spam databases without sacrificing authorship.
+dumixthestupid <dumix@local> <dumixthestupid@users.noreply.github.com>

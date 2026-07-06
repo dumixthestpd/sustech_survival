@@ -65,8 +65,17 @@ class Course:
     def from_api(cls, raw: dict) -> "Course":
         """Parse one row of Xsxktz/queryRwxxcxList.
 
-        Note: rooms/teachers/slots_raw are extracted from the kcxx HTML
-        blob (the only place real schedule+room data lives).
+        Field selection (TIS-2026 catalog format):
+          name / name_en — rwmc/rwmc_en first (the actual section name with
+            class group + language, e.g. "体育I-中文-空手道1班"). kcmc/kcmc_en
+            is the generic course name ("体育I") — same for every section,
+            useless in a per-class view. Fall back to kcmc if rwmc is missing.
+          teachers       — dgjsmc is the clean teacher field, comma-separated
+            for co-teach ("余春红,贾方兴"). Split on common delimiters.
+            Fall back to the kcxx anchor-text extraction only if dgjsmc
+            is empty (older TIS layouts).
+          rooms/slots    — extracted from the kcxx HTML (the only place
+            real schedule+room data lives).
         """
         kcxx = raw.get("kcxx") or ""
         slot_dicts = parse_kcxx(kcxx)
@@ -74,15 +83,28 @@ class Course:
         for s in slot_dicts:
             if s["room"] and s["room"] not in rooms:
                 rooms.append(s["room"])
-        # Teachers: kcxx has names like "<a>张三</a> <a>李四</a>" inside the
-        # 教师 block. Reuse the existing ivu-tag-text extraction.
-        import re
-        teacher_blocks = re.findall(r"<a [^>]*>([^<]+)</a>", kcxx)
-        teachers = []
-        for t in teacher_blocks:
-            t = t.strip()
-            if t and t not in teachers and len(t) <= 8:
-                teachers.append(t)
+
+        # Name: prefer rwmc (section name) over kcmc (course name)
+        name = raw.get("rwmc") or raw.get("kcmc") or ""
+        name_en = raw.get("rwmc_en") or raw.get("kcmc_en") or ""
+
+        # Teachers: prefer dgjsmc (clean field), fall back to kcxx anchors
+        dgjs = raw.get("dgjsmc") or ""
+        teachers: List[str] = []
+        if dgjs:
+            import re as _re
+            # TIS uses comma (and sometimes Chinese 、 or ，) between co-teachers
+            for t in _re.split(r"[,，、]", dgjs):
+                t = t.strip()
+                if t and t not in teachers:
+                    teachers.append(t)
+        if not teachers and kcxx:
+            import re as _re
+            for t in _re.findall(r"<a [^>]*>([^<]+)</a>", kcxx):
+                t = t.strip()
+                if t and t not in teachers:
+                    teachers.append(t)
+
         # Capacity fields may be strings ("48") or None.
         def _int(v):
             try:
@@ -91,8 +113,8 @@ class Course:
                 return None
         return cls(
             code=raw.get("kcdm") or "",
-            name=raw.get("kcmc") or "",
-            name_en=raw.get("rwmc_en") or "",
+            name=name,
+            name_en=name_en,
             class_group=raw.get("kxh") or "",
             rwh=raw.get("rwh") or "",
             college=raw.get("kkyxmc") or "",
