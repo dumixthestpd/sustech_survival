@@ -57,7 +57,11 @@ select.filter{flex:1;min-width:60px}
 .filter-pill .fp-x{color:#7b8393;font-size:.7rem;margin-left:.1rem;line-height:1}
 .filter-pill:hover .fp-x{color:#ff6b6b}
 .filter-pill.fp-empty{opacity:0;pointer-events:none;height:0;margin:0;padding:0;overflow:hidden}
-.empty,.loading{padding:2rem 1rem;color:var(--mut);text-align:center;font-size:.85rem}
+/* loading bar */
+#loading-bar{position:fixed;top:0;left:0;z-index:9999;width:100%;height:2px;pointer-events:none;opacity:0;transition:opacity .15s}
+#loading-bar.active{opacity:1}
+#loading-bar .lb-fill{height:100%;width:0;background:linear-gradient(90deg,var(--accent),#7fb0ff,var(--accent));background-size:200% 100%;animation:lb-shimmer 1.2s ease infinite;border-radius:0 2px 2px 0}
+@keyframes lb-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 
 /* schedule grid */
 .grid-wrap{padding:.7rem 1rem}
@@ -214,6 +218,7 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
 </style>
 </head>
 <body>
+<div id="loading-bar"><div class="lb-fill"></div></div>
 <header>
   <a href="/">← Home</a>
   <h1>Course Selector</h1>
@@ -393,6 +398,52 @@ var SEMESTER_INFO = null;   // cached /api/tis/info response
 var MODE = 'personal';      // 'personal' (我要选课, default) or 'campus' (全校课表, browse-only)
 
 var PERIODS = 12;
+
+// ── Loading bar ───────────────────────────────────────────────────────────
+var LB = document.getElementById('loading-bar');
+var LOADING = 0;  // counter — stays active until all stacked requests finish
+function showLoading() {
+  LOADING++;
+  if (LOADING === 1) {
+    LB.classList.add('active');
+    var fill = LB.querySelector('.lb-fill');
+    if (fill) { fill.style.width = '20%'; fill._tick = 20; }
+    if (STAT && !STAT.textContent.match(/Loading/)) STAT.dataset.prevText = STAT.textContent;
+    if (STAT) STAT.textContent = '⟳ Loading…';
+    // Clear stale results so user knows something new is happening
+    if (RESULTS) RESULTS.innerHTML = '<div class="loading">⟳ Loading…</div>';
+    // Animate the bar gradually (20% → 85%) until done
+    if (fill) clearInterval(fill._timer);
+    if (fill) fill._timer = setInterval(function() {
+      if (fill._tick < 85) { fill._tick += Math.random() * 8; if (fill._tick > 85) fill._tick = 85; fill.style.width = fill._tick + '%'; }
+    }, 600);
+  }
+}
+function hideLoading() {
+  if (LOADING > 0) LOADING--;
+  if (LOADING === 0) {
+    var fill = LB.querySelector('.lb-fill');
+    if (fill) { clearInterval(fill._timer); fill.style.width = '100%'; setTimeout(function() { fill.style.width = '0'; }, 200); }
+    setTimeout(function() { LB.classList.remove('active'); }, 400);
+    if (STAT && STAT.textContent === '⟳ Loading…' && STAT.dataset.prevText) {
+      var pt = STAT.dataset.prevText;
+      delete STAT.dataset.prevText;
+      if (STAT.textContent === '⟳ Loading…') STAT.textContent = pt;
+    }
+  }
+}
+// Monkey-patch fetch to auto-track loading
+var _origFetch = window.fetch;
+window.fetch = function(url, opts) {
+  showLoading();
+  return _origFetch.call(window, url, opts).then(function(r) {
+    hideLoading();
+    return r;
+  })['catch'](function(e) {
+    hideLoading();
+    throw e;
+  });
+};
 var DAYS = 7;
 var DAY_NAMES = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 var ROW_HEIGHT = 38;
