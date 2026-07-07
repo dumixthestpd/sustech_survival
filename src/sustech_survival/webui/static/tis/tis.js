@@ -1041,7 +1041,14 @@ function renderEvalDetailCard(d) {
       '</div>';
     }
   } else {
-    reviewsHtml = '<div class="ncn">No written reviews for this course.</div>';
+    // No reviews at all — surface it as a warning so the user knows this
+    // section exists in NCES but the community hasn't reviewed it.
+    reviewsHtml = '<div class="eval-reviews-h reviews-mismatch-hdr">' +
+      '⚠ Exact course match found, but no evaluations yet — ' +
+      escapeHtml(d.name || d.code) +
+      (d.teacher ? ' by ' + escapeHtml(d.teacher) : '') + ':' +
+    '</div>' +
+    '<div class="ncn">No written reviews for this course.</div>';
   }
 
   return '<div class="eval-detail">' +
@@ -1095,9 +1102,26 @@ function renderEvalBrief(d) {
     '</div>';
   }
   var excerpts = d.review_excerpts || [];
+  // Build a review-area header that tells the user the data below is for
+  // a different teacher's section (mismatch) or has no reviews at all
+  // (exact match but 0 reviews). Without this, the review list below
+  // would be silently misattributed to the user's TIS teacher.
+  var reviewsHdr = '';
+  if (d.teacher_mismatch && d.tis_teacher) {
+    reviewsHdr = '<div class="eval-reviews-h reviews-mismatch-hdr">' +
+      '⚠ Valid exact course match not found in NCES — ' +
+      escapeHtml(d.name || d.code) +
+      ' by other teacher (' + escapeHtml(d.teacher || '?') + '):' +
+    '</div>';
+  } else if ((d.review_count || 0) === 0 && d.available) {
+    reviewsHdr = '<div class="eval-reviews-h reviews-mismatch-hdr">' +
+      '⚠ Exact course match found, but no evaluations yet — ' +
+      escapeHtml(d.name || d.code) +
+      (d.teacher ? ' by ' + escapeHtml(d.teacher) : '') + ':' +
+    '</div>';
+  }
   var exHtml = excerpts.length
-    ? '<div class="eval-reviews-h">Top Reviews</div>' +
-      excerpts.map(function(r) {
+    ? reviewsHdr + excerpts.map(function(r) {
         return '<div class="eval-item">' +
           '<div class="ei-t">' + escapeHtml(r.username || 'Anonymous') +
             (r.semester ? ' · ' + escapeHtml(r.semester) : '') +
@@ -1107,7 +1131,7 @@ function renderEvalBrief(d) {
             (r.excerpt.length >= 200 ? '…' : '') + '</div>' : '') +
         '</div>';
       }).join('')
-    : '<div class="ncn">No written reviews for this course.</div>';
+    : reviewsHdr + '<div class="ncn">No written reviews for this course.</div>';
 
   // Teacher-mismatch banner: when the user clicked a TIS card whose
   // teacher isn't represented in NCES, surface that clearly. Without
