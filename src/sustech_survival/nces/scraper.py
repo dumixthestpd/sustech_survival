@@ -294,17 +294,36 @@ class NCESScraper:
         tis_teachers: list[str],
         term_id: str,
     ) -> Optional[dict]:
-        """Pick the best-matching course section for the TIS lookup."""
+        """Pick the best-matching course section for the TIS lookup.
+
+        Scoring: (matched_tis_teachers, nces_teachers ⊆ tis_teachers, term_match)
+        so a section where every TIS teacher is in NCES wins over one with
+        the same number of matches but an extra teacher (TIS class A+B+C
+        should prefer NCES A+B+C over NCES A+B+C+D).
+        """
         if not courses:
             return None
         best: Optional[dict] = None
-        best_score = (-1, -1)  # (teacher_match, term_match)
+        best_score = (-1, -1, -1)  # (matched_count, exact_subset, term_match)
         for c in courses:
-            t_match = (
-                1 if tis_teachers and _teachers_overlap(tis_teachers, _split_teachers(c.get("teacher_names", ""))) else 0
-            )
+            nces_t = _split_teachers(c.get("teacher_names", ""))
+            if tis_teachers:
+                # Count matched TIS teachers (not just bool) so 4/4 > 3/4.
+                matched = sum(
+                    1 for t in tis_teachers
+                    if any(t == n or t in n or n in t for n in nces_t)
+                )
+                # Bonus if NCES teachers are a subset of TIS (no extras)
+                nces_subset = (
+                    all(
+                        any(t == n or t in n or n in t for t in tis_teachers)
+                        for n in nces_t
+                    ) if nces_t else False
+                )
+            else:
+                matched, nces_subset = 0, True
             term_match = 1 if term_id and term_id in c.get("term_ids", []) else 0
-            score = (t_match, term_match)
+            score = (matched, 1 if nces_subset else 0, term_match)
             if score > best_score:
                 best_score = score
                 best = c
@@ -387,21 +406,46 @@ class NCESScraper:
             return (None, False, [])
 
         nces_teachers = _split_teachers(best.get("teacher_names", ""))
-        exact_match = bool(tis_teachers) and _teachers_overlap(tis_teachers, nces_teachers)
+        # exact_match means EVERY TIS teacher appears in the NCES section.
+        # Mere overlap (1 of 4) is not enough — the user expects to see data
+        # for THEIR section's full teacher team. For single-teacher TIS
+        # cards, overlap degenerates to equality which is what we want.
+        exact_match = bool(tis_teachers) and all(
+            any(t == n or t in n or n in t for n in nces_teachers)
+            for t in tis_teachers
+        )
         if not tis_teachers:
             # No TIS teacher filter — treat the first section as a match
             exact_match = True
 
         course = self._to_course(best, code)
 
-        alternatives = [
-            {
+        # Alternatives = OTHER sections of the SAME course code, but only
+        # ones that actually provide insight:
+        #   1. must have at least 1 review (no-eval is useless)
+        #   2. must share at least 1 teacher with the TIS section
+        #      (otherwise the user is no better informed than the
+        #      course-wide stats)
+        #   3. show all matches (no slicing) so the user can pick
+        alternatives = []
+        for c in courses:
+            if c["id"] == best["id"]:
+                continue
+            if int(c.get("review_count") or 0) == 0:
+                continue
+            nces_t = _split_teachers(c.get("teacher_names", ""))
+            if not any(
+                t == n or t in n or n in t
+                for t in tis_teachers for n in nces_t
+            ):
+                continue
+            alternatives.append({
                 "name": c.get("name", ""),
                 "teacher": c.get("teacher_names", ""),
                 "nces_id": int(c["id"]),
-            }
-            for c in courses if c["id"] != best["id"]
-        ]
+                "review_count": int(c.get("review_count") or 0),
+                "rating": float(c.get("rate_average") or 0),
+            })
 
         self._course_cache[cache_key] = (now, course)
         return (course, exact_match, alternatives)
@@ -515,20 +559,22 @@ class NCESScraper:
     # ── Domain response shape (UI-agnostic payload) ────────────────────────
     def _collect_teacher_other(self, tis_teachers: list[str], exclude_code: str = "") -> list[dict]:
         """Aggregate the teacher's other courses for the teacher-other
-        fallback panel. Returns one section per (teacher, course_code),
-        keeping the one with the most reviews. Sorted by review_count
-        desc so the most-reviewed courses are on top. ``exclude_code``
-        filters out the requested course itself (we don't want to show
-        the same unevaluated section as its own fallback).
+        fallback panel. Returns one row per TIS teacher — the single
+        best section each teacher has (most reviewed). Sorted by
+        review_count desc. ``exclude_code`` filters out the requested
+        course itself. No-eval sections are skipped — they're not
+        useful for gauging the teacher.
         """
-        agg: dict[tuple[str, str], dict] = {}
+        # For each TIS teacher, find their single best reviewed section.
+        per_teacher: dict[str, dict] = {}
         for t in tis_teachers:
             for c in self.teacher_courses(t):
+                if c.review_count == 0:
+                    continue
                 if exclude_code and c.code == exclude_code:
                     continue
-                key = (c.teacher, c.code)
-                if key not in agg or c.review_count > agg[key]["review_count"]:
-                    agg[key] = {
+                if t not in per_teacher or c.review_count > per_teacher[t]["review_count"]:
+                    per_teacher[t] = {
                         "teacher": c.teacher,
                         "code": c.code,
                         "name": c.name,
@@ -541,7 +587,7 @@ class NCESScraper:
                         "takeaways": c.takeaways,
                         "semester": c.semester,
                     }
-        return sorted(agg.values(), key=lambda r: r["review_count"], reverse=True)
+        return sorted(per_teacher.values(), key=lambda r: r["review_count"], reverse=True)
 
     def brief(
         self, code: str, *, teacher: str = "", xn: str = "", xq: str = "",
