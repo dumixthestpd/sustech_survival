@@ -1611,6 +1611,39 @@ function updateSolveCodes() {
 
 // ── Weekly Grid (reusable: sections → blocks → tables) ─────────────────
 
+// Lightweight overlap check between two sections (any shared day+period+week).
+// Mirrors the backend _slots_overlap() but client-side so the solver
+// annotations can compute "dropped because it conflicts with X" without
+// a round-trip.
+function _sectionsOverlapLite(a, b) {
+  var sa = a.slots || a.slots_raw || [];
+  var sb = b.slots || b.slots_raw || [];
+  for (var i = 0; i < sa.length; i++) {
+    for (var j = 0; j < sb.length; j++) {
+      if (sa[i].day !== sb[j].day) continue;
+      var ap = sa[i].period_end != null
+        ? { start: sa[i].period_start, end: sa[i].period_end }
+        : { start: sa[i].ksjc || sa[i].period_start, end: sa[i].jsjc || sa[i].period_end };
+      var bp = sb[j].period_end != null
+        ? { start: sb[j].period_start, end: sb[j].period_end }
+        : { start: sb[j].ksjc || sb[j].period_start, end: sb[j].jsjc || sb[j].period_end };
+      if (ap.start <= bp.end && bp.start <= ap.end) {
+        // weeks overlap?
+        var aw = sa[i].weeks || [];
+        var bw = sb[j].weeks || [];
+        if (aw.length && bw.length) {
+          for (var k = 0; k < aw.length; k++) {
+            if (bw.indexOf(aw[k]) >= 0) return true;
+          }
+        } else {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
 function sectionsToBlocks(sections) {
   var allBlocks = [];
   for (var pi = 0; pi < sections.length; pi++) {
@@ -1939,6 +1972,53 @@ function solve() {
 
     function renderSolveItem() {
       var sol = flat[idx];
+
+      // ── Per-solution annotations ───────────────────────────────────
+      // (a) "One code one class rule" — codes the user picked multiple
+      //     sections of. The solution keeps ONE; the others are not in
+      //     `sol.dropped` (which is keyed by code) so we compute them here.
+      var userPickedByCode = {};  // code → [rwh,...]
+      Object.keys(PICKED).forEach(function(rwh) {
+        var c = PICKED[rwh].code;
+        if (!userPickedByCode[c]) userPickedByCode[c] = [];
+        userPickedByCode[c].push(rwh);
+      });
+      var solutionRwhs = sol.sections.map(function(s) { return s.rwh; });
+      var intraDrops = {};  // code → [rwh,...] dropped by "one code" rule
+      Object.keys(userPickedByCode).forEach(function(code) {
+        var rwhs = userPickedByCode[code];
+        if (rwhs.length <= 1) return;
+        var kept = rwhs.filter(function(r) { return solutionRwhs.indexOf(r) >= 0; });
+        var dropped = rwhs.filter(function(r) { return solutionRwhs.indexOf(r) < 0; });
+        if (kept.length && dropped.length) {
+          intraDrops[code] = dropped;
+        }
+      });
+
+      // (b) For each fully-dropped code, find a kept section whose slots
+      //     overlap with any of the dropped code's sections → "conflict with"
+      var droppedCodes = sol.dropped || [];
+      var conflictReasons = {};  // code → [keptSection, ...] (first overlap wins)
+      var allCourses = CAT.concat(sol.sections);  // all sections we have data for
+      var catByCode = {};  // code → [courses]
+      allCourses.forEach(function(c) {
+        if (!catByCode[c.code]) catByCode[c.code] = [];
+        catByCode[c.code].push(c);
+      });
+      droppedCodes.forEach(function(code) {
+        var droppedSecs = catByCode[code] || [];
+        var keptSecs = sol.sections.filter(function(s) { return s.code !== code; });
+        droppedSecs.forEach(function(ds) {
+          for (var ki = 0; ki < keptSecs.length; ki++) {
+            if (_sectionsOverlapLite(ds, keptSecs[ki])) {
+              if (!conflictReasons[code]) conflictReasons[code] = [];
+              conflictReasons[code].push(keptSecs[ki]);
+              break;
+            }
+          }
+        });
+      });
+
       // Build section rows + total credits
       var secHtml = '';
       var totalCredits = 0;
@@ -1946,6 +2026,16 @@ function solve() {
         var sec = sol.sections[si];
         var schedStr = sec.schedule || formatSchedule(sec.slots);
         totalCredits += parseFloat(sec.credits) || 0;
+        // Annotate sections that had intra-code siblings
+        var intraNote = '';
+        if (intraDrops[sec.code]) {
+          var others = intraDrops[sec.code].map(function(r) {
+            var p = userPickedByCode[sec.code].filter(function(x) { return x === r; })[0] && PICKED[r];
+            if (!p) return r;
+            return 'class ' + (p.class_group || '?') + (p.teachers && p.teachers[0] ? ' (' + p.teachers[0] + ')' : '');
+          }).join(', ');
+          intraNote = ' <span class="sc-note">← kept this; ' + others + ' dropped (one code one class rule)</span>';
+        }
         secHtml += '<div class="sc-sec">' +
           '<span class="solve-sec-code">' + escapeHtml(sec.code) + '</span>' +
           (sec.class_group ? ' <span style="color:var(--mut)">' + escapeHtml(sec.class_group) + '</span>' : '') +
@@ -1953,7 +2043,27 @@ function solve() {
           (sec.teachers && sec.teachers[0] ? ' · ' + escapeHtml(sec.teachers.join(', ')) : '') +
           (sec.credits ? ' · <b>' + sec.credits + '</b> cr' : '') +
           (schedStr ? ' · <span style="color:var(--mut);font-size:.72rem">' + escapeHtml(schedStr) + '</span>' : '') +
+          intraNote +
         '</div>';
+      }
+
+      // Build dropped annotation lines: "MSE410: dropped ↔ conflict with CH105"
+      var dropHtml = '';
+      if (droppedCodes.length) {
+        dropHtml = '<div class="sc-drops">';
+        droppedCodes.forEach(function(code) {
+          var name = (PICKED[Object.keys(PICKED).filter(function(r) { return PICKED[r].code === code; })[0]] || {}).name || code;
+          var reason = conflictReasons[code];
+          var reasonText = reason && reason[0]
+            ? '↔ conflict with <b>' + escapeHtml(reason[0].code) + '</b>'
+            : '↔ no non-conflicting section exists';
+          dropHtml += '<div class="sc-drop-row">' +
+            '<span class="solve-sec-code">' + escapeHtml(code) + '</span> ' +
+            escapeHtml(name) + ': <span style="color:var(--bad)">dropped</span>. ' +
+            reasonText +
+          '</div>';
+        });
+        dropHtml += '</div>';
       }
 
       var coverage = sol.covered;
@@ -1992,6 +2102,7 @@ function solve() {
         '</div>' +
         '<div class="solve-card" style="border:none;background:transparent;padding:0;margin-bottom:.3rem">' +
           secHtml +
+          dropHtml +
           '<div class="sc-apply" style="margin-top:.5rem">' +
             '<button class="primary" id="solve-apply" style="width:100%;padding:.4rem">Apply This Schedule</button>' +
           '</div>' +
