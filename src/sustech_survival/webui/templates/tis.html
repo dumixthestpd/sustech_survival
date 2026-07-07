@@ -167,9 +167,23 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
 .teacher-mismatch{padding:.7rem;margin:.4rem 0;background:rgba(227,179,65,.08);border:1px solid var(--warn);border-radius:6px;font-size:.78rem}
 .teacher-mismatch .tm-h{font-weight:600;color:var(--warn);margin-bottom:.25rem}
 .teacher-mismatch .tm-b{color:var(--mut);margin-bottom:.5rem;line-height:1.4}
+.tm-section{margin-top:.5rem}
+.tm-section-h{font-size:.7rem;font-weight:600;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.3rem}
 .tm-alts{display:flex;flex-wrap:wrap;gap:.35rem}
 .tm-alt{padding:.25rem .55rem;background:var(--panel2);border:1px solid var(--border);border-radius:4px;color:var(--txt);cursor:pointer;font-size:.76rem}
 .tm-alt:hover{border-color:var(--accent);background:var(--panel)}
+.tm-other{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:.4rem}
+.tm-other-card{padding:.5rem .6rem;background:var(--panel2);border:1px solid var(--border);
+  border-radius:5px;cursor:pointer;text-align:left;color:var(--txt);font:inherit;
+  display:flex;flex-direction:column;gap:.3rem;transition:border-color .12s,background .12s}
+.tm-other-card:hover{border-color:var(--accent);background:var(--panel)}
+.tm-other-card .to-head{display:flex;flex-direction:column;gap:.05rem}
+.tm-other-card .to-head b{font-size:.82rem;font-family:ui-monospace,monospace;color:var(--accent)}
+.tm-other-card .to-head span{font-size:.72rem;color:var(--mut);line-height:1.25}
+.tm-other-card .to-meta{display:flex;gap:.5rem;font-size:.72rem}
+.tm-other-card .to-rating{color:#7ed4a7;font-weight:600}
+.tm-other-card .to-reviews{color:var(--mut)}
+.tm-other-card .to-dims{display:flex;flex-wrap:wrap;gap:.25rem .55rem;font-size:.66rem;color:var(--mut);line-height:1.3}
 
 /* hover brief card (NCES structured) */
 .brief-card{position:absolute;z-index:1000;width:380px;background:var(--panel2);

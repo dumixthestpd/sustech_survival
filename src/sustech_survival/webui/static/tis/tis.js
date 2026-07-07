@@ -1117,24 +1117,61 @@ function renderEvalBrief(d) {
   if (d.teacher_mismatch && d.tis_teacher) {
     var alts = d.alternatives || [];
     var altHtml = alts.length
-      ? '<div class="tm-alts">' +
-          alts.map(function(a) {
-            return '<button class="tm-alt" data-nces-id="' + (a.nces_id || '') + '">' +
-              '<b>' + escapeHtml(a.teacher || '?') + '</b>' +
-              (a.rating ? ' · ' + a.rating.toFixed(2) + '/10' : '') +
-              (a.review_count ? ' · ' + a.review_count + ' reviews' : '') +
-            '</button>';
-          }).join('') +
+      ? '<div class="tm-section">' +
+          '<div class="tm-section-h">Other sections of ' + escapeHtml(d.code) + '</div>' +
+          '<div class="tm-alts">' +
+            alts.map(function(a) {
+              return '<button class="tm-alt" data-nces-id="' + (a.nces_id || '') + '">' +
+                '<b>' + escapeHtml(a.teacher || '?') + '</b>' +
+                (a.rating ? ' · ' + a.rating.toFixed(2) + '/10' : '') +
+                (a.review_count ? ' · ' + a.review_count + ' reviews' : '') +
+              '</button>';
+            }).join('') +
+          '</div>' +
         '</div>'
       : '';
+
+    // Teacher's OTHER courses — gives a sense of what they're like as a
+    // teacher even when their section of THIS course has no reviews.
+    var other = d.teacher_other || [];
+    var otherHtml = other.length
+      ? '<div class="tm-section">' +
+          '<div class="tm-section-h">What ' + escapeHtml(d.tis_teacher) +
+            ' teaches elsewhere</div>' +
+          '<div class="tm-other">' +
+            other.slice(0, 6).map(function(c) {
+              var d1 = c.difficulty || ['—', 0];
+              var w1 = c.workload   || ['—', 0];
+              var g1 = c.grading    || ['—', 0];
+              var t1 = c.takeaways  || ['—', 0];
+              return '<button class="tm-other-card" data-nces-id="' + (c.nces_id || '') + '">' +
+                '<div class="to-head">' +
+                  '<b>' + escapeHtml(c.code || '') + '</b>' +
+                  '<span>' + escapeHtml(c.name || '') + '</span>' +
+                '</div>' +
+                '<div class="to-meta">' +
+                  '<span class="to-rating">' + (c.rating || 0).toFixed(1) + '/10</span>' +
+                  '<span class="to-reviews">' + (c.review_count || 0) + ' reviews</span>' +
+                '</div>' +
+                '<div class="to-dims">' +
+                  '<span>Difficulty ' + Math.round(d1[1] || 0) + '%</span>' +
+                  '<span>Workload ' + Math.round(w1[1] || 0) + '%</span>' +
+                  '<span>Grading ' + Math.round(g1[1] || 0) + '%</span>' +
+                  '<span>Gain ' + Math.round(t1[1] || 0) + '%</span>' +
+                '</div>' +
+              '</button>';
+            }).join('') +
+          '</div>' +
+        '</div>'
+      : '';
+
     mismatchHtml =
       '<div class="teacher-mismatch">' +
         '<div class="tm-h">⚠ Different teacher</div>' +
         '<div class="tm-b">NCES has no reviews for your teacher <b>' +
-          escapeHtml(d.tis_teacher) + '</b>. Showing the highest-rated ' +
-          'section of <b>' + escapeHtml(d.code) + '</b> instead. Pick a ' +
-          'different section if you prefer:</div>' +
-        altHtml +
+          escapeHtml(d.tis_teacher) + '</b> in <b>' + escapeHtml(d.code) +
+          '</b>. Showing the highest-rated section instead.</div>' +
+        altHtml + otherHtml +
       '</div>';
   }
 
@@ -1163,6 +1200,16 @@ function renderEvalBrief(d) {
   var altBtns = EVAL_OUT.querySelectorAll('.tm-alt');
   for (var ai = 0; ai < altBtns.length; ai++) {
     altBtns[ai].addEventListener('click', function() {
+      var id = parseInt(this.dataset.ncesId, 10);
+      if (id) renderEvalDetail(id);
+    });
+  }
+  // Teacher's other courses: clicking jumps to that course's detail
+  // (useful when the TIS teacher's section has no reviews, but their
+  // OTHER courses do — gives the user real review data to look at).
+  var otherBtns = EVAL_OUT.querySelectorAll('.tm-other-card');
+  for (var oi = 0; oi < otherBtns.length; oi++) {
+    otherBtns[oi].addEventListener('click', function() {
       var id = parseInt(this.dataset.ncesId, 10);
       if (id) renderEvalDetail(id);
     });

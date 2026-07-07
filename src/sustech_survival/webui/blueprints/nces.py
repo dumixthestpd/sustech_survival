@@ -55,6 +55,44 @@ def api_nces_code(code: str):
     return jsonify(brief if brief is not None else s.not_found(code))
 
 
+@bp.route("/api/nces/teacher")
+def api_nces_teacher():
+    """All NCES sections taught by a given teacher.
+
+    Query params:
+      name — teacher name (URL-encoded UTF-8)
+    """
+    s = _get_scraper()
+    name = request.args.get("name", "").strip()
+    if not name:
+        return jsonify({"available": False, "reason": "missing ?name=", "items": []})
+    courses = s.teacher_courses(name)
+    return jsonify({
+        "available": True,
+        "teacher": name,
+        "items": [
+            {
+                "nces_id": c.nces_id,
+                "code": c.code,
+                "name": c.name,
+                "teacher": c.teacher,
+                "semester": c.semester,
+                "semesters": c.semesters,
+                "rating": c.rating,
+                "review_count": c.review_count,
+                "dimensions": {
+                    "difficulty": {"label": c.difficulty[0], "pct": c.difficulty[1]},
+                    "workload":   {"label": c.workload[0],   "pct": c.workload[1]},
+                    "grading":    {"label": c.grading[0],    "pct": c.grading[1]},
+                    "takeaways":  {"label": c.takeaways[0],  "pct": c.takeaways[1]},
+                },
+                "detail_url": c.direct_url,
+            }
+            for c in courses
+        ],
+    })
+
+
 @bp.route("/api/nces/course/<int:nces_id>")
 def api_nces_course(nces_id: int):
     """Single course detail by NCES id — feed for the eval-tab expand."""
