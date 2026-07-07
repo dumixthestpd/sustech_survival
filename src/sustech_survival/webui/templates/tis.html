@@ -79,9 +79,16 @@ table.grid td{height:38px;position:relative}
 .blk .t{font-weight:600}
 /* Blocked cell — click/drag in the grid to set; shows on both odd & even
    week tables. Diagonal hatch makes it visible even when overlaid on a
-   course block. */
-.cell.blocked{background:repeating-linear-gradient(45deg,rgba(231,76,60,.18) 0,rgba(231,76,60,.18) 6px,transparent 6px,transparent 12px)}
+   course block. data-mode="odd" or "even" overrides the full hatch with
+   a single-triangle fill (upper-left for odd, lower-right for even) so
+   the user can see week-detail at a glance. */
+.cell.blocked{background:rgba(231,76,60,.22)}
+.cell.blocked[data-mode="all"]{background:repeating-linear-gradient(45deg,rgba(231,76,60,.22) 0,rgba(231,76,60,.22) 6px,transparent 6px,transparent 12px)}
+.cell.blocked[data-mode="odd"]{background:linear-gradient(to top right,rgba(231,76,60,.55) 0,rgba(231,76,60,.55) 50%,transparent 50%,transparent 100%)}
+.cell.blocked[data-mode="even"]{background:linear-gradient(to top right,transparent 0,transparent 50%,rgba(231,76,60,.55) 50%,rgba(231,76,60,.55) 100%)}
 .cell.blocked::after{content:"🚫";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:.85rem;opacity:.55;pointer-events:none;z-index:5}
+.cell.blocked[data-mode="odd"]::after,
+.cell.blocked[data-mode="even"]::after{font-size:.65rem;opacity:.7}
 .cell.empty-cell{cursor:pointer}
 .cell{cursor:pointer}
 .palette{display:flex;gap:.3rem;flex-wrap:wrap;align-items:center;padding:.3rem 0}

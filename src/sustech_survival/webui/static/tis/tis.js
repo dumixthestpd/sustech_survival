@@ -1950,16 +1950,68 @@ function renderGrid() {
   // the listener attached to a stable parent.
   attachGridBlockingHandlers(GRID_ODD);
   attachGridBlockingHandlers(GRID_EVEN);
+  // Right-click on a blocked cell cycles week-detail mode (all/odd/even)
+  attachGridContextMenu(GRID_ODD);
+  attachGridContextMenu(GRID_EVEN);
 
-  // Apply .blocked class to cells matching BLOCKED state. Used after
-// renderGridBlocks() (which overwrites innerHTML).
+  // Week-detail mode for a blocked cell:
+//   'all'  — every week (default; the cell is fully blocked)
+//   'odd'  — only odd-numbered weeks (1, 3, 5, ...)
+//   'even' — only even-numbered weeks (2, 4, 6, ...)
+// Stored as BLOCKED[key] = { weeks: 'all' | 'odd' | 'even' } (when weeks != 'all',
+// we use the object form so the old truthy check still works for the
+// simple case). For 'all' we keep the boolean form to avoid allocating
+// an object for the common case.
+function _setBlockMode(key, mode) {
+  if (mode === 'all' || !mode) {
+    BLOCKED[key] = true;
+  } else {
+    BLOCKED[key] = { weeks: mode };
+  }
+}
+function _blockMode(key) {
+  if (!BLOCKED[key]) return null;
+  if (BLOCKED[key] === true) return 'all';
+  return BLOCKED[key].weeks || 'all';
+}
+
+// Right-click on a cell in a blocked tbody: cycle week-detail mode
+// (all → odd → even → all) and refresh visuals.
+function attachGridContextMenu(tbody) {
+  if (!tbody || tbody.dataset.ctxWired === '1') return;
+  tbody.dataset.ctxWired = '1';
+  tbody.addEventListener('contextmenu', function(e) {
+    var td = e.target.closest('td[data-day][data-period]');
+    if (!td) return;
+    e.preventDefault();
+    var key = td.getAttribute('data-day') + ':' + td.getAttribute('data-period');
+    // Only meaningful for already-blocked cells
+    if (!BLOCKED[key]) return;
+    var next = _blockMode(key) === 'all' ? 'odd'
+             : _blockMode(key) === 'odd' ? 'even'
+             : 'all';
+    _setBlockMode(key, next);
+    applyBlockedVisual(GRID_ODD);
+    applyBlockedVisual(GRID_EVEN);
+    syncBlockedInput();
+  });
+}
+
+// Apply .blocked class + data-mode attribute to cells matching BLOCKED state.
+// Used after renderGridBlocks() (which overwrites innerHTML).
 function applyBlockedVisual(tbody) {
   if (!tbody) return;
   var cells = tbody.querySelectorAll('td[data-day][data-period]');
   cells.forEach(function(td) {
     var key = td.getAttribute('data-day') + ':' + td.getAttribute('data-period');
-    if (BLOCKED[key]) td.classList.add('blocked');
-    else td.classList.remove('blocked');
+    if (BLOCKED[key]) {
+      td.classList.add('blocked');
+      var mode = _blockMode(key);
+      td.setAttribute('data-mode', mode);
+    } else {
+      td.classList.remove('blocked');
+      td.removeAttribute('data-mode');
+    }
   });
 }
 
