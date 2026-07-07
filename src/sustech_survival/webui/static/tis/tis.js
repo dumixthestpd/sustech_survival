@@ -62,6 +62,8 @@ var EVAL_CACHE = {};        // { code: evalResponse }
 var ENROLLED_RWH = new Set(); // rwhs currently enrolled
 var COLORS_CACHE = {};      // { code: color }
 var SEMESTER_INFO = null;   // cached /api/tis/info response
+var COLLEGE_MAP = {};       // college-name → college-code (for p_kkyx on TIS personal search)
+var LANGUAGE_MAP = {'中文': '1', '英文': '2', '双语': '3'}; // language-name → TIS code
 var MODE = 'personal';      // 'personal' (我要选课, default) or 'campus' (全校课表, browse-only)
 
 var PERIODS = 12;
@@ -356,8 +358,15 @@ function loadInfo() {
     var xn = currentXn();
     var xq = currentXq();
     CRUMB.textContent = d.count + ' courses · ' + semesterLabel(xn, xq);
-    // Colleges: d.colleges is [(code, name), ...] — show name, store name
-    populateSelect(F_COL, d.colleges.map(function(p) { return p[1]; }));
+    // Colleges: d.colleges is [(code, name), ...] — store name as option text,
+    // but stash the code→name map on the select so loadCourses() can look up
+    // the code for personal-mode requests (TIS p_kkyx requires the code).
+    COLLEGE_MAP = {};
+    var collegeItems = d.colleges.map(function(p) {
+      COLLEGE_MAP[p[1]] = p[0];
+      return p[1];
+    });
+    populateSelect(F_COL, collegeItems);
     populateSelect(F_TASK, d.task_types);
     populateSelect(F_CAT, d.categories);
     populateSelect(F_CAM, d.campuses);
@@ -409,11 +418,24 @@ function loadCourses(isInitialLoad) {
   var qs = sem();
   qs += '&mode=' + MODE;
   qs += '&keyword=' + encodeURIComponent(KW.value);
-  qs += '&college=' + encodeURIComponent(F_COL.value);
+  // Campus mode does a substring match on c.college (the display name).
+  // Personal mode hits TIS's p_kkyx which REQUIRES the code, not the name —
+  // sending the name yields 0 results. Look up the code from COLLEGE_MAP.
+  if (MODE === 'personal' && F_COL.value && COLLEGE_MAP[F_COL.value]) {
+    qs += '&college=' + encodeURIComponent(COLLEGE_MAP[F_COL.value]);
+  } else {
+    qs += '&college=' + encodeURIComponent(F_COL.value);
+  }
   qs += '&task_type=' + encodeURIComponent(F_TASK.value);
   qs += '&category=' + encodeURIComponent(F_CAT.value);
   qs += '&campus=' + encodeURIComponent(F_CAM.value);
-  qs += '&language=' + encodeURIComponent(F_LANG.value);
+  // Personal mode: TIS p_skyy requires a code (1=中文, 2=英文, 3=双语),
+  // not the display name.
+  if (MODE === 'personal' && F_LANG.value && LANGUAGE_MAP[F_LANG.value]) {
+    qs += '&language=' + encodeURIComponent(LANGUAGE_MAP[F_LANG.value]);
+  } else {
+    qs += '&language=' + encodeURIComponent(F_LANG.value);
+  }
   qs += '&cultivation=' + encodeURIComponent(F_CULT.value);
   qs += '&teacher=' + encodeURIComponent(F_TEACHER.value);
   qs += '&scheduled=' + (F_SCH.checked ? '1' : '0');
