@@ -545,6 +545,7 @@ class NCESScraper:
             "username": (r.get("author") or {}).get("username", ""),
             "semester": _term_id_to_display(r.get("term", "")),
             "likes": int(r.get("upvote_count") or 0),
+            "rate": float(r.get("rate") or 0),
             "text": text,
             "excerpt": text[:200],
             "dimensions": {
@@ -646,6 +647,7 @@ class NCESScraper:
                     "username": r.get("username", ""),
                     "semester": r.get("semester", ""),
                     "likes": r.get("likes", 0),
+                    "rate": r.get("rate", 0),
                     "excerpt": r.get("excerpt", ""),
                 }
                 for r in top
