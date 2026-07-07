@@ -90,15 +90,20 @@ table.grid td{height:38px;position:relative}
 .cell.blocked[data-mode="odd"]{background:linear-gradient(to top right,rgba(231,76,60,.55) 0,rgba(231,76,60,.55) 50%,transparent 50%,transparent 100%)}
 .cell.blocked[data-mode="even"]{background:linear-gradient(to top right,transparent 0,transparent 50%,rgba(231,76,60,.55) 50%,rgba(231,76,60,.55) 100%)}
 .cell.blocked::after{content:"🚫";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:.85rem;opacity:.55;pointer-events:none;z-index:5}
+/* The 🚫 only makes sense for "all weeks blocked". For odd/even
+   per-week blocks, the triangle fill itself is the signal — no overlay. */
 .cell.blocked[data-mode="odd"]::after,
-.cell.blocked[data-mode="even"]::after{font-size:.65rem;opacity:.7}
-/* Single-grid block view (scheduler): per-week uses shade + label, no triangle */
-#block-body td.blocked{background:rgba(231,76,60,.32)}
+.cell.blocked[data-mode="even"]::after{content:"";opacity:0}
+/* Single-grid block view (scheduler): per-week uses triangle fill.
+   "all" = striped, "odd" = upper-left triangle, "even" = lower-right triangle.
+   The CSS `linear-gradient(to bottom right, …)` with a 50% color stop
+   creates the diagonal split — solid above the diagonal for odd, below
+   for even. See user spec: "upper left triangle division fill is odd
+   week block, lower right for even week block". */
+#block-body td.blocked{background:repeating-linear-gradient(45deg,rgba(231,76,60,.32) 0,rgba(231,76,60,.32) 6px,transparent 6px,transparent 12px)}
 #block-body td.blocked[data-mode="all"]{background:repeating-linear-gradient(45deg,rgba(231,76,60,.32) 0,rgba(231,76,60,.32) 6px,transparent 6px,transparent 12px)}
-#block-body td.blocked[data-mode="odd"]{background:rgba(231,76,60,.16);color:#e74c3c;font-weight:600}
-#block-body td.blocked[data-mode="odd"]::after{content:"O";font-size:.7rem}
-#block-body td.blocked[data-mode="even"]{background:rgba(231,76,60,.16);color:#e74c3c;font-weight:600}
-#block-body td.blocked[data-mode="even"]::after{content:"E";font-size:.7rem}
+#block-body td.blocked[data-mode="odd"]{background:linear-gradient(to bottom right,rgba(231,76,60,.55) 0%,rgba(231,76,60,.55) 50%,transparent 50%,transparent 100%)}
+#block-body td.blocked[data-mode="even"]{background:linear-gradient(to bottom right,transparent 0%,transparent 50%,rgba(231,76,60,.55) 50%,rgba(231,76,60,.55) 100%)}
 .cell.empty-cell{cursor:pointer}
 .cell{cursor:pointer}
 .palette{display:flex;gap:.3rem;flex-wrap:wrap;align-items:center;padding:.3rem 0}
