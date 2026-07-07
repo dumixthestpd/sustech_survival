@@ -181,12 +181,17 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
 .sc-drop-row b{color:var(--accent)}
 /* One-code-one-class rule block (parallel to sc-drops, but yellow/info styling).
    Header line explains in plain English that the user picked multiple
-   teaching classes of the same course and the solver kept one. */
+   teaching classes of the same course and the solver kept one.
+   The "kept" line is followed by an indented list of "dropped" classes,
+   each on its own sub-line with all teachers shown (no first-teacher
+   comparison shortcut — classes that share a first teacher can still
+   differ in their full roster). */
 .sc-onecode{margin-top:.4rem;padding:.4rem .55rem;background:rgba(241,196,15,.07);border-left:3px solid #f1c40f;border-radius:0 6px 6px 0}
 .sc-onecode-h{font-size:.72rem;color:#f1c40f;font-weight:500;margin-bottom:.3rem;line-height:1.4}
 .sc-onecode-row{font-size:.72rem;padding:.1rem 0;color:var(--txt);line-height:1.5}
 .sc-onecode-row .sc-teacher{color:var(--mut);font-size:.68rem;margin-left:.15rem}
-.sc-onecode-row .sc-others-dropped{color:#f1c40f}
+.sc-onecode-drops{margin:.15rem 0 .15rem 1rem;border-left:1px dashed rgba(241,196,15,.4);padding-left:.6rem}
+.sc-onecode-drop{font-size:.68rem;color:var(--mut);line-height:1.5;padding:.05rem 0}
 /* Name/code hierarchy: code goes first ("CODE NAME"), in a brighter
    cyan-blue that is distinct from --accent (#5b9dff, used for links
    and active states) so course codes don't blend in with interactive
