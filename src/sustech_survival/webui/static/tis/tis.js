@@ -1953,15 +1953,9 @@ function renderGrid() {
   // Right-click on a blocked cell cycles week-detail mode (all/odd/even)
   attachGridContextMenu(GRID_ODD);
   attachGridContextMenu(GRID_EVEN);
+}
 
-  // Week-detail mode for a blocked cell:
-//   'all'  — every week (default; the cell is fully blocked)
-//   'odd'  — only odd-numbered weeks (1, 3, 5, ...)
-//   'even' — only even-numbered weeks (2, 4, 6, ...)
-// Stored as BLOCKED[key] = { weeks: 'all' | 'odd' | 'even' } (when weeks != 'all',
-// we use the object form so the old truthy check still works for the
-// simple case). For 'all' we keep the boolean form to avoid allocating
-// an object for the common case.
+// Week-detail mode for a blocked cell:
 function _setBlockMode(key, mode) {
   if (mode === 'all' || !mode) {
     BLOCKED[key] = true;
@@ -2124,21 +2118,6 @@ function loadBlockedFromInput() {
     var day = pair[0], periods = pair[1];
     periods.forEach(function(p) { BLOCKED[day + ':' + p] = true; });
   });
-}
-
-
-  // Update conflict count on the solve button
-  var conflictCount = allBlocks.filter(function(b) { return b.conflict; }).length;
-  var conflictCodes = {};
-  allBlocks.forEach(function(b) { if (b.conflict) conflictCodes[b.code] = true; });
-  var btn = document.getElementById('grid-solve');
-  if (conflictCount > 0) {
-    btn.textContent = '⚠ ' + Object.keys(conflictCodes).length + ' courses conflict — Solve';
-    btn.style.color = 'var(--bad)';
-  } else {
-    btn.textContent = '✅ No conflicts — Solve combinations';
-    btn.style.color = '';
-  }
 }
 
 // ── Enrolled ──────────────────────────────────────────────────────────────
@@ -3044,46 +3023,60 @@ document.addEventListener('DOMContentLoaded', function() {
   // full loaded 1503-course cache.
   document.getElementById('btn-search').addEventListener('click', onFilterChangeImmediate);
 
+  // ── Mode-dependent DOM (Selection vs Catalog) ────────────────────────
+  // Single source of truth for which rows show in which mode. Called
+  // on cold load AND on every mode toggle so the two paths never drift.
+  function applyModeVisibility() {
+    // personal-only rows: shown in Selection, hidden in Catalog
+    document.querySelectorAll('.personal-only').forEach(function(el) {
+      el.style.display = MODE === 'personal' ? 'block' : 'none';
+    });
+    // task_type + scheduled rows: shown in Catalog, hidden in Selection
+    var taskRow = document.getElementById('f-tasktype');
+    var schedRow = document.getElementById('f-sched');
+    if (taskRow) {
+      var tr = taskRow.closest('.row');
+      if (tr) tr.style.display = MODE === 'campus' ? 'flex' : 'none';
+    }
+    if (schedRow) {
+      var sr = schedRow.closest('.row');
+      if (sr) sr.style.display = MODE === 'campus' ? 'flex' : 'none';
+    }
+    // h2 heading text
+    var h2 = document.getElementById('mode-h2');
+    if (h2) h2.textContent = MODE === 'personal' ? 'Selection' : 'Catalog';
+    // mode button active styling
+    document.querySelectorAll('.mode-btn').forEach(function(b) {
+      var active = b.dataset.mode === MODE;
+      b.classList.toggle('active', active);
+      b.style.border = active ? '1px solid var(--accent)' : 'none';
+      b.style.background = active ? 'rgba(91,157,255,.1)' : 'transparent';
+    });
+  }
+
+  // Fetch + load the right data set for the current mode. Called on
+  // cold load AND on every mode toggle.
+  function loadForMode() {
+    ALL_CAT = []; CAT = [];
+    if (MODE === 'personal') {
+      getJSON('/api/tis/course-types' + sem()).then(function(d) {
+        if (d.course_types && d.course_types.length) populateCourseTypes(d.course_types);
+        loadInfo();
+      })['catch'](function() { loadInfo(); });
+    } else {
+      loadInfo();
+      loadCourses();
+    }
+  }
+
   // Mode switch
   document.querySelectorAll('.mode-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
       var newMode = btn.dataset.mode;
       if (newMode === MODE) return;
       MODE = newMode;
-      document.querySelectorAll('.mode-btn').forEach(function(b) {
-        b.classList.toggle('active', b.dataset.mode === MODE);
-        if (b.dataset.mode === MODE) {
-          b.style.border = '1px solid var(--accent)';
-          b.style.background = 'rgba(91,157,255,.1)';
-        } else {
-          b.style.border = 'none';
-          b.style.background = 'transparent';
-        }
-      });
-      // Show/hide personal-only filters
-      document.querySelectorAll('.personal-only').forEach(function(el) {
-        el.style.display = MODE === 'personal' ? 'block' : 'none';
-      });
-      // Update h2 to reflect the current mode
-      var h2 = document.getElementById('mode-h2');
-      if (h2) h2.textContent = MODE === 'personal' ? 'Selection' : 'Catalog';
-      // Show/hide task_type and scheduled (campus-only)
-      var taskRow = document.getElementById('f-tasktype').closest('.row');
-      var schedRow = document.getElementById('f-sched').closest('.row');
-      if (taskRow) taskRow.style.display = MODE === 'campus' ? 'flex' : 'none';
-      if (schedRow) schedRow.style.display = MODE === 'campus' ? 'flex' : 'none';
-      // Reload
-      ALL_CAT = []; CAT = [];
-      if (MODE === 'personal') {
-        var self = this;
-        getJSON('/api/tis/course-types' + sem()).then(function(d) {
-          if (d.course_types && d.course_types.length) populateCourseTypes(d.course_types);
-          loadInfo();
-        })['catch'](function() { loadInfo(); });
-      } else {
-        loadInfo();
-        loadCourses();   // re-populate ALL_CAT so client-side filter works
-      }
+      applyModeVisibility();
+      loadForMode();
     });
   });
 
@@ -3162,35 +3155,13 @@ document.addEventListener('DOMContentLoaded', function() {
   // Drag-to-reorder picked list = reprioritise for the solver
   attachPickedDragHandlers();
 
-  // On page load, the personal-mode filter rows (.personal-only) start
-  // hidden. The mode-toggle handler shows them — but on initial load
-  // (when Selection is the default mode and no toggle happens), the
-  // handler never runs. Show them here so the xkfsdm dropdown and
-  // ignore-conflicts checkbox are usable immediately.
-  if (MODE === 'personal') {
-    document.querySelectorAll('.personal-only').forEach(function(el) {
-      el.style.display = 'block';
-    });
-  }
-
-  // Auto-load: on page load, if we're in personal mode, fetch the
-  // xkfsdm type list FIRST so the dropdown is populated before the
-  // first search fires. Without this, the initial personal search goes
-  // out with xkfsdm="" and TIS returns "not yet open" (the round is
-  // technically open, but the empty xkfsdm makes TIS reject the
-  // queryform). Catalog mode does not need this step.
-  function initialLoad() {
-    if (MODE === 'personal') {
-      getJSON('/api/tis/course-types' + sem()).then(function(d) {
-        if (d.course_types && d.course_types.length) populateCourseTypes(d.course_types);
-        loadInfo();
-      })['catch'](function() { loadInfo(); });
-    } else {
-      loadInfo();
-      loadCourses();
-    }
-  }
-  initialLoad();
+  // On cold load, run the same setup the mode-toggle handler runs.
+  // Without this, the page starts in the default mode (Selection) but
+  // nothing in the DOM reflects it — the xkfsdm dropdown stays empty,
+  // Task Type / Only with schedule stay visible, etc. Sharing the same
+  // functions with the toggle handler means the two paths can't drift.
+  applyModeVisibility();
+  loadForMode();
 
 
 });
