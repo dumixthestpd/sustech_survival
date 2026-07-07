@@ -2345,13 +2345,17 @@ function solve() {
       if (c.code && c.name && !codeToName[c.code]) codeToName[c.code] = c.name;
     });
     function cname(code) { return codeToName[code] || code; }
-    function cnameWithCode(code) {
-      var n = cname(code);
-      // If we couldn't find a name distinct from the code, just show the code.
-      return (n && n !== code) ? (n + ' <span class="sc-code">(' + code + ')</span>') : code;
+    // codeAndName(code): returns 'CODE NAME' format with code in blue
+    // (class .sc-code) and the name following. The code goes FIRST so
+    // users can scan by code when comparing multiple courses.
+    function codeAndName(code) {
+      var n = codeToName[code];
+      var codeHtml = '<span class="sc-code">' + escapeHtml(code) + '</span>';
+      if (n && n !== code) return codeHtml + ' ' + escapeHtml(n);
+      return codeHtml;
     }
-    function joinNames(codes) {
-      return codes.map(function(c) { return cname(c); }).join(', ');
+    function joinCodeNames(codes) {
+      return codes.map(function(c) { return codeAndName(c); }).join(', ');
     }
 
     function renderSolveItem() {
@@ -2405,6 +2409,8 @@ function solve() {
 
       // Build section rows + total credits (selected courses — no annotations
       // for one-code drops, those are surfaced in their own block below).
+      // Format: "CODE NAME cls 001 · 教师 · 3 cr · schedule"
+      // Code first, in blue (.sc-code), no parens. "class" abbreviated to "cls".
       var secHtml = '';
       var totalCredits = 0;
       for (var si = 0; si < sol.sections.length; si++) {
@@ -2412,9 +2418,8 @@ function solve() {
         var schedStr = sec.schedule || formatSchedule(sec.slots);
         totalCredits += parseFloat(sec.credits) || 0;
         secHtml += '<div class="sc-sec">' +
-          '<span class="sc-name">' + escapeHtml(sec.name || sec.code) + '</span>' +
-          ' <span class="sc-code">(' + escapeHtml(sec.code) + ')</span>' +
-          (sec.class_group ? ' <span style="color:var(--mut)">class ' + escapeHtml(sec.class_group) + '</span>' : '') +
+          codeAndName(sec.code) +
+          (sec.class_group ? ' <span style="color:var(--mut)">cls ' + escapeHtml(sec.class_group) + '</span>' : '') +
           (sec.teachers && sec.teachers[0] ? ' · ' + escapeHtml(sec.teachers.join(', ')) : '') +
           (sec.credits ? ' · <b>' + sec.credits + '</b> cr' : '') +
           (schedStr ? ' · <span style="color:var(--mut);font-size:.72rem">' + escapeHtml(schedStr) + '</span>' : '') +
@@ -2423,17 +2428,18 @@ function solve() {
 
       // Build dropped annotation lines:
       //   "生物学原理 (BIO103): dropped ↔ conflict with 大学化学 (CH105)"
-      // Name is primary, code is parenthetical for disambiguation.
+      // Build dropped annotation lines: "CODE NAME: dropped ↔ conflict with CODE NAME"
+      // (Code first, in blue, no parens. Name follows.)
       var dropHtml = '';
       if (droppedCodes.length) {
         dropHtml = '<div class="sc-drops">';
         droppedCodes.forEach(function(code) {
           var reason = conflictReasons[code];
           var reasonText = reason && reason[0]
-            ? '↔ conflict with <b>' + cnameWithCode(reason[0].code) + '</b>'
+            ? '↔ conflict with <b>' + codeAndName(reason[0].code) + '</b>'
             : '↔ no non-conflicting section exists';
           dropHtml += '<div class="sc-drop-row">' +
-            cnameWithCode(code) + ': <span style="color:var(--bad)">dropped</span>. ' +
+            codeAndName(code) + ': <span style="color:var(--bad)">dropped</span>. ' +
             reasonText +
           '</div>';
         });
@@ -2443,7 +2449,7 @@ function solve() {
       // One-code-one-class drops: courses where the user picked multiple
       // sections and the solution kept one. NOT in sol.dropped (keyed by
       // code), so we surface them here with the required format:
-      //   "生物学原理 (BIO103): selected class 002 张三, others dropped
+      //   "CODE NAME: selected cls 002 张三, others dropped
       //    (one code one class rule caused this) (not accounted into dropped number)"
       var oneCodeHtml = '';
       var oneCodeKeys = Object.keys(intraDrops);
@@ -2458,16 +2464,16 @@ function solve() {
           // Build "others dropped" listing each alternate class
           var others = droppedRwhs.map(function(r) {
             var p = PICKED[r];
-            if (!p) return 'class ?';
-            var label = 'class ' + (p.class_group || '?');
+            if (!p) return 'cls ?';
+            var label = 'cls ' + (p.class_group || '?');
             if (p.teachers && p.teachers[0] && p.teachers[0] !== keptTeacher) {
               label += ' ' + p.teachers.join('/');
             }
             return label;
           }).join(', ');
           oneCodeHtml += '<div class="sc-onecode-row">' +
-            cnameWithCode(code) +
-            ': <b>selected class ' + escapeHtml(keptClass) + '</b>' +
+            codeAndName(code) +
+            ': <b>selected cls ' + escapeHtml(keptClass) + '</b>' +
             (keptTeacher ? ' <span class="sc-teacher">' + escapeHtml(keptTeacher) + '</span>' : '') +
             ', <span class="sc-others-dropped">' + escapeHtml(others) + '</span> dropped ' +
             '<span class="sc-tag">one code one class rule</span>' +
@@ -2479,7 +2485,7 @@ function solve() {
 
       var coverage = sol.covered;
       var droppedStr = (sol.dropped && sol.dropped.length)
-        ? ' <span class="dropped">Dropped: ' + escapeHtml(joinNames(sol.dropped)) + '</span>'
+        ? ' <span class="dropped">Dropped: ' + joinCodeNames(sol.dropped) + '</span>'
         : '';
 
       // ── Categorized drop-group list (top of solve output) ───────────
@@ -2502,10 +2508,7 @@ function solve() {
         var label = gkey === '__all__'
           ? 'No courses dropped'
           : 'Dropped ' + (gsols[0].dropped.length
-              ? gsols[0].dropped.map(function(c) {
-                  var n = cname(c);
-                  return (n && n !== c) ? (n + ' (' + c + ')') : c;
-                }).join(', ')
+              ? gsols[0].dropped.map(codeAndName).join(', ')
               : '');
         groupHtml += '<button class="sg-chip' + (isActive ? ' sg-active' : '') +
           '" data-gfirst="' + gFirst + '" title="Jump to first combination in this group">' +
