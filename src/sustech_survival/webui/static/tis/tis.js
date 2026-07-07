@@ -591,10 +591,14 @@ function renderCard(c) {
       (PICKED[c.rwh]
         ? ''
         : '<button class="ghost pick-btn" data-action="add" style="color:var(--accent);font-size:.7rem;padding:.1rem .35rem">+ Pick</button>') +
+      // NCES compare — jumps to the public NCES search page for this code
+      // so the user can browse all sections + reviews without our cache.
+      (c.code ? '<a class="ghost nces-link" target="_blank" rel="noopener" href="https://ncesnext.com/search?q=' + encodeURIComponent(c.code) + '" title="Compare all sections of this course on NCES" style="color:var(--accent);font-size:.7rem;padding:.1rem .35rem;text-decoration:none">↗ NCES</a>' : '') +
     '</div>';
 
   card.addEventListener('click', function(e) {
     if (e.target.closest('.pick-btn')) return;
+    if (e.target.closest('.nces-link')) return;  // let the <a> open its href
     if (e.target.closest('.unpick-badge')) {
       removePicked(c.rwh);
       return;
