@@ -97,7 +97,11 @@ table.grid td{height:38px;position:relative}
 
 /* picked / my selection -- FIX for overlap bug */
 .picked{display:flex;flex-direction:column}
-.pick{position:relative;padding:.6rem .7rem;border-bottom:1px solid #1a2030;clear:both;margin-bottom:0;overflow:visible}
+.pick{position:relative;padding:.6rem .7rem;border-bottom:1px solid #1a2030;clear:both;margin-bottom:0;overflow:visible;cursor:grab}
+.pick:active{cursor:grabbing}
+.pick.dragging{opacity:.4;outline:2px dashed var(--accent)}
+.pick.drag-over-above{box-shadow:0 -2px 0 var(--accent) inset,0 -2px 4px var(--accent)}
+.pick.drag-over-below{box-shadow:0 2px 0 var(--accent) inset,0 2px 4px var(--accent)}
 .pick .pn{font-weight:600;font-size:.84rem}
 .pick .pm{color:var(--mut);font-size:.72rem;margin-top:.1rem}
 .pick .pm b{color:#c2c8d0;font-weight:500}
