@@ -2447,14 +2447,15 @@ function solve() {
       }
 
       // One-code-one-class drops: courses where the user picked multiple
-      // sections and the solution kept one. NOT in sol.dropped (keyed by
-      // code), so we surface them here with the required format:
-      //   "CODE NAME: selected cls 002 张三, others dropped
-      //    (one code one class rule caused this) (not accounted into dropped number)"
+      // sections of the SAME course code and the solver kept one. The
+      // dropped siblings are not in sol.dropped (which is keyed by code),
+      // so we surface them here. The header line explains the situation
+      // in plain English; per-row annotations are kept minimal.
       var oneCodeHtml = '';
       var oneCodeKeys = Object.keys(intraDrops);
       if (oneCodeKeys.length) {
-        oneCodeHtml = '<div class="sc-onecode">';
+        oneCodeHtml = '<div class="sc-onecode">' +
+          '<div class="sc-onecode-h">Same course picked across multiple teaching classes — solution kept one</div>';
         oneCodeKeys.forEach(function(code) {
           var droppedRwhs = intraDrops[code];
           // Find the kept section (in sol.sections with this code)
@@ -2473,11 +2474,10 @@ function solve() {
           }).join(', ');
           oneCodeHtml += '<div class="sc-onecode-row">' +
             codeAndName(code) +
-            ': <b>selected cls ' + escapeHtml(keptClass) + '</b>' +
+            ': <b>kept cls ' + escapeHtml(keptClass) + '</b>' +
             (keptTeacher ? ' <span class="sc-teacher">' + escapeHtml(keptTeacher) + '</span>' : '') +
-            ', <span class="sc-others-dropped">' + escapeHtml(others) + '</span> dropped ' +
-            '<span class="sc-tag">one code one class rule</span>' +
-            '<span class="sc-tag sc-tag-muted">not accounted into dropped number</span>' +
+            ', dropped ' +
+            '<span class="sc-others-dropped">' + escapeHtml(others) + '</span>' +
           '</div>';
         });
         oneCodeHtml += '</div>';
