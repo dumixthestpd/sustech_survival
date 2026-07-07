@@ -445,6 +445,19 @@ class NCESScraper:
                 "nces_id": int(c["id"]),
                 "review_count": int(c.get("review_count") or 0),
                 "rating": float(c.get("rate_average") or 0),
+                # Dimensions — same fields _to_course reads (lines 247-252).
+                # Without these, the UI renders "0%" placeholders for every
+                # alternative, which looks broken.
+                "dimensions": {
+                    k: {"label": _score_to_label(k, c.get(score_key))[0],
+                        "pct":    _score_to_label(k, c.get(score_key))[1]}
+                    for k, score_key in [
+                        ("difficulty", "difficulty_score"),
+                        ("workload",   "homework_score"),
+                        ("grading",    "grading_score"),
+                        ("takeaways",  "gain_score"),
+                    ]
+                },
             })
 
         self._course_cache[cache_key] = (now, course)
