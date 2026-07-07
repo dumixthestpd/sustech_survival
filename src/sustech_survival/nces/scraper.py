@@ -34,26 +34,29 @@ import requests
 
 
 # Score (0-100, higher = better) → (English label, Chinese label)
+# Thresholds are 33/67/100 — verified 2026-07-07: NCES rounds 66.67→67 and
+# labels it "Average" (中等), not "Light" (很少). Using 66 as the boundary
+# put 66.67% in the "Light" bucket, which doesn't match the page.
 DIMENSION_LABELS = {
     "difficulty": [  # 100% = easy
         (33, ("Hard", "困难")),
-        (66, ("Medium", "中等")),
+        (67, ("Average", "中等")),
         (100, ("Easy", "简单")),
     ],
     "workload": [    # 100% = light
         (33, ("Heavy", "很多")),
-        (66, ("Average", "一般")),
+        (67, ("Average", "一般")),
         (100, ("Light", "很少")),
     ],
     "grading": [     # 100% = excellent
         (33, ("Poor", "差")),
-        (66, ("Good", "好")),
+        (67, ("Average", "一般")),
         (100, ("Excellent", "超好")),
     ],
     "takeaways": [   # 100% = high gain
-        (33, ("Low", "低")),
-        (66, ("Medium", "中")),
-        (100, ("High", "高")),
+        (33, ("Low", "没有")),
+        (67, ("Average", "一般")),
+        (100, ("High", "很多")),
     ],
 }
 
@@ -440,7 +443,17 @@ class NCESScraper:
         return out
 
     def fetch_reviews(self, code: str, teacher: str = "") -> Optional[list[dict]]:
-        """Fetch reviews for a course code. Returns [] if course not found."""
+        """Fetch reviews for a course code. Returns [] if course not found.
+
+        Like search_course, this also augments the code-search with a
+        teacher-name search when a teacher is specified, so reviews for
+        teachers outside the top-5-by-reviews are reachable.
+
+        Then hits the direct ``/api/v1/courses/{id}/reviews`` endpoint
+        for the chosen section so we get ALL of that section's reviews
+        (the /search endpoint only returns page 1 of the teacher's review
+        set, not the full count).
+        """
         code = code.strip().upper()
         teacher = teacher.strip()
         try:
@@ -448,18 +461,38 @@ class NCESScraper:
         except Exception:
             return None
         courses = data.get("courses", {}).get("items", []) or []
+        # Augment with teacher-name search so this teacher's section is in scope
+        tis_teachers = _split_teachers(teacher.replace("，", ",")) if teacher else []
+        seen_ids = {c.get("id") for c in courses}
+        for t in tis_teachers:
+            try:
+                tdata = self._api_search(t)
+            except Exception:
+                continue
+            for c in tdata.get("courses", {}).get("items", []) or []:
+                if (c.get("course_code") or "").upper() == code and c.get("id") not in seen_ids:
+                    courses.append(c)
+                    seen_ids.add(c.get("id"))
         if not courses:
             return None
         # Pick the same section the search would pick
-        tis_teachers = _split_teachers(teacher.replace("，", ",")) if teacher else []
         best = self._pick_course(courses, tis_teachers, "")
         if not best:
             return None
         target_id = best["id"]
-        # Filter reviews to the chosen section
-        reviews_raw = data.get("reviews", {}).get("items", []) or []
-        reviews = [r for r in reviews_raw if r.get("course", {}).get("id") == target_id]
-        return [self._to_review(r) for r in reviews]
+        # Direct reviews endpoint — returns the FULL set of reviews for
+        # this section, not just page 1 of the search endpoint.
+        try:
+            self._throttle()
+            rr = self.session.get(
+                f"{self.BASE}/api/v1/courses/{target_id}/reviews",
+                timeout=15,
+            )
+            rr.raise_for_status()
+            reviews_raw = rr.json().get("items", []) or []
+        except Exception:
+            reviews_raw = list(data.get("reviews", {}).get("items", []) or [])
+        return [self._to_review(r) for r in reviews_raw]
 
     @staticmethod
     def _to_review(r: dict) -> dict:
