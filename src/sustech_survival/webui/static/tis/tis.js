@@ -67,6 +67,7 @@ var LANGUAGE_MAP = {'中文': '1', '英文': '2', '双语': '3'}; // language-na
 var MODE = 'personal';      // 'personal' (我要选课, default) or 'campus' (全校课表, browse-only)
 
 var PERIODS = 12;
+var BLOCKED = {};          // { 'day:period' -> true }   day=1-7, period=1-12
 
 // ── Loading bar (bar only — never touches results or stat) ──────────────
 var LB = document.getElementById('loading-bar');
@@ -1762,10 +1763,12 @@ function renderGridTable(tbody, items) {
     for (var day = 1; day <= DAYS; day++) {
       var key = day + ':' + row;
       var entries = cellMap[key];
+      var isBlocked = !!BLOCKED[day + ':' + row];
+      var classes = 'cell' + (isBlocked ? ' blocked' : '');
       if (entries && entries.length) {
         var hasStart = entries.some(function(e) { return e.isStart; });
         if (hasStart) {
-          h += '<td class="cell" style="padding:0;position:relative;height:' + ROW_HEIGHT + 'px">' +
+          h += '<td class="' + classes + '" data-day="' + day + '" data-period="' + row + '" style="padding:0;position:relative;height:' + ROW_HEIGHT + 'px">' +
                '<div class="cell-inner" style="position:absolute;left:0;top:0;right:0;bottom:0">';
           entries.forEach(function(e) {
             if (!e.isStart) return;
@@ -1788,7 +1791,8 @@ function renderGridTable(tbody, items) {
           });
           h += '</div></td>';
         } else {
-          h += '<td class="cell" style="padding:0;position:relative;height:' + ROW_HEIGHT + 'px">' +
+          var c2 = 'cell' + (isBlocked ? ' blocked' : '');
+          h += '<td class="' + c2 + '" data-day="' + day + '" data-period="' + row + '" style="padding:0;position:relative;height:' + ROW_HEIGHT + 'px">' +
                '<div class="cell-inner" style="position:absolute;left:0;top:0;right:0;bottom:0">';
           entries.forEach(function(e) {
             if (e.isStart) return;
@@ -1804,8 +1808,8 @@ function renderGridTable(tbody, items) {
           h += '</div></td>';
         }
       } else {
-        h += '<td class="cell" style="padding:0;position:relative;height:' + ROW_HEIGHT + 'px">' +
-             '<div class="cell-inner"></div></td>';
+        var c3 = 'cell empty-cell' + (isBlocked ? ' blocked' : '');
+        h += '<td class="' + c3 + '" data-day="' + day + '" data-period="' + row + '" style="position:relative;height:' + ROW_HEIGHT + 'px"></td>';
       }
     }
     h += '</tr>';
@@ -1862,6 +1866,140 @@ function renderGrid() {
   }
   var allBlocks = sectionsToBlocks(pickedArr);
   renderGridBlocks(allBlocks, GRID_ODD, GRID_EVEN, GRID_LEGEND);
+  // Re-apply blocked cells on top of course blocks (so they show even when
+  // the cell already has a course drawn)
+  applyBlockedVisual(GRID_ODD);
+  applyBlockedVisual(GRID_EVEN);
+
+  // Wire click + drag for blocking. Done here (not in renderGridBlocks)
+  // because the cell DOM is rewritten each time and event delegation keeps
+  // the listener attached to a stable parent.
+  attachGridBlockingHandlers(GRID_ODD);
+  attachGridBlockingHandlers(GRID_EVEN);
+
+  // Apply .blocked class to cells matching BLOCKED state. Used after
+// renderGridBlocks() (which overwrites innerHTML).
+function applyBlockedVisual(tbody) {
+  if (!tbody) return;
+  var cells = tbody.querySelectorAll('td[data-day][data-period]');
+  cells.forEach(function(td) {
+    var key = td.getAttribute('data-day') + ':' + td.getAttribute('data-period');
+    if (BLOCKED[key]) td.classList.add('blocked');
+    else td.classList.remove('blocked');
+  });
+}
+
+// Click + drag on grid cells to toggle BLOCKED. Single click flips the
+// cell; drag selects a range (toggles all cells from start to current
+// to the same state as the start cell, so drag-then-release gives a
+// continuous "add" or "remove" gesture).
+function attachGridBlockingHandlers(tbody) {
+  if (!tbody || tbody.dataset.blockingWired === '1') return;
+  tbody.dataset.blockingWired = '1';
+
+  var startCell = null;  // { day, period }
+  var startState = null;  // boolean, BLOCKED state at mousedown
+
+  function cellFromEvent(e) {
+    var td = e.target.closest('td[data-day][data-period]');
+    if (!td) return null;
+    return {
+      day: parseInt(td.getAttribute('data-day'), 10),
+      period: parseInt(td.getAttribute('data-period'), 10),
+      el: td
+    };
+  }
+  function setRangeBlocked(from, to, blocked) {
+    var d1 = Math.min(from.day, to.day), d2 = Math.max(from.day, to.day);
+    var p1 = Math.min(from.period, to.period), p2 = Math.max(from.period, to.period);
+    for (var d = d1; d <= d2; d++) {
+      for (var p = p1; p <= p2; p++) {
+        var key = d + ':' + p;
+        if (blocked) BLOCKED[key] = true;
+        else delete BLOCKED[key];
+      }
+    }
+  }
+  function refresh() {
+    applyBlockedVisual(GRID_ODD);
+    applyBlockedVisual(GRID_EVEN);
+    syncBlockedInput();
+  }
+
+  tbody.addEventListener('mousedown', function(e) {
+    if (e.button !== 0) return;  // left-click only; right-click reserved for week-detail
+    var c = cellFromEvent(e);
+    if (!c) return;
+    e.preventDefault();
+    startCell = c;
+    var key = c.day + ':' + c.period;
+    startState = !BLOCKED[key];  // what to set on release
+    setRangeBlocked(c, c, startState);
+    refresh();
+  });
+  tbody.addEventListener('mouseover', function(e) {
+    if (!startCell) return;
+    var c = cellFromEvent(e);
+    if (!c) return;
+    setRangeBlocked(startCell, c, startState);
+    refresh();
+  });
+  // Finalize on mouseup anywhere (not just tbody — user may drag off the
+  // grid and release)
+  function onUp() {
+    if (!startCell) return;
+    startCell = null;
+    startState = null;
+  }
+  document.addEventListener('mouseup', onUp);
+  // Context menu on a cell: right-click opens the week-detail prompt
+  // (UI affordance for odd/even blocking). Skipped here for brevity — the
+  // simple click/drag is enough for most use cases; week-detail is
+  // a future iteration.
+}
+
+// Convert BLOCKED to the text input format ("1,3-5/2,1-2" style).
+// Groups consecutive periods in the same day so the input stays compact.
+function blockedToInput() {
+  var out = [];
+  for (var d = 1; d <= 7; d++) {
+    var periods = [];
+    for (var p = 1; p <= 12; p++) {
+      if (BLOCKED[d + ':' + p]) periods.push(p);
+    }
+    if (!periods.length) continue;
+    // Group consecutive into ranges
+    var ranges = [];
+    var start = periods[0], end = periods[0];
+    for (var i = 1; i < periods.length; i++) {
+      if (periods[i] === end + 1) { end = periods[i]; continue; }
+      ranges.push(start === end ? '' + start : start + '-' + end);
+      start = end = periods[i];
+    }
+    ranges.push(start === end ? '' + start : start + '-' + end);
+    out.push(d + ',' + ranges.join(','));
+  }
+  return out.join('/');
+}
+
+function syncBlockedInput() {
+  var el = document.getElementById('blocked-input');
+  if (el) el.value = blockedToInput();
+}
+
+// Hook up: keep BLOCKED in sync with the text input (so users can still
+// type by hand). Initial population parses whatever is already in the box.
+function loadBlockedFromInput() {
+  var el = document.getElementById('blocked-input');
+  if (!el) return;
+  var parsed = parseBlockedInput(el.value);
+  BLOCKED = {};
+  parsed.forEach(function(pair) {
+    var day = pair[0], periods = pair[1];
+    periods.forEach(function(p) { BLOCKED[day + ':' + p] = true; });
+  });
+}
+
 
   // Update conflict count on the solve button
   var conflictCount = allBlocks.filter(function(b) { return b.conflict; }).length;
@@ -2885,6 +3023,16 @@ document.addEventListener('DOMContentLoaded', function() {
     switchTab('solve');
     setTimeout(solve, 100);
   });
+  // Blocked-time text input: keep BLOCKED state in sync with manual edits
+  // (the grid is the primary editor; the input is a fallback for power users)
+  var blockedEl = document.getElementById('blocked-input');
+  if (blockedEl) {
+    loadBlockedFromInput();  // initial population
+    blockedEl.addEventListener('change', function() {
+      loadBlockedFromInput();
+      renderGrid();
+    });
+  }
 
   // On page load, the personal-mode filter rows (.personal-only) start
   // hidden. The mode-toggle handler shows them — but on initial load
