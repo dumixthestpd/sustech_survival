@@ -1992,8 +1992,13 @@ function _blockMode(key) {
   return BLOCKED[key].weeks || 'all';
 }
 
-// Right-click on a cell in a blocked tbody: cycle week-detail mode
-// (all → odd → even → all) and refresh visuals.
+// Right-click on a cell opens a mode-selector panel. The user picks:
+//   - All weeks   (soft radial gradient — "leaves room to breathe")
+//   - Odd weeks   (upper-left triangle)
+//   - Even weeks  (lower-right triangle)
+//   - Unblock     (only shown if cell is already blocked)
+// The current mode is highlighted with ✓. Click-outside or Escape closes
+// the panel without applying changes.
 function attachGridContextMenu(tbody) {
   if (!tbody || tbody.dataset.ctxWired === '1') return;
   tbody.dataset.ctxWired = '1';
@@ -2001,18 +2006,108 @@ function attachGridContextMenu(tbody) {
     var td = e.target.closest('td[data-day][data-period]');
     if (!td) return;
     e.preventDefault();
-    var key = td.getAttribute('data-day') + ':' + td.getAttribute('data-period');
-    // Only meaningful for already-blocked cells
-    if (!BLOCKED[key]) return;
-    var next = _blockMode(key) === 'all' ? 'odd'
-             : _blockMode(key) === 'odd' ? 'even'
-             : 'all';
-    _setBlockMode(key, next);
-    applyBlockedVisual(GRID_ODD);
-    applyBlockedVisual(GRID_EVEN);
-    if (BLOCK_BODY) applyBlockedVisual(BLOCK_BODY);
-    syncBlockedInput();
+    var day = parseInt(td.getAttribute('data-day'), 10);
+    var period = parseInt(td.getAttribute('data-period'), 10);
+    var key = day + ':' + period;
+    showBlockPanel(key, day, period, e.clientX, e.clientY);
   });
+}
+
+// Show the mode-selector panel at (clientX, clientY). Builds the panel
+// DOM on demand, positions it near the cursor, and wires the option
+// buttons to mutate BLOCKED. Click outside / Escape closes it.
+function showBlockPanel(key, day, period, clientX, clientY) {
+  hideBlockPanel();
+  var currentMode = _blockMode(key);  // 'all' / 'odd' / 'even' / null
+
+  var panel = document.createElement('div');
+  panel.id = 'block-panel';
+  panel.className = 'block-panel';
+
+  var dnames = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  var header = dnames[day] + ' · Period ' + period;
+  if (currentMode) header += ' · currently <b>' + currentMode + '</b>';
+
+  var opts = [
+    { mode: 'all',  label: 'All weeks',  desc: 'block every week' },
+    { mode: 'odd',  label: 'Odd weeks',  desc: 'block odd-numbered weeks' },
+    { mode: 'even', label: 'Even weeks', desc: 'block even-numbered weeks' },
+  ];
+  if (currentMode) {
+    opts.push({ mode: 'unblock', label: 'Unblock', desc: 'remove this block' });
+  }
+
+  var html = '<div class="bp-header">' + header + '</div>';
+  for (var i = 0; i < opts.length; i++) {
+    var o = opts[i];
+    var isCurrent = (o.mode === currentMode);
+    var swatchCls = o.mode === 'unblock' ? 'bp-swatch-none' : ('bp-swatch-' + o.mode);
+    html += '<button class="bp-opt' + (isCurrent ? ' bp-current' : '') +
+      '" data-mode="' + o.mode + '">' +
+      '<span class="bp-swatch ' + swatchCls + '"></span>' +
+      '<span class="bp-label"><b>' + o.label + '</b><br>' +
+      '<span style="font-size:.65rem;color:var(--mut)">' + o.desc + '</span></span>' +
+      (isCurrent ? '<span class="bp-check">✓</span>' : '') +
+      '</button>';
+  }
+  panel.innerHTML = html;
+  document.body.appendChild(panel);
+
+  // Position near cursor; clamp to viewport so it doesn't go off-screen
+  var rect = panel.getBoundingClientRect();
+  var pad = 8;
+  var x = clientX + 4;
+  var y = clientY + 4;
+  if (x + rect.width > window.innerWidth - pad)  x = window.innerWidth - rect.width - pad;
+  if (y + rect.height > window.innerHeight - pad) y = window.innerHeight - rect.height - pad;
+  if (x < pad) x = pad;
+  if (y < pad) y = pad;
+  panel.style.left = x + 'px';
+  panel.style.top = y + 'px';
+
+  // Apply the chosen mode
+  panel.querySelectorAll('.bp-opt').forEach(function(btn) {
+    btn.addEventListener('click', function(ev) {
+      ev.stopPropagation();
+      var m = btn.dataset.mode;
+      if (m === 'unblock') {
+        delete BLOCKED[key];
+      } else {
+        _setBlockMode(key, m);
+      }
+      hideBlockPanel();
+      // Refresh all visuals + text input
+      applyBlockedVisual(GRID_ODD);
+      applyBlockedVisual(GRID_EVEN);
+      if (BLOCK_BODY) applyBlockedVisual(BLOCK_BODY);
+      syncBlockedInput();
+    });
+  });
+
+  // Close on outside click or Escape
+  setTimeout(function() {
+    function onOutside(ev) {
+      if (panel && !panel.contains(ev.target)) hideBlockPanel();
+      document.removeEventListener('click', onOutside, true);
+      document.removeEventListener('contextmenu', onOutside, true);
+    }
+    function onEsc(ev) {
+      if (ev.key === 'Escape') {
+        hideBlockPanel();
+        document.removeEventListener('keydown', onEsc);
+        document.removeEventListener('click', onOutside, true);
+        document.removeEventListener('contextmenu', onOutside, true);
+      }
+    }
+    document.addEventListener('click', onOutside, true);
+    document.addEventListener('contextmenu', onOutside, true);
+    document.addEventListener('keydown', onEsc);
+  }, 0);
+}
+
+function hideBlockPanel() {
+  var p = document.getElementById('block-panel');
+  if (p && p.parentNode) p.parentNode.removeChild(p);
 }
 
 // Apply .blocked class + data-mode attribute to cells matching BLOCKED state.
