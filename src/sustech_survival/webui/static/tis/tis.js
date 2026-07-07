@@ -1916,11 +1916,26 @@ function solve() {
       return;
     }
 
-    // Flatten: all solutions in order (already sorted by coverage then priority)
+    // Group solutions by the "dropped" set (same dropped = same group).
+    // Within a group, solutions differ only by which class was chosen
+    // for codes the user picked multiple sections of. Key the group
+    // by the sorted "dropped" list, since order doesn't matter.
+    var groups = {};   // groupKey → [sol, sol, ...]
+    var groupOrder = [];  // preserve order of first appearance
+    for (var gi = 0; gi < solutions.length; gi++) {
+      var s = solutions[gi];
+      var key = (s.dropped || []).slice().sort().join('|') || '__all__';
+      if (!groups[key]) {
+        groups[key] = [];
+        groupOrder.push(key);
+      }
+      groups[key].push(s);
+    }
+
+    var totalCodes = codeOrder.length;
+    var idx = 0;            // index into the FLAT solutions list (for nav)
     var flat = solutions;
     var total = flat.length;
-    var idx = 0;
-    var totalCodes = codeOrder.length;
 
     function renderSolveItem() {
       var sol = flat[idx];
@@ -1946,7 +1961,25 @@ function solve() {
         ? ' <span class="dropped">Dropped: ' + escapeHtml(sol.dropped.join(', ')) + '</span>'
         : '';
 
+      // Build the group header: click to jump to first solution in that group.
+      // Each group = same "dropped" set = a category of combinations.
+      var groupHtml = '<div class="solve-groups">';
+      for (var gk = 0; gk < groupOrder.length; gk++) {
+        var gkey = groupOrder[gk];
+        var gsols = groups[gkey];
+        var gFirst = flat.indexOf(gsols[0]);
+        var isActive = (gFirst === idx);
+        var label = gkey === '__all__'
+          ? 'No courses dropped'
+          : 'Dropped ' + escapeHtml(gsols[0].dropped.join(', '));
+        groupHtml += '<button class="sg-chip' + (isActive ? ' sg-active' : '') +
+          '" data-gfirst="' + gFirst + '" title="Jump to first combination in this group">' +
+          label + ' <span class="sg-cnt">' + gsols.length + '</span></button>';
+      }
+      groupHtml += '</div>';
+
       var h =
+        groupHtml +
         '<div class="solve-nav">' +
           '<button class="nav-btn" id="solve-prev"' + (idx === 0 ? ' disabled' : '') + '>◀</button>' +
           '<span class="nav-pos">Solution <b>' + (idx + 1) + '</b>/' + total + '</span>' +
@@ -1993,6 +2026,17 @@ function solve() {
       if (prev) prev.addEventListener('click', function() { if (idx > 0) { idx--; renderSolveItem(); } });
       if (next) next.addEventListener('click', function() { if (idx < total - 1) { idx++; renderSolveItem(); } });
       document.getElementById('solve-apply').addEventListener('click', function() { applySolution(flat[idx]); });
+      // Wire group chips: click → jump to first combination in that group
+      var groupChips = SOLVE_OUT.querySelectorAll('.sg-chip');
+      for (var ci = 0; ci < groupChips.length; ci++) {
+        groupChips[ci].addEventListener('click', function() {
+          var target = parseInt(this.dataset.gfirst, 10);
+          if (!isNaN(target) && target >= 0 && target < total) {
+            idx = target;
+            renderSolveItem();
+          }
+        });
+      }
     }
 
     renderSolveItem();

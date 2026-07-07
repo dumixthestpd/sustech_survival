@@ -119,6 +119,12 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
 .solve-coverage{font-size:.8rem;color:var(--mut);text-align:center;padding:.3rem 0}
 .solve-coverage b{color:var(--accent)}
 .solve-coverage .dropped{color:var(--bad)}
+.solve-groups{display:flex;flex-wrap:wrap;gap:.3rem;padding:.3rem 0 .5rem;border-bottom:1px solid var(--border);margin-bottom:.5rem}
+.solve-groups .sg-chip{background:var(--panel2);border:1px solid var(--border);border-radius:14px;padding:.18rem .55rem;font-size:.7rem;cursor:pointer;color:var(--mut);display:inline-flex;align-items:center;gap:.3rem;transition:border-color .12s,background .12s}
+.solve-groups .sg-chip:hover{border-color:var(--accent);color:var(--txt)}
+.solve-groups .sg-chip.sg-active{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:500}
+.solve-groups .sg-chip .sg-cnt{background:rgba(255,255,255,.18);border-radius:8px;padding:.05rem .35rem;font-size:.62rem;font-weight:600;line-height:1.1}
+.solve-groups .sg-chip.sg-active .sg-cnt{background:rgba(0,0,0,.25)}
 .solve-sec-code{font-family:ui-monospace,monospace;color:var(--accent);font-weight:500}
 
 /* eval */
