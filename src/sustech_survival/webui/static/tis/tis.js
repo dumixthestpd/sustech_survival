@@ -1538,6 +1538,11 @@ function renderPickItem(c) {
   var div = document.createElement('div');
   div.className = 'pick';
   div.dataset.rwh = c.rwh;
+  // Drag-to-reorder support. The picked list doubles as the priority
+  // list for the solver, so reordering items = reprioritising courses
+  // (like SUSTech_AutoScheduler). The drag handle is the whole item,
+  // but right-click is reserved for the un-pick badge.
+  div.draggable = true;
 
   var enrolled = ENROLLED_RWH.has(c.rwh);
   var schedHTML = c.slots && c.slots.length ? formatScheduleHTML(c.slots) : '';
@@ -1581,6 +1586,75 @@ function renderPickItem(c) {
 
   return div;
 }
+
+// ── Drag-to-reorder picked list (priority for the solver) ───────────────
+// PICKED is { rwh: course }. JS object key order is preserved since ES2015
+// (insertion order for string keys, integer-like keys first). So moving
+// rwh X to position N = remove X from PICKED, re-insert at the right
+// iteration, re-render. Same approach as c.x-d.fun's priority drag.
+
+function attachPickedDragHandlers() {
+  if (PICK_LIST._dragWired === '1') return;
+  PICK_LIST._dragWired = '1';
+
+  PICK_LIST.addEventListener('dragstart', function(e) {
+    var item = e.target.closest('.pick');
+    if (!item) return;
+    PICK_LIST._draggingRwh = item.dataset.rwh;
+    item.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    // dataTransfer must have data for Firefox to allow the drag
+    e.dataTransfer.setData('text/plain', item.dataset.rwh);
+  });
+  PICK_LIST.addEventListener('dragend', function() {
+    PICK_LIST._draggingRwh = null;
+    var dragging = PICK_LIST.querySelector('.dragging');
+    if (dragging) dragging.classList.remove('dragging');
+    // Clear any leftover over indicators
+    var overs = PICK_LIST.querySelectorAll('.drag-over');
+    overs.forEach(function(el) { el.classList.remove('drag-over'); });
+  });
+  PICK_LIST.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    var item = e.target.closest('.pick');
+    if (!item || item.dataset.rwh === PICK_LIST._draggingRwh) return;
+    // Mark where the drop will land (above or below the hovered item)
+    var rect = item.getBoundingClientRect();
+    var above = (e.clientY - rect.top) < rect.height / 2;
+    item.classList.toggle('drag-over-above', above);
+    item.classList.toggle('drag-over-below', !above);
+  });
+  PICK_LIST.addEventListener('dragleave', function(e) {
+    var item = e.target.closest('.pick');
+    if (item) {
+      item.classList.remove('drag-over-above');
+      item.classList.remove('drag-over-below');
+    }
+  });
+  PICK_LIST.addEventListener('drop', function(e) {
+    e.preventDefault();
+    var srcRwh = PICK_LIST._draggingRwh || e.dataTransfer.getData('text/plain');
+    if (!srcRwh || !PICKED[srcRwh]) return;
+    var target = e.target.closest('.pick');
+    if (!target || target.dataset.rwh === srcRwh) return;
+    var rect = target.getBoundingClientRect();
+    var above = (e.clientY - rect.top) < rect.height / 2;
+
+    // Rebuild PICKED in the new order. JS objects preserve insertion
+    // order for string keys (ES2015+), so this is the priority list.
+    var order = Object.keys(PICKED);
+    order.splice(order.indexOf(srcRwh), 1);
+    var targetIdx = order.indexOf(target.dataset.rwh);
+    order.splice(above ? targetIdx : targetIdx + 1, 0, srcRwh);
+    var reordered = {};
+    order.forEach(function(r) { reordered[r] = PICKED[r]; });
+    PICKED = reordered;
+    renderPicked();
+    renderGrid();
+  });
+}
+
 
 function dryRunAction(url, rwh, div) {
   var existing = div.querySelector('.wire');
@@ -3033,6 +3107,8 @@ document.addEventListener('DOMContentLoaded', function() {
       renderGrid();
     });
   }
+  // Drag-to-reorder picked list = reprioritise for the solver
+  attachPickedDragHandlers();
 
   // On page load, the personal-mode filter rows (.personal-only) start
   // hidden. The mode-toggle handler shows them — but on initial load
