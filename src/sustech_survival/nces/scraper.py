@@ -300,20 +300,23 @@ class NCESScraper:
         so a section where every TIS teacher is in NCES wins over one with
         the same number of matches but an extra teacher (TIS class A+B+C
         should prefer NCES A+B+C over NCES A+B+C+D).
+
+        When no teacher overlaps meaningfully (< half of TIS teachers match),
+        fall back to the most-reviewed course so the user sees real data
+        rather than a 0-review orphan that happens to share a name match.
         """
         if not courses:
             return None
+        tis_count = len(tis_teachers) if tis_teachers else 0
         best: Optional[dict] = None
         best_score = (-1, -1, -1)  # (matched_count, exact_subset, term_match)
         for c in courses:
             nces_t = _split_teachers(c.get("teacher_names", ""))
             if tis_teachers:
-                # Count matched TIS teachers (not just bool) so 4/4 > 3/4.
                 matched = sum(
                     1 for t in tis_teachers
                     if any(t == n or t in n or n in t for n in nces_t)
                 )
-                # Bonus if NCES teachers are a subset of TIS (no extras)
                 nces_subset = (
                     all(
                         any(t == n or t in n or n in t for t in tis_teachers)
@@ -327,7 +330,18 @@ class NCESScraper:
             if score > best_score:
                 best_score = score
                 best = c
-        # Fall back to first candidate if all scored 0
+
+        # Weak overlap check: if no exact match and fewer than half the
+        # TIS teachers matched, the "best" section is a random orphan.
+        # Fall back to the highest-reviewed section instead so the user
+        # gets real data (review_count, ratings, dimensions).
+        if best and tis_count > 1 and best_score[0] > 0 and best_score[0] < tis_count / 2:
+            # Try to find a section with reviews
+            reviewed = [c for c in courses if int(c.get("review_count") or 0) > 0]
+            if reviewed:
+                reviewed.sort(key=lambda c: int(c.get("review_count") or 0), reverse=True)
+                best = reviewed[0]
+
         return best or courses[0]
 
     def _to_course(self, c: dict, code: str) -> NCESCourse:

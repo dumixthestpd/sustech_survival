@@ -68,6 +68,9 @@ var MODE = 'personal';      // 'personal' (我要选课, default) or 'campus' (�
 
 var PERIODS = 12;
 var BLOCKED = {};          // { 'day:period' -> true }   day=1-7, period=1-12
+var _modeLoadId = 0;       // monotonic token — incremented on every loadForMode call.
+                           // loadCourses() captures it at call time and discards the
+                           // response if the token changed (guards against fast toggles).
 
 // ── Loading bar (bar only — never touches results or stat) ──────────────
 var LB = document.getElementById('loading-bar');
@@ -416,6 +419,7 @@ function populateCourseTypes(types, currentType) {
 }
 
 function loadCourses(isInitialLoad) {
+  var loadId = ++_modeLoadId;
   var qs = sem();
   qs += '&mode=' + MODE;
   qs += '&keyword=' + encodeURIComponent(KW.value);
@@ -454,6 +458,7 @@ function loadCourses(isInitialLoad) {
   }
 
   return getJSON('/api/tis/courses' + qs).then(function(d) {
+    if (loadId !== _modeLoadId) return;  // stale — a newer loadForMode call
     if (d.error) {
       RESULTS.innerHTML = '<div class="flash err">' + escapeHtml(d.error) + '</div><div class="empty">Check TIS credentials or try refreshing the catalog.</div>';
       CAT = [];
@@ -501,6 +506,7 @@ function loadCourses(isInitialLoad) {
     renderResults(CAT);
     renderFilterPills();
   })['catch'](function(e) {
+    if (loadId !== _modeLoadId) return;  // stale
     RESULTS.innerHTML = '<div class="flash err">Network error: ' + escapeHtml(e.message) + '</div>';
     CAT = [];
   });
@@ -586,20 +592,18 @@ function renderCard(c) {
       (hasRealTeacher ? '<b>Teacher</b> ' + escapeHtml(teachers) : '<span style="color:var(--mut)"><b>Teacher</b> TBD</span>') +
       (c.credits ? ' · <b>Credits</b> ' + c.credits : '') +
       (c.capacity ? ' · <b>Capacity</b> ' + c.capacity : '') +
+      (c.code ? ' · <a href="https://ncesnext.com/search?q=' + encodeURIComponent(c.code) + '" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;font-size:.72rem">Compare in NCES ↗</a>' : '') +
     '</div>' +
     (schedHTML ? '<div class="sched"><span class="sched-lbl">Schedule</span>' + schedHTML + '</div>' : '') +
     '<div class="actions">' +
       (PICKED[c.rwh]
         ? ''
         : '<button class="ghost pick-btn" data-action="add" style="color:var(--accent);font-size:.7rem;padding:.1rem .35rem">+ Pick</button>') +
-      // NCES compare — jumps to the public NCES search page for this code
-      // so the user can browse all sections + reviews without our cache.
-      (c.code ? '<a class="ghost nces-link" target="_blank" rel="noopener" href="https://ncesnext.com/search?q=' + encodeURIComponent(c.code) + '" title="Compare all sections of this course on NCES" style="color:var(--accent);font-size:.7rem;padding:.1rem .35rem;text-decoration:none">↗ NCES</a>' : '') +
     '</div>';
 
   card.addEventListener('click', function(e) {
     if (e.target.closest('.pick-btn')) return;
-    if (e.target.closest('.nces-link')) return;  // let the <a> open its href
+    if (e.target.closest('a')) return;  // regular anchor in meta (NCES link)
     if (e.target.closest('.unpick-badge')) {
       removePicked(c.rwh);
       return;
@@ -3055,17 +3059,21 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   // Fetch + load the right data set for the current mode. Called on
-  // cold load AND on every mode toggle.
+  // cold load AND on every mode toggle. Uses _modeLoadId to guard both
+  // the course-types → loadInfo chain AND loadCourses responses against
+  // stale results from fast toggling.
   function loadForMode() {
+    var loadId = ++_modeLoadId;  // will be captured by loadCourses() inside loadInfo()
     ALL_CAT = []; CAT = [];
     if (MODE === 'personal') {
       getJSON('/api/tis/course-types' + sem()).then(function(d) {
+        if (loadId !== _modeLoadId) return;  // stale — another toggle happened
         if (d.course_types && d.course_types.length) populateCourseTypes(d.course_types);
+        if (loadId !== _modeLoadId) return;  // check again after populateCourseTypes
         loadInfo();
-      })['catch'](function() { loadInfo(); });
+      })['catch'](function() { if (loadId === _modeLoadId) loadInfo(); });
     } else {
       loadInfo();
-      loadCourses();
     }
   }
 
