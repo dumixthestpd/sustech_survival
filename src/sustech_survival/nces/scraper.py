@@ -513,6 +513,36 @@ class NCESScraper:
         }
 
     # ── Domain response shape (UI-agnostic payload) ────────────────────────
+    def _collect_teacher_other(self, tis_teachers: list[str], exclude_code: str = "") -> list[dict]:
+        """Aggregate the teacher's other courses for the teacher-other
+        fallback panel. Returns one section per (teacher, course_code),
+        keeping the one with the most reviews. Sorted by review_count
+        desc so the most-reviewed courses are on top. ``exclude_code``
+        filters out the requested course itself (we don't want to show
+        the same unevaluated section as its own fallback).
+        """
+        agg: dict[tuple[str, str], dict] = {}
+        for t in tis_teachers:
+            for c in self.teacher_courses(t):
+                if exclude_code and c.code == exclude_code:
+                    continue
+                key = (c.teacher, c.code)
+                if key not in agg or c.review_count > agg[key]["review_count"]:
+                    agg[key] = {
+                        "teacher": c.teacher,
+                        "code": c.code,
+                        "name": c.name,
+                        "nces_id": c.nces_id,
+                        "rating": c.rating,
+                        "review_count": c.review_count,
+                        "difficulty": c.difficulty,
+                        "workload": c.workload,
+                        "grading": c.grading,
+                        "takeaways": c.takeaways,
+                        "semester": c.semester,
+                    }
+        return sorted(agg.values(), key=lambda r: r["review_count"], reverse=True)
+
     def brief(
         self, code: str, *, teacher: str = "", xn: str = "", xq: str = "",
     ) -> dict | None:
@@ -535,32 +565,15 @@ class NCESScraper:
         reviews = self.fetch_reviews(code, teacher=teacher) or []
         top = sorted(reviews, key=lambda r: r.get("likes", 0), reverse=True)[:3]
 
-        # Teacher-mismatch fallback: pull the teacher's other courses so
-        # the user can gauge their teaching from courses that DO have reviews.
+        # Teacher-other fallback: when the user can't see reviews for the
+        # requested section (either because the teacher is wrong, or the
+        # section exists but has no reviews yet), pull the teacher's
+        # other courses so they can gauge the teacher from courses that
+        # DO have reviews.
         teacher_other = []
-        if teacher_mismatch and tis_teachers:
-            # Aggregate by teacher — show one section per (teacher, course_code)
-            agg: dict[tuple[str, str], dict] = {}
-            for t in tis_teachers:
-                for c in self.teacher_courses(t):
-                    key = (c.teacher, c.code)
-                    # Keep the section with the most reviews per (teacher, code)
-                    if key not in agg or c.review_count > agg[key]["review_count"]:
-                        agg[key] = {
-                            "teacher": c.teacher,
-                            "code": c.code,
-                            "name": c.name,
-                            "nces_id": c.nces_id,
-                            "rating": c.rating,
-                            "review_count": c.review_count,
-                            "difficulty": c.difficulty,
-                            "workload": c.workload,
-                            "grading": c.grading,
-                            "takeaways": c.takeaways,
-                            "semester": c.semester,
-                        }
-            teacher_other = sorted(
-                agg.values(), key=lambda r: r["review_count"], reverse=True
+        if tis_teachers and (teacher_mismatch or course.review_count == 0):
+            teacher_other = self._collect_teacher_other(
+                tis_teachers, exclude_code=course.code,
             )
 
         return {

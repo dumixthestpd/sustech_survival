@@ -1136,9 +1136,13 @@ function renderEvalBrief(d) {
   // Teacher-mismatch banner: when the user clicked a TIS card whose
   // teacher isn't represented in NCES, surface that clearly. Without
   // this, the data below would be silently misattributed to the user's
-  // teacher.
+  // teacher. Also fires when the section exists in NCES but has no
+  // reviews yet — show the teacher's other courses so the user can
+  // gauge them from somewhere.
+  var showFallback = (d.teacher_mismatch && d.tis_teacher) ||
+                     ((d.review_count || 0) === 0 && d.available && d.tis_teacher);
   var mismatchHtml = '';
-  if (d.teacher_mismatch && d.tis_teacher) {
+  if (showFallback) {
     var alts = d.alternatives || [];
     var altHtml = alts.length
       ? '<div class="tm-section">' +
@@ -1189,12 +1193,22 @@ function renderEvalBrief(d) {
         '</div>'
       : '';
 
+    // Title above the alternatives/teacher-other panel differs depending
+    // on whether the teacher is wrong or the section has 0 reviews.
+    var bannerTitle = d.teacher_mismatch
+      ? '⚠ Different teacher'
+      : '⚠ No evaluations for this section';
+    var bannerBody = d.teacher_mismatch
+      ? 'NCES has no reviews for your teacher <b>' + escapeHtml(d.tis_teacher) +
+        '</b> in <b>' + escapeHtml(d.code) + '</b>. Showing the highest-rated section instead.'
+      : 'NCES has no reviews for <b>' + escapeHtml(d.code) +
+        '</b> by <b>' + escapeHtml(d.tis_teacher) +
+        '</b> yet. See what they teach elsewhere:';
+
     mismatchHtml =
       '<div class="teacher-mismatch">' +
-        '<div class="tm-h">⚠ Different teacher</div>' +
-        '<div class="tm-b">NCES has no reviews for your teacher <b>' +
-          escapeHtml(d.tis_teacher) + '</b> in <b>' + escapeHtml(d.code) +
-          '</b>. Showing the highest-rated section instead.</div>' +
+        '<div class="tm-h">' + bannerTitle + '</div>' +
+        '<div class="tm-b">' + bannerBody + '</div>' +
         altHtml + otherHtml +
       '</div>';
   }
