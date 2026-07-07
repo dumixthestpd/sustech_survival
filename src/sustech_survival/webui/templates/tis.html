@@ -224,6 +224,16 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
 .brief-card .bc-empty .bce-detail{margin-top:.4rem;font-size:.7rem}
 .brief-card .bc-loading{padding:1rem .8rem;text-align:center;color:var(--mut);font-size:.78rem}
 .brief-card .bc-loading::after{content:'…';animation:bc-dots 1.2s steps(4,end) infinite}
+.brief-card .bc-warn{font-size:.7rem;color:var(--warn);background:rgba(227,179,65,.08);
+  border-left:3px solid var(--warn);padding:.3rem .5rem;margin-top:.35rem;
+  border-radius:3px;line-height:1.4}
+.brief-card .bc-other-h{font-size:.68rem;color:var(--mut);text-transform:uppercase;
+  letter-spacing:.04em;padding:.45rem .8rem 0;font-weight:600}
+.brief-card .bc-other{display:flex;flex-wrap:wrap;gap:.25rem;padding:.3rem .8rem .55rem}
+.bc-other-chip{background:var(--panel);border:1px solid var(--border);border-radius:3px;
+  padding:.15rem .4rem;font-size:.66rem;color:var(--txt);display:flex;gap:.3rem;align-items:center}
+.bc-other-chip b{font-family:ui-monospace,monospace;color:var(--accent);font-weight:600}
+.bc-other-chip span{color:var(--mut)}
 @keyframes bc-dots{0%,20%{content:'.'}40%{content:'..'}60%,100%{content:'...'}}
 
 /* scrollbar */

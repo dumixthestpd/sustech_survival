@@ -699,10 +699,26 @@ function briefRender(d) {
              '</div>' +
            '</div>';
   }
+  // Show a teacher-mismatch / no-eval warning right under the name, so
+  // the user knows the rating below belongs to a different section
+  // (or that the section has no reviews yet) BEFORE they click.
+  var warnHtml = '';
+  if (d.teacher_mismatch && d.tis_teacher) {
+    warnHtml = '<div class="bc-warn">' +
+      '⚠ Different teacher — ' + escapeHtml(d.tis_teacher) +
+      ' not in NCES; showing ' + escapeHtml(d.teacher || '?') +
+      ' (best available)' +
+    '</div>';
+  } else if ((d.review_count || 0) === 0) {
+    warnHtml = '<div class="bc-warn">' +
+      '⚠ No evaluations yet — NCES has no reviews for ' +
+      escapeHtml(d.code) + (d.teacher ? ' by ' + escapeHtml(d.teacher) : '') +
+    '</div>';
+  }
   // Display priority: name (top, large) > teacher+class > code (small, muted)
-  var cls = d.code && d.code.match(/^\D+\d+\D?$/);  // not really used yet
   var html = '<div class="bc-head">' +
     '<div class="bc-name">' + escapeHtml(d.name) + '</div>' +
+    warnHtml +
     '<div class="bc-meta">' +
       '<span>' + escapeHtml(d.teacher) + '</span>' +
       (d.semester ? '<span class="bc-sem">· ' + escapeHtml(d.semester) + '</span>' : '') +
@@ -735,15 +751,31 @@ function briefRender(d) {
       '</span>' +
     '</div>';
   }
-  html += '</div>' +
-  '<div class="bc-foot">' +
+  // List teacher's other courses as small chips when there's a mismatch
+  // or no eval, so the user knows what reviews ARE available.
+  var otherHtml = '';
+  if ((d.teacher_mismatch || (d.review_count || 0) === 0) &&
+      d.teacher_other && d.teacher_other.length) {
+    otherHtml = '<div class="bc-other-h">' + escapeHtml(d.tis_teacher || d.teacher) +
+                ' teaches elsewhere:</div>' +
+      '<div class="bc-other">' +
+        d.teacher_other.map(function(c) {
+          return '<div class="bc-other-chip">' +
+            '<b>' + escapeHtml(c.code || '') + '</b>' +
+            '<span>' + (c.review_count || 0) + ' rev</span>' +
+          '</div>';
+        }).join('') +
+      '</div>';
+  }
+  html += '</div>' + otherHtml +
+    '<div class="bc-foot">' +
     '<span class="bc-hint">community-sourced · ' + escapeHtml(d.code) + '</span>' +
     '<a href="' + escapeHtml(d.detail_url) + '" target="_blank" rel="noopener">Full NCES page ↗</a>' +
   '</div>';
   return html;
 }
 
-function briefFetch(code, evt) {
+function briefFetch(code, teacher, evt) {
   // Cancel any in-flight request
   if (BRIEF_INFLIGHT && BRIEF_INFLIGHT.abort) BRIEF_INFLIGHT.abort();
   var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
@@ -751,10 +783,11 @@ function briefFetch(code, evt) {
   var url = '/api/nces/code/' + encodeURIComponent(code) +
             '?xn=' + encodeURIComponent(currentXn()) +
             '&xq=' + encodeURIComponent(currentXq());
+  if (teacher) url += '&teacher=' + encodeURIComponent(teacher);
   fetch(url, ctrl ? { signal: ctrl.signal } : {})
     .then(function(r) { return r.json(); })
     .then(function(d) {
-      BRIEF_CACHE[code] = d;
+      BRIEF_CACHE[code + '::' + (teacher || '')] = d;
       if (BRIEF_ACTIVE_CODE === code) {
         BRIEF_CARD.innerHTML = briefRender(d);
       }
@@ -786,18 +819,22 @@ function briefShow(c, evt) {
     }
     // Clamp to viewport bottom + top
     if (top + cardH > window.pageYOffset + window.innerHeight - 8) {
-      top = window.pageYOffset + window.innerHeight - cardH - 8;
+      top = window.pageYOffset + window.innerHeight - cardH;
     }
     if (top < window.pageYOffset + 8) top = window.pageYOffset + 8;
     BRIEF_CARD.style.left = left + 'px';
     BRIEF_CARD.style.top = top + 'px';
     BRIEF_CARD.classList.add('show');
-    // Render cached result if any, else fetch
-    if (BRIEF_CACHE[c.code]) {
-      BRIEF_CARD.innerHTML = briefRender(BRIEF_CACHE[c.code]);
+    // Render cached result if any, else fetch. Key the cache by
+    // (code, teacher) so the same course under different teachers
+    // doesn't share a stale response.
+    var teacherStr = (c.teachers || []).join(',');
+    var cacheKey = c.code + '::' + teacherStr;
+    if (BRIEF_CACHE[cacheKey]) {
+      BRIEF_CARD.innerHTML = briefRender(BRIEF_CACHE[cacheKey]);
     } else {
       BRIEF_CARD.innerHTML = '<div class="bc-loading">Loading NCES</div>';
-      briefFetch(c.code, evt);
+      briefFetch(c.code, teacherStr, evt);
     }
   }, 280);
 }
@@ -1143,31 +1180,15 @@ function renderEvalBrief(d) {
                      ((d.review_count || 0) === 0 && d.available && d.tis_teacher);
   var mismatchHtml = '';
   if (showFallback) {
-    var alts = d.alternatives || [];
-    var altHtml = alts.length
-      ? '<div class="tm-section">' +
-          '<div class="tm-section-h">Other sections of ' + escapeHtml(d.code) + '</div>' +
-          '<div class="tm-alts">' +
-            alts.map(function(a) {
-              return '<button class="tm-alt" data-nces-id="' + (a.nces_id || '') + '">' +
-                '<b>' + escapeHtml(a.teacher || '?') + '</b>' +
-                (a.rating ? ' · ' + a.rating.toFixed(2) + '/10' : '') +
-                (a.review_count ? ' · ' + a.review_count + ' reviews' : '') +
-              '</button>';
-            }).join('') +
-          '</div>' +
-        '</div>'
-      : '';
-
-    // Teacher's OTHER courses — gives a sense of what they're like as a
-    // teacher even when their section of THIS course has no reviews.
+    // Priority: same teacher on different course (more useful for
+    // gauging the teacher) over different teacher on same course.
     var other = d.teacher_other || [];
     var otherHtml = other.length
       ? '<div class="tm-section">' +
           '<div class="tm-section-h">What ' + escapeHtml(d.tis_teacher) +
             ' teaches elsewhere</div>' +
           '<div class="tm-other">' +
-            other.slice(0, 6).map(function(c) {
+            other.map(function(c) {
               var d1 = c.difficulty || ['—', 0];
               var w1 = c.workload   || ['—', 0];
               var g1 = c.grading    || ['—', 0];
@@ -1193,6 +1214,22 @@ function renderEvalBrief(d) {
         '</div>'
       : '';
 
+    var alts = d.alternatives || [];
+    var altHtml = alts.length
+      ? '<div class="tm-section">' +
+          '<div class="tm-section-h">Other sections of ' + escapeHtml(d.code) + '</div>' +
+          '<div class="tm-alts">' +
+            alts.map(function(a) {
+              return '<button class="tm-alt" data-nces-id="' + (a.nces_id || '') + '">' +
+                '<b>' + escapeHtml(a.teacher || '?') + '</b>' +
+                (a.rating ? ' · ' + a.rating.toFixed(2) + '/10' : '') +
+                (a.review_count ? ' · ' + a.review_count + ' reviews' : '') +
+              '</button>';
+            }).join('') +
+          '</div>' +
+        '</div>'
+      : '';
+
     // Title above the alternatives/teacher-other panel differs depending
     // on whether the teacher is wrong or the section has 0 reviews.
     var bannerTitle = d.teacher_mismatch
@@ -1209,7 +1246,7 @@ function renderEvalBrief(d) {
       '<div class="teacher-mismatch">' +
         '<div class="tm-h">' + bannerTitle + '</div>' +
         '<div class="tm-b">' + bannerBody + '</div>' +
-        altHtml + otherHtml +
+        otherHtml + altHtml +
       '</div>';
   }
 
