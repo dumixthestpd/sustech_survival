@@ -162,7 +162,13 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
   border-left:3px solid var(--warn);padding:.4rem .6rem;border-radius:3px;
   font-size:.82rem;line-height:1.45;font-weight:500}
 .eval-item{padding:.5rem .7rem;border-bottom:1px solid #1a2030;font-size:.78rem}
-.eval-item .ei-t{font-weight:600}
+.eval-item .ei-t{font-weight:600;display:flex;align-items:baseline;gap:.5rem;flex-wrap:wrap}
+.eval-item .ei-rate{display:inline-block;background:rgba(91,157,255,.12);
+  color:var(--accent);font-weight:700;font-size:.78rem;padding:.1rem .42rem;
+  border-radius:3px;border:1px solid rgba(91,157,255,.4);font-family:ui-monospace,monospace}
+.eval-item .ei-rate-out{color:var(--mut);font-size:.65rem;font-weight:400;margin-left:.1rem}
+.eval-item .ei-author{font-weight:600}
+.eval-item .ei-sem{color:var(--mut);font-weight:400}
 .eval-item .ei-m{color:var(--mut);margin-top:.15rem;font-size:.74rem;line-height:1.5}
 .eval-item .ei-dims{color:var(--mut);font-size:.7rem;margin-top:.2rem;display:flex;gap:.6rem;flex-wrap:wrap}
 .eval-item .ei-dims b{color:#c2c8d0;font-weight:500}
@@ -187,6 +193,33 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
 .tm-other-card .to-rating{color:#7ed4a7;font-weight:600}
 .tm-other-card .to-reviews{color:var(--mut)}
 .tm-other-card .to-dims{display:flex;flex-wrap:wrap;gap:.25rem .55rem;font-size:.66rem;color:var(--mut);line-height:1.3}
+
+/* Pick screen — categorized course picker for mismatch / no-eval cases */
+.pick-head{padding:.8rem .9rem;background:rgba(227,179,65,.08);
+  border-bottom:1px solid var(--warn);border-radius:6px 6px 0 0;margin:.4rem 0 0}
+.pick-head-h{font-weight:600;color:var(--warn);font-size:.92rem;margin-bottom:.3rem}
+.pick-head-b{color:var(--txt);font-size:.78rem;line-height:1.45}
+.pick-section{padding:.7rem .9rem;border-bottom:1px solid var(--border)}
+.pick-section:last-child{border-bottom:none}
+.pick-section-h{font-size:.84rem;font-weight:600;color:var(--txt);
+  margin-bottom:.2rem;display:flex;align-items:baseline;gap:.5rem}
+.pick-section-meta{font-size:.68rem;color:var(--mut);font-weight:400}
+.pick-section-b{font-size:.72rem;color:var(--mut);line-height:1.45;margin-bottom:.55rem}
+.pick-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.5rem}
+.pick-card{padding:.6rem .7rem;background:var(--panel2);border:1px solid var(--border);
+  border-radius:5px;cursor:pointer;text-align:left;color:var(--txt);font:inherit;
+  display:flex;flex-direction:column;gap:.35rem;transition:border-color .12s,background .12s}
+.pick-card:hover{border-color:var(--accent);background:var(--panel)}
+.pick-card .pc-head{display:flex;flex-direction:column;gap:.05rem}
+.pick-card .pc-head b{font-size:.85rem;font-family:ui-monospace,monospace;color:var(--accent)}
+.pick-card .pc-head span{font-size:.72rem;color:var(--mut);line-height:1.3}
+.pick-card .pc-meta{font-size:.7rem;color:var(--txt);line-height:1.35}
+.pick-card .pc-teacher{color:var(--mut);font-size:.68rem}
+.pick-card .pc-rating{display:flex;align-items:baseline;gap:.3rem;font-size:.78rem}
+.pick-card .pc-score{font-size:1.05rem;font-weight:700;color:var(--accent)}
+.pick-card .pc-out{color:var(--mut);font-size:.7rem}
+.pick-card .pc-rev{color:var(--mut);font-size:.68rem;margin-left:auto}
+.pick-card .pc-dims{display:flex;flex-wrap:wrap;gap:.25rem .55rem;font-size:.65rem;color:var(--mut)}
 
 /* hover brief card (NCES structured) */
 .brief-card{position:absolute;z-index:1000;width:380px;background:var(--panel2);

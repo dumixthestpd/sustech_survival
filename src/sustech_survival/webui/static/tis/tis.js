@@ -898,8 +898,8 @@ function fetchEval(code, teacher) {
   if (!code) return;
   if (EVAL_CACHE[code]) {
     var d = EVAL_CACHE[code];
-    if (d.nces_id) { renderEvalDetail(d.nces_id); return; }
-    renderEvalBrief(d); return;
+    routeEvalResponse(d);
+    return;
   }
   EVAL_OUT.innerHTML = '<div class="ncn">Loading NCES evaluation…</div>';
   getJSON('/api/nces/code/' + encodeURIComponent(code) +
@@ -908,15 +908,31 @@ function fetchEval(code, teacher) {
           (teacher ? '&teacher=' + encodeURIComponent(teacher) : ''))
     .then(function(d) {
       EVAL_CACHE[code] = d;
-      // If the TIS teacher has no NCES section, keep the brief view (with
-      // mismatch banner + alternatives) instead of silently opening a
-      // detail page that doesn't actually belong to the user's teacher.
-      if (d.available && d.teacher_mismatch) { renderEvalBrief(d); return; }
-      if (d.nces_id) { renderEvalDetail(d.nces_id); return; }
-      renderEvalBrief(d);
+      routeEvalResponse(d);
     })['catch'](function(e) {
       EVAL_OUT.innerHTML = '<div class="flash err">Error: ' + escapeHtml(e.message) + '</div>';
     });
+}
+
+// Decide what to show when a TIS card is clicked:
+//   - exact match with reviews  → full detail page
+//   - mismatch / no-eval / no data → pick screen (let user choose)
+function routeEvalResponse(d) {
+  if (!d.available) { renderEvalNotFound(d); return; }
+  if (d.teacher_mismatch) { renderEvalPick(d, 'mismatch'); return; }
+  if ((d.review_count || 0) === 0 && d.tis_teacher) {
+    renderEvalPick(d, 'no-eval'); return;
+  }
+  if (d.nces_id) { renderEvalDetail(d.nces_id); return; }
+  renderEvalNotFound(d);
+}
+
+function renderEvalNotFound(d) {
+  EVAL_OUT.dataset.mode = 'notfound';
+  EVAL_OUT.innerHTML = '<div class="empty" style="padding:1.5rem">' +
+    escapeHtml(d.reason || 'NCES evaluation not available for this course.') + '</div>' +
+    (d.search_url ? '<div style="margin:.6rem 1.5rem"><a href="' + escapeHtml(d.search_url) +
+      '" target="_blank" rel="noopener">Search NCES ↗</a></div>' : '');
 }
 
 // ── Browse list (default view) ───────────────────────────────────────────
@@ -1068,9 +1084,13 @@ function renderEvalDetailCard(d) {
           d_html += '<span><b>' + dimKeys[di][1] + '</b> ' + escapeHtml(v) + '</span>';
         }
       }
+      var rate = (typeof r.rate === 'number') ? r.rate : 0;
+      var rateHtml = '<span class="ei-rate" title="Individual rating">' +
+        rate.toFixed(1) + '<span class="ei-rate-out">/10</span></span>';
       reviewsHtml += '<div class="eval-item">' +
-        '<div class="ei-t">' + escapeHtml(r.username || 'Anonymous') +
-          (r.semester ? ' · ' + escapeHtml(r.semester) : '') +
+        '<div class="ei-t">' + rateHtml +
+          '<span class="ei-author">' + escapeHtml(r.username || 'Anonymous') + '</span>' +
+          (r.semester ? ' · <span class="ei-sem">' + escapeHtml(r.semester) + '</span>' : '') +
           (r.likes ? ' · 👍' + r.likes : '') +
         '</div>' +
         (r.text ? '<div class="ei-m">' + escapeHtml(r.text) + '</div>' : '') +
@@ -1108,7 +1128,140 @@ function renderEvalDetailCard(d) {
   '</div>';
 }
 
-// ── Brief view (compact — used when a TIS card is clicked) ───────────────
+// ── Pick screen — shown when the TIS section has no exact match in NCES,
+// or the matched section has no reviews yet. Asks the user to pick which
+// NCES course they want to inspect. Courses are grouped into two
+// categories so the user can choose based on what they care about:
+//   - "Same teacher on different course" — gauge the teacher via their
+//     other taught courses (more useful for course selection)
+//   - "Different teacher on same course" — gauge the course via other
+//     teachers' sections (more useful for course identity)
+function renderEvalPick(d, reason) {
+  EVAL_MODE = 'pick';
+  EVAL_OUT.dataset.mode = 'pick';
+
+  var sameTeacher = d.teacher_other || [];
+  var sameCourse  = d.alternatives || [];
+
+  var hasAny = sameTeacher.length > 0 || sameCourse.length > 0;
+
+  var headerTitle = reason === 'mismatch'
+    ? '⚠ No exact course match in NCES'
+    : '⚠ No evaluations yet for this section';
+  var headerBody = reason === 'mismatch'
+    ? 'NCES has no reviews for your teacher <b>' + escapeHtml(d.tis_teacher) +
+      '</b> in <b>' + escapeHtml(d.code) + '</b>. Pick which course you want to see:'
+    : 'NCES has no reviews for <b>' + escapeHtml(d.code) +
+      '</b> by <b>' + escapeHtml(d.tis_teacher) +
+      '</b> yet. Pick which course you want to see:';
+
+  // Empty state: nothing to pick. Just show a search-NCES link.
+  if (!hasAny) {
+    EVAL_OUT.innerHTML = '<div class="eval-detail">' +
+      '<button class="ghost ed-back" id="eval-back">← Back to browse</button>' +
+      '<div class="eval-detail-body" style="padding:1.2rem">' +
+        '<div class="ed-head"><span class="ed-name">No NCES data</span></div>' +
+        '<div class="ncn" style="margin-top:.6rem">' +
+          'NCES has no reviews for your teacher in this course, and no ' +
+          'other courses by your teacher have been reviewed either. ' +
+          'You can try searching NCES manually.' +
+        '</div>' +
+        '<div style="margin-top:1rem"><a href="' +
+          escapeHtml(d.search_url || 'https://ncesnext.com/search?q=' +
+            encodeURIComponent(d.code || '')) +
+          '" target="_blank" rel="noopener" class="ghost">Search NCES ↗</a></div>' +
+      '</div>' +
+    '</div>';
+    var back = document.getElementById('eval-back');
+    if (back) back.addEventListener('click', renderEvalBrowse);
+    return;
+  }
+
+  // Helper to render a course card button (same shape for both panels).
+  function cardHtml(c) {
+    var d1 = c.difficulty || ['—', 0];
+    var w1 = c.workload   || ['—', 0];
+    var g1 = c.grading    || ['—', 0];
+    var t1 = c.takeaways  || ['—', 0];
+    return '<button class="pick-card" data-nces-id="' + (c.nces_id || '') + '">' +
+      '<div class="pc-head">' +
+        '<b>' + escapeHtml(c.code || '') + '</b>' +
+        '<span>' + escapeHtml(c.name || '') + '</span>' +
+      '</div>' +
+      '<div class="pc-meta">' +
+        '<span class="pc-teacher">' + escapeHtml(c.teacher || '') + '</span>' +
+      '</div>' +
+      '<div class="pc-rating">' +
+        '<span class="pc-score">' + (c.rating || 0).toFixed(1) + '</span>' +
+        '<span class="pc-out">/ 10</span>' +
+        '<span class="pc-rev">' + (c.review_count || 0) + ' reviews</span>' +
+      '</div>' +
+      '<div class="pc-dims">' +
+        '<span>Difficulty ' + Math.round(d1[1] || 0) + '%</span>' +
+        '<span>Workload ' + Math.round(w1[1] || 0) + '%</span>' +
+        '<span>Grading ' + Math.round(g1[1] || 0) + '%</span>' +
+        '<span>Gain ' + Math.round(t1[1] || 0) + '%</span>' +
+      '</div>' +
+    '</button>';
+  }
+
+  var sameTeacherHtml = sameTeacher.length
+    ? '<div class="pick-section">' +
+        '<div class="pick-section-h">Same teacher on different course ' +
+          '<span class="pick-section-meta">' + sameTeacher.length + ' option' +
+          (sameTeacher.length === 1 ? '' : 's') + '</span></div>' +
+        '<div class="pick-section-b">' +
+          'Useful for gauging what <b>' + escapeHtml(d.tis_teacher) +
+          '</b> is like as a teacher based on their other courses.' +
+        '</div>' +
+        '<div class="pick-grid">' + sameTeacher.map(cardHtml).join('') + '</div>' +
+      '</div>'
+    : '';
+
+  var sameCourseHtml = sameCourse.length
+    ? '<div class="pick-section">' +
+        '<div class="pick-section-h">Different teacher on same course ' +
+          '<span class="pick-section-meta">' + sameCourse.length + ' option' +
+          (sameCourse.length === 1 ? '' : 's') + '</span></div>' +
+        '<div class="pick-section-b">' +
+          'Useful for gauging <b>' + escapeHtml(d.code) + '</b> as a course ' +
+          'by looking at how other teachers teach it.' +
+        '</div>' +
+        '<div class="pick-grid">' + sameCourse.map(function(a) {
+          return cardHtml({
+            code: d.code, name: d.name,
+            teacher: a.teacher,
+            nces_id: a.nces_id,
+            rating: a.rating,
+            review_count: a.review_count,
+            // alternatives don't have dimensions, default to placeholder
+            difficulty: ['—', 0], workload: ['—', 0],
+            grading: ['—', 0], takeaways: ['—', 0],
+          });
+        }).join('') + '</div>' +
+      '</div>'
+    : '';
+
+  EVAL_OUT.innerHTML = '<div class="eval-detail">' +
+    '<button class="ghost ed-back" id="eval-back">← Back to browse</button>' +
+    '<div class="pick-head">' +
+      '<div class="pick-head-h">' + headerTitle + '</div>' +
+      '<div class="pick-head-b">' + headerBody + '</div>' +
+    '</div>' +
+    sameTeacherHtml + sameCourseHtml +
+  '</div>';
+
+  // Wire up: clicking a card opens that NCES section's full detail.
+  var back = document.getElementById('eval-back');
+  if (back) back.addEventListener('click', renderEvalBrowse);
+  var cards = EVAL_OUT.querySelectorAll('.pick-card');
+  for (var i = 0; i < cards.length; i++) {
+    cards[i].addEventListener('click', function() {
+      var id = parseInt(this.dataset.ncesId, 10);
+      if (id) renderEvalDetail(id);
+    });
+  }
+}
 function renderEvalBrief(d) {
   EVAL_MODE = 'brief';
   EVAL_OUT.dataset.mode = 'brief';
@@ -1159,9 +1312,13 @@ function renderEvalBrief(d) {
   }
   var exHtml = excerpts.length
     ? reviewsHdr + excerpts.map(function(r) {
+        var rate = (typeof r.rate === 'number') ? r.rate : 0;
+        var rateHtml = '<span class="ei-rate" title="Individual rating">' +
+          rate.toFixed(1) + '<span class="ei-rate-out">/10</span></span>';
         return '<div class="eval-item">' +
-          '<div class="ei-t">' + escapeHtml(r.username || 'Anonymous') +
-            (r.semester ? ' · ' + escapeHtml(r.semester) : '') +
+          '<div class="ei-t">' + rateHtml +
+            '<span class="ei-author">' + escapeHtml(r.username || 'Anonymous') + '</span>' +
+            (r.semester ? ' · <span class="ei-sem">' + escapeHtml(r.semester) + '</span>' : '') +
             (r.likes ? ' · 👍' + r.likes : '') +
           '</div>' +
           (r.excerpt ? '<div class="ei-m">' + escapeHtml(r.excerpt) +
