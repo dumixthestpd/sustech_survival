@@ -16,6 +16,7 @@ var STAT = document.getElementById('stat');
 var RESULTS = document.getElementById('results');
 var GRID_ODD = document.getElementById('grid-body-odd');
 var GRID_EVEN = document.getElementById('grid-body-even');
+var BLOCK_BODY = document.getElementById('block-body');
 var PICK_STAT = document.getElementById('pick-stat');
 var PICK_LIST = document.getElementById('pick-list');
 var ENROLLED_OUT = document.getElementById('enrolled-out');
@@ -69,6 +70,7 @@ var MODE = 'personal';      // 'personal' (我要选课, default) or 'campus' (�
 var PERIODS = 12;
 var BLOCKED = {};          // { 'day:period' -> true }   day=1-7, period=1-12
 var _modeLoadId = 0;       // monotonic token — incremented on every loadForMode call.
+var _evalLoadId = 0;       // monotonic token — incremented on every selectCourse call.
                            // loadCourses() captures it at call time and discards the
                            // response if the token changed (guards against fast toggles).
 
@@ -592,14 +594,14 @@ function renderCard(c) {
       (hasRealTeacher ? '<b>Teacher</b> ' + escapeHtml(teachers) : '<span style="color:var(--mut)"><b>Teacher</b> TBD</span>') +
       (c.credits ? ' · <b>Credits</b> ' + c.credits : '') +
       (c.capacity ? ' · <b>Capacity</b> ' + c.capacity : '') +
-      (c.code ? ' · <a href="https://ncesnext.com/search?q=' + encodeURIComponent(c.code) + '" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;font-size:.72rem">Compare in NCES ↗</a>' : '') +
     '</div>' +
     (schedHTML ? '<div class="sched"><span class="sched-lbl">Schedule</span>' + schedHTML + '</div>' : '') +
     '<div class="actions">' +
       (PICKED[c.rwh]
         ? ''
         : '<button class="ghost pick-btn" data-action="add" style="color:var(--accent);font-size:.7rem;padding:.1rem .35rem">+ Pick</button>') +
-    '</div>';
+    '</div>' +
+    (c.code ? '<div class="nces-link"><a href="https://ncesnext.com/search?q=' + encodeURIComponent(c.code) + '" target="_blank" rel="noopener">Compare in NCES ↗</a></div>' : '');
 
   card.addEventListener('click', function(e) {
     if (e.target.closest('.pick-btn')) return;
@@ -906,6 +908,7 @@ var EVAL_SEARCH_EL, EVAL_SORT_EL, EVAL_PREV_EL, EVAL_NEXT_EL, EVAL_PAGE_INFO_EL;
 
 function selectCourse(rwh) {
   ACTIVE_RWH = rwh;
+  var loadId = ++_evalLoadId;
   var cards = RESULTS.querySelectorAll('.c-card');
   for (var i = 0; i < cards.length; i++) {
     cards[i].classList.toggle('active', cards[i].dataset.rwh === rwh);
@@ -915,19 +918,19 @@ function selectCourse(rwh) {
     if (CAT[j].rwh === rwh) { course = CAT[j]; break; }
   }
   if (!course) return;
+  EVAL_OUT.innerHTML = '<div class="ncn">Loading NCES evaluation…</div>';
   switchTab('eval');
-  // Try to find the matching NCES id and open the full detail; fall back
-  // to the brief shape (rating + 3 review excerpts) if we can't pin it.
-  fetchEval(course.code, course.teachers && course.teachers.join(','));
+  fetchEval(course.code, course.teachers && course.teachers.join(','), loadId);
 }
 
 // fetchEval: called when a TIS card is clicked. Prefer the full detail
 // (which has all reviews) by looking up the NCES id first via the brief
 // endpoint; if that succeeds, we have an nces_id and switch to detail.
-function fetchEval(code, teacher) {
+function fetchEval(code, teacher, loadId) {
   code = String(code || '').trim();
   if (!code) return;
   if (EVAL_CACHE[code]) {
+    if (loadId !== undefined && loadId !== _evalLoadId) return;  // stale
     var d = EVAL_CACHE[code];
     routeEvalResponse(d);
     return;
@@ -938,9 +941,11 @@ function fetchEval(code, teacher) {
           '&xq=' + encodeURIComponent(currentXq()) +
           (teacher ? '&teacher=' + encodeURIComponent(teacher) : ''))
     .then(function(d) {
+      if (loadId !== undefined && loadId !== _evalLoadId) return;  // stale
       EVAL_CACHE[code] = d;
       routeEvalResponse(d);
     })['catch'](function(e) {
+      if (loadId !== undefined && loadId !== _evalLoadId) return;  // stale
       EVAL_OUT.innerHTML = '<div class="flash err">Error: ' + escapeHtml(e.message) + '</div>';
     });
 }
@@ -1061,8 +1066,10 @@ function _termIdToDisplay(term_id) {
 function renderEvalDetail(nces_id) {
   EVAL_MODE = 'detail';
   EVAL_OUT.dataset.mode = 'detail';
+  var loadId = _evalLoadId;
   EVAL_OUT.innerHTML = '<div class="ncn" style="padding:1rem">Loading course detail…</div>';
   getJSON('/api/nces/course/' + nces_id).then(function(d) {
+    if (loadId !== _evalLoadId) return;  // stale — user already clicked another course
     if (!d.available) {
       EVAL_OUT.innerHTML = '<div class="empty" style="padding:1.5rem">' +
         escapeHtml(d.reason || 'Course not found in NCES') + '</div>';
@@ -1930,6 +1937,25 @@ function renderGridBlocks(allBlocks, targetOdd, targetEven, legendTarget) {
   renderGridTable(targetEven, buildPackedItems(allBlocks, false));
 }
 
+// Single empty grid for the scheduler's block-time UI. No course blocks —
+// just cells the user can click to mark BLOCKED.
+function renderBlockGrid() {
+  if (!BLOCK_BODY) return;
+  var h = '';
+  for (var row = 1; row <= PERIODS; row++) {
+    h += '<tr><th>' + row + '</th>';
+    for (var day = 1; day <= DAYS; day++) {
+      h += '<td class="cell" data-day="' + day + '" data-period="' + row +
+        '" style="position:relative;height:' + ROW_HEIGHT + 'px"></td>';
+    }
+    h += '</tr>';
+  }
+  BLOCK_BODY.innerHTML = h;
+  applyBlockedVisual(BLOCK_BODY);
+  attachGridBlockingHandlers(BLOCK_BODY);
+  attachGridContextMenu(BLOCK_BODY);
+}
+
 function renderGrid() {
   var keys = Object.keys(PICKED);
   if (!keys.length) {
@@ -1945,18 +1971,11 @@ function renderGrid() {
   var allBlocks = sectionsToBlocks(pickedArr);
   renderGridBlocks(allBlocks, GRID_ODD, GRID_EVEN, GRID_LEGEND);
   // Re-apply blocked cells on top of course blocks (so they show even when
-  // the cell already has a course drawn)
+  // the cell already has a course drawn). Blocking is now edited in the
+  // scheduler tab's single grid, but we still mirror the state here so the
+  // user can SEE which slots are off-limits.
   applyBlockedVisual(GRID_ODD);
   applyBlockedVisual(GRID_EVEN);
-
-  // Wire click + drag for blocking. Done here (not in renderGridBlocks)
-  // because the cell DOM is rewritten each time and event delegation keeps
-  // the listener attached to a stable parent.
-  attachGridBlockingHandlers(GRID_ODD);
-  attachGridBlockingHandlers(GRID_EVEN);
-  // Right-click on a blocked cell cycles week-detail mode (all/odd/even)
-  attachGridContextMenu(GRID_ODD);
-  attachGridContextMenu(GRID_EVEN);
 }
 
 // Week-detail mode for a blocked cell:
@@ -1991,6 +2010,7 @@ function attachGridContextMenu(tbody) {
     _setBlockMode(key, next);
     applyBlockedVisual(GRID_ODD);
     applyBlockedVisual(GRID_EVEN);
+    if (BLOCK_BODY) applyBlockedVisual(BLOCK_BODY);
     syncBlockedInput();
   });
 }
@@ -2047,6 +2067,7 @@ function attachGridBlockingHandlers(tbody) {
   function refresh() {
     applyBlockedVisual(GRID_ODD);
     applyBlockedVisual(GRID_EVEN);
+    if (BLOCK_BODY) applyBlockedVisual(BLOCK_BODY);
     syncBlockedInput();
   }
 
@@ -2217,6 +2238,27 @@ function solve() {
     var flat = solutions;
     var total = flat.length;
 
+    // ── code → name lookup (PICKED first, CAT fallback) ─────────────
+    // The name is the user-facing primary identifier. Code is shown only
+    // as a parenthetical for disambiguation (e.g. "生物学原理 (BIO103)").
+    var codeToName = {};
+    Object.keys(PICKED).forEach(function(rwh) {
+      var p = PICKED[rwh];
+      if (p.code && p.name && !codeToName[p.code]) codeToName[p.code] = p.name;
+    });
+    CAT.forEach(function(c) {
+      if (c.code && c.name && !codeToName[c.code]) codeToName[c.code] = c.name;
+    });
+    function cname(code) { return codeToName[code] || code; }
+    function cnameWithCode(code) {
+      var n = cname(code);
+      // If we couldn't find a name distinct from the code, just show the code.
+      return (n && n !== code) ? (n + ' <span class="sc-code">(' + code + ')</span>') : code;
+    }
+    function joinNames(codes) {
+      return codes.map(function(c) { return cname(c); }).join(', ');
+    }
+
     function renderSolveItem() {
       var sol = flat[idx];
 
@@ -2266,69 +2308,110 @@ function solve() {
         });
       });
 
-      // Build section rows + total credits
+      // Build section rows + total credits (selected courses — no annotations
+      // for one-code drops, those are surfaced in their own block below).
       var secHtml = '';
       var totalCredits = 0;
       for (var si = 0; si < sol.sections.length; si++) {
         var sec = sol.sections[si];
         var schedStr = sec.schedule || formatSchedule(sec.slots);
         totalCredits += parseFloat(sec.credits) || 0;
-        // Annotate sections that had intra-code siblings
-        var intraNote = '';
-        if (intraDrops[sec.code]) {
-          var others = intraDrops[sec.code].map(function(r) {
-            var p = userPickedByCode[sec.code].filter(function(x) { return x === r; })[0] && PICKED[r];
-            if (!p) return r;
-            return 'class ' + (p.class_group || '?') + (p.teachers && p.teachers[0] ? ' (' + p.teachers[0] + ')' : '');
-          }).join(', ');
-          intraNote = ' <span class="sc-note">← kept this; ' + others + ' dropped (one code one class rule)</span>';
-        }
         secHtml += '<div class="sc-sec">' +
-          '<span class="solve-sec-code">' + escapeHtml(sec.code) + '</span>' +
-          (sec.class_group ? ' <span style="color:var(--mut)">' + escapeHtml(sec.class_group) + '</span>' : '') +
-          ' · ' + escapeHtml(sec.name || '') +
+          '<span class="sc-name">' + escapeHtml(sec.name || sec.code) + '</span>' +
+          ' <span class="sc-code">(' + escapeHtml(sec.code) + ')</span>' +
+          (sec.class_group ? ' <span style="color:var(--mut)">class ' + escapeHtml(sec.class_group) + '</span>' : '') +
           (sec.teachers && sec.teachers[0] ? ' · ' + escapeHtml(sec.teachers.join(', ')) : '') +
           (sec.credits ? ' · <b>' + sec.credits + '</b> cr' : '') +
           (schedStr ? ' · <span style="color:var(--mut);font-size:.72rem">' + escapeHtml(schedStr) + '</span>' : '') +
-          intraNote +
         '</div>';
       }
 
-      // Build dropped annotation lines: "MSE410: dropped ↔ conflict with CH105"
+      // Build dropped annotation lines:
+      //   "生物学原理 (BIO103): dropped ↔ conflict with 大学化学 (CH105)"
+      // Name is primary, code is parenthetical for disambiguation.
       var dropHtml = '';
       if (droppedCodes.length) {
         dropHtml = '<div class="sc-drops">';
         droppedCodes.forEach(function(code) {
-          var name = (PICKED[Object.keys(PICKED).filter(function(r) { return PICKED[r].code === code; })[0]] || {}).name || code;
           var reason = conflictReasons[code];
           var reasonText = reason && reason[0]
-            ? '↔ conflict with <b>' + escapeHtml(reason[0].code) + '</b>'
+            ? '↔ conflict with <b>' + cnameWithCode(reason[0].code) + '</b>'
             : '↔ no non-conflicting section exists';
           dropHtml += '<div class="sc-drop-row">' +
-            '<span class="solve-sec-code">' + escapeHtml(code) + '</span> ' +
-            escapeHtml(name) + ': <span style="color:var(--bad)">dropped</span>. ' +
+            cnameWithCode(code) + ': <span style="color:var(--bad)">dropped</span>. ' +
             reasonText +
           '</div>';
         });
         dropHtml += '</div>';
       }
 
+      // One-code-one-class drops: courses where the user picked multiple
+      // sections and the solution kept one. NOT in sol.dropped (keyed by
+      // code), so we surface them here with the required format:
+      //   "生物学原理 (BIO103): selected class 002 张三, others dropped
+      //    (one code one class rule caused this) (not accounted into dropped number)"
+      var oneCodeHtml = '';
+      var oneCodeKeys = Object.keys(intraDrops);
+      if (oneCodeKeys.length) {
+        oneCodeHtml = '<div class="sc-onecode">';
+        oneCodeKeys.forEach(function(code) {
+          var droppedRwhs = intraDrops[code];
+          // Find the kept section (in sol.sections with this code)
+          var kept = sol.sections.filter(function(s) { return s.code === code; })[0];
+          var keptClass = kept && kept.class_group ? kept.class_group : '?';
+          var keptTeacher = kept && kept.teachers && kept.teachers[0] ? kept.teachers[0] : '';
+          // Build "others dropped" listing each alternate class
+          var others = droppedRwhs.map(function(r) {
+            var p = PICKED[r];
+            if (!p) return 'class ?';
+            var label = 'class ' + (p.class_group || '?');
+            if (p.teachers && p.teachers[0] && p.teachers[0] !== keptTeacher) {
+              label += ' ' + p.teachers.join('/');
+            }
+            return label;
+          }).join(', ');
+          oneCodeHtml += '<div class="sc-onecode-row">' +
+            cnameWithCode(code) +
+            ': <b>selected class ' + escapeHtml(keptClass) + '</b>' +
+            (keptTeacher ? ' <span class="sc-teacher">' + escapeHtml(keptTeacher) + '</span>' : '') +
+            ', <span class="sc-others-dropped">' + escapeHtml(others) + '</span> dropped ' +
+            '<span class="sc-tag">one code one class rule</span>' +
+            '<span class="sc-tag sc-tag-muted">not accounted into dropped number</span>' +
+          '</div>';
+        });
+        oneCodeHtml += '</div>';
+      }
+
       var coverage = sol.covered;
       var droppedStr = (sol.dropped && sol.dropped.length)
-        ? ' <span class="dropped">Dropped: ' + escapeHtml(sol.dropped.join(', ')) + '</span>'
+        ? ' <span class="dropped">Dropped: ' + escapeHtml(joinNames(sol.dropped)) + '</span>'
         : '';
 
-      // Build the group header: click to jump to first solution in that group.
-      // Each group = same "dropped" set = a category of combinations.
+      // ── Categorized drop-group list (top of solve output) ───────────
+      // One section per group. The header is the dropped-set (using
+      // course NAMES, code in parens). The count badge shows how many
+      // combinations fall in this group. Clicking jumps to the first
+      // solution in the group; the currently-active group is highlighted
+      // even when the user is on a later solution in that group
+      // (so arrow navigation does NOT lose the highlight).
+      var currentSol = flat[idx];
+      var currentGroupKey = (currentSol.dropped || []).slice().sort().join('|') || '__all__';
       var groupHtml = '<div class="solve-groups">';
       for (var gk = 0; gk < groupOrder.length; gk++) {
         var gkey = groupOrder[gk];
         var gsols = groups[gkey];
         var gFirst = flat.indexOf(gsols[0]);
-        var isActive = (gFirst === idx);
+        // Highlight if the CURRENT solution belongs to this group, not
+        // only if it is the first solution in the group.
+        var isActive = (gkey === currentGroupKey);
         var label = gkey === '__all__'
           ? 'No courses dropped'
-          : 'Dropped ' + escapeHtml(gsols[0].dropped.join(', '));
+          : 'Dropped ' + (gsols[0].dropped.length
+              ? gsols[0].dropped.map(function(c) {
+                  var n = cname(c);
+                  return (n && n !== c) ? (n + ' (' + c + ')') : c;
+                }).join(', ')
+              : '');
         groupHtml += '<button class="sg-chip' + (isActive ? ' sg-active' : '') +
           '" data-gfirst="' + gFirst + '" title="Jump to first combination in this group">' +
           label + ' <span class="sg-cnt">' + gsols.length + '</span></button>';
@@ -2349,6 +2432,7 @@ function solve() {
         '</div>' +
         '<div class="solve-card" style="border:none;background:transparent;padding:0;margin-bottom:.3rem">' +
           secHtml +
+          oneCodeHtml +
           dropHtml +
           '<div class="sc-apply" style="margin-top:.5rem">' +
             '<button class="primary" id="solve-apply" style="width:100%;padding:.4rem">Apply This Schedule</button>' +
@@ -3155,9 +3239,11 @@ document.addEventListener('DOMContentLoaded', function() {
   var blockedEl = document.getElementById('blocked-input');
   if (blockedEl) {
     loadBlockedFromInput();  // initial population
+    renderBlockGrid();       // build the scheduler's single-grid editor
     blockedEl.addEventListener('change', function() {
       loadBlockedFromInput();
       renderGrid();
+      if (BLOCK_BODY) applyBlockedVisual(BLOCK_BODY);
     });
   }
   // Drag-to-reorder picked list = reprioritise for the solver
