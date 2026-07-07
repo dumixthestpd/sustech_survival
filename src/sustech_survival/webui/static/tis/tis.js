@@ -2451,6 +2451,14 @@ function solve() {
       // dropped siblings are not in sol.dropped (which is keyed by code),
       // so we surface them here. The header line explains the situation
       // in plain English; per-row annotations are kept minimal.
+      //
+      // Multi-teacher rendering: always show ALL teachers of both the
+      // kept and dropped classes. The earlier "compare first teacher"
+      // logic was wrong — two classes that share a first teacher are
+      // still different sections with different full rosters.
+      function teacherList(t) {
+        return (t && t.length) ? t.join(', ') : '—';
+      }
       var oneCodeHtml = '';
       var oneCodeKeys = Object.keys(intraDrops);
       if (oneCodeKeys.length) {
@@ -2461,24 +2469,21 @@ function solve() {
           // Find the kept section (in sol.sections with this code)
           var kept = sol.sections.filter(function(s) { return s.code === code; })[0];
           var keptClass = kept && kept.class_group ? kept.class_group : '?';
-          var keptTeacher = kept && kept.teachers && kept.teachers[0] ? kept.teachers[0] : '';
-          // Build "others dropped" listing each alternate class
-          var others = droppedRwhs.map(function(r) {
-            var p = PICKED[r];
-            if (!p) return 'cls ?';
-            var label = 'cls ' + (p.class_group || '?');
-            if (p.teachers && p.teachers[0] && p.teachers[0] !== keptTeacher) {
-              label += ' ' + p.teachers.join('/');
-            }
-            return label;
-          }).join(', ');
           oneCodeHtml += '<div class="sc-onecode-row">' +
-            codeAndName(code) +
-            ': <b>kept cls ' + escapeHtml(keptClass) + '</b>' +
-            (keptTeacher ? ' <span class="sc-teacher">' + escapeHtml(keptTeacher) + '</span>' : '') +
-            ', dropped ' +
-            '<span class="sc-others-dropped">' + escapeHtml(others) + '</span>' +
-          '</div>';
+            codeAndName(code) + ': <b>kept cls ' + escapeHtml(keptClass) + '</b>' +
+            ' <span class="sc-teacher">— ' + escapeHtml(teacherList(kept && kept.teachers)) + '</span>';
+          // Each dropped class on its own indented sub-line
+          oneCodeHtml += '<div class="sc-onecode-drops">';
+          droppedRwhs.forEach(function(r) {
+            var p = PICKED[r];
+            if (!p) return;
+            var cls = p.class_group || '?';
+            oneCodeHtml += '<div class="sc-onecode-drop">· dropped cls ' +
+              escapeHtml(cls) +
+              ' <span class="sc-teacher">— ' + escapeHtml(teacherList(p.teachers)) + '</span>' +
+            '</div>';
+          });
+          oneCodeHtml += '</div></div>';
         });
         oneCodeHtml += '</div>';
       }
