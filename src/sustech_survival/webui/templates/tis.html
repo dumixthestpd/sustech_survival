@@ -47,6 +47,9 @@ select.filter{flex:1;min-width:60px}
 .c-card .sched .sched-lbl{display:block;color:var(--txt);font-weight:600;font-size:.7rem;margin-bottom:.15rem;width:100%;flex-basis:100%}
 .slot-tag{display:inline-block;padding:.08rem .4rem;border-radius:4px;background:#1a2230;font-size:.7rem;color:#b0b8c8;white-space:nowrap;line-height:1.6}
 .c-card .actions{position:absolute;top:.45rem;right:.7rem;display:flex;gap:.25rem}
+.c-card .nces-link{display:flex;justify-content:flex-end;margin-top:.4rem;padding-top:.35rem;border-top:1px solid #1a2030}
+.c-card .nces-link a{color:var(--accent);text-decoration:none;font-size:.7rem;opacity:.85;transition:opacity .12s}
+.c-card .nces-link a:hover{opacity:1;text-decoration:underline}
 .badge{font-size:.68rem;padding:.08rem .35rem;border-radius:4px;background:#1e2733;color:var(--mut);display:inline-block}
 .badge.must{color:var(--ok)} .badge.opt{color:#c084fc}
 /* filter pills */
@@ -89,6 +92,13 @@ table.grid td{height:38px;position:relative}
 .cell.blocked::after{content:"🚫";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:.85rem;opacity:.55;pointer-events:none;z-index:5}
 .cell.blocked[data-mode="odd"]::after,
 .cell.blocked[data-mode="even"]::after{font-size:.65rem;opacity:.7}
+/* Single-grid block view (scheduler): per-week uses shade + label, no triangle */
+#block-body td.blocked{background:rgba(231,76,60,.32)}
+#block-body td.blocked[data-mode="all"]{background:repeating-linear-gradient(45deg,rgba(231,76,60,.32) 0,rgba(231,76,60,.32) 6px,transparent 6px,transparent 12px)}
+#block-body td.blocked[data-mode="odd"]{background:rgba(231,76,60,.16);color:#e74c3c;font-weight:600}
+#block-body td.blocked[data-mode="odd"]::after{content:"O";font-size:.7rem}
+#block-body td.blocked[data-mode="even"]{background:rgba(231,76,60,.16);color:#e74c3c;font-weight:600}
+#block-body td.blocked[data-mode="even"]::after{content:"E";font-size:.7rem}
 .cell.empty-cell{cursor:pointer}
 .cell{cursor:pointer}
 .palette{display:flex;gap:.3rem;flex-wrap:wrap;align-items:center;padding:.3rem 0}
@@ -148,6 +158,17 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
 .sc-drops{margin-top:.4rem;padding:.4rem .55rem;background:rgba(231,76,60,.06);border-left:3px solid var(--bad);border-radius:0 6px 6px 0}
 .sc-drop-row{font-size:.72rem;padding:.1rem 0;color:var(--txt);line-height:1.4}
 .sc-drop-row b{color:var(--accent)}
+/* One-code-one-class rule block (parallel to sc-drops, but yellow/info styling) */
+.sc-onecode{margin-top:.4rem;padding:.4rem .55rem;background:rgba(241,196,15,.07);border-left:3px solid #f1c40f;border-radius:0 6px 6px 0}
+.sc-onecode-row{font-size:.72rem;padding:.1rem 0;color:var(--txt);line-height:1.5}
+.sc-onecode-row .sc-teacher{color:var(--mut);font-size:.68rem;margin-left:.15rem}
+.sc-onecode-row .sc-others-dropped{color:#f1c40f}
+.sc-tag{display:inline-block;font-size:.6rem;padding:.05rem .3rem;border-radius:3px;background:rgba(241,196,15,.15);color:#f1c40f;margin-left:.3rem;font-weight:500;letter-spacing:.02em}
+.sc-tag.sc-tag-muted{background:rgba(255,255,255,.06);color:var(--mut)}
+/* Name/code hierarchy: name is the user-facing primary, code is a small reference */
+.sc-name{font-weight:500;color:var(--txt)}
+.sc-code{color:var(--mut);font-size:.65rem;font-family:monospace}
+.sc-drop-row .sc-code, .sc-onecode-row .sc-code{font-size:.62rem}
 
 /* eval */
 .eval-toolbar{display:flex;gap:.5rem;align-items:center;padding:.6rem 1rem;background:var(--panel);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:5;flex-wrap:wrap}
@@ -430,6 +451,14 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
         <div class="row" style="margin-bottom:.6rem">
           <span class="lbl" style="min-width:auto">Blocked time</span>
           <input type="text" id="blocked-input" placeholder="e.g. 1,3-4 / 3,7-8 (day,periods)" style="flex:1;font-size:.78rem"/>
+        </div>
+        <div id="block-grid-wrap" style="margin-bottom:.6rem">
+          <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.4rem">
+            <span style="font-size:.78rem;color:var(--txt);font-weight:500">Block time visually</span>
+            <span style="font-size:.7rem;color:var(--mut)">click to toggle, drag to expand, right-click for per-week</span>
+          </div>
+          <table class="grid"><thead><tr><th>Pd</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th></tr></thead>
+            <tbody id="block-body"></tbody></table>
         </div>
         <button class="primary" id="btn-solve">Solve combinations</button>
         <div id="solve-out" style="margin-top:.6rem"></div>
