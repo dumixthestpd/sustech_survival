@@ -1199,12 +1199,23 @@ function renderEvalPick(d, reason) {
     return;
   }
 
+  // Helper: read dimension as [label, pct] pair from either a Course dict
+  // (uses .difficulty = ['Easy', 100]) or an alternatives dict (uses
+  // .dimensions.difficulty = {label, pct}). Returns ['—', 0] on miss.
+  function dimPair(obj, dim) {
+    if (!obj) return ['—', 0];
+    if (obj[dim]) return obj[dim];                // Course dict shape
+    var d = obj.dimensions && obj.dimensions[dim];  // alternatives shape
+    if (d) return [d.label || '—', d.pct || 0];
+    return ['—', 0];
+  }
+
   // Helper to render a course card button (same shape for both panels).
   function cardHtml(c) {
-    var d1 = c.difficulty || ['—', 0];
-    var w1 = c.workload   || ['—', 0];
-    var g1 = c.grading    || ['—', 0];
-    var t1 = c.takeaways  || ['—', 0];
+    var d1 = dimPair(c, 'difficulty');
+    var w1 = dimPair(c, 'workload');
+    var g1 = dimPair(c, 'grading');
+    var t1 = dimPair(c, 'takeaways');
     return '<button class="pick-card" data-nces-id="' + (c.nces_id || '') + '">' +
       '<div class="pc-head">' +
         '<b>' + escapeHtml(c.code || '') + '</b>' +
@@ -1256,9 +1267,11 @@ function renderEvalPick(d, reason) {
             nces_id: a.nces_id,
             rating: a.rating,
             review_count: a.review_count,
-            // alternatives don't have dimensions, default to placeholder
-            difficulty: ['—', 0], workload: ['—', 0],
-            grading: ['—', 0], takeaways: ['—', 0],
+            // alternatives now include dimensions (scraper provides them)
+            difficulty: dimPair(a, 'difficulty'),
+            workload:   dimPair(a, 'workload'),
+            grading:    dimPair(a, 'grading'),
+            takeaways:  dimPair(a, 'takeaways'),
           });
         }).join('') + '</div>' +
       '</div>'
@@ -1368,10 +1381,10 @@ function renderEvalBrief(d) {
             ' teaches elsewhere</div>' +
           '<div class="tm-other">' +
             other.map(function(c) {
-              var d1 = c.difficulty || ['—', 0];
-              var w1 = c.workload   || ['—', 0];
-              var g1 = c.grading    || ['—', 0];
-              var t1 = c.takeaways  || ['—', 0];
+              var d1 = dimPair(c, 'difficulty');
+              var w1 = dimPair(c, 'workload');
+              var g1 = dimPair(c, 'grading');
+              var t1 = dimPair(c, 'takeaways');
               return '<button class="tm-other-card" data-nces-id="' + (c.nces_id || '') + '">' +
                 '<div class="to-head">' +
                   '<b>' + escapeHtml(c.code || '') + '</b>' +
