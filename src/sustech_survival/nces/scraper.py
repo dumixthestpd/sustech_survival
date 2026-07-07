@@ -147,6 +147,7 @@ class NCESScraper:
         self.session = session or requests.Session()
         self.session.headers["User-Agent"] = self.USER_AGENT
         self._course_cache: dict[str, tuple[float, NCESCourse]] = {}
+        self._teacher_cache: dict[str, tuple[float, list[NCESCourse]]] = {}
         self._last_request_at: float = 0.0
         # Throttle: NCES API rate-limits aggressively; 1 req / 200ms is safe.
         self._min_interval = 0.2
@@ -341,6 +342,11 @@ class NCESScraper:
 
         exact_match is True when the teacher name matched an NCES section.
         alternatives is a list of other sections of the same code.
+
+        Note: the NCES API's /search?q=<code> only returns ~5 sections
+        (top by review_count). To find a specific teacher's section that
+        didn't make the top-5, we also do a teacher-name search and merge
+        any matching-course-code sections into the candidate pool.
         """
         code = code.strip().upper()
         teacher = teacher.strip()
@@ -353,11 +359,26 @@ class NCESScraper:
                 return (course, True, [])
 
         data = self._api_search(code)
-        courses = data.get("courses", {}).get("items", []) or []
+        courses = list(data.get("courses", {}).get("items", []) or [])
+
+        # If a TIS teacher was given and isn't in the top-5, augment with
+        # a teacher-name search so the specific section is found.
+        tis_teachers = _split_teachers(teacher.replace("，", ",")) if teacher else []
+        seen_ids = {c.get("id") for c in courses}
+        if tis_teachers:
+            for t in tis_teachers:
+                try:
+                    tdata = self._api_search(t)
+                except Exception:
+                    continue
+                for c in tdata.get("courses", {}).get("items", []) or []:
+                    if (c.get("course_code") or "").upper() == code and c.get("id") not in seen_ids:
+                        courses.append(c)
+                        seen_ids.add(c.get("id"))
+
         if not courses:
             return (None, False, [])
 
-        tis_teachers = _split_teachers(teacher.replace("，", ",")) if teacher else []
         best = self._pick_course(courses, tis_teachers, term_id)
         if not best:
             return (None, False, [])
@@ -381,6 +402,42 @@ class NCESScraper:
 
         self._course_cache[cache_key] = (now, course)
         return (course, exact_match, alternatives)
+
+    def teacher_courses(self, teacher: str) -> list[NCESCourse]:
+        """All NCES sections taught by a given teacher.
+
+        Used as a fallback when a TIS course's teacher isn't in NCES under
+        that exact course code — gives the user a sense of what the teacher
+        is like based on reviews of their other courses.
+        """
+        teacher = teacher.strip()
+        if not teacher:
+            return []
+        cache_key = teacher
+        now = time.time()
+        if cache_key in self._teacher_cache:
+            ts, cached = self._teacher_cache[cache_key]
+            if now - ts < self.TTL:
+                return cached
+        try:
+            data = self._api_search(teacher)
+        except Exception:
+            return []
+        raw = data.get("courses", {}).get("items", []) or []
+        # Dedupe by nces_id (API may return the same section twice)
+        seen: set[int] = set()
+        out: list[NCESCourse] = []
+        for c in raw:
+            cid = c.get("id")
+            if cid in seen:
+                continue
+            seen.add(cid)
+            code = (c.get("course_code") or "").upper()
+            if not code:
+                continue
+            out.append(self._to_course(c, code))
+        self._teacher_cache[cache_key] = (now, out)
+        return out
 
     def fetch_reviews(self, code: str, teacher: str = "") -> Optional[list[dict]]:
         """Fetch reviews for a course code. Returns [] if course not found."""
@@ -444,6 +501,35 @@ class NCESScraper:
         teacher_mismatch = bool(tis_teachers) and not exact_match
         reviews = self.fetch_reviews(code, teacher=teacher) or []
         top = sorted(reviews, key=lambda r: r.get("likes", 0), reverse=True)[:3]
+
+        # Teacher-mismatch fallback: pull the teacher's other courses so
+        # the user can gauge their teaching from courses that DO have reviews.
+        teacher_other = []
+        if teacher_mismatch and tis_teachers:
+            # Aggregate by teacher — show one section per (teacher, course_code)
+            agg: dict[tuple[str, str], dict] = {}
+            for t in tis_teachers:
+                for c in self.teacher_courses(t):
+                    key = (c.teacher, c.code)
+                    # Keep the section with the most reviews per (teacher, code)
+                    if key not in agg or c.review_count > agg[key]["review_count"]:
+                        agg[key] = {
+                            "teacher": c.teacher,
+                            "code": c.code,
+                            "name": c.name,
+                            "nces_id": c.nces_id,
+                            "rating": c.rating,
+                            "review_count": c.review_count,
+                            "difficulty": c.difficulty,
+                            "workload": c.workload,
+                            "grading": c.grading,
+                            "takeaways": c.takeaways,
+                            "semester": c.semester,
+                        }
+            teacher_other = sorted(
+                agg.values(), key=lambda r: r["review_count"], reverse=True
+            )
+
         return {
             "available": True,
             "code": course.code,
@@ -475,6 +561,7 @@ class NCESScraper:
             "exact_match": exact_match,
             "nces_teacher": course.teacher,
             "alternatives": alternatives,
+            "teacher_other": teacher_other,  # other courses the TIS teacher teaches (for mismatch fallback)
         }
 
     def not_found(self, code: str) -> dict:
