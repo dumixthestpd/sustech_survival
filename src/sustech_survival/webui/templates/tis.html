@@ -186,10 +186,13 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
 .sc-onecode-row .sc-others-dropped{color:#f1c40f}
 .sc-tag{display:inline-block;font-size:.6rem;padding:.05rem .3rem;border-radius:3px;background:rgba(241,196,15,.15);color:#f1c40f;margin-left:.3rem;font-weight:500;letter-spacing:.02em}
 .sc-tag.sc-tag-muted{background:rgba(255,255,255,.06);color:var(--mut)}
-/* Name/code hierarchy: name is the user-facing primary, code is a small reference */
+/* Name/code hierarchy: code goes first ("CODE NAME"), in a brighter
+   cyan-blue that is distinct from --accent (#5b9dff, used for links
+   and active states) so course codes don't blend in with interactive
+   elements. The name follows in normal text. */
 .sc-name{font-weight:500;color:var(--txt)}
-.sc-code{color:var(--mut);font-size:.65rem;font-family:monospace}
-.sc-drop-row .sc-code, .sc-onecode-row .sc-code{font-size:.62rem}
+.sc-code{color:#5fc7ff;font-family:'SF Mono','Menlo','Consolas',monospace;font-weight:600}
+.sc-drop-row .sc-code, .sc-onecode-row .sc-code{font-size:.82rem}
 
 /* eval */
 .eval-toolbar{display:flex;gap:.5rem;align-items:center;padding:.6rem 1rem;background:var(--panel);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:5;flex-wrap:wrap}
