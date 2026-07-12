@@ -504,18 +504,18 @@ def current_week(
 class LiveOccupancyClient:
     """Live per-room schedule from TIS 场地课表 (cdkb).
 
-    Cache: stored at <skill_root>/classroom/cache/live_<xn>_<xq>_<cddm>.json
-    Default TTL: 3600s.
+    Cache: stored under ``<sustech_survival>/tmp/classroom/live/`` with a
+    per-room filename ``live_<xn>_<xq>_<cddm>.json``. Default TTL: 3600s.
     """
 
     BASE_URL = TIS_BASE
 
-    def __init__(self, *, max_age: int = DEFAULT_TTL, skill_root: Optional[Path] = None):
+    def __init__(self, *, max_age: int = DEFAULT_TTL):
         self.max_age = max_age
-        # skill_root is used only for the local cache dir, not auth.
-        # Auth goes through TISAuth which resolves skill_dir itself.
-        self.skill_root = skill_root or Path(__file__).resolve().parent.parent.parent.parent
-        self.cache_dir = self.skill_root / "classroom" / "cache" / "live"
+        # Cache lives in the uniform package-scoped tmp/ tree.
+        from sustech_survival import _cache
+        self._cache_helper = _cache
+        self.cache_dir = _cache.cache_path("classroom", "live")
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._sess: Optional[requests.Session] = None
 

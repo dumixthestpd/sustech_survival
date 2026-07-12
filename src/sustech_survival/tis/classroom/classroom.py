@@ -15,8 +15,8 @@ Architecture mirrors `sustech_survival.booking.BookingClient`:
 The full campus schedule (~1499 courses × N slots) is fetched once, parsed
 into ScheduleSlots, and indexed. Subsequent queries are O(1) dict lookups.
 
-Cache: stored at <skill_root>/classroom/cache/schedule_<xn>_<xq>.json with
-a timestamp. Default TTL: 3600s. Pass `max_age=0` to force a refresh.
+Cache: stored under ``<sustech_survival>/tmp/classroom/`` with a timestamp.
+Default TTL: 3600s. Pass ``max_age=0`` to force a refresh.
 """
 from __future__ import annotations
 
@@ -129,17 +129,17 @@ class ClassroomOccupancy:
 
     def __init__(self, *, xn: str = "2025-2026", xq: str = "2",
                  semester: Optional[Semester] = None,
-                 max_age: int = DEFAULT_TTL, skill_root: Optional[Path] = None,
+                 max_age: int = DEFAULT_TTL,
                  live_client: Optional[LiveOccupancyClient] = None):
         if semester is not None:
             self._sem = semester
         else:
             self._sem = Semester(xn, xq)
         self.max_age = max_age
-        # skill_root is used only for the local cache dir, not auth.
-        # Auth goes through TISAuth which resolves skill_dir itself.
-        self.skill_root = skill_root or Path(__file__).resolve().parent.parent.parent.parent
-        self.cache_dir = self.skill_root / "classroom" / "cache"
+        # Cache lives in the uniform package-scoped tmp/ tree.
+        from sustech_survival import _cache
+        self._cache_helper = _cache
+        self.cache_dir = _cache.cache_path("classroom")
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._slots: Optional[List[ScheduleSlot]] = None
         self._rooms: Optional[Dict[str, Room]] = None
@@ -363,7 +363,7 @@ class ClassroomOccupancy:
 
         Returns the raw list of room dicts from the API. Cached for 1h.
         """
-        cache_dir = self.skill_root / "classroom" / "cache" / "live"
+        cache_dir = self._cache_helper.cache_path("classroom", "live")
         cache_dir.mkdir(parents=True, exist_ok=True)
         cf = cache_dir / f"didian_{self._sem.xn}_{self._sem.xq}.json"
         if cf.exists():

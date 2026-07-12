@@ -16,10 +16,14 @@ bb-courses.json
 content_discovery.json
 
 # Cache — personal per-user state
+# Uniform layout: <sustech_survival>/tmp/<module>/...
+src/sustech_survival/tmp/
+# Legacy locations (no longer written, but ignore if old trees still exist)
 cache/
-src/sustech_survival/bb/cache/
+classroom/cache/
+selectcourse/cache/
 bb/cache/
-_cache.py
+src/classroom/cache/
 
 # Cookies — personal auth tokens
 *cookie*.txt
