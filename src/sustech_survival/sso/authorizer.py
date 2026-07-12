@@ -33,11 +33,16 @@ from typing import Callable, Optional
 from urllib.parse import quote, urlparse
 from abc import ABC
 
+from sustech_survival.exceptions import (
+    InvalidCredentials,
+    NetworkError,
+    SessionExpired,
+)
+
 __all__ = [
     "Authorizer",
     "AuthorizerError",
     "register_auth",
-    "get_auth",
     "require_auth",
     "CAS_BASE",
     "UA",
@@ -66,16 +71,28 @@ class Authorizer(ABC):
         BASE_URL    — the service's root URL (e.g. "https://tis.sustech.edu.cn")
         SERVICE_URL — where the IdP/SSO redirects after auth
 
-    Credentials: read from <skill_root>/credentials.txt (format: username:password).
-    Access via auth.username / auth.password properties.
+    Credentials: read from credentials.txt (format: username:password).
+    Resolution: SUSTECH_CREDENTIALS env var →
+    ~/.config/sustech-survival/credentials.txt →
+    ./credentials.txt → walk-up from package source.
+    Access via auth.username / auth.password.
 
-    Usage:
+    Usage::
+
         auth = MyServiceAuth()
         ok, reason = auth.ensure()       # check + auto-refresh
-        data = auth.get("/api/endpoint")  # GET, BASE_URL prepended automatically
-        result = auth.post("/api/data", json={"key": "value"})
-        # Or raw session for full control:
-        r = auth.session.get("https://other-domain/api")
+        data = auth.get("/api/endpoint")  # GET, auto-detects stale session
+        result = auth.post("/api/data")   # POST, auto-refreshes if needed
+        r = auth.session.get("https://other-domain/api")  # raw session
+
+    ``get()`` and ``post()`` transparently detect stale-session responses:
+    HTTP 401, 302/303 redirect to CAS, or a response URL on
+    ``cas.sustech.edu.cn``. On detection they refresh the CAS login once
+    and retry. If refresh fails, they raise ``InvalidCredentials`` (wrong
+    password), ``NetworkError`` (CAS down), or ``AuthorizerError`` (generic).
+
+    ``ensure()`` → ``(True, '')`` on success, ``(False, reason)`` on failure
+    where *reason* distinguishes the three failure types.
 
     No disk I/O. No cookie juggling. No header assembly.
     """
@@ -106,27 +123,100 @@ class Authorizer(ABC):
         self._session_time: float = 0.0
         self._session_ttl: int = 25 * 60  # 25 minutes — server-side session limit
         self._cached_session: Optional[requests.Session] = None
+        self._last_refresh_error: Optional[Exception] = None
         self._initialized = True
 
     # ── Public API — no HTTP leak ─────────────────────────────────────────
 
     def get(self, path: str, **kwargs) -> requests.Response:
-        """GET path relative to BASE_URL. Cookies, headers, UA already set."""
-        return self.session.get(self._url(path), **kwargs)
+        """GET path relative to BASE_URL. Cookies, headers, UA already set.
+
+        Auto-detects stale-session responses (override ``_is_stale_response()``
+        per subclass): refreshes cookies once and retries the request transparently.
+        Raises ``InvalidCredentials`` or ``NetworkError`` if refresh fails.
+        """
+        url = self._url(path)
+        response = self.session.get(url, **kwargs)
+        if self._is_stale_response(response):
+            if self._refresh():
+                response = self.session.get(url, **kwargs)
+            else:
+                self._raise_last_error()
+        return response
 
     def post(self, path: str, **kwargs) -> requests.Response:
-        """POST path relative to BASE_URL. Cookies, headers, UA already set."""
-        return self.session.post(self._url(path), **kwargs)
+        """POST path relative to BASE_URL. Same stale-detection as ``get()``."""
+        url = self._url(path)
+        response = self.session.post(url, **kwargs)
+        if self._is_stale_response(response):
+            if self._refresh():
+                response = self.session.post(url, **kwargs)
+            else:
+                self._raise_last_error()
+        return response
+
+    def _is_stale_response(self, response: requests.Response) -> bool:
+        """Universal stale-session detection for all SUSTech CAS services.
+
+        Returns ``True`` when the response indicates the session has expired
+        or been revoked. Two universal signals are checked:
+
+        1. **302/303 with Location → CAS** — direct redirect to the SUSTech
+           CAS login page (TIS, Lib, WS, Booking, PMS, and any CAS-fronted
+           service).
+        2. **Final URL contains CAS** — ``requests`` follows the redirect, so
+           the final ``response.url`` contains ``cas.sustech.edu.cn``.
+
+        Subclasses may add service-specific checks — e.g. ``BBAuth`` also
+        checks ``HTTP 401`` because BB's REST API returns this instead of a
+        redirect. (Do NOT use 401 universally — some services return it for
+        off-campus network issues, not session expiry.)
+        """
+        # Signal 1: redirect to CAS login (before follow)
+        if response.status_code in self.REDIRECT_STATUS:
+            loc = (response.headers.get("Location") or "").lower()
+            if "cas.sustech.edu.cn" in loc:
+                return True
+        # Signal 2: redirect was already followed, final URL is on CAS
+        if "cas.sustech.edu.cn" in (response.url or "").lower():
+            return True
+        return False
+
+    def _raise_last_error(self):
+        """Raise the last stored refresh error, or a generic one if unknown."""
+        err = self._last_refresh_error
+        if isinstance(err, (InvalidCredentials, NetworkError, AuthorizerError)):
+            raise err
+        raise AuthorizerError(
+            f"[{self.__class__.__name__}] Session refresh failed (unknown reason)"
+        )
+
+    def _refresh_error_message(self) -> str:
+        """Human-readable failure reason based on ``_last_refresh_error``."""
+        cls = self.__class__.__name__
+        err = self._last_refresh_error
+        if isinstance(err, InvalidCredentials):
+            return f"{cls}: credentials invalid — check credentials.txt"
+        if isinstance(err, NetworkError):
+            return f"{cls}: network error — {err}"
+        if isinstance(err, AuthorizerError):
+            return f"{cls}: {err}"
+        return (
+            f"{cls} session not available — "
+            "ensure credentials.txt exists and CAS is reachable"
+        )
 
     def ensure(self) -> tuple[bool, str]:
         """Check session, auto-refresh if expired. Returns (True, '') or (False, reason)."""
-        ok, reason = self.check()
-        if ok:
-            return True, ""
-        return False, reason
+        return self.check()
 
     def check(self) -> tuple[bool, str]:
-        """Verify in-memory session is valid. Auto-refreshes if expired."""
+        """Verify in-memory session is valid. Auto-refreshes if expired.
+
+        Return value is ``(True, '')`` on success, or ``(False, reason)`` where
+        *reason* distinguishes ``credentials invalid``, ``network error``, and
+        generic failure.
+        """
         cls = self.__class__.__name__
 
         # Fast path: session within TTL
@@ -135,15 +225,15 @@ class Authorizer(ABC):
 
         # Session exists but TTL expired — refresh
         if self._session_cache:
-            return self._refresh(), ""
+            if self._refresh():
+                return True, ""
+            return False, self._refresh_error_message()
 
         # No session at all — try fresh auth
         if self._refresh():
             return True, ""
 
-        return False, (
-            f"{cls} session not available — ensure credentials.txt exists and CAS is reachable"
-        )
+        return False, self._refresh_error_message()
 
     # ── Session (the requests.Session with cookies + headers) ────────────
 
@@ -172,17 +262,6 @@ class Authorizer(ABC):
         self._apply_cookies(sess, self._session_cache)
         return sess
 
-    @property
-    def requests_session(self) -> requests.Session:
-        """DEPRECATED — use .session instead."""
-        import warnings
-        warnings.warn(
-            ".requests_session is deprecated — use .session instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.session
-
     def _apply_cookies(self, sess: requests.Session, raw: dict):
         for k, v in raw.items():
             sess.cookies.set(k, v, domain=self._domain, path="/")
@@ -201,14 +280,33 @@ class Authorizer(ABC):
 
     # ── Auth lifecycle ───────────────────────────────────────────────────
 
+    def refresh(self) -> bool:
+        """Force a fresh CAS login using stored credentials.
+
+        Reads ``credentials.txt``, grinds a new CAS ticket, and stores the
+        result in memory.  Returns True on success.
+
+        Subclasses that support headless auth override ``_get_ticket_cookies()``.
+        """
+        return self._refresh()
+
     def _refresh(self) -> bool:
         """
         Authenticate using credentials.txt. Populates _session_cache in memory.
-        Subclasses with headless support override _get_ticket_cookies().
+
+        Returns ``True`` on success. On failure, stores the typed exception in
+        ``_last_refresh_error`` (``InvalidCredentials``, ``NetworkError``, or
+        ``AuthorizerError``) and returns ``False``.
+
+        Subclasses with headless support override ``_get_ticket_cookies()``.
+        Callers that need the error type should read ``_last_refresh_error``
+        after a ``False`` return.
         """
+        self._last_refresh_error = None
         try:
             username, password = self._read_creds()
         except AuthorizerError as e:
+            self._last_refresh_error = InvalidCredentials(str(e))
             print(f"❌ Auth refresh skipped: {e}")
             return False
         try:
@@ -218,8 +316,21 @@ class Authorizer(ABC):
             cls = self.__class__.__name__
             print(f"✅ {cls} session refreshed ({len(cookies)} cookies)")
             return True
-        except (NotImplementedError, AuthorizerError) as e:
-            print(f"❌ Auth refresh not supported: {e}")
+        except InvalidCredentials as e:
+            self._last_refresh_error = e
+            print(f"❌ {self.__class__.__name__} credentials rejected")
+            return False
+        except NetworkError as e:
+            self._last_refresh_error = e
+            print(f"❌ {self.__class__.__name__} network error: {e}")
+            return False
+        except NotImplementedError as e:
+            self._last_refresh_error = AuthorizerError(str(e))
+            print(f"❌ {self.__class__.__name__} auth not supported: {e}")
+            return False
+        except AuthorizerError as e:
+            self._last_refresh_error = e
+            print(f"❌ {self.__class__.__name__} auth failed: {e}")
             return False
 
     def _set_session(self, cookies: dict):
@@ -251,22 +362,48 @@ class Authorizer(ABC):
                 line = f.read().strip()
         except FileNotFoundError:
             raise AuthorizerError(
-                f"Credentials not found: {self._creds_file}\n"
-                "Copy credentials.example.txt → credentials.txt and fill in."
+                f"Credentials not found at {self._creds_file}\n"
+                "Set SUSTECH_CREDENTIALS env var, or create "
+                "~/.config/sustech-survival/credentials.txt (format: sid:password)"
             )
         if ':' not in line:
             raise AuthorizerError(f"Invalid format in {self._creds_file} (need username:password)")
         return line.split(':', 1)
 
-    def _resolve_skill_dir(self) -> Path:
-        """Walk up looking for credentials.txt."""
+    def _resolve_creds_file(self) -> Path:
+        """Resolve credentials.txt location.
+
+        Search order (first match wins):
+          1. ``SUSTECH_CREDENTIALS`` env var — explicit path to a credentials file
+          2. ``~/.config/sustech-survival/credentials.txt`` — XDG-style user config
+          3. ``./credentials.txt`` — current working directory
+          4. Walk up from this file looking for ``credentials.txt`` — dev/editable installs
+        """
+        import os
+
+        # 1. Env var — explicit override
+        env_path = os.environ.get("SUSTECH_CREDENTIALS")
+        if env_path:
+            return Path(env_path)
+
+        # 2. XDG user config
+        xdg = Path.home() / ".config" / "sustech-survival" / "credentials.txt"
+        if xdg.exists():
+            return xdg
+
+        # 3. CWD
+        cwd_creds = Path.cwd() / "credentials.txt"
+        if cwd_creds.exists():
+            return cwd_creds
+
+        # 4. Walk up from package source (editable installs / dev tree)
         here = Path(__file__).resolve().parent
         for parent in [here, here.parent, here.parent.parent, here.parent.parent.parent]:
             if (parent / "credentials.txt").exists():
-                return parent
-            if (parent / "sustech_survival").exists() and parent.name == "src":
-                continue
-        return here.parent.parent.parent
+                return parent / "credentials.txt"
+
+        # Default: XDG path (even if it doesn't exist yet — error message will guide)
+        return xdg
 
     @property
     def _creds_file(self) -> Path:
@@ -274,8 +411,7 @@ class Authorizer(ABC):
             if isinstance(self.skill_dir, str):
                 self.skill_dir = Path(self.skill_dir)
             return self.skill_dir / "credentials.txt"
-        self.skill_dir = self._resolve_skill_dir()
-        return self.skill_dir / "credentials.txt"
+        return self._resolve_creds_file()
 
     def read_creds(self) -> tuple[str, str]:
         """Public wrapper for _read_creds (backward compat)."""
@@ -343,45 +479,22 @@ class Authorizer(ABC):
         return wrapper
 
 
-# ── Auth registry (DEPRECATED — use class-based @require_auth instead) ───────
-
-_auth_registry: dict[str, Authorizer] = {}
-
-
-def register_auth(name: str, auth: Authorizer):
-    """Register an Authorizer singleton by service name. DEPRECATED."""
-    import warnings
-    warnings.warn(
-        "register_auth() is deprecated — use @require_auth(ClassName) instead",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    _auth_registry[name] = auth
+# ── Auth registry ─────────────────────────────────────────────────────────────
+# register_auth() is a no-op shim kept for backward compatibility.
+# Authorizer subclasses are already singletons via __new__, so the old
+# string-keyed registry is unnecessary. Import the class directly:
+#   from sustech_survival.sso import TISAuth
+#   auth = TISAuth()        # singleton — same instance everywhere
 
 
-def get_auth(name: str) -> Authorizer:
+def register_auth(name: str, auth: "Authorizer") -> None:
+    """No-op — Authorizer subclasses are singletons via __new__.
+
+    Previously registered instances in a global dict for get_auth() lookup.
+    That dict is removed. This function remains as a no-op so existing
+    authlib modules don't break on import.
     """
-    Get an Authorizer by service name. DEPRECATED.
-
-    Import the auth class directly instead:
-        from sustech_survival.sso import TISAuth
-    """
-    import warnings
-    from sustech_survival.sso import TISAuth, BBAuth, LibAuth
-
-    _class_map = {"bb": BBAuth, "tis": TISAuth, "lib": LibAuth}
-    cls = _class_map.get(name)
-    if cls is None:
-        raise AuthorizerError(
-            f"Unknown service {name!r}. Known: {list(_class_map.keys())}. "
-            "Import the auth class directly: from sustech_survival.sso import TISAuth"
-        )
-    warnings.warn(
-        f"get_auth({name!r}) is deprecated — use {cls.__name__}() directly instead",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return cls()
+    pass
 
 
 def require_auth(auth_class: type) -> Callable:

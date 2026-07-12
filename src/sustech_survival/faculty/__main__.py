@@ -68,7 +68,7 @@ def cmd_render(args):
     print(faculty.render(args.slug))
 
 
-def main():
+def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="python -m sustech_survival.faculty",
                                 description="Live SUSTech faculty directory query")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -98,8 +98,9 @@ def main():
     p_render.add_argument("slug")
     p_render.set_defaults(func=cmd_render)
 
-    args = p.parse_args()
+    args = p.parse_args(argv)
     args.func(args)
+    return 0
 
 
 if __name__ == "__main__":

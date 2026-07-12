@@ -52,6 +52,15 @@ select.filter{flex:1;min-width:60px}
 .c-card .nces-link a:hover{opacity:1;text-decoration:underline}
 .badge{font-size:.68rem;padding:.08rem .35rem;border-radius:4px;background:#1e2733;color:var(--mut);display:inline-block}
 .badge.must{color:var(--ok)} .badge.opt{color:#c084fc}
+/* flash messages */
+.flash{padding:.4rem .8rem;border-radius:6px;font-size:.82rem;background:var(--panel);border:1px solid var(--border);box-shadow:0 4px 12px rgba(0,0,0,.4);pointer-events:auto;animation:flash-in .15s ease}
+.flash.warn{border-color:var(--warn);color:var(--warn)}
+.flash.err{border-color:var(--bad);color:var(--bad)}
+.flash.ok{border-color:var(--ok);color:var(--ok)}
+@keyframes flash-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+/* iCal export button */
+.ical-export-btn{margin-left:8px;font-size:.75rem;padding:2px 8px;cursor:pointer;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--txt)}
+.ical-export-btn:hover{border-color:var(--accent)}
 /* filter pills */
 #filter-pills{display:flex;flex-wrap:wrap;gap:.35rem;margin-bottom:.5rem;min-height:0}
 .filter-pill{display:inline-flex;align-items:center;gap:.25rem;padding:.15rem .5rem;border-radius:12px;
@@ -405,6 +414,7 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
 </head>
 <body>
 <div id="loading-bar"><div class="lb-fill"></div></div>
+<div id="flash-zone" style="position:fixed;top:8px;right:8px;z-index:9999;display:flex;flex-direction:column;gap:4px;pointer-events:none"></div>
 <header>
   <a href="/">← Home</a>
   <h1>Course Selector</h1>

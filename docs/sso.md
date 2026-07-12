@@ -9,14 +9,13 @@
 ## Auth Rules (Non-Negotiable for Agents)
 
 ### ✅ Always Do
-- Use `@bb_auth.ensured` (or `ensure()` before any sequence of operations) as the **first line of defense**
+- Use `@require_auth(AuthorizerClass)` (or call `ensure()` before any sequence of operations) as the **first line of defense**
 - Call `ensure()` before any HTTP request to a protected endpoint
-- For multi-call sequences: call `ensure()` once at the start, then use `auth.requests_session` or `auth.cookies`
+- For multi-call sequences: call `ensure()` once at the start, then use `auth.session` to get a `requests.Session` with cookies + headers already set
 - For CLI tools: login once per session; the in-memory session persists for the process lifetime
 
 ### ❌ Never Do
 - **Do not navigate to `cas.sustech.edu.cn` manually in a browser** — it has a hidden reCAPTCHA that blocks automation
-- **Do not use `load()` without calling `ensure()` first** — it returns stale disk cache
 - **Do not store session cookies to disk** — in-memory only, no `session.json` writes
 - **Do not ask the user for credentials in plaintext** — always read from `credentials.txt`
 - **Do not try to automate the CAS login page with Playwright** — the captcha will silently block you
@@ -24,26 +23,27 @@
 ### 🔑 Quick Reference
 
 ```python
-# GOOD — @ensured decorator auto-injects session
-from sustech_survival.sso import BBAuth
-bb_auth = BBAuth()
+# GOOD — @require_auth decorator auto-injects the Authorizer
+from sustech_survival.sso import require_auth, TISAuth
 
-@bb_auth.ensured
-def download_content(content_id, session=None, **kwargs):
-    r = requests.get(url, cookies=session)
+@require_auth(TISAuth)
+def my_endpoint(auth=None):
+    r = auth.session.get("/xszykb/querydangqianxnxq")  # cookies + headers pre-set
 
-# GOOD — explicit ensure + in-memory cookies
-ok, reason = bb_auth.ensure()
+# GOOD — explicit ensure() + in-memory session
+ok, reason = auth.ensure()
 if not ok:
     raise AuthorizerError(reason)
-r = bb_auth.requests_session.get(url)  # in-memory session, no disk
+r = auth.session.get(url)
 
-# GOOD — refresh when needed (headless, no captcha)
-ok = bb_auth.refresh()  # CAS grinding via requests
+# GOOD — check vs. force-refresh
+ok, reason = auth.check()        # (ok, reason) — auto-refreshes if expired
+auth.refresh()                   # bool — force a fresh CAS login when needed
 
 # BAD — never do this
-cookies = bb_auth.load()  # deprecated, reads stale disk cache
-session = bb_auth.session  # deprecated property
+ok = auth._refresh()             # private — use the public auth.refresh() instead
+cookies = auth.load()            # REMOVED — disk cache is gone
+session = auth.requests_session  # REMOVED — use auth.session
 ```
 
 ---
@@ -51,30 +51,33 @@ session = bb_auth.session  # deprecated property
 ## Credentials
 
 ```python
-from sustech_survival.sso import Credentials
-c = Credentials()
-c.username   # '12413021'
-c.password   # wifi password
+from sustech_survival.sso import TISAuth
+auth = TISAuth()
+auth.username   # '12413021'
+auth.password   # CAS password
 ```
 
-Reads `credentials.txt` at skill root. Format: `sid:password`
+Reads credentials via `auth.username` / `auth.password` properties, which call `_read_creds()` internally. Resolution order: `SUSTECH_CREDENTIALS` env var → `~/.config/sustech-survival/credentials.txt` → `./credentials.txt` → walk-up from package source. Format: `sid:password`
 
 ## `Authorizer` (ABC)
 
 ```python
 auth.check()       # (bool, str) — verify session, auto-refresh if expired
-auth.refresh()     # bool — headless re-auth (subclasses may not implement)
-auth.ensure()      # (bool, str) — check + auto-refresh
-auth.login()       # headful Playwright browser login
+auth.ensure()      # (bool, str) — check + auto-refresh (recommended)
+auth.refresh()     # bool — force a fresh CAS login
+auth.login()       # headful Playwright browser login (last-resort fallback)
+
+# Property
+auth.session       # requests.Session with cookies + headers already set
 ```
 
-Session stored **in-memory only** (as of 2026-06-03). No `session.json` writes. Call `ensure()` first.
+Sessions are stored **in memory only**. No `session.json` writes. Call `ensure()` before any HTTP request — it will auto-refresh if the session is missing or expired.
 
 ## `CASAuthorizer`
 
-Adds CAS ticket-grinding via `requests`. Inherit with `get_ticket_cookies()` override for headless auth.
+Adds CAS ticket-grinding via `requests`. Inherit with `_get_ticket_cookies()` for custom CAS flows (or use the existing `TISAuth`, `BBAuth`, `LibAuth`, `PMSAuth`, etc. directly).
 
-Inheritors: `BBAuth`, `LibAuth`
+Inheritors: `TISAuth`, `BBAuth`, `LibAuth`, `PMSAuth`, `WSAuth`
 
 ## `ShibbolethAuthorizer`
 
@@ -92,13 +95,17 @@ login_via_carsi(page, wayf_url)
 
 ## Authlib Classes
 
-| Class | Session | Auth Method | Status (2026-05-30) |
-|-------|---------|-------------|----------------------|
-| `BBAuth` | `bb/session.json` | CAS tickets (headless) | ✅ Works |
-| `LibAuth` | `lib/session.json` | CAS tickets (headless) | ✅ Fixed — SSL + poolmanager |
-| `RSCAuthorizer` | None | Shibboleth/CARSI (Playwright) | ✅ Works |
-| `WoSAuth` | None | Shibboleth/CARSI (Playwright) | ✅ Works |
-| `CNKIAuth` | None | FSSO/Shibboleth (Playwright) | ✅ Works |
+The `sso.authlib` subpackage provides Authorizer subclasses for the
+research-database providers. All use Shibboleth/CARSI Playwright login
+(except `PMSAuthorizer`, which is CAS-based).
+
+| Class | Auth Method | Status (2026-07-11) |
+|-------|-------------|---------------------|
+| `RSCAuthorizer` | Shibboleth/CARSI (Playwright) | ✅ Works |
+| `WoSAuth` | Shibboleth/CARSI (Playwright) | ✅ Works |
+| `CNKIAuth` | FSSO/Shibboleth (Playwright) | ✅ Works |
+| `PMSAuth` | CAS tickets (headless) | ✅ Works |
+| `IEEEAuth`, `SpringerAuth`, `WileyAuth`, `ScopusAuth`, `JSTORAuth`, `ACSAuth`, `PubMedAuth` | Shibboleth/CARSI | ✅ Available |
 
 ### LibAuth SSL Fix (2026-05-30)
 

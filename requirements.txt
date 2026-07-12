@@ -1,8 +1,0 @@
-# sustech-survival — runtime dependencies
-# Minimal set. No extras for unused modules.
-
-requests>=2.31.0
-click>=8.1.0
-playwright>=1.40.0
-cloudscraper>=1.3.0
-urllib3>=2.0.0

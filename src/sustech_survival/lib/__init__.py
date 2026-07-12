@@ -28,6 +28,9 @@ def check() -> tuple[bool, str]:
 
 
 def refresh() -> bool:
+    """Force a fresh CAS login (headless, via requests). Returns True on
+    success. Use ``ensure()`` instead — it auto-refreshes when the
+    in-memory session is missing or expired."""
     return _auth.refresh()
 
 

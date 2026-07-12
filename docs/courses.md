@@ -15,7 +15,7 @@ from sustech_survival.tis.courses import run
 ```python
 run()                        # all semesters, table output
 run(semester='2026春季')
-run(format='csv')            # -> ~/.openclaw/workspace/sustech/courses_tis.csv
+run(format='csv')            # -> Exports to courses_tis.csv in the current directory.
 ```
 
 Uses the same TIS grade API as grades (it returns all course records including ungraded ones). Groups by semester and prints instructor, credits, course type.

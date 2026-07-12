@@ -1,35 +1,19 @@
 import pytest, warnings
 
 
-class TestGetAuthDeprecation:
-    """get_auth() should emit DeprecationWarning; direct import preferred."""
+class TestRemovedDeprecatedAPI:
+    """get_auth was removed; register_auth is a no-op shim for backward compat."""
 
-    def test_get_auth_bb_deprecated(self):
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            from sustech_survival.sso import get_auth
-            get_auth("bb")
-        assert len(w) == 1
-        assert issubclass(w[0].category, DeprecationWarning)
-        assert "BBAuth" in str(w[0].message)
+    def test_get_auth_removed(self):
+        import sustech_survival.sso as sso
+        assert not hasattr(sso, "get_auth")
 
-    def test_get_auth_tis_deprecated(self):
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            from sustech_survival.sso import get_auth
-            get_auth("tis")
-        assert len(w) == 1
-        assert issubclass(w[0].category, DeprecationWarning)
-        assert "TISAuth" in str(w[0].message)
-
-    def test_get_auth_lib_deprecated(self):
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            from sustech_survival.sso import get_auth
-            get_auth("lib")
-        assert len(w) == 1
-        assert issubclass(w[0].category, DeprecationWarning)
-        assert "LibAuth" in str(w[0].message)
+    def test_register_auth_is_noop(self):
+        import sustech_survival.sso as sso
+        # register_auth still exists but is a no-op — calling it should not error
+        assert hasattr(sso, "register_auth")
+        result = sso.register_auth("test", None)
+        assert result is None  # no-op returns None
 
 
 class TestDirectAuthImports:
