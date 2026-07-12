@@ -229,11 +229,8 @@ def cmd_book(args) -> int:
     )
 
     # Resolve room name → TIS code if single-ticket mode
-    actual_skill_root = Path(__file__).resolve().parent.parent.parent.parent
     from sustech_survival.tis.classroom.classroom import ClassroomOccupancy
-    classroom_obj = ClassroomOccupancy(
-        xn=args.xn, xq=args.xq, skill_root=actual_skill_root,
-    )
+    classroom_obj = ClassroomOccupancy(xn=args.xn, xq=args.xq)
 
     # ── Build tickets from args ──
     tickets: list[RowTicket] = []
@@ -583,8 +580,7 @@ def cmd_search_rooms(args) -> int:
     """
     from sustech_survival.tis.classroom.classroom import ClassroomOccupancy
     from pathlib import Path
-    actual_skill_root = Path(__file__).resolve().parent.parent.parent.parent
-    c = ClassroomOccupancy(xn=args.xn, xq=args.xq, skill_root=actual_skill_root)
+    c = ClassroomOccupancy(xn=args.xn, xq=args.xq)
 
     didian = c._query_didian_catalog()
     if not didian:

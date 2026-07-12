@@ -250,8 +250,11 @@ class TestLiveOccupancyClientMocked:
         sess.post.return_value = cdkb_resp
         return sess
 
-    def test_query_room_returns_entries(self, mock_session, tmp_path):
-        client = LiveOccupancyClient(skill_root=tmp_path)
+    def test_query_room_returns_entries(self, mock_session, tmp_path,
+                                         monkeypatch):
+        from sustech_survival import _cache
+        monkeypatch.setattr(_cache, "TMP_ROOT", tmp_path, raising=False)
+        client = LiveOccupancyClient()
         client._sess = mock_session
         entries = client.query_room("YJ-123", xn="2025-2026", xq="2",
                                      use_cache=False)
@@ -261,8 +264,11 @@ class TestLiveOccupancyClientMocked:
         assert entries[0].borrower == "井水淼"
         assert entries[0].cddm == "YJ-123"
 
-    def test_live_at_filters_by_weekday(self, mock_session, tmp_path):
-        client = LiveOccupancyClient(skill_root=tmp_path)
+    def test_live_at_filters_by_weekday(self, mock_session, tmp_path,
+                                         monkeypatch):
+        from sustech_survival import _cache
+        monkeypatch.setattr(_cache, "TMP_ROOT", tmp_path, raising=False)
+        client = LiveOccupancyClient()
         client._sess = mock_session
         entries = client.query_room("YJ-123", xn="2025-2026", xq="2",
                                      use_cache=False)
@@ -278,8 +284,10 @@ class TestLiveOccupancyClientMocked:
         hits = [e for e in entries if e.active_on(14, 7)]
         assert len(hits) == 0
 
-    def test_cache_persists(self, mock_session, tmp_path):
-        client = LiveOccupancyClient(skill_root=tmp_path)
+    def test_cache_persists(self, mock_session, tmp_path, monkeypatch):
+        from sustech_survival import _cache
+        monkeypatch.setattr(_cache, "TMP_ROOT", tmp_path, raising=False)
+        client = LiveOccupancyClient()
         client._sess = mock_session
         # First call: hits mock_session
         client.query_room("YJ-123", xn="2025-2026", xq="2", use_cache=False)
