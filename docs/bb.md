@@ -34,18 +34,18 @@ ddl(course_id='_8053_1') # single course
 | `12月31日 23:59` | Specific date |
 | (no date) | Status unknown |
 
-**Active semester courses:** `_8053_1` CLE105, `_8157_1` Mechanics B, `_8221_1` EAP, `_8328_1` GOrganic Exp, `_8343_1` PhyChem Exp
+**Active semester courses:** Course IDs are internal BB IDs — use `sustech bb courses` to list yours.
 
 ## `BBAuth`
 
 ```python
-from sustech_survival.bb.session import BBAuth
+from sustech_survival.sso import BBAuth
 auth = BBAuth()
 auth.check()    # (bool, str)
 auth.login()    # headful Playwright CAS login
 ```
 
-Session saved to `bb/session.json`. Auto-refresh on 401.
+Sessions kept in memory only. Auto-refresh on stale response (401/302→CAS).
 
 ## `submit_assignment(file, content_id, course_id)`
 
@@ -68,4 +68,4 @@ ok = submit_assignment(
 
 **File input workaround:** `page.set_input_files()` won't trigger JS handlers. Use `page.evaluate()` to directly manipulate `input.files` and `dispatchEvent(new Event('change', {bubbles:true}))`.
 
-**Known trap:** cloudscraper imported at top of `sso.authlib` → process exits silently. Always verify submission by checking attempt count increased after "success".
+**Known trap:** cloudscraper is an optional dependency in the `papers` extra — if missing, paper fetch fails silently. Always verify submission by checking attempt count increased after "success".

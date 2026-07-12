@@ -133,12 +133,14 @@ def api_info():
     """Semester info + filter options for the course search UI.
 
     TIS mapping:
-      colleges     → (kkyx code, kkyxmc) pairs
-      categories   → kclbmc values
-      task_types   → rwlxmc values  — e.g. 通识必修选课, 通识选修选课, ...
-      languages    → skyymc values  — 中文, 英文, 双语
-      campuses     → xiaoqumc
-      cultivation  → 本科 / 研究生
+      colleges       → (kkyx code, kkyxmc) pairs
+      categories     → kclbmc values
+      category_codes → kclbmc → kclbdm map (for personal-mode search)
+      task_types     → rwlxmc values  — e.g. 通识必修选课, 通识选修选课, ...
+      languages      → skyymc values  — 中文, 英文, 双语
+      language_codes → skyymc → skyydm map
+      campuses       → xiaoqumc
+      cultivation    → 本科 / 研究生
     """
     xn, xq = _parse_sem(request.args)
     try:
@@ -152,12 +154,21 @@ def api_info():
     sem = Semester(xn, xq)
     display_year = sem.end_year if sem.season == Season.FALL else sem.cohort_year
     semester_label = f"{sem.season.name.capitalize()} {display_year}"
+
+    # Augment categories with kclbdm codes from the central map. Only
+    # categories that have a known code get the annotation; the rest
+    # (e.g. "通识必修课-外语类" the catalog sometimes produces) still show
+    # in the dropdown but won't have a code suffix. Frontend can use
+    # `category_codes` as a translation dict before sending the filter.
+    from sustech_survival.selectcourse import KCLBDM_MAP, LANGUAGE_MAP
+    category_codes = {name: KCLBDM_MAP.get(name, "") for name in opts["categories"]}
     return jsonify({
-        "xn": xn, "xq": xq,
-        "semester_label": semester_label,
+        "semester": {"xn": xn, "xq": xq, "label": semester_label},
         "count": len(c.list_courses()),
-        "colleges": opts["colleges"],        # [(code, name), ...]
+        "colleges": opts["colleges"],         # [(code, name), ...]
         "categories": opts["categories"],     # [name, ...]
+        "category_codes": category_codes,     # {name: code, ...}
+        "language_codes": LANGUAGE_MAP,       # {name: code, ...}
         "task_types": opts["task_types"],     # [name, ...]
         "languages": opts["languages"],       # [name, ...]
         "campuses": opts["campuses"],         # [name, ...]
@@ -580,3 +591,74 @@ def api_bids():
         return jsonify(result)
     except Exception as e:
         return jsonify({"ok": False, "error": str(e), "results": []}), 200
+
+
+@bp.route("/api/tis/ical", methods=["GET"])
+def api_ical():
+    """Build an .ics file from the current picked list.
+
+    Reads the picked list from sessionStorage on the client (passed as the
+    ``picks`` query param, JSON-encoded). Each pick is a dict of class-time
+    fields; this route maps them to ``calendar.ClassTime`` and registers
+    them on the resolved Semester, then hands off to
+    ``selectcourse.ical.courses_to_ical``.
+
+    Calendar is loaded online (GitHub raw is the canonical source). If the
+    fetch fails, fall back to a 502 with a useful error.
+    """
+    import json as _json
+    from flask import Response, current_app
+    from sustech_survival.calendar import (
+        AcademicCalendar, ClassTime, CalendarError,
+    )
+    from sustech_survival.selectcourse.ical import courses_to_ical
+
+    raw = request.args.get("picks", "")
+    if not raw:
+        return Response("missing 'picks' query param", status=400,
+                        mimetype="text/plain")
+    try:
+        picks = _json.loads(raw)
+    except Exception as e:
+        return Response(f"invalid 'picks' JSON: {e}", status=400,
+                        mimetype="text/plain")
+    if not isinstance(picks, list) or not picks:
+        return Response("'picks' must be a non-empty list", status=400,
+                        mimetype="text/plain")
+
+    xn, xq = _parse_sem(request.args)
+    try:
+        # xn is "2025-2026", split year for AcademicCalendar
+        cal_year = int(xn.split("-")[0]) + (1 if xq == "2" else 0)
+        cal = AcademicCalendar.load(cal_year, "undergraduate")
+    except CalendarError as e:
+        return Response(f"calendar load failed: {e}", status=502,
+                        mimetype="text/plain")
+    except Exception as e:
+        return Response(f"calendar load failed: {type(e).__name__}: {e}",
+                        status=502, mimetype="text/plain")
+
+    sem = cal.spring if xq == "2" else cal.fall
+    if sem is None:
+        return Response(f"semester not found for {xn}-{xq}", status=404,
+                        mimetype="text/plain")
+
+    for p in picks:
+        try:
+            weeks = tuple(int(w) for w in p.get("weeks", []))
+            periods = tuple(int(x) for x in p.get("periods", []))
+            ct = ClassTime(
+                weeks=weeks,
+                weekday=int(p.get("weekday", 0)),
+                periods=periods,
+                title=p.get("title", ""),
+                teacher=p.get("teacher", ""),
+                room=p.get("room", ""),
+            )
+            sem.fill(ct)
+        except Exception as e:
+            # Skip malformed entries but keep going — best-effort export.
+            current_app.logger.warning("ical: skipped pick %r: %s", p, e)
+
+    text = courses_to_ical(sem)
+    return Response(text, mimetype="text/calendar")

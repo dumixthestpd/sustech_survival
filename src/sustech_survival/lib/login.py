@@ -2,11 +2,17 @@
 """
 SUSTech Library (Primo) Login.
 
-Checks session → requests-based refresh → Playwright headful login.
+Checks the in-memory session via ``ensure()`` first; that already
+auto-refreshes if the session is missing or expired. Falls back to a
+Playwright headful login only when headless refresh fails.
 
 Usage:
     python3 login.py
     # Reads credentials from <skill_root>/credentials.txt
+
+Public auth API lives in :mod:`sustech_survival.sso`. ``ensure()`` is the
+recommended entry point — it checks the session and refreshes
+automatically when possible.
 """
 import sys as _sys
 from pathlib import Path as _Path
@@ -21,24 +27,18 @@ from sustech_survival.sso import LibAuth
 auth_singleton = LibAuth(skill_dir=_PKG_ROOT)
 
 
-def main():
-    print(f"=== SUSTech Library Login ===")
+def main() -> None:
+    print("=== SUSTech Library Login ===")
 
-    # Step 1: Ensure
+    # Step 1: Ensure — checks the session and auto-refreshes if expired.
     ok, reason = auth_singleton.ensure()
     if ok:
         print("✓ Already logged in.")
         return
     print(f"Session check: {reason}")
 
-    # Step 2: Refresh via requests
-    print("[2/3] Attempting requests-based refresh...")
-    if auth_singleton.refresh():
-        print("✓ Refresh successful!")
-        return
-
-    # Step 3: Playwright headful login
-    print("[3/3] Opening browser for manual CAS login...")
+    # Step 2: Playwright headful login as last resort.
+    print("[2/2] Opening browser for manual CAS login...")
     auth_singleton.login()
 
     # Verify

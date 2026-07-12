@@ -30,6 +30,8 @@ from .selectcourse import (
     TIS_ADD_XUANKE_URL, TIS_TUIKE_URL,
     TIS_ADD_GOUWUCHE_URL, TIS_DEL_GOUWUCHE_URL,
     XKTJZ_CART_TO_ENROLLED, XKTJZ_TASK_TO_CART,
+    KCLBDM_MAP, KCLBDM_REVERSE, kclbmc_to_code,
+    LANGUAGE_MAP, language_to_code,
 )
 from .schema import Course
 
@@ -39,4 +41,6 @@ __all__ = [
     "TIS_ADD_XUANKE_URL", "TIS_TUIKE_URL",
     "TIS_ADD_GOUWUCHE_URL", "TIS_DEL_GOUWUCHE_URL",
     "XKTJZ_CART_TO_ENROLLED", "XKTJZ_TASK_TO_CART",
+    "KCLBDM_MAP", "KCLBDM_REVERSE", "kclbmc_to_code",
+    "LANGUAGE_MAP", "language_to_code",
 ]

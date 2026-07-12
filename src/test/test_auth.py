@@ -179,7 +179,8 @@ class TestCheck:
             SERVICE_URL = "https://dummy.example.com/cas"
 
         auth = DummyAuth()
-        # No session set, no credentials — will fail
+        # Force the no-credentials path so the failure mode is deterministic.
+        auth.skill_dir = "/nonexistent"
 
         ok, reason = auth.check()
         assert ok is False
@@ -254,10 +255,11 @@ class TestEnsureAddsHint:
 
         ok, reason = auth.ensure()
         assert ok is False
-        # New format: "<Class> session not available — ensure credentials.txt exists and CAS is reachable"
-        assert "DummyAuth session not available" in reason
+        # New format: "DummyAuth: credentials invalid — check credentials.txt"
+        # Distinguishes wrong-password failures from network / generic failures.
+        assert "DummyAuth: credentials invalid" in reason
         assert "credentials.txt" in reason
-        assert "CAS" in reason
+        assert "CAS" not in reason  # this is the credentials path, not the network path
 
     def test_ensure_no_session(self):
         from sustech_survival.sso import Authorizer, AuthorizerError

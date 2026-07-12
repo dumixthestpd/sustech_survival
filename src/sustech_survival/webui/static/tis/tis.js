@@ -65,6 +65,8 @@ var COLORS_CACHE = {};      // { code: color }
 var SEMESTER_INFO = null;   // cached /api/tis/info response
 var COLLEGE_MAP = {};       // college-name → college-code (for p_kkyx on TIS personal search)
 var LANGUAGE_MAP = {'中文': '1', '英文': '2', '双语': '3'}; // language-name → TIS code
+var CATEGORY_MAP = {};      // category-name → kclbdm code (e.g. 美育类→0907).
+                            // Populated from /api/tis/info.category_codes on first load.
 var MODE = 'personal';      // 'personal' (我要选课, default) or 'campus' (全校课表, browse-only)
 
 var PERIODS = 12;
@@ -372,9 +374,31 @@ function loadInfo() {
       COLLEGE_MAP[p[1]] = p[0];
       return p[1];
     });
+    // CATEGORY_MAP: kclbmc → kclbdm (e.g. 美育类 → 0907). Backend also
+    // translates, but we need the map here to (a) annotate the dropdown
+    // and (b) send the right value when personal mode is active.
+    CATEGORY_MAP = d.category_codes || {};
+    // Language map: prefer server-provided, fall back to the hardcoded
+    // defaults if the server didn't include one (back-compat).
+    if (d.language_codes) LANGUAGE_MAP = d.language_codes;
     populateSelect(F_COL, collegeItems);
     populateSelect(F_TASK, d.task_types);
-    populateSelect(F_CAT, d.categories);
+    // Category dropdown: value = bare name, text = "name (code)".
+    // This way sel.value is clean for server lookup, and the user sees
+    // the code annotation.
+    {
+      var catVal = F_CAT.value;
+      var html = '<option value="">All</option>';
+      d.categories.forEach(function(n) {
+        var code = CATEGORY_MAP[n];
+        var label = code ? n + ' (' + code + ')' : n;
+        var ev = n.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        var el = label.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        html += '<option value="' + ev + '">' + el + '</option>';
+      });
+      F_CAT.innerHTML = html;
+      F_CAT.value = catVal;
+    }
     populateSelect(F_CAM, d.campuses);
     populateSelect(F_LANG, d.languages);
     STAT.textContent = d.count + ' courses available.';
@@ -434,7 +458,21 @@ function loadCourses(isInitialLoad) {
     qs += '&college=' + encodeURIComponent(F_COL.value);
   }
   qs += '&task_type=' + encodeURIComponent(F_TASK.value);
-  qs += '&category=' + encodeURIComponent(F_CAT.value);
+  // Personal mode: TIS p_kclb requires a kclbdm code (e.g. 0907 for 美育类),
+  // not the display name — sending the name silently returns 0 results.
+  // The CATEGORY_MAP (populated from /api/tis/info.category_codes) maps
+  // bare names → codes. The dropdown value is the bare name (e.g. "美育类"),
+  // and the option text is annotated "美育类 (0907)" for the user.
+  var catVal = F_CAT.value;
+  if (catVal) {
+    if (MODE === 'personal' && CATEGORY_MAP[catVal]) {
+      qs += '&category=' + encodeURIComponent(CATEGORY_MAP[catVal]);
+    } else {
+      qs += '&category=' + encodeURIComponent(catVal);
+    }
+  } else {
+    qs += '&category=';
+  }
   qs += '&campus=' + encodeURIComponent(F_CAM.value);
   // Personal mode: TIS p_skyy requires a code (1=中文, 2=英文, 3=双语),
   // not the display name.
@@ -1525,6 +1563,77 @@ function removePicked(rwh) {
   renderBidPanel();
 }
 
+function exportICal() {
+  var keys = Object.keys(PICKED);
+  if (!keys.length) {
+    flash('No sections picked — nothing to export.', 'warn');
+    return;
+  }
+  var picks = [];
+  for (var i = 0; i < keys.length; i++) {
+    var c = PICKED[keys[i]];
+    var slots = parseSlotsForIcal(c);
+    for (var j = 0; j < slots.length; j++) {
+      picks.push(slots[j]);
+    }
+  }
+  if (!picks.length) {
+    flash('Picked sections have no parseable schedule — cannot export.', 'warn');
+    return;
+  }
+  var sem = SEMESTER_INFO && SEMESTER_INFO.semester;
+  var xn = sem ? sem.xn : '';
+  var xq = sem ? sem.xq : '';
+  if (!xn || !xq) {
+    flash('No semester info loaded — cannot determine xn/xq.', 'warn');
+    return;
+  }
+  var url = '/api/tis/ical?xn=' + encodeURIComponent(xn) +
+            '&xq=' + encodeURIComponent(xq) +
+            '&picks=' + encodeURIComponent(JSON.stringify(picks));
+  window.location = url;
+}
+
+// Parse a course's slot data into the {weeks, weekday, periods, ...} shape
+// the backend's /api/tis/ical route expects. Each parsed slot becomes one
+// pick. Falls back to [] if the course has no schedule info.
+function parseSlotsForIcal(c) {
+  var out = [];
+  var slots = c.slots || [];
+  for (var i = 0; i < slots.length; i++) {
+    var s = slots[i];
+    if (!s || !s.weeks || !s.weeks.length) continue;
+    var weekdayMap = {'Mon': 0, 'Tue': 1, 'Wed': 2, 'Thu': 3,
+                      'Fri': 4, 'Sat': 5, 'Sun': 6};
+    var wd = s.weekday_int != null ? s.weekday_int
+            : (s.weekday != null && weekdayMap[s.weekday] != null
+               ? weekdayMap[s.weekday] : null);
+    if (wd == null) continue;
+    var periods = s.periods || (s.period_start ? [s.period_start] : []);
+    if (!periods.length) continue;
+    out.push({
+      weeks: s.weeks,
+      weekday: wd,
+      periods: periods,
+      title: (c.name || c.code || 'Class') + (c.class_group ? ' (' + c.class_group + ')' : ''),
+      teacher: (c.teachers || []).join(', '),
+      room: (c.rooms || []).join(', '),
+    });
+  }
+  return out;
+}
+
+function flash(msg, kind) {
+  // Brief inline status — non-blocking.
+  var el = document.getElementById('flash-zone');
+  if (!el) return;
+  var div = document.createElement('div');
+  div.className = 'flash ' + (kind || 'info');
+  div.textContent = msg;
+  el.appendChild(div);
+  setTimeout(function () { if (div.parentNode) div.parentNode.removeChild(div); }, 2400);
+}
+
 function renderPicked() {
   var keys = Object.keys(PICKED);
   var totalCredits = 0;
@@ -1532,6 +1641,18 @@ function renderPicked() {
     totalCredits += parseFloat(PICKED[keys[i]].credits) || 0;
   }
   PICK_STAT.textContent = keys.length + ' sections · ' + totalCredits.toFixed(1) + ' Credits';
+  // ICAL export button. Calls /api/tis/ical with the picked slots; the
+  // backend resolves each pick's actual meeting dates using the SUSTech
+  // academic calendar (online source) and returns a text/calendar file.
+  if (!window._icalBtn) {
+    var btn = document.createElement('button');
+    btn.className = 'ical-export-btn';
+    btn.textContent = '📅 Export iCal';
+    btn.title = 'Download your picked schedule as an .ics file (Google Calendar / Apple Calendar / Outlook).';
+    btn.onclick = exportICal;
+    PICK_STAT.parentNode.insertBefore(btn, PICK_STAT.nextSibling);
+    window._icalBtn = btn;
+  }
 
   if (!keys.length) {
     PICK_LIST.innerHTML = '<div class="loading">No sections picked.</div>';
@@ -3360,6 +3481,7 @@ document.addEventListener('DOMContentLoaded', function() {
   applyModeVisibility();
   loadForMode();
 
-
+  // ── END DOMContentReady ──────────────────────────────────────────
 });
+// ── END outer IIFE ────────────────────────────────────────────────
 })();

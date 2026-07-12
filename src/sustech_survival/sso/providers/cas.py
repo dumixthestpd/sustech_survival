@@ -22,6 +22,7 @@ def patched(protocol=None):
 _us_ssl.create_urllib3_context = patched
 import requests
 from ..authorizer import Authorizer, AuthorizerError, CAS_BASE, UA
+from sustech_survival.exceptions import InvalidCredentials, NetworkError
 
 
 class CASAuthorizer(Authorizer):
@@ -43,11 +44,23 @@ class CASAuthorizer(Authorizer):
     # ── Private CAS flow ─────────────────────────────────────────────────────
 
     def _get_ticket_cookies(self, username: str, password: str) -> dict:
-        """Full headless CAS flow. Returns cookie dict."""
+        """Full headless CAS flow. Returns cookie dict.
+
+        Raises ``InvalidCredentials`` if CAS rejects the username/password,
+        ``NetworkError`` if CAS is unreachable, or ``AuthorizerError`` for
+        unexpected response formats.
+        """
         sess = self._build_cas_session()
         sess.headers['User-Agent'] = UA
-        ticket_url = self._post_cas(sess, username, password)
-        cookies = self._exchange_ticket(sess, ticket_url)
+        try:
+            ticket_url = self._post_cas(sess, username, password)
+            cookies = self._exchange_ticket(sess, ticket_url)
+        except requests.ConnectionError as e:
+            raise NetworkError(f"Cannot reach CAS at {self._cas_url}: {e}")
+        except requests.Timeout as e:
+            raise NetworkError(f"CAS timeout at {self._cas_url}: {e}")
+        except InvalidCredentials:
+            raise
         if not cookies:
             raise AuthorizerError("No cookies received after CAS ticket exchange.")
         return cookies
@@ -89,7 +102,10 @@ class CASAuthorizer(Authorizer):
         if not loc:
             raise AuthorizerError("No Location header in CAS response.")
         if "cas.sustech.edu.cn" in loc and "ticket" not in loc:
-            raise AuthorizerError("CAS rejected credentials (wrong username/password).")
+            raise InvalidCredentials(
+                "CAS rejected credentials — wrong username or password.\n"
+                f"Check credentials.txt at {self._creds_file}"
+            )
         return loc
 
     def _exchange_ticket(self, sess: requests.Session, ticket_url: str) -> dict:

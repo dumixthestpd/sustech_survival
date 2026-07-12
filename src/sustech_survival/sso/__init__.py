@@ -45,7 +45,7 @@ for the full reference with worked examples.
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-from .authorizer import Authorizer, AuthorizerError, CAS_BASE, UA, register_auth, get_auth, require_auth
+from .authorizer import Authorizer, AuthorizerError, CAS_BASE, UA, register_auth, require_auth
 from .providers.cas import CASAuthorizer
 from .providers.shibboleth import ShibbolethAuthorizer
 from .providers.ws import WSProvider
@@ -62,7 +62,6 @@ __all__ = [
     "LibAuth",
     "PMSAuth",
     "register_auth",
-    "get_auth",
     "require_auth",
     "ensured",
 ]
@@ -108,6 +107,24 @@ class TISAuth(CASAuthorizer):
         self._throttle()
         return super().post(path, **kwargs)
 
+    def _is_stale_response(self, response: _requests.Response) -> bool:
+        """Detect expired TIS session.
+
+        Signal 1: Non-XHR endpoints redirect to CAS login (302/303).
+        Signal 2: XHR endpoints return the CAS login page as HTML when
+        the session is dead (Content-Type: text/html instead of JSON).
+        """
+        if response.status_code in self.REDIRECT_STATUS:
+            loc = response.headers.get("Location", "")
+            if "cas.sustech.edu.cn" in loc:
+                return True
+        ct = response.headers.get("Content-Type", "")
+        if ct and "text/html" in ct:
+            snippet = getattr(response, "text", "")[:1000].lower()
+            if "统一身份认证" in snippet or "cas/login" in snippet:
+                return True
+        return False
+
     def _build_session(self) -> _requests.Session:
         """
         TIS needs a raw Cookie header (not cookie jar) because Set-Cookie
@@ -148,6 +165,10 @@ class BBAuth(CASAuthorizer):
         for f in (skill_bb / "courses.json", skill_bb / "structure.json"):
             if f.exists():
                 f.unlink()
+
+    def _is_stale_response(self, response: _requests.Response) -> bool:
+        """BB REST API returns HTTP 401 when the session is expired."""
+        return response.status_code == 401
 
     def _build_session(self) -> _requests.Session:
         """BB cookies are scoped to .bb.sustech.edu.cn domain."""
@@ -202,13 +223,6 @@ class LibAuth(CASAuthorizer):
 class WSAuth(WSProvider):
     """Convenience subclass matching the TISAuth/BBAuth/LibAuth naming convention."""
     pass
-
-
-# Register singletons for backwards compatibility
-register_auth("tis", TISAuth(skill_dir=str(SKILL_ROOT)))
-register_auth("bb", BBAuth(skill_dir=str(SKILL_ROOT)))
-register_auth("lib", LibAuth(skill_dir=str(SKILL_ROOT)))
-register_auth("ws", WSAuth(skill_dir=str(SKILL_ROOT)))
 
 
 # Export ensured from Authorizer
