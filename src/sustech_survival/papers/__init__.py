@@ -1,13 +1,14 @@
-# Paper Research Tool — unified workflow
-#
-# Usage:
-#   from sustech_survival.sso.authlib.papers import research
-#   results = research.search_and_fetch(["electrochromic WPU"], dest_dir="papers/")
-#
-# Or use individual modules:
-#   from sustech_survival.sso.authlib.papers import search, fetch, openaccess
-#   papers = search.crossref_search("electrochromic polymer", max_results=10)
-#   fetch.fetch_batch(papers, dest_dir="papers/")
+"""Paper Research Tool — unified workflow.
+
+Usage:
+    from sustech_survival.papers import search_and_fetch
+    results = search_and_fetch(["electrochromic WPU"], dest_dir="papers/")
+
+Or use individual modules:
+    from sustech_survival.papers import search, fetch, openaccess
+    papers = search.crossref_search("electrochromic polymer", max_results=10)
+    fetch.fetch_batch(papers, dest_dir="papers/")
+"""
 
 import json
 from pathlib import Path

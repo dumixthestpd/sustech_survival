@@ -13,7 +13,7 @@ from typing import Optional
 
 import cloudscraper
 
-from ..authorizer import Authorizer, register_auth
+from ..authorizer import Authorizer
 
 JSTOR_BASE = "https://www.jstor.org"
 JSTOR_SEARCH = f"{JSTOR_BASE}/search/build-results"
@@ -86,4 +86,3 @@ class JSTORAuth(Authorizer):
 
 
 _jstor = JSTORAuth(skill_dir=str(Path(__file__).resolve().parent.parent.parent.parent))
-register_auth("jstor", _jstor)

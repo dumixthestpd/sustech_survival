@@ -2,18 +2,15 @@ import pytest, warnings
 
 
 class TestRemovedDeprecatedAPI:
-    """get_auth was removed; register_auth is a no-op shim for backward compat."""
+    """The old string-registry API (get_auth, register_auth) is fully removed."""
 
     def test_get_auth_removed(self):
         import sustech_survival.sso as sso
         assert not hasattr(sso, "get_auth")
 
-    def test_register_auth_is_noop(self):
+    def test_register_auth_removed(self):
         import sustech_survival.sso as sso
-        # register_auth still exists but is a no-op — calling it should not error
-        assert hasattr(sso, "register_auth")
-        result = sso.register_auth("test", None)
-        assert result is None  # no-op returns None
+        assert not hasattr(sso, "register_auth")
 
 
 class TestDirectAuthImports:

@@ -11,7 +11,7 @@ from typing import Optional
 
 import cloudscraper
 
-from ..authorizer import Authorizer, register_auth
+from ..authorizer import Authorizer
 
 ACS_BASE = "https://pubs.acs.org"
 ACS_SSO = f"{ACS_BASE}/action/ssostart?redirecturi=%2f"
@@ -67,4 +67,3 @@ class ACSAuth(Authorizer):
 
 
 _acm = ACSAuth(skill_dir=str(Path(__file__).resolve().parent.parent.parent.parent))
-register_auth("acs", _acm)

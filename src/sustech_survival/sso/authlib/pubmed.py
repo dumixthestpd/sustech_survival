@@ -18,7 +18,7 @@ from urllib.parse import urlencode
 
 import requests
 
-from ..authorizer import Authorizer, register_auth
+from ..authorizer import Authorizer
 
 NCBI_BASE = "https://eutils.ncbi.nlm.nih.gov"
 ENTREZ_EUTILS = f"{NCBI_BASE}/entrez/eutils"
@@ -192,4 +192,3 @@ class PubMedAuth(Authorizer):
 
 
 _pubmed = PubMedAuth(skill_dir=str(Path(__file__).resolve().parent.parent.parent.parent))
-register_auth("pubmed", _pubmed)

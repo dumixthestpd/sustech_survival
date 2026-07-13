@@ -30,7 +30,7 @@ from typing import Optional, Tuple
 
 import requests
 
-from ...sso import AuthorizerError, UA, register_auth
+from ...sso import AuthorizerError, UA
 from ...sso.providers.cas import CASAuthorizer
 
 # ── Constants ────────────────────────────────────────────────────────────────
@@ -287,4 +287,3 @@ def register() -> None:
     """Register this auth under the name 'lib-booking' for get_auth() lookup."""
     from ...sso import SKILL_ROOT
 
-    register_auth("lib-booking", LibBookingAuth(skill_dir=str(SKILL_ROOT)))

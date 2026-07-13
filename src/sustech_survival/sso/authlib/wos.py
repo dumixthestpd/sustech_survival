@@ -19,8 +19,6 @@
 
 from pathlib import Path
 from ..providers.shibboleth import ShibbolethAuthorizer
-from ..authorizer import register_auth
-
 WOS_BASE = "https://www.webofscience.com"
 WOS_INIT = "https://www.webofscience.com/wos/woscc/summary/basic"
 WOS_ACS = "https://www.webofscience.com/Shibboleth.sso/SAML2/POST"
@@ -219,4 +217,3 @@ class WoSAuth(ShibbolethAuthorizer):
 
 
 _auth = WoSAuth(skill_dir=str(Path(__file__).resolve().parent.parent.parent.parent))
-register_auth("wos", _auth)

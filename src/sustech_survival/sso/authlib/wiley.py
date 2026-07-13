@@ -7,7 +7,7 @@ from typing import Optional
 
 import cloudscraper
 
-from ..authorizer import Authorizer, register_auth
+from ..authorizer import Authorizer
 
 WILEY_BASE = "https://onlinelibrary.wiley.com"
 WILEY_SSO = f"{WILEY_BASE}/action/ssostart?redirecturi=%2f"
@@ -53,4 +53,3 @@ class WileyAuth(Authorizer):
 
 
 _wiley = WileyAuth(skill_dir=str(Path(__file__).resolve().parent.parent.parent.parent))
-register_auth("wiley", _wiley)

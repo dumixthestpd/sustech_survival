@@ -18,8 +18,6 @@
 
 from pathlib import Path
 from ..providers.shibboleth import ShibbolethAuthorizer
-from ..authorizer import register_auth
-
 CNKI_BASE = "https://www.cnki.net"
 CNKI_FSSO = "https://fsso.cnki.net/Shibboleth.sso/Login"
 CNKI_TARGET = "https://fsso.cnki.net/secure/default.aspx"
@@ -135,4 +133,3 @@ class CNKIAuth(ShibbolethAuthorizer):
 
 
 _auth = CNKIAuth(skill_dir=str(Path(__file__).resolve().parent.parent.parent.parent))
-register_auth("cnki", _auth)

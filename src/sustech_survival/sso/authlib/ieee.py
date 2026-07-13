@@ -15,7 +15,7 @@ from typing import Optional
 
 import cloudscraper
 
-from ..authorizer import Authorizer, register_auth
+from ..authorizer import Authorizer
 
 IEEE_BASE = "https://ieeexplore.ieee.org"
 IEEE_SEARCH = f"{IEEE_BASE}/search/searchresult"
@@ -113,4 +113,3 @@ class IEEEAuth(Authorizer):
 
 
 _ieee = IEEEAuth(skill_dir=str(Path(__file__).resolve().parent.parent.parent.parent))
-register_auth("ieee", _ieee)

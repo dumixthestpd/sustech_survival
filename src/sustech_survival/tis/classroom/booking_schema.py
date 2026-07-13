@@ -10,7 +10,7 @@ are translated to snake_case at the parser boundary so Python code never
 sees raw API field names.
 
 Wire-shape verification: 2026-06-29 via Playwright + $.ajax hook.
-Full diff in `~/.hermes/skills/sustech-dev/references/tis-cdjy-post-probe-2026-06-29.md`.
+Probe script: ``scripts/probe_cdjy_post.py``.
 """
 from __future__ import annotations
 

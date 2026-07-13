@@ -2,7 +2,6 @@
 from .authorizer import (
     Authorizer,
     AuthorizerError,
-    register_auth,
     require_auth,
     CAS_BASE,
     UA,
@@ -11,7 +10,6 @@ from .authorizer import (
 __all__ = [
     "Authorizer",
     "AuthorizerError",
-    "register_auth",
     "require_auth",
     "CAS_BASE",
     "UA",
