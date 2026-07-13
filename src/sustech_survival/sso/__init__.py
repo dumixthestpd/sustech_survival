@@ -39,13 +39,14 @@ RULES:
   ❌ Never override _get_ticket_cookies(). Override _refresh() instead.
   ❌ Never subclass Authorizer directly for a CAS service.
 
-See ~/.hermes/skills/sustech-dev/SKILL.md § "Authorizer subclass design"
-for the full reference with worked examples.
+See ``sustech_survival.sso.authorizer.Authorizer`` for the base class API
+and the ``CASAuthorizer``/``ShibbolethAuthorizer`` subclasses for worked
+examples of each pattern.
 """
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-from .authorizer import Authorizer, AuthorizerError, CAS_BASE, UA, register_auth, require_auth
+from .authorizer import Authorizer, AuthorizerError, CAS_BASE, UA, require_auth
 from .providers.cas import CASAuthorizer
 from .providers.shibboleth import ShibbolethAuthorizer
 from .providers.ws import WSProvider
@@ -61,7 +62,6 @@ __all__ = [
     "BBAuth",
     "LibAuth",
     "PMSAuth",
-    "register_auth",
     "require_auth",
     "ensured",
 ]

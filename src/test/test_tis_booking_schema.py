@@ -564,8 +564,7 @@ class TestWirePayloadProbe2026_06_29:
     Source: `~/.openclaw/code/sustech_survival/scripts/probe_cdjy_post.py`
     ran in Playwright against https://tis.sustech.edu.cn/cdjy/query/1/sq,
     hooked `$.ajax`, called `saveOrSubmit('bc')`, and captured the
-    exact JSON body. See `~/.hermes/skills/sustech-dev/references/
-    tis-cdjy-post-probe-2026-06-29.md` for the full probe write-up.
+    exact JSON body. Probe write-up lives at ``scripts/probe_cdjy_post.py``.
 
     This test ensures `to_api()` continues to match the wire shape.
     Any drift between the schema and the wire (e.g. a server-side

@@ -10,7 +10,7 @@ from typing import Optional
 
 import cloudscraper
 
-from ..authorizer import Authorizer, register_auth
+from ..authorizer import Authorizer
 
 SCOPUS_BASE = "https://www.scopus.com"
 SCOPUS_SSO = f"{SCOPUS_BASE}/pages/signin?referralurl=https%3a%2f%2fwww.scopus.com%2fpages%2fhome"
@@ -56,4 +56,3 @@ class ScopusAuth(Authorizer):
 
 
 _scopus = ScopusAuth(skill_dir=str(Path(__file__).resolve().parent.parent.parent.parent))
-register_auth("scopus", _scopus)

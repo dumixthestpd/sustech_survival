@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-SRC_DIR = Path(__file__).resolve().parent.parent / "src" / "sustech_survival"
+SRC_DIR = Path(__file__).resolve().parent.parent / "sustech_survival"
 
 # Files that are ALLOWED to contain credential/session patterns.
 # Each entry is (relative_path, reason).

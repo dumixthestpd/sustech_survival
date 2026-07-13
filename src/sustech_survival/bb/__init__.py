@@ -1,18 +1,18 @@
-# BB — Blackboard Learn
-# ─────────────────────────────────────────────────────────────────────────────
-# Usage:
-#   from sustech_survival.bb import ddl
-#   ddl()        → print upcoming BB assignment deadlines
-#   ddl(days=7)  → deadlines within N days
-#
-# REST-based modules (no Playwright):
-#   from sustech_survival.bb import query, download
-#   query.discover_courses()   → list of (course_id, name)
-#   query.discover_pages(cid) → list of (content_id, title, section)
-#   query.resolve_course(cid) → course_id string
-#   download.scrape_content_files(cid) → (title, [(name, url)])
-#   download.download_content(cid) → list of saved paths
-# ─────────────────────────────────────────────────────────────────────────────
+"""BB — Blackboard Learn.
+
+Usage:
+    from sustech_survival.bb import ddl
+    ddl()        → print upcoming BB assignment deadlines
+    ddl(days=7)  → deadlines within N days
+
+REST-based modules (no Playwright):
+    from sustech_survival.bb import query, download
+    query.discover_courses()   → list of (course_id, name)
+    query.discover_pages(cid) → list of (content_id, title, section)
+    query.resolve_course(cid) → course_id string
+    download.scrape_content_files(cid) → (title, [(name, url)])
+    download.download_content(cid) → list of saved paths
+"""
 
 import sys
 from pathlib import Path as _Path

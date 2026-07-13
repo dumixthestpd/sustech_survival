@@ -4,25 +4,66 @@
 
 **Use for:** Checking upcoming due dates before exams, submitting lab reports as PDF, downloading course slides.
 
-**Auth:** CAS tickets (headless, no browser needed for deadlines).
+**Auth:** `BBAuth` — CAS-authenticated session via `sustech_survival.sso`. See [SSO](sso.md) for credential setup.
 
-## Module
+---
+
+## Authentication
+
+```python
+from sustech_survival.sso import BBAuth
+
+auth = BBAuth()               # singleton-per-class
+ok, reason = auth.ensure()    # check + auto-refresh if expired
+if not ok:
+    raise RuntimeError(reason)
+
+# Use the authenticated session
+auth.session.get("https://bb.sustech.edu.cn/...")
+```
+
+Or with the decorator:
+
+```python
+from sustech_survival.sso import require_auth, BBAuth
+
+@require_auth(BBAuth)
+def fetch_deadlines(auth=None):
+    ...
+```
+
+```bash
+# CLI — verify and manage the BB session
+sustech bb session check      # verify credentials work
+sustech bb session refresh    # force re-login
+```
+
+Sessions are kept in memory only. Auto-refresh on stale response (HTTP 401).
+
+---
+
+## CLI
+
+```bash
+sustech bb courses            # list enrolled courses
+sustech bb courses --query MSE  # filter by keyword
+sustech bb search --course MSE306 --has-attachments  # find attachments
+sustech bb types              # list content types per course
+```
+
+---
+
+## Deadlines
 
 ```python
 from sustech_survival.bb import ddl
-```
 
-## `ddl(days=7, course_id=None)`
-
-Print upcoming assignment deadlines.
-
-```python
-ddl()                    # next 7 days, all 2026 courses
+ddl()                    # next 7 days, all courses
 ddl(days=14)             # next 14 days
 ddl(course_id='_8053_1') # single course
 ```
 
-**How it works:** REST API for assignment items + portal page for course IDs (the REST API omits some enrolled courses). Due dates are parsed from item titles (Week N) or body text (每周六晚12点).
+**How it works:** REST API for assignment items + portal page for course IDs. Due dates are parsed from item titles (Week N) or body text (每周六晚12点).
 
 **Due date parsing rules:**
 
@@ -36,36 +77,48 @@ ddl(course_id='_8053_1') # single course
 
 **Active semester courses:** Course IDs are internal BB IDs — use `sustech bb courses` to list yours.
 
-## `BBAuth`
+---
 
-```python
-from sustech_survival.sso import BBAuth
-auth = BBAuth()
-auth.check()    # (bool, str)
-auth.login()    # headful Playwright CAS login
-```
-
-Sessions kept in memory only. Auto-refresh on stale response (401/302→CAS).
-
-## `submit_assignment(file, content_id, course_id)`
-
-Upload a file to a BB assignment.
+## File Submission
 
 ```python
 from sustech_survival.bb.submit import submit_assignment
-ok = submit_assignment(
-    file='/tmp/report.pdf',
+
+submit_assignment(
+    course_id='_8053_1',
     content_id=490876,
-    course_id='_8053_1'
+    file_paths=['/tmp/report.pdf'],
 )
 ```
 
-**BB submit flow (from browser network trace):**
+Also available via REST (no browser):
 
-1. `GET /webapps/assignment/uploadAssignment?assignId={id}` — fetch form token
-2. `POST /webapps/assignment/uploadAssignment` — multipart upload: `patchType=part_upload`, `attempt_number=1`, `倍数=1`, `submit`, ` Plumlof`
-3. BB returns confirmation HTML
+```python
+from sustech_survival.bb.submit_rest import submit_assignment_rest
 
-**File input workaround:** `page.set_input_files()` won't trigger JS handlers. Use `page.evaluate()` to directly manipulate `input.files` and `dispatchEvent(new Event('change', {bubbles:true}))`.
+submit_assignment_rest(
+    course_id='_8053_1',
+    content_id='490876',
+    file_path='/tmp/report.pdf',
+)
+```
 
-**Known trap:** cloudscraper is an optional dependency in the `papers` extra — if missing, paper fetch fails silently. Always verify submission by checking attempt count increased after "success".
+**⚠️ Always verify submission by checking attempt count increased after "success".**
+
+---
+
+## Download
+
+```python
+from sustech_survival.bb.download import download_content
+
+download_content(content_id='_12345_1', out_dir='./downloads')
+```
+
+Downloads all files attached to a content item. Requires the `[playwright]` extra for some legacy download paths.
+
+---
+
+## See also
+
+- [SSO](sso.md) — credential setup and auth infrastructure

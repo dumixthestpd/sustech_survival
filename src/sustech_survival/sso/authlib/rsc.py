@@ -18,8 +18,6 @@
 
 from pathlib import Path
 from ..providers.shibboleth import ShibbolethAuthorizer
-from ..authorizer import register_auth
-
 # RSC Shibboleth configuration
 RSC_BASE = "https://pubs.rsc.org"
 RSC_INIT = "https://www.rsc.org/rsc-id/account/federatedaccess"
@@ -147,4 +145,3 @@ class RSCAuthorizer(ShibbolethAuthorizer):
 
 # Module-level singleton + registration
 rsc_auth_singleton = RSCAuthorizer()
-register_auth("rsc", _auth)

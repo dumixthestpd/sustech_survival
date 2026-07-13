@@ -14,6 +14,9 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
+# Skip entire module if pycryptodome isn't installed (optional [pms] extra).
+pytest.importorskip("Crypto")
+
 from sustech_survival.sso.authlib.pms import (
     PMSAuth, _rsa_encrypt, _to_pem,
     PMS_BASE, PMS_SERVICE, PMS_API,
@@ -78,10 +81,11 @@ class TestPMSAuthConstruction:
         assert auth.BASE_URL == PMS_BASE
 
     def test_singleton_registration(self):
-        from sustech_survival.sso.authorizer import _auth_registry
-        # Force import to ensure registration
+        # register_auth() is a no-op shim; verify PMSAuth is importable
+        # and re-exported from the sso package.
         from sustech_survival.sso.authlib import pms as _pms_mod
-        assert "pms" in _auth_registry
+        from sustech_survival.sso import PMSAuth as RePMSAuth
+        assert RePMSAuth is PMSAuth
 
     def test_re_exported_from_sso(self):
         from sustech_survival.sso import PMSAuth as RePMSAuth

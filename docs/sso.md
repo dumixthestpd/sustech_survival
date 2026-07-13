@@ -59,6 +59,45 @@ auth.password   # CAS password
 
 Reads credentials via `auth.username` / `auth.password` properties, which call `_read_creds()` internally. Resolution order: `SUSTECH_CREDENTIALS` env var → `~/.config/sustech-survival/credentials.txt` → `./credentials.txt` → walk-up from package source. Format: `sid:password`
 
+## Setting Up Credentials
+
+Create a `credentials.txt` file with one line:
+
+```
+12413021:your_password
+```
+
+Pick any of these locations (first match wins):
+
+| # | Location | When to use |
+|---|----------|-------------|
+| 1 | `$SUSTECH_CREDENTIALS` env var (path to file) | CI, containers, agents |
+| 2 | `~/.config/sustech-survival/credentials.txt` | Shared across projects (recommended) |
+| 3 | `./credentials.txt` (current working directory) | Quick local dev |
+| 4 | Walk-up from package source | Editable/development installs |
+
+A template is provided as `credentials.example.txt` in the repo root:
+
+```bash
+cp credentials.example.txt credentials.txt
+# Edit credentials.txt — replace YOUR_PASSWORD with your CAS password
+```
+
+`credentials.txt` is in `.gitignore` — it will never be committed. Sessions are kept **in memory only** — no session data is written to disk.
+
+### Verifying credentials
+
+```bash
+# CLI — check if auth works
+sustech tis session check
+sustech bb session check
+
+# Python — ensure() returns (ok: bool, reason: str)
+from sustech_survival.sso import TISAuth
+ok, reason = TISAuth().ensure()
+print(ok, reason)  # True "Logged in as 段斯宸" or False "..."
+```
+
 ## `Authorizer` (ABC)
 
 ```python

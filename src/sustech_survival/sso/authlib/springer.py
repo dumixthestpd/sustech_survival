@@ -16,7 +16,7 @@ from typing import Optional
 
 import cloudscraper
 
-from ..authorizer import Authorizer, register_auth
+from ..authorizer import Authorizer
 
 SPRINGER_BASE = "https://link.springer.com"
 SPRINGER_IDP = "https://idp.springer.com"
@@ -93,4 +93,3 @@ class SpringerAuth(Authorizer):
 
 
 _springer = SpringerAuth(skill_dir=str(Path(__file__).resolve().parent.parent.parent.parent))
-register_auth("springer", _springer)

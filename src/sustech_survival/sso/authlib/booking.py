@@ -24,7 +24,7 @@ from typing import Optional, Tuple
 
 import requests
 
-from ..authorizer import Authorizer, AuthorizerError, UA, register_auth
+from ..authorizer import Authorizer, AuthorizerError, UA
 
 
 BOOKING_BASE = "https://booking.sustech.edu.cn"
@@ -251,4 +251,3 @@ class BookingAuth(Authorizer):
 # ── Module-level singleton ──────────────────────────────────────────────────
 
 _auth = BookingAuth()  # resolves skill_root by walking up looking for credentials.txt
-register_auth("booking", _auth)

@@ -31,7 +31,7 @@ import requests
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_v1_5 as PKCS1Padding
 
-from ..authorizer import Authorizer, AuthorizerError, UA, register_auth
+from ..authorizer import Authorizer, AuthorizerError, UA
 from ...pms.pms import OFF_CAMPUS_HINT, _looks_off_campus
 
 
@@ -258,4 +258,3 @@ def _to_pem(key: str) -> str:
 # ── Module-level singleton ───────────────────────────────────────────────────
 
 _auth = PMSAuth()  # resolves skill_root by walking up looking for credentials.txt
-register_auth("pms", _auth)

@@ -2,7 +2,7 @@
 # SSO — Generic Authentication Framework
 # =============================================================================
 #   sso/
-#     authorizer.py   — Authorizer base class + error types + registry
+#     authorizer.py   — Authorizer base class + error types
 #     providers/
 #       cas.py        — CAS (Central Authentication Service) v3.0
 #       shibboleth.py — Shibboleth SP (Service Provider) via WAYF/DS
@@ -42,7 +42,6 @@ from sustech_survival.exceptions import (
 __all__ = [
     "Authorizer",
     "AuthorizerError",
-    "register_auth",
     "require_auth",
     "CAS_BASE",
     "UA",
@@ -477,24 +476,6 @@ class Authorizer(ABC):
             kwargs["auth"] = self
             return func(*args, **kwargs)
         return wrapper
-
-
-# ── Auth registry ─────────────────────────────────────────────────────────────
-# register_auth() is a no-op shim kept for backward compatibility.
-# Authorizer subclasses are already singletons via __new__, so the old
-# string-keyed registry is unnecessary. Import the class directly:
-#   from sustech_survival.sso import TISAuth
-#   auth = TISAuth()        # singleton — same instance everywhere
-
-
-def register_auth(name: str, auth: "Authorizer") -> None:
-    """No-op — Authorizer subclasses are singletons via __new__.
-
-    Previously registered instances in a global dict for get_auth() lookup.
-    That dict is removed. This function remains as a no-op so existing
-    authlib modules don't break on import.
-    """
-    pass
 
 
 def require_auth(auth_class: type) -> Callable:

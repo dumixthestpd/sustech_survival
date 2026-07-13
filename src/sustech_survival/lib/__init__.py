@@ -1,12 +1,12 @@
-# lib — SUSTech Library (Primo) search + auth
-# ─────────────────────────────────────────────────────────────────────────────
-# Usage:
-#   from sustech_survival import lib
-#   lib.login()           # CAS login via Playwright / requests
-#   lib.check()           # check session validity
-#   lib.refresh()         # re-auth via requests
-#   lib.ensure()          # check + auto-refresh
-# ─────────────────────────────────────────────────────────────────────────────
+"""lib — SUSTech Library (Primo) search + auth.
+
+Usage:
+    from sustech_survival import lib
+    lib.login()           # CAS login via Playwright / requests
+    lib.check()           # check session validity
+    lib.refresh()         # re-auth via requests
+    lib.ensure()          # check + auto-refresh
+"""
 
 __all__ = ["login", "check", "refresh", "ensure"]
 
