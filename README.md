@@ -42,7 +42,7 @@ By connecting the services at the code level, we simplify the campus systems, of
 
 ### 1. Install
 
-The CLI (`click`) is in core deps — `pip install sustech-survival` gives you both the Python API and the `sustech` command.
+The CLI (`click`) is in core deps — `pip install git+https://github.com/dumixthestpd/sustech_survival.git` gives you both the Python API and the `sustech` command.
 
 Extras add heavier optional capabilities:
 
@@ -53,10 +53,10 @@ Extras add heavier optional capabilities:
 - `all` — Everything above
 
 ```bash
-# Pick one — examples:
-pip install "sustech-survival"               # API + CLI only
-pip install "sustech-survival[webui]"        # + web UI
-pip install "sustech-survival[all]"          # everything
+```bash
+pip install "sustech-survival @ git+https://github.com/dumixthestpd/sustech_survival.git"               # API + CLI only
+pip install "sustech-survival[webui] @ git+https://github.com/dumixthestpd/sustech_survival.git"        # + web UI
+pip install "sustech-survival[all] @ git+https://github.com/dumixthestpd/sustech_survival.git"          # everything
 ```
 
 ### 2. Authentication
