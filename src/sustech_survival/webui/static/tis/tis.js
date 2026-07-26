@@ -49,6 +49,7 @@ var BID_STAT = document.getElementById('bid-stat');
 var BID_STAT_TEXT = document.getElementById('bid-stat-text');
 var BID_OVER_BANNER = document.getElementById('bp-over-banner');
 var BID_PANEL = document.querySelector('.bid-panel');
+var BID_CONFLICT_BANNER = document.getElementById('bp-conflict-banner');
 var PICKED_BIDS = {};        // { rwh: bid_int }      parallel to PICKED
 var PICKED_CONFLICTS = {};    // { rwh: bool }        true if this rwh conflicts with another picked rwh
 var ROUND_INFO = { jffs: 0, ksrq: '', jsrq: '', lcmc: '', xkfsdm: '', xkms: '', ok: false, message: '' };
@@ -110,25 +111,48 @@ function loadingEnd(id) {
 }
 
 // ── HTTP helpers (transport only — UI updates are caller's job) ──────────
+// 15s default timeout. TIS rate-limits and is often slow on the
+// personal-mode queryKxrw endpoint — without a timeout, a hung request
+// leaves the UI stuck on "Searching…" indefinitely and the user can't
+// tell whether the page is broken or just slow.
+var DEFAULT_FETCH_TIMEOUT_MS = 15000;
+
 function getJSON(url) {
   var id = loadingStart();
-  return fetch(url).then(function(r) {
+  var ctrl = new AbortController();
+  var timer = setTimeout(function() { ctrl.abort(); }, DEFAULT_FETCH_TIMEOUT_MS);
+  return fetch(url, { signal: ctrl.signal }).then(function(r) {
+    clearTimeout(timer);
     loadingEnd(id);
     if (!r.ok) throw new Error('HTTP ' + r.status);
     return r.json();
-  }, function(e) { loadingEnd(id); throw e; });
+  }, function(e) {
+    clearTimeout(timer);
+    loadingEnd(id);
+    if (e.name === 'AbortError') throw new Error('Request timed out after ' + (DEFAULT_FETCH_TIMEOUT_MS/1000) + 's — TIS is slow, try again');
+    throw e;
+  });
 }
 function postJSON(url, body) {
   var id = loadingStart();
+  var ctrl = new AbortController();
+  var timer = setTimeout(function() { ctrl.abort(); }, DEFAULT_FETCH_TIMEOUT_MS);
   return fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body || {}),
+    signal: ctrl.signal,
   }).then(function(r) {
+    clearTimeout(timer);
     loadingEnd(id);
     if (!r.ok) throw new Error('HTTP ' + r.status);
     return r.json();
-  }, function(e) { loadingEnd(id); throw e; });
+  }, function(e) {
+    clearTimeout(timer);
+    loadingEnd(id);
+    if (e.name === 'AbortError') throw new Error('Request timed out after ' + (DEFAULT_FETCH_TIMEOUT_MS/1000) + 's — TIS is slow, try again');
+    throw e;
+  });
 }
 var DAYS = 7;
 var DAY_NAMES = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
@@ -440,10 +464,17 @@ function populateCourseTypes(types, currentType) {
     o.textContent = (r.xkfsmc || r.lcmc || r.xkfsdm);
     sel.appendChild(o);
   }
-  // Auto-select first type if no selection
-  if (!val && sel.options.length > 1) {
-    sel.selectedIndex = 1;
-  } else if (val) {
+  // Default to kzyxk (培养方案内课程 — your plan courses). Most students
+  // care about their plan courses first; bxxk (通识必修) is rarely the
+  // search target for course codes like MSE307. If kzyxk isn't in the
+  // round config (summer/etc.), fall back to the first available type.
+  if (!val) {
+    if (sel.querySelector('option[value="kzyxk"]')) {
+      sel.value = 'kzyxk';
+    } else if (sel.options.length > 1) {
+      sel.selectedIndex = 1;
+    }
+  } else {
     sel.value = val;
   }
 }
@@ -2831,23 +2862,40 @@ function renderBidPanel() {
     BID_BAR.innerHTML = '';
     BID_BOXES.innerHTML = '';
     BID_STAT.style.display = 'none';
+    if (BID_CONFLICT_BANNER) BID_CONFLICT_BANNER.textContent = '';
+    if (BID_PANEL) BID_PANEL.classList.remove('has-conflicts');
     return;
   }
   computePickedConflicts();
   var hasConflict = Object.keys(PICKED_CONFLICTS).length > 0;
   var keys = Object.keys(PICKED);
 
-  if (hasConflict) {
-    BID_BAR.innerHTML = '';
-    BID_BOXES.innerHTML =
-      '<div style="color:var(--warn);font-size:.84rem;padding:.5rem 0">⚠ Resolve schedule conflicts first to set bids.</div>';
-    BID_META.textContent = '';
-    BID_JFFS.textContent = 'conflicts pending';
-    BID_JFFS.className = 'bp-jffs over';
-    BID_STAT.style.display = 'block';
-    BID_STAT_TEXT.innerHTML = '⚠ Conflicts — resolve to bid';
-    return;
+  // Conflict warning — loud, non-blocking. The bid panel stays fully
+  // interactive: the user can set bids on every picked rwh regardless of
+  // conflicts. The submit button stays enabled too — TIS will accept the
+  // bid updates (they're independent of enrollment), and the user's
+  // enrollment attempt will fail separately due to the schedule overlap.
+  if (BID_CONFLICT_BANNER) {
+    if (hasConflict) {
+      // Build a unique, priority-sorted list of conflicted course codes
+      var seen = {};
+      var codes = [];
+      var ckeys = Object.keys(PICKED_CONFLICTS);
+      for (var ci = 0; ci < ckeys.length; ci++) {
+        var c = PICKED[ckeys[ci]];
+        var cd = c && (c.code || c.kcdm) || '';
+        if (cd && !seen[cd]) { seen[cd] = true; codes.push(cd); }
+      }
+      codes.sort();
+      BID_CONFLICT_BANNER.textContent =
+        '⚠ ' + codes.length + ' course(s) have schedule conflicts: ' +
+        codes.join(', ') +
+        '. Bids will sync to TIS, but enrollment will fail for conflicting sections until you resolve via Conflict-free Scheduler.';
+    } else {
+      BID_CONFLICT_BANNER.textContent = '';
+    }
   }
+  if (BID_PANEL) BID_PANEL.classList.toggle('has-conflicts', hasConflict);
 
   BID_STAT.style.display = 'block';
   var jffs = ROUND_INFO.jffs;
