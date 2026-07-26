@@ -111,48 +111,29 @@ function loadingEnd(id) {
 }
 
 // ── HTTP helpers (transport only — UI updates are caller's job) ──────────
-// 15s default timeout. TIS rate-limits and is often slow on the
-// personal-mode queryKxrw endpoint — without a timeout, a hung request
-// leaves the UI stuck on "Searching…" indefinitely and the user can't
-// tell whether the page is broken or just slow.
-var DEFAULT_FETCH_TIMEOUT_MS = 15000;
-
+// No timeout: TIS is frequently slow over VPN, and a hard timeout would
+// abort requests the user knows to expect as slow. The caller owns error
+// handling via its .catch() — there, network errors surface as flash
+// messages the user can act on (refresh, switch network, etc.).
 function getJSON(url) {
   var id = loadingStart();
-  var ctrl = new AbortController();
-  var timer = setTimeout(function() { ctrl.abort(); }, DEFAULT_FETCH_TIMEOUT_MS);
-  return fetch(url, { signal: ctrl.signal }).then(function(r) {
-    clearTimeout(timer);
+  return fetch(url).then(function(r) {
     loadingEnd(id);
     if (!r.ok) throw new Error('HTTP ' + r.status);
     return r.json();
-  }, function(e) {
-    clearTimeout(timer);
-    loadingEnd(id);
-    if (e.name === 'AbortError') throw new Error('Request timed out after ' + (DEFAULT_FETCH_TIMEOUT_MS/1000) + 's — TIS is slow, try again');
-    throw e;
-  });
+  }, function(e) { loadingEnd(id); throw e; });
 }
 function postJSON(url, body) {
   var id = loadingStart();
-  var ctrl = new AbortController();
-  var timer = setTimeout(function() { ctrl.abort(); }, DEFAULT_FETCH_TIMEOUT_MS);
   return fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body || {}),
-    signal: ctrl.signal,
   }).then(function(r) {
-    clearTimeout(timer);
     loadingEnd(id);
     if (!r.ok) throw new Error('HTTP ' + r.status);
     return r.json();
-  }, function(e) {
-    clearTimeout(timer);
-    loadingEnd(id);
-    if (e.name === 'AbortError') throw new Error('Request timed out after ' + (DEFAULT_FETCH_TIMEOUT_MS/1000) + 's — TIS is slow, try again');
-    throw e;
-  });
+  }, function(e) { loadingEnd(id); throw e; });
 }
 var DAYS = 7;
 var DAY_NAMES = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
@@ -1088,7 +1069,12 @@ function renderEvalBrowse() {
       EVAL_TOTAL_PAGES = 1; EVAL_PAGE = 1;
     }
     var html = '<div class="eval-list">';
-    if (!items.length) {
+    if (d.error) {
+      // Upstream NCES API is down (e.g. consolidated /api/v1/courses → 404).
+      // Surface the error instead of pretending there are no courses.
+      html += '<div class="empty" style="padding:1.5rem;text-align:center;color:var(--warn)">' +
+        escapeHtml(d.error) + '</div>';
+    } else if (!items.length) {
       html += '<div class="empty" style="padding:1.5rem;text-align:center">No courses found.</div>';
     } else {
       for (var i = 0; i < items.length; i++) {
