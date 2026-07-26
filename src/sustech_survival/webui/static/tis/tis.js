@@ -2854,21 +2854,23 @@ function renderBidPanel() {
   var total = bidTotal();
   var overBudget = !!(jffs && total > jffs);
 
-  // Over-budget banner + panel-level class + disable submit so the user
-  // can't ship a doomed payload. The previous behavior was a tiny color
-  // change in the header — easy to miss and the submit button stayed
-  // clickable, sending bids that TIS would reject.
+  // Over-budget banner — loud warning, but the submit button stays
+  // enabled. TIS will reject the over-budget POST with a clear error,
+  // and we'd rather the user see that exact response than hide the
+  // failure mode behind a disabled button.
   if (BID_OVER_BANNER) {
     if (overBudget) {
       BID_OVER_BANNER.textContent = '⚠ Over budget: ' + total.toFixed(1) +
         ' / ' + jffs.toFixed(1) + ' pts — ' +
-        (total - jffs).toFixed(1) + ' pts over. Lower bids before submitting.';
+        (total - jffs).toFixed(1) + ' pts over. TIS will reject this — submit anyway to see the exact rejection, or lower bids first.';
     } else {
       BID_OVER_BANNER.textContent = '';
     }
   }
   if (BID_PANEL) BID_PANEL.classList.toggle('over-budget', overBudget);
-  if (BID_SUBMIT) BID_SUBMIT.disabled = overBudget;
+  // Note: we deliberately do NOT disable the submit button here.
+  // The user is a SUSTech student who knows their budget; hiding
+  // the action would mask the real server-side response.
 
   if (jffs && total > jffs) {
     BID_STAT_TEXT.innerHTML = '🎯 ' + total + ' pts used · <span style="color:var(--bad)">⚠ over ' + (total - jffs).toFixed(1) + ' pts budget</span> — click to manage';
