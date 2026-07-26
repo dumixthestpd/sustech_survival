@@ -47,11 +47,15 @@ var BID_MSG = document.getElementById('bp-msg');
 var BID_SUBMIT = document.getElementById('bp-submit');
 var BID_STAT = document.getElementById('bid-stat');
 var BID_STAT_TEXT = document.getElementById('bid-stat-text');
+var BID_OVER_BANNER = document.getElementById('bp-over-banner');
+var BID_PANEL = document.querySelector('.bid-panel');
 var PICKED_BIDS = {};        // { rwh: bid_int }      parallel to PICKED
 var PICKED_CONFLICTS = {};    // { rwh: bool }        true if this rwh conflicts with another picked rwh
 var ROUND_INFO = { jffs: 0, ksrq: '', jsrq: '', lcmc: '', xkfsdm: '', xkms: '', ok: false, message: '' };
 var BID_DRAG = null;         // { sourceRwh, sourceBox, arrowEl, targetRwh, lastX, lastY }
 var BID_EDIT = null;         // { rwh, originalBid, inputEl }
+var EXISTING_BIDS = {};      // { rwh: bid_int } — bids already set on TIS for enrolled/cart items
+                              // (read from d.enrolled[]/d.cart[] in search_personal response)
 
 
 // ── State ─────────────────────────────────────────────────────────────────
@@ -525,6 +529,19 @@ function loadCourses(isInitialLoad) {
           message: d.message || '',
         };
       }
+      // Existing bids from TIS (so addPicked() can default to them for
+      // already-enrolled/cart picks instead of starting from 1). TIS puts
+      // the bid on the `xkxs` field of each yxkcList/xkgwcList item.
+      EXISTING_BIDS = {};
+      var _ingestBidItems = function(items) {
+        for (var i = 0; i < items.length; i++) {
+          if (items[i] && items[i].rwh && items[i].xkxs != null) {
+            EXISTING_BIDS[items[i].rwh] = Number(items[i].xkxs) || 1;
+          }
+        }
+      };
+      _ingestBidItems(d.enrolled || []);
+      _ingestBidItems(d.cart || []);
       var msg = d.message || '';
       if (!d.ok) {
         STAT.textContent = 'Selection: ' + (msg || 'unavailable');
@@ -1541,7 +1558,13 @@ function renderEvalBrief(d) {
 
 function addPicked(course) {
   PICKED[course.rwh] = JSON.parse(JSON.stringify(course));
-  if (!(course.rwh in PICKED_BIDS)) PICKED_BIDS[course.rwh] = 1;
+  if (!(course.rwh in PICKED_BIDS)) {
+    // Default to the bid TIS already has for this rwh (if it's an
+    // already-enrolled/cart pick); fall back to 1 for new picks.
+    PICKED_BIDS[course.rwh] = EXISTING_BIDS[course.rwh] != null
+      ? EXISTING_BIDS[course.rwh]
+      : 1;
+  }
   // Re-render search results so cards reflect the new pick state
   renderResults(CAT);
   renderPicked();
@@ -2829,6 +2852,24 @@ function renderBidPanel() {
   BID_STAT.style.display = 'block';
   var jffs = ROUND_INFO.jffs;
   var total = bidTotal();
+  var overBudget = !!(jffs && total > jffs);
+
+  // Over-budget banner + panel-level class + disable submit so the user
+  // can't ship a doomed payload. The previous behavior was a tiny color
+  // change in the header — easy to miss and the submit button stayed
+  // clickable, sending bids that TIS would reject.
+  if (BID_OVER_BANNER) {
+    if (overBudget) {
+      BID_OVER_BANNER.textContent = '⚠ Over budget: ' + total.toFixed(1) +
+        ' / ' + jffs.toFixed(1) + ' pts — ' +
+        (total - jffs).toFixed(1) + ' pts over. Lower bids before submitting.';
+    } else {
+      BID_OVER_BANNER.textContent = '';
+    }
+  }
+  if (BID_PANEL) BID_PANEL.classList.toggle('over-budget', overBudget);
+  if (BID_SUBMIT) BID_SUBMIT.disabled = overBudget;
+
   if (jffs && total > jffs) {
     BID_STAT_TEXT.innerHTML = '🎯 ' + total + ' pts used · <span style="color:var(--bad)">⚠ over ' + (total - jffs).toFixed(1) + ' pts budget</span> — click to manage';
   } else if (total > 0) {
@@ -3195,43 +3236,83 @@ BID_SUBMIT.addEventListener('click', function() {
 });
 
 function submitBids() {
-  var picks = {};
+  // Group picks by endpoint. Enrolled courses go to updXkxsByyx; cart
+  // courses go to upd_xkxsBygwc. The previous code hardcoded 'cart' for
+  // everything, so bids on already-enrolled sections silently failed
+  // (TIS rejected the request because the rwh wasn't in cart state).
+  var picksByWhere = { cart: {}, enrolled: {} };
   for (var k in PICKED_BIDS) {
     if (PICKED_BIDS.hasOwnProperty(k) && PICKED[k]) {
-      picks[k] = PICKED_BIDS[k];
+      var w = ENROLLED_RWH.has(k) ? 'enrolled' : 'cart';
+      picksByWhere[w][k] = PICKED_BIDS[k];
     }
   }
-  if (!Object.keys(picks).length) {
+  var totalPicks = Object.keys(picksByWhere.cart).length +
+                    Object.keys(picksByWhere.enrolled).length;
+  if (!totalPicks) {
     BID_MSG.textContent = 'No picks to bid on.';
     BID_MSG.className = 'bp-msg err';
     return;
   }
-  if (!confirm('Sync ' + Object.keys(picks).length + ' bid(s) to TIS? This is a real action.')) return;
-  BID_MSG.textContent = 'Submitting: syncing ' + Object.keys(picks).length + ' bid(s)…';
+  if (!confirm('Sync ' + totalPicks + ' bid(s) to TIS? This is a real action.')) return;
+  BID_MSG.textContent = 'Submitting: syncing ' + totalPicks + ' bid(s)…';
   BID_MSG.className = 'bp-msg';
   BID_SUBMIT.disabled = true;
-  postJSON('/api/tis/bids' + sem(), {
-    picks: picks,
-    xkfsdm: ROUND_INFO.xkfsdm || '',
-    where: 'cart',
-    jffs_limit: ROUND_INFO.jffs || null,
-    dry_run: false,
-  }).then(function(res) {
+
+  function _sendBatch(where, picks) {
+    return postJSON('/api/tis/bids' + sem(), {
+      picks: picks,
+      xkfsdm: ROUND_INFO.xkfsdm || '',
+      where: where,
+      jffs_limit: ROUND_INFO.jffs || null,
+      dry_run: false,
+    });
+  }
+
+  // Fire the batches sequentially would be safer for rate limiting, but
+  // they're independent so we go in parallel and merge the results.
+  var batches = [];
+  if (Object.keys(picksByWhere.cart).length) {
+    batches.push(_sendBatch('cart', picksByWhere.cart));
+  }
+  if (Object.keys(picksByWhere.enrolled).length) {
+    batches.push(_sendBatch('enrolled', picksByWhere.enrolled));
+  }
+
+  Promise.all(batches).then(function(results) {
     BID_SUBMIT.disabled = false;
-    if (res.over_limit) {
-      BID_MSG.textContent = 'Over budget: ' + res.sum + ' > ' + res.jffs_limit + ' pts. Adjust bids first.';
+    var merged = { results: [], sum: 0, over_limit: false };
+    for (var i = 0; i < results.length; i++) {
+      var r = results[i] || {};
+      if (r.over_limit) merged.over_limit = true;
+      merged.sum += r.sum || 0;
+      merged.results = merged.results.concat(r.results || []);
+    }
+    if (merged.over_limit) {
+      BID_MSG.textContent = 'Over budget: ' + merged.sum + ' > ' + ROUND_INFO.jffs +
+        ' pts. Adjust bids first.';
       BID_MSG.className = 'bp-msg err';
       return;
     }
-    if (res.error) {
-      BID_MSG.textContent = 'Error: ' + res.error;
-      BID_MSG.className = 'bp-msg err';
-      return;
+    var okCount = 0;
+    var failed = [];
+    for (var fi = 0; fi < merged.results.length; fi++) {
+      if (merged.results[fi].ok) okCount++;
+      else failed.push(merged.results[fi]);
     }
-    var okCount = (res.results || []).filter(function(r){return r.ok;}).length;
-    var total = (res.results || []).length;
+    var total = merged.results.length;
+    var failedSummary = '';
+    if (failed.length) {
+      var parts = [];
+      for (var fj = 0; fj < failed.length; fj++) {
+        var f = failed[fj];
+        var code = (PICKED[f.rwh] && PICKED[f.rwh].code) || f.rwh;
+        parts.push(code + ' (' + (f.message || 'no message') + ')');
+      }
+      failedSummary = ' · ' + failed.length + ' failed: ' + parts.join('; ');
+    }
     BID_MSG.textContent = 'Committed: ' + okCount + '/' + total + ' bid(s) sent' +
-      (res.sum ? ' · total ' + res.sum + ' pts' : '');
+      (merged.sum ? ' · total ' + merged.sum + ' pts' : '') + failedSummary;
     BID_MSG.className = 'bp-msg' + (okCount === total ? '' : ' err');
     loadRound().then(renderBidPanel);
   })['catch'](function(e) {

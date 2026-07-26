@@ -410,6 +410,10 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
 .bid-panel .bp-empty{font-size:.76rem;color:var(--mut);text-align:center;padding:.6rem 0}
 .bid-panel .bp-msg{font-size:.7rem;color:var(--ok);margin-top:.4rem;min-height:1em}
 .bid-panel .bp-msg.err{color:var(--bad)}
+.bp-over-banner{display:none;background:rgba(231,76,60,.15);border:1px solid var(--bad);border-radius:4px;padding:.5rem .7rem;margin:.4rem 0 .5rem;font-size:.82rem;color:var(--bad);font-weight:600;line-height:1.4}
+.bid-panel.over-budget .bp-over-banner{display:block}
+.bid-panel.over-budget .bid-bar{border-color:var(--bad);background:rgba(231,76,60,.12)}
+.bid-panel.over-budget #bp-submit{opacity:.45;cursor:not-allowed}
 </style>
 </head>
 <body>
@@ -521,13 +525,14 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
       <div id="eval-out" style="font-size:.8rem"></div>
     </div>
     <div id="tab-bids" class="tabpane" style="display:none">
-      <div style="padding:1rem">
+      <div class="bid-panel" style="padding:1rem">
         <p style="color:var(--mut);font-size:.84rem;margin-bottom:.6rem">Set bid amounts for your picked sections. Click a bid to edit, drag between boxes to transfer. <b>积分选课</b> — use higher bids for competitive sections.</p>
         <div class="bp-h">
           <span class="bp-t" style="font-size:1rem;font-weight:600;color:var(--accent)">🎯 Bids</span>
           <span class="bp-meta" id="bp-meta" style="font-size:.72rem;color:var(--mut)"></span>
           <span class="bp-jffs" id="bp-jffs" style="margin-left:auto;font-size:.9rem;color:var(--accent);font-weight:600">— pts</span>
         </div>
+        <div class="bp-over-banner" id="bp-over-banner"></div>
         <div class="bid-bar" id="bid-bar" style="margin:.6rem 0 .7rem"></div>
         <div class="bid-boxes" id="bid-boxes"></div>
         <div class="bp-submit" style="margin-top:.7rem">
