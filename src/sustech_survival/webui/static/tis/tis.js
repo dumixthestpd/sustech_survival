@@ -3643,50 +3643,41 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 // ── END outer IIFE ────────────────────────────────────────────────
 
-// ── Picked-panel actions (safe row + real-actions row) ───────────────────
-// These are built once into #picked-col on DOMContentLoaded so the buttons
-// are always reachable, even on a fresh page with no picks. The buttons
-// are inert (or trigger their own confirm) until the user has something
-// to act on.
-//
-// Layout (matches the CSS in tis.html, see commit aae89b4):
-//   📅 Export ICS · 💾 Save · 📂 Load            ← safe row, no TIS contact
-//   ── "Real actions — talks to TIS" ──          ← labeled divider
-//   📤 Sync to TIS · 🗑 Drop all enrolled        ← real actions, confirm()
-
+// ── Picked-panel actions (right column) ──────────────────────────────────
+// The right column is the "picks management" surface — local data (Save,
+// Load) + the one server-side op on ENROLLED_RWH (Drop all). The terminal
+// actions on the picks (Export ICS, Sync to TIS) live in step ④ of the
+// stepper — see addStep4TerminalActions() in commit 2.
 function initPickedActions() {
   var pickedCol = document.getElementById('picked-col');
   if (!pickedCol) return;
-  // Find the pick-list and inject the action rows right above the
-  // "Enrollment status" details element.
   var pickList = document.getElementById('pick-list');
   if (!pickList) return;
+  if (document.getElementById('picked-data-actions')) return;
 
-  // Avoid double-init
-  if (document.getElementById('picked-safe-actions')) return;
-
-  var safeRow = document.createElement('div');
-  safeRow.id = 'picked-safe-actions';
-  safeRow.className = 'picked-safe-actions';
-  safeRow.innerHTML =
-    '<button class="ics-export-btn" id="btn-export-ics" title="Download schedule as .ics">📅 Export ICS</button>' +
-    '<button class="save-file-btn" id="btn-save-picks" title="Save your selection to a JSON file">💾 Save</button>' +
+  // Save + Load: local data ops. Always available — the user may save
+  // mid-selection with conflicts and come back later.
+  var dataRow = document.createElement('div');
+  dataRow.id = 'picked-data-actions';
+  dataRow.className = 'picked-safe-actions';
+  dataRow.innerHTML =
+    '<button class="save-file-btn" id="btn-save-picks" title="Save your selection to a JSON file (works any time, even with conflicts)">💾 Save</button>' +
     '<button class="load-file-btn" id="btn-load-picks" title="Load a saved selection from JSON">📂 Load</button>';
 
+  // Drop all enrolled: server-side op on ENROLLED_RWH (different state
+  // from PICKED). Different intent from "sync my picks" — kept here
+  // because the right column is where enrollment state is shown.
   var divider = document.createElement('div');
   divider.className = 'picked-divider';
   divider.innerHTML =
-    '<span>Real actions — talks to TIS</span>' +
-    '<button class="sync-tis-btn" id="btn-sync-tis" title="Push your picked sections to TIS">📤 Sync to TIS</button>' +
+    '<span>Server-side — affects TIS</span>' +
     '<button class="drop-all-tis-btn" id="btn-drop-all" title="Drop every currently-enrolled section">🗑 Drop all enrolled</button>';
 
-  pickList.parentNode.insertBefore(safeRow, pickList);
+  pickList.parentNode.insertBefore(dataRow, pickList);
   pickList.parentNode.insertBefore(divider, pickList);
 
-  document.getElementById('btn-export-ics').onclick = exportICS;
   document.getElementById('btn-save-picks').onclick = savePicksToFile;
   document.getElementById('btn-load-picks').onclick = loadPicksFromFile;
-  document.getElementById('btn-sync-tis').onclick = syncToTIS;
   document.getElementById('btn-drop-all').onclick = dropAllEnrolled;
 }
 
