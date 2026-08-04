@@ -112,12 +112,31 @@ def api_nces_browse():
       page     — 1-indexed page number (default 1)
       per_page — 1-50, default 30
       sort     — "rating" (default) / "reviews" / "name"
+
+    Returns ``{items, total, page, per_page, pages}``. On upstream NCES
+    failure (the /api/v1/courses endpoint has been 404 in recent days
+    — they've consolidated everything behind /api/v1/search), returns
+    an empty list with an ``error`` field so the UI can show "NCES
+    browse unavailable" instead of a hard HTTP 500.
     """
     s = _get_scraper()
     page = max(1, int(request.args.get("page", 1)))
     per_page = max(1, min(50, int(request.args.get("per_page", 30))))
     sort = request.args.get("sort", "rating")
-    return jsonify(s.browse(page=page, per_page=per_page, sort=sort))
+    try:
+        result = s.browse(page=page, per_page=per_page, sort=sort)
+    except Exception as e:
+        # Upstream NCES endpoint dead — degrade to empty list with a
+        # visible error field. The UI shows "NCES browse unavailable".
+        return jsonify({
+            "items": [],
+            "total": 0,
+            "page": page,
+            "per_page": per_page,
+            "pages": 0,
+            "error": f"NCES browse API unavailable: {type(e).__name__}",
+        }), 200
+    return jsonify(result)
 
 
 @bp.route("/api/nces/search")
