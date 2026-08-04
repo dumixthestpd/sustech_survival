@@ -1,0 +1,121 @@
+site_name: sustech-survival
+site_description: A unified Python toolkit for SUSTech academic systems — BB, TIS, library, papers, transit, and more.
+site_url: https://dumixthestpd.github.io/sustech_survival/
+repo_url: https://github.com/dumixthestpd/sustech_survival
+edit_uri: edit/main/docs/
+docs_dir: docs
+site_dir: site
+
+theme:
+  name: material
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.top
+    - navigation.sections
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to light mode
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search:
+      separator: '[\s\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+  - i18n:
+      docs_structure: suffix
+      languages:
+        - locale: en
+          name: English
+          default: true
+        - locale: zh
+          name: 简体中文
+          build: true
+          nav_translations:
+            Home: 首页
+            Core Systems: 核心系统
+            External Databases: 外部数据库
+            Reference: 参考
+            BB (Blackboard): BB（Blackboard）
+            TIS: 教学信息服务
+            TIS Courses: 课程
+            TIS Grades: 成绩
+            SSO: 单点登录
+            PMS: 联创打印
+            Faculty: 教师信息
+            Transit: 校园巴士
+            Selectcourse: 选课
+            Context: 上下文
+            Papers: 论文
+            NCES: 课程评价
+            WS: 外事
+            "E-Hall Booking": 场地预约
+            Library Booking: 图书馆预约
+            "Library (Primo)": 图书馆（Primo）
+            Calendar: 校历
+            Web UI: Web 界面
+            CNKI: CNKI
+            RSC: RSC
+            WoS: WoS
+            Resources: 资源
+      fallback_to_default: true
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+  - toc:
+      permalink: true
+  - footnotes
+
+nav:
+  - Home: index.md
+  - Core Systems:
+      - BB (Blackboard): bb.md
+      - TIS: tis.md
+      - TIS Courses: courses.md
+      - TIS Grades: grades.md
+      - SSO: sso.md
+      - PMS: pms.md
+      - Faculty: faculty.md
+      - Transit: transit.md
+      - Selectcourse: selectcourse.md
+      - Context: context.md
+      - Papers: papers.md
+      - NCES: nces.md
+      - WS: ws.md
+      - E-Hall Booking: booking.md
+      - Library Booking: lib-booking.md
+      - Library (Primo): lib.md
+      - Calendar: calendar.md
+      - Web UI: webui.md
+  - External Databases:
+      - CNKI: cnki.md
+      - RSC: rsc.md
+      - WoS: wos.md
+  - Reference:
+      - Resources: resources.md

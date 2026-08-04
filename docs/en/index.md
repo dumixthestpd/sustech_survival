@@ -1,3 +1,5 @@
+**Languages:** [English (current)](#) · [中文 →](zh/)
+
 # Documentation Index
 
 ## Core Systems
@@ -28,5 +30,4 @@
 - [WoS](wos.md) — Web of Science authentication
 
 ## Reference
-
 - [Resources](resources.md) — campus resource links

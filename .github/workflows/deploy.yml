@@ -1,0 +1,42 @@
+name: Deploy release
+
+# Publishes to PyPI when a version tag is pushed.
+# Uses PyPI trusted publishing (OIDC) — no API token in secrets required.
+#
+# Setup once, before the first release:
+#   1. On https://pypi.org/manage/account/publishing/ :
+#      - Add a new pending publisher
+#      - Owner: dumixthestpd  /  Repository: sustech_survival
+#      - Workflow filename: deploy.yml
+#      - Environment name: (leave blank — this workflow has no `environment:`)
+#   2. Bump `_version.py` to a release version (e.g. 2026.7.14b1)
+#   3. Update CHANGELOG.md (cut `[Unreleased]` into a dated version section)
+#   4. `git tag 2026.7.14b1 && git push --tags`
+#
+# Live (requires-network) tests are skipped via the default `-m "not live"`.
+
+on:
+  push:
+    tags:
+      - "*"
+
+jobs:
+  pypi:
+    permissions:
+      id-token: write  # OIDC trusted publishing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: "actions/checkout@v4"
+
+      - uses: "actions/setup-python@v5"
+        with:
+          python-version: "3.12"
+
+      - name: "Install build tooling"
+        run: python -m pip install --upgrade build
+
+      - name: "Build sdist + wheel"
+        run: python -m build
+
+      - name: "Publish to PyPI"
+        uses: pypa/gh-action-pypi-publish@release/v1
