@@ -163,12 +163,88 @@ table.grid td{height:38px;position:relative}
 .palette .sw{display:inline-block;width:12px;height:12px;border-radius:3px;flex-shrink:0}
 .palette .sl{font-size:.72rem;color:var(--mut)}
 
-/* tabs */
-.tabs{display:flex;gap:.3rem;padding:.6rem 1rem;border-bottom:1px solid var(--border);background:var(--panel);position:sticky;top:0;z-index:5}
-.tabs button{background:transparent;border:none;color:var(--mut);border-bottom:2px solid transparent;border-radius:0;padding:.25rem .6rem;font-size:.82rem;cursor:pointer}
-.tabs button:hover{color:var(--txt)}
-.tabs button.active{color:var(--txt);border-color:var(--accent)}
-.tabpane{overflow-y:auto;flex:1}
+/* ── Stepper (replaces tabs) ────────────────────────────────────
+   A 4-step workflow: Pick → Mark unavailable → Schedule → Bid & sync.
+   Current step highlighted in accent. Completed steps in OK green.
+   Future steps muted. The "Grid" toggle on the right shows/hides the
+   weekly grid (persistent in steps 1+2 by default). */
+.stepper{display:flex;align-items:center;gap:.5rem;padding:.7rem 1rem;border-bottom:1px solid var(--border);background:var(--panel);position:sticky;top:0;z-index:5;flex-shrink:0}
+.step-chip{display:flex;align-items:center;gap:.4rem;background:transparent;border:1px solid var(--border);color:var(--mut);border-radius:999px;padding:.32rem .7rem .32rem .4rem;font-size:.78rem;cursor:pointer;transition:all .12s}
+.step-chip:hover{border-color:var(--accent);color:var(--txt)}
+.step-chip.active{background:rgba(91,157,255,.14);border-color:var(--accent);color:var(--txt);font-weight:500}
+.step-chip.done{background:rgba(63,185,80,.1);border-color:var(--ok);color:var(--ok)}
+.step-num{display:inline-flex;align-items:center;justify-content:center;width:1.3rem;height:1.3rem;border-radius:50%;background:var(--bg);color:var(--mut);font-size:.7rem;font-weight:600;flex-shrink:0}
+.step-chip.active .step-num{background:var(--accent);color:#fff}
+.step-chip.done .step-num{background:var(--ok);color:#fff}
+.step-connector{width:1.2rem;height:1px;background:var(--border);flex-shrink:0}
+.step-toggle-grid{margin-left:auto;display:flex;align-items:center;gap:.4rem;font-size:.72rem;color:var(--mut);cursor:pointer;padding:.2rem .5rem;border-radius:4px;user-select:none}
+.step-toggle-grid:hover{color:var(--txt);background:var(--panel2)}
+.step-toggle-dot{font-size:.6rem;color:var(--ok);transition:color .12s}
+.step-toggle-grid.off .step-toggle-dot{color:var(--mut)}
+
+.step-content{overflow-y:auto;flex:1;display:flex;flex-direction:column}
+.step-pane{flex:1;display:flex;flex-direction:column;min-height:0}
+.step-pane-body{padding:1rem 1.4rem;display:flex;flex-direction:column;gap:1rem;flex:1}
+.step-hint{color:var(--mut);font-size:.84rem;line-height:1.45;margin:0}
+
+/* Persistent weekly grid container inside steps 1 and 2. The actual
+   table contents (odd/even weeks + legend) are populated by renderGrid. */
+.persistent-grid{display:flex;flex-direction:column;gap:1rem;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:1rem;flex:1;min-height:0}
+.persistent-grid .grid-legend-h{display:flex;align-items:center;gap:.5rem;margin-bottom:.4rem}
+.persistent-grid .grid-legend-h .grid-legend{flex:1;min-height:0}
+.persistent-grid .grid-weeks{display:grid;grid-template-columns:1fr 1fr;gap:1rem;flex:1;min-height:0}
+.persistent-grid .grid-week-section{display:flex;flex-direction:column;gap:.3rem;min-height:0}
+.persistent-grid .grid-week-section .grid-week-h{font-size:.72rem;color:var(--accent);font-weight:500;text-transform:uppercase;letter-spacing:.04em}
+
+/* Block section in step 2 — relaxed, roomy. Center-aligned single grid
+   so the user can click cells with plenty of hit-target. */
+.block-section{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:1rem;display:flex;flex-direction:column;gap:.5rem}
+.block-section-relaxed{padding:1.4rem;max-width:780px;margin:0 auto;width:100%}
+.block-section-relaxed .grid{font-size:.85rem}
+.block-section-relaxed td{height:46px;cursor:pointer}
+.block-section-h{font-size:.72rem;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
+
+/* Step 4 bid panel — relaxed 2-column grid, larger boxes, more
+   breathing room. (See also .bid-panel-relaxed overrides.) */
+.bid-step{padding-bottom:1.5rem}
+.bid-panel-relaxed{background:transparent;border:none;padding:0;display:flex;flex-direction:column;gap:1.2rem}
+.bid-panel-relaxed .bid-boxes{display:grid;grid-template-columns:1fr 1fr;gap:1rem;min-height:0}
+.bid-panel-relaxed .bid-box{flex:none;min-width:0;padding:.8rem 1rem;border-radius:8px;background:var(--panel);border:1px solid var(--border);min-height:96px;display:flex;flex-direction:column;gap:.25rem;transition:border-color .12s,background .12s,transform .12s}
+.bid-panel-relaxed .bid-box:hover{border-color:var(--accent);transform:translateY(-1px)}
+.bid-panel-relaxed .bid-box.drag-source{opacity:.5;border-color:var(--warn);transform:scale(.98)}
+.bid-panel-relaxed .bid-box.drag-target{outline:1px dashed var(--accent);outline-offset:-1px;background:#1d2a3d;transform:translateY(-1px)}
+.bid-panel-relaxed .bid-box .bb-bid{font-size:1.5rem;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums;line-height:1.1}
+.bid-panel-relaxed .bid-box .bb-bid::after{font-size:.7rem;color:var(--mut);font-weight:400;margin-left:.25rem}
+.bid-panel-relaxed .bid-box .bb-code{font-size:.72rem;font-weight:500;color:var(--accent);font-family:ui-monospace,Menlo,monospace}
+.bid-panel-relaxed .bid-box .bb-name{font-size:.78rem;color:var(--txt);margin-top:auto;line-height:1.3;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+
+/* Arrow layer for the bid drag — fixed position overlay where the
+   SVG arrow is drawn. The arrow persists for ~600ms after drop. */
+.bid-arrow-layer{position:relative;min-height:0}
+.bid-arrow-layer svg{position:absolute;pointer-events:none;z-index:50;overflow:visible}
+.bid-arrow-layer svg path{stroke:var(--accent);stroke-width:2;fill:none;opacity:.85}
+.bid-arrow-layer svg.fading{transition:opacity .4s;opacity:0}
+.bid-arrow-layer .bid-popup{position:absolute;background:var(--accent);color:#fff;font-size:.72rem;font-weight:600;padding:.18rem .5rem;border-radius:4px;pointer-events:none;z-index:51;box-shadow:0 2px 6px rgba(0,0,0,.4);transform:translate(-50%,-130%);white-space:nowrap;animation:bid-pop .9s ease forwards}
+@keyframes bid-pop{0%{transform:translate(-50%,-50%);opacity:0}20%{transform:translate(-50%,-130%);opacity:1}100%{transform:translate(-50%,-260%);opacity:0}}
+
+.step-terminal-actions{margin-top:.5rem;padding-top:1rem;border-top:1px dashed var(--border);display:flex;flex-direction:column;gap:.5rem}
+.step-terminal-h{font-size:.66rem;color:var(--mut);text-transform:uppercase;letter-spacing:.06em}
+.step-terminal-row{display:flex;gap:.6rem;align-items:center}
+.step-terminal-row .ics-export-btn{margin:0;padding:.4rem .8rem;font-size:.8rem}
+.step-terminal-row .sync-tis-btn{margin:0;padding:.4rem 1rem;font-size:.8rem}
+.step-terminal-row .ics-export-btn:disabled{opacity:.45;cursor:not-allowed}
+.step-terminal-row .ics-export-btn:disabled:hover{border-color:var(--border)}
+
+/* NCES detail sheet (replaces the eval tab — opened by 'View NCES detail' from the brief card) */
+.nces-sheet{position:fixed;inset:0;z-index:9000;display:none}
+.nces-sheet.show{display:block}
+.nces-sheet-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.5);animation:fade-in .15s ease}
+.nces-sheet-body{position:absolute;right:0;top:0;bottom:0;width:min(720px,90vw);background:var(--bg);border-left:1px solid var(--border);box-shadow:-8px 0 24px rgba(0,0,0,.4);overflow-y:auto;padding:1.4rem 1.6rem;animation:slide-in .2s ease}
+.nces-sheet-close{position:absolute;top:.6rem;right:.8rem;background:transparent;border:1px solid var(--border);border-radius:4px;color:var(--mut);width:1.8rem;height:1.8rem;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:.95rem}
+.nces-sheet-close:hover{border-color:var(--accent);color:var(--txt)}
+@keyframes fade-in{from{opacity:0}to{opacity:1}}
+@keyframes slide-in{from{transform:translateX(40px);opacity:0}to{transform:translateX(0);opacity:1}}
+
 
 /* picked / my selection -- FIX for overlap bug */
 .picked{display:flex;flex-direction:column}
@@ -493,89 +569,124 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
     <div class="results" id="results"><div class="loading">Loading course catalog…</div></div>
   </div>
 
-  <!-- CENTER: grid / solver / eval -->
+  <!-- CENTER: 4-step workflow stepper + persistent weekly grid -->
   <div class="col" id="center-col">
-    <div class="tabs" id="tabs">
-      <button class="active" data-tab="grid">Weekly Grid</button>
-      <button data-tab="solve">Conflict-free Scheduler</button>
-      <button data-tab="eval">NCES Course Eval</button>
-      <button data-tab="bids">Bid Management</button>
+    <div class="stepper" id="stepper">
+      <button class="step-chip active" data-step="1">
+        <span class="step-num">1</span>
+        <span class="step-label">Pick</span>
+      </button>
+      <span class="step-connector"></span>
+      <button class="step-chip" data-step="2">
+        <span class="step-num">2</span>
+        <span class="step-label">Mark unavailable</span>
+      </button>
+      <span class="step-connector"></span>
+      <button class="step-chip" data-step="3">
+        <span class="step-num">3</span>
+        <span class="step-label">Schedule</span>
+      </button>
+      <span class="step-connector"></span>
+      <button class="step-chip" data-step="4">
+        <span class="step-num">4</span>
+        <span class="step-label">Bid &amp; sync</span>
+      </button>
+      <span class="step-toggle-grid" id="step-toggle-grid" title="Show/hide the weekly grid">
+        <span class="step-toggle-dot" id="step-toggle-dot">●</span>
+        <span class="step-toggle-text">Grid</span>
+      </span>
     </div>
-    <div id="tab-grid" class="tabpane">
-      <div class="grid-wrap">
-        <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:6px">
-          <div class="palette" id="grid-legend" style="flex:1"></div>
-          <button class="ghost" id="grid-solve" style="font-size:.72rem;white-space:nowrap" title="Run conflict-free solver on picked courses">🎯 Solve conflicts</button>
-        </div>
-        <div style="margin-bottom:14px">
-          <div style="font-size:.78rem;color:var(--accent);font-weight:500;margin-bottom:4px">Odd Weeks</div>
-          <table class="grid"><thead><tr><th>Pd</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th></tr></thead>
-            <tbody id="grid-body-odd"></tbody></table>
-        </div>
-        <div>
-          <div style="font-size:.78rem;color:var(--accent);font-weight:500;margin-bottom:4px">Even Weeks</div>
-          <table class="grid"><thead><tr><th>Pd</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th></tr></thead>
-            <tbody id="grid-body-even"></tbody></table>
-        </div>
-      </div>
-    </div>
-    <div id="tab-solve" class="tabpane" style="display:none">
-      <div style="padding:1rem">
-        <p style="color:var(--mut);font-size:.84rem;margin-bottom:.6rem">Generates non-conflicting section combinations from <b>course codes</b> in your picked list. Select different sections of the same course codes to resolve conflicts.</p>
-        <div style="color:var(--mut);font-size:.82rem;margin-bottom:.5rem">
-          <b style="color:var(--txt)">Codes to solve:</b> <span id="solve-codes">none</span>
-        </div>
-        <div class="row" style="margin-bottom:.6rem">
-          <span class="lbl" style="min-width:auto">Blocked time</span>
-          <input type="text" id="blocked-input" placeholder="e.g. 1,3-4 / 3,7-8 (day,periods)" style="flex:1;font-size:.78rem"/>
-        </div>
-        <div id="block-grid-wrap" style="margin-bottom:.6rem">
-          <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.4rem">
-            <span style="font-size:.78rem;color:var(--txt);font-weight:500">Block time visually</span>
-            <span style="font-size:.7rem;color:var(--mut)">click to toggle, drag to expand, right-click for per-week</span>
+
+    <!-- Step content area. Only one .step-pane is visible at a time;
+         .step-persistent-grid is the inline weekly grid that appears
+         in steps 1 and 2. -->
+    <div class="step-content" id="step-content">
+
+      <!-- STEP 1: Pick — left panel does the actual picking. Center
+           shows the weekly grid as feedback so the user sees the
+           impact of each pick. -->
+      <div class="step-pane" data-step-pane="1">
+        <div class="step-pane-body">
+          <p class="step-hint">← Pick courses on the left. The weekly grid updates as you tick boxes.</p>
+          <div class="persistent-grid">
+            <div class="grid-legend-h">
+              <div class="palette grid-legend" id="grid-legend"></div>
+            </div>
+            <div class="grid-weeks">
+              <div class="grid-week-section">
+                <div class="grid-week-h">Odd weeks</div>
+                <table class="grid"><thead><tr><th>Pd</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th></tr></thead>
+                  <tbody id="grid-body-odd"></tbody></table>
+              </div>
+              <div class="grid-week-section">
+                <div class="grid-week-h">Even weeks</div>
+                <table class="grid"><thead><tr><th>Pd</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th></tr></thead>
+                  <tbody id="grid-body-even"></tbody></table>
+              </div>
+            </div>
           </div>
-          <table class="grid"><thead><tr><th>Pd</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th></tr></thead>
-            <tbody id="block-body"></tbody></table>
-        </div>
-        <button class="primary" id="btn-solve">Solve combinations</button>
-        <div id="solve-out" style="margin-top:.6rem"></div>
-      </div>
-    </div>
-    <div id="tab-eval" class="tabpane" style="display:none">
-      <div class="eval-toolbar">
-        <input type="text" id="eval-search" placeholder="Search by code (BIO, MA2, HUM)…" style="flex:1;min-width:120px"/>
-        <select id="eval-sort">
-          <option value="rating">Top rated</option>
-          <option value="reviews">Most reviewed</option>
-          <option value="name">A–Z</option>
-        </select>
-        <div class="eval-pager">
-          <button id="eval-prev" title="Previous page">‹</button>
-          <span id="eval-page-info">— / —</span>
-          <button id="eval-next" title="Next page">›</button>
         </div>
       </div>
-      <div id="eval-out" style="font-size:.8rem"></div>
-    </div>
-    <div id="tab-bids" class="tabpane" style="display:none">
-      <div class="bid-panel" style="padding:1rem">
-        <p style="color:var(--mut);font-size:.84rem;margin-bottom:.6rem">Set bid amounts for your picked sections. Click a bid to edit, drag between boxes to transfer. <b>积分选课</b> — use higher bids for competitive sections.</p>
-        <div class="bp-h">
-          <span class="bp-t" style="font-size:1rem;font-weight:600;color:var(--accent)">🎯 Bids</span>
-          <span class="bp-meta" id="bp-meta" style="font-size:.72rem;color:var(--mut)"></span>
-          <span class="bp-jffs" id="bp-jffs" style="margin-left:auto;font-size:.9rem;color:var(--accent);font-weight:600">— pts</span>
+
+      <!-- STEP 2: Mark unavailable — visual block editor. The weekly
+           grid lives in step 1; the user can step back to it via the
+           stepper header. Step 2's content is just the block editor,
+           so the layout is roomy and focused. -->
+      <div class="step-pane" data-step-pane="2" style="display:none">
+        <div class="step-pane-body">
+          <p class="step-hint">Click a cell to block that slot. Drag to expand. Right-click for per-week (odd/even/all). To see your schedule alongside, click step 1.</p>
+          <div class="block-section block-section-relaxed">
+            <div class="block-section-h">Mark unavailable</div>
+            <table class="grid"><thead><tr><th>Pd</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th></tr></thead>
+              <tbody id="block-body"></tbody></table>
+          </div>
         </div>
-        <div class="bp-over-banner" id="bp-over-banner"></div>
-        <div class="bp-conflict-banner" id="bp-conflict-banner"></div>
-        <div class="bid-bar" id="bid-bar" style="margin:.6rem 0 .7rem"></div>
-        <div class="bid-boxes" id="bid-boxes"></div>
-        <div class="bp-submit" style="margin-top:.7rem">
-          <button class="primary" id="bp-submit" title="Sync all bid values to TIS">Sync to TIS</button>
-        </div>
-        <div class="bp-msg" id="bp-msg" style="margin-top:.5rem"></div>
       </div>
+
+      <!-- STEP 3: Schedule — solver output. The user picks the
+           conflict-free combination here. -->
+      <div class="step-pane" data-step-pane="3" style="display:none">
+        <div class="step-pane-body">
+          <p class="step-hint">Generates non-conflicting section combinations from your picked course codes. The schedule is conflict-free when no picked rwh has a conflict.</p>
+          <div style="color:var(--mut);font-size:.82rem;margin-bottom:.5rem">
+            <b style="color:var(--txt)">Codes to solve:</b> <span id="solve-codes">none</span>
+          </div>
+          <button class="primary" id="btn-solve">Solve combinations</button>
+          <div id="solve-out" style="margin-top:.6rem"></div>
+        </div>
+      </div>
+
+      <!-- STEP 4: Bid & sync — bid management + terminal actions
+           (Export ICS, Sync to TIS). -->
+      <div class="step-pane" data-step-pane="4" style="display:none">
+        <div class="step-pane-body bid-step">
+          <p class="step-hint">Set bid amounts for your picked sections. Click a bid to edit, drag between boxes to transfer. <b>积分选课</b> — use higher bids for competitive sections.</p>
+          <div class="bid-panel bid-panel-relaxed">
+            <div class="bp-h">
+              <span class="bp-t" style="font-size:1rem;font-weight:600;color:var(--accent)">🎯 Bids</span>
+              <span class="bp-meta" id="bp-meta" style="font-size:.72rem;color:var(--mut)"></span>
+              <span class="bp-jffs" id="bp-jffs" style="margin-left:auto;font-size:.9rem;color:var(--accent);font-weight:600">— pts</span>
+            </div>
+            <div class="bp-over-banner" id="bp-over-banner"></div>
+            <div class="bp-conflict-banner" id="bp-conflict-banner"></div>
+            <div class="bid-bar" id="bid-bar" style="margin:.6rem 0 .7rem"></div>
+            <div class="bid-boxes" id="bid-boxes"></div>
+            <div class="bid-arrow-layer" id="bid-arrow-layer"></div>
+            <div class="bp-msg" id="bp-msg" style="margin-top:.5rem;min-height:1em"></div>
+            <div class="step-terminal-actions">
+              <div class="step-terminal-h">Terminal actions</div>
+              <div class="step-terminal-row">
+                <button class="ghost ics-export-btn" id="btn-export-ics" title="Download schedule as .ics (requires conflict-free schedule)">📅 Export ICS</button>
+                <button class="primary sync-tis-btn" id="btn-sync-tis" title="Push your picked sections + bids to TIS">📤 Sync to TIS</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
+
 
   <!-- RIGHT: picked sections / My Selection -->
   <div class="col picked" id="picked-col" style="overflow-y:auto">
@@ -592,5 +703,14 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
 </div>
 
 <script src="/static/tis/tis.js"></script>
+
+<!-- NCES detail sheet (replaces the eval tab; opened by 'View NCES detail' from the brief card) -->
+<div class="nces-sheet" id="nces-sheet" style="display:none">
+  <div class="nces-sheet-backdrop" id="nces-sheet-backdrop"></div>
+  <div class="nces-sheet-body">
+    <button class="nces-sheet-close" id="nces-sheet-close" title="Close">✕</button>
+    <div id="nces-sheet-content"></div>
+  </div>
+</div>
 </body>
 </html>

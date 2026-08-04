@@ -108,6 +108,8 @@ var LANGUAGE_MAP = {'中文': '1', '英文': '2', '双语': '3'}; // language-na
 var CATEGORY_MAP = {};      // category-name → kclbdm code (e.g. 美育类→0907).
                             // Populated from /api/tis/info.category_codes on first load.
 var MODE = 'personal';      // 'personal' (我要选课, default) or 'campus' (全校课表, browse-only)
+var CURRENT_STEP = 1;        // active step in the 4-step workflow (1..4)
+var GRID_VISIBLE = true;     // whether the weekly grid is shown (toggle in stepper header)
 
 var PERIODS = 12;
 var BLOCKED = {};          // { 'day:period' -> true }   day=1-7, period=1-12
@@ -1678,6 +1680,7 @@ function addPicked(course) {
   renderBidPanel();
   updateBidStat();
   updateSolveCodes();
+  updateExportIcsButton();
   savePicks();
 }
 
@@ -1695,6 +1698,7 @@ function removePicked(rwh) {
   renderBidPanel();
   updateBidStat();
   updateSolveCodes();
+  updateExportIcsButton();
   savePicks();
 }
 
@@ -2796,21 +2800,120 @@ function applySolution(sol) {
     '</div>';
 }
 
-function switchTab(name) {
-  var tabs = document.querySelectorAll('.tabs button');
-  for (var i = 0; i < tabs.length; i++) {
-    tabs[i].classList.toggle('active', tabs[i].dataset.tab === name);
+function switchStep(n) {
+  if (typeof n !== 'number' || n < 1 || n > 4) n = 1;
+  CURRENT_STEP = n;
+
+  // Update step chip styles
+  var chips = document.querySelectorAll('.step-chip');
+  for (var i = 0; i < chips.length; i++) {
+    var stepNum = parseInt(chips[i].dataset.step, 10);
+    chips[i].classList.toggle('active', stepNum === n);
+    chips[i].classList.toggle('done', stepNum < n);
   }
-  document.getElementById('tab-grid').style.display = name === 'grid' ? '' : 'none';
-  document.getElementById('tab-solve').style.display = name === 'solve' ? '' : 'none';
-  document.getElementById('tab-eval').style.display = name === 'eval' ? '' : 'none';
-  document.getElementById('tab-bids').style.display = name === 'bids' ? '' : 'none';
-  if (name === 'bids') renderBidPanel();
-  // Lazy-load the NCES browse on first eval-tab open
-  if (name === 'eval' && !EVAL_OUT.innerHTML.trim()) {
-    renderEvalBrowse();
+
+  // Show the matching pane
+  var panes = document.querySelectorAll('.step-pane');
+  for (var j = 0; j < panes.length; j++) {
+    var paneStep = parseInt(panes[j].dataset.stepPane, 10);
+    panes[j].style.display = paneStep === n ? '' : 'none';
+  }
+
+  // Refresh per-step data
+  if (n === 3) updateSolveCodes();
+  if (n === 4) { renderBidPanel(); updateExportIcsButton(); }
+
+  // Grid visibility: persistent in steps 1+2, hidden in 3+4 unless
+  // the user toggled it on.
+  GRID_VISIBLE = (n === 1 || n === 2);
+  var gridToggle = document.getElementById('step-toggle-grid');
+  if (gridToggle) {
+    gridToggle.classList.toggle('off', !GRID_VISIBLE);
+    var dot = document.getElementById('step-toggle-dot');
+    if (dot) dot.textContent = GRID_VISIBLE ? '●' : '○';
+  }
+  applyGridVisibility();
+}
+
+// applyGridVisibility: show or hide the persistent grid in the current
+// step pane. In steps 1+2, GRID_VISIBLE is true (default). In 3+4, the
+// user controls via the "Grid" toggle in the stepper header.
+function applyGridVisibility() {
+  var stepContent = document.getElementById('step-content');
+  if (!stepContent) return;
+  // The persistent grid only exists in steps 1 and 2 (rendered in HTML).
+  // In steps 3+4, this is a no-op since the pane doesn't contain a grid.
+  var grid = stepContent.querySelector('.persistent-grid');
+  if (grid) grid.style.display = GRID_VISIBLE ? '' : 'none';
+}
+
+// updateExportIcsButton: enable only when the schedule is conflict-free
+// AND there is at least one pick. Sync to TIS is always enabled (with
+// confirm dialog). The conflict check is the only real precondition for
+// Export ICS — a conflicted schedule produces an invalid .ics file.
+function updateExportIcsButton() {
+  var btn = document.getElementById('btn-export-ics');
+  if (!btn) return;
+  var has = Object.keys(PICKED).length > 0;
+  var noConflict = Object.keys(PICKED_CONFLICTS).length === 0;
+  var ok = has && noConflict;
+  btn.disabled = !ok;
+  if (!ok) {
+    btn.title = has
+      ? 'Resolve schedule conflicts first — a conflicted schedule produces an invalid .ics file.'
+      : 'Pick at least one section to export.';
+  } else {
+    btn.title = 'Download schedule as .ics';
   }
 }
+
+// Backward-compat: map old tab names to step numbers.
+function switchTab(name) {
+  if (name === 'grid') return switchStep(1);
+  if (name === 'solve') return switchStep(3);
+  if (name === 'bids') return switchStep(4);
+  if (name === 'eval') {
+    openNcesSheet();
+    return;
+  }
+  switchStep(1);
+}
+
+// ── NCES detail sheet ──────────────────────────────────────────────────
+// The old eval tab is gone — NCES is now a hover-brief on each card.
+// "View NCES detail" (from the brief) opens this right-side sheet.
+function openNcesSheet() {
+  // If we have a focused card (ACTIVE_RWH), fetch + render it; otherwise
+  // show the browse view as a fallback.
+  var sheet = document.getElementById('nces-sheet');
+  var content = document.getElementById('nces-sheet-content');
+  if (!sheet || !content) return;
+  content.innerHTML = '<div class="ncn" style="padding:2rem;text-align:center">Loading NCES…</div>';
+  sheet.classList.add('show');
+  if (ACTIVE_RWH) {
+    var c = PICKED[ACTIVE_RWH] || (CAT || []).find(function(x) { return x.rwh === ACTIVE_RWH; });
+    if (c) { fetchEval(c.code, c.teachers && c.teachers[0]); return; }
+  }
+  // Fallback: show browse
+  content.innerHTML = '<div class="eval-toolbar">' +
+    '<input type="text" id="sheet-eval-search" placeholder="Search by code…" style="flex:1;min-width:120px"/>' +
+    '<select id="sheet-eval-sort"><option value="rating">Top rated</option><option value="reviews">Most reviewed</option><option value="name">A–Z</option></select>' +
+    '</div><div id="sheet-eval-out"></div>';
+  // Re-use the existing browse renderer, but in the sheet container
+  var oldEvalOut = EVAL_OUT;
+  EVAL_OUT = document.getElementById('sheet-eval-out');
+  renderEvalBrowse();
+  // Restore on close
+  sheet._restoreEvalOut = function() { EVAL_OUT = oldEvalOut; };
+}
+
+function closeNcesSheet() {
+  var sheet = document.getElementById('nces-sheet');
+  if (!sheet) return;
+  sheet.classList.remove('show');
+  if (sheet._restoreEvalOut) { sheet._restoreEvalOut(); sheet._restoreEvalOut = null; }
+}
+
 
 // ── Event binding ─────────────────────────────────────────────────────────
 
@@ -2912,6 +3015,7 @@ function renderBidPanel() {
     }
   }
   if (BID_PANEL) BID_PANEL.classList.toggle('has-conflicts', hasConflict);
+  updateExportIcsButton();
 
   BID_STAT.style.display = 'block';
   var jffs = ROUND_INFO.jffs;
@@ -3297,7 +3401,11 @@ function showTransferOverlay(srcRwh, dstRwh) {
 }
 
 // ── Submit to TIS ───────────────────────────────────────────────────────
-BID_SUBMIT.addEventListener('click', function() {
+// BID_SUBMIT is the old bp-submit button (no longer in HTML — the new
+// step-④ terminal action row has btn-sync-tis instead, wired in
+// DOMContentLoaded). Guard the legacy handler in case the element comes
+// back via a different template path.
+if (BID_SUBMIT) BID_SUBMIT.addEventListener('click', function() {
   submitBids();
 });
 
@@ -3409,13 +3517,45 @@ loadInfo = function() {
 
 document.addEventListener('DOMContentLoaded', function() {
 
-  // Tab buttons
-  var tabBtns = document.querySelectorAll('.tabs button');
-  for (var i = 0; i < tabBtns.length; i++) {
-    tabBtns[i].addEventListener('click', function() {
-      switchTab(this.dataset.tab);
+  // ── Stepper wiring (4-step workflow) ─────────────────────────────
+  // The step chips are the new top-of-center tabs. Clicking a chip
+  // jumps to that step. Current step is highlighted in accent; completed
+  // steps turn OK green. The "Grid" toggle shows/hides the weekly grid
+  // in steps 3-4 (it's persistent by default in 1-2).
+  var stepChips = document.querySelectorAll('.step-chip');
+  for (var sci = 0; sci < stepChips.length; sci++) {
+    stepChips[sci].addEventListener('click', function() {
+      switchStep(parseInt(this.dataset.step, 10));
     });
   }
+  var gridToggle = document.getElementById('step-toggle-grid');
+  if (gridToggle) {
+    gridToggle.addEventListener('click', function() {
+      GRID_VISIBLE = !GRID_VISIBLE;
+      gridToggle.classList.toggle('off', !GRID_VISIBLE);
+      var dot = document.getElementById('step-toggle-dot');
+      if (dot) dot.textContent = GRID_VISIBLE ? '●' : '○';
+      applyGridVisibility();
+    });
+  }
+
+  // ── Step 4 terminal action wiring (Export ICS, Sync to TIS) ────────
+  var btnExportIcs = document.getElementById('btn-export-ics');
+  if (btnExportIcs) btnExportIcs.onclick = exportICS;
+  var btnSyncTis = document.getElementById('btn-sync-tis');
+  if (btnSyncTis) btnSyncTis.onclick = syncToTIS;
+
+  // ── NCES detail sheet wiring (replaces the eval tab) ──────────────
+  var ncesSheet = document.getElementById('nces-sheet');
+  var ncesSheetBackdrop = document.getElementById('nces-sheet-backdrop');
+  var ncesSheetClose = document.getElementById('nces-sheet-close');
+  if (ncesSheetClose) ncesSheetClose.addEventListener('click', closeNcesSheet);
+  if (ncesSheetBackdrop) ncesSheetBackdrop.addEventListener('click', closeNcesSheet);
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && ncesSheet && ncesSheet.classList.contains('show')) {
+      closeNcesSheet();
+    }
+  });
 
   // Load info (this also triggers auto-load of all courses)
   document.getElementById('btn-info').addEventListener('click', loadInfo);
@@ -3600,8 +3740,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Solve
   document.getElementById('btn-solve').addEventListener('click', solve);
-  // Grid solve button — switches to solver tab and runs it
-  document.getElementById('grid-solve').addEventListener('click', function() {
+  // grid-solve button was removed when the tab structure became the
+  // stepper. The "🎯 Solve conflicts" button in the step-1 grid is now
+  // just the Solve step itself; clicking the step-3 chip navigates
+  // there. Guard in case a future template brings grid-solve back.
+  var gridSolveBtn = document.getElementById('grid-solve');
+  if (gridSolveBtn) gridSolveBtn.addEventListener('click', function() {
     switchTab('solve');
     setTimeout(solve, 100);
   });
@@ -3627,6 +3771,9 @@ document.addEventListener('DOMContentLoaded', function() {
   // functions with the toggle handler means the two paths can't drift.
   applyModeVisibility();
   loadForMode();
+  // Initialize the stepper. Step 1 is the default; switchStep sets the
+  // chip active/done classes and shows the right pane.
+  switchStep(1);
 
   // Restore any saved picks from localStorage. Done before initPickedActions
   // so the buttons exist when the user first sees the page, and before
@@ -3723,6 +3870,7 @@ function applyPicksFromData(data) {
   renderBidPanel();
   updateBidStat();
   updateSolveCodes();
+  updateExportIcsButton();
 }
 
 function savePicksToFile() {
