@@ -661,8 +661,56 @@ function filterResultsClientSide() {
 
 function renderResults(courses) {
   RESULTS.innerHTML = '';
+  // Sticky results header — shows "Select all" + count, plus a small
+  // "N / M picked" indicator so the user knows what's selected without
+  // scrolling to the right panel.
+  var header = document.getElementById('results-header');
+  var countEl = document.getElementById('results-count');
+  if (header) {
+    header.style.display = courses.length ? 'flex' : 'none';
+  }
+  if (countEl) {
+    var pickedHere = 0;
+    for (var pi = 0; pi < courses.length; pi++) {
+      if (PICKED[courses[pi].rwh]) pickedHere++;
+    }
+    countEl.textContent = pickedHere + ' / ' + courses.length + ' picked';
+  }
   for (var i = 0; i < courses.length; i++) {
     RESULTS.appendChild(renderCard(courses[i]));
+  }
+  // Wire up the "Select all" header checkbox. Wire-once, since the
+  // header element survives re-renders of the results list.
+  var sel = document.getElementById('select-all-check');
+  if (sel && !sel.dataset.wired) {
+    sel.dataset.wired = '1';
+    sel.addEventListener('change', function() {
+      // Iterate the current CAT (already-filtered results). Tick or untick
+      // each visible course in place. Per-card checkbox state updates via
+      // renderResults at the end.
+      var want = sel.checked;
+      for (var i = 0; i < CAT.length; i++) {
+        var c = CAT[i];
+        var isPicked = !!PICKED[c.rwh];
+        if (want && !isPicked) addPicked(c);
+        else if (!want && isPicked) removePicked(c.rwh);
+      }
+    });
+  }
+  // Re-sync the Select-all checkbox to reflect current PICKED state.
+  // Three states: all checked / some checked (indeterminate) / none checked.
+  if (sel && courses.length) {
+    var allPicked = true;
+    var somePicked = false;
+    for (var ri = 0; ri < courses.length; ri++) {
+      if (PICKED[courses[ri].rwh]) somePicked = true;
+      else allPicked = false;
+    }
+    sel.checked = allPicked;
+    sel.indeterminate = !allPicked && somePicked;
+  } else if (sel) {
+    sel.checked = false;
+    sel.indeterminate = false;
   }
 }
 
@@ -684,10 +732,16 @@ function renderCard(c) {
 
   card.innerHTML =
     '<div class="top">' +
+      // Per-card checkbox — the user ticks the boxes they want, then hits
+      // "Select all" in the results header to flip every visible card.
+      // Larger hit-target than the old "+ Pick" ghost button.
+      '<label class="pick-check-label" title="Add/remove from your selection">' +
+        '<input type="checkbox" class="pick-check" data-rwh="' + escapeHtml(c.rwh) + '"' +
+        (PICKED[c.rwh] ? ' checked' : '') + ' />' +
+      '</label>' +
       '<span class="code">' + escapeHtml(c.code) + '</span>' +
       '<span class="nm">' + escapeHtml(c.name || c.name_en || '') + '</span>' +
       (c.class_group ? '<span class="grp">' + escapeHtml(c.class_group) + '</span>' : '') +
-      (PICKED[c.rwh] ? '<span style="color:var(--accent);font-size:.7rem;margin-left:auto;cursor:pointer" class="unpick-badge" data-rwh="' + c.rwh + '">✕ picked</span>' : '') +
     '</div>' +
     (c.section_name && c.section_name !== c.name
       ? '<div class="sect">' + escapeHtml(c.section_name) + (c.section_name_en ? ' <span class="sect-en">' + escapeHtml(c.section_name_en) + '</span>' : '') + '</div>'
@@ -698,20 +752,12 @@ function renderCard(c) {
       (c.capacity ? ' · <b>Capacity</b> ' + c.capacity : '') +
     '</div>' +
     (schedHTML ? '<div class="sched"><span class="sched-lbl">Schedule</span>' + schedHTML + '</div>' : '') +
-    '<div class="actions">' +
-      (PICKED[c.rwh]
-        ? ''
-        : '<button class="ghost pick-btn" data-action="add" style="color:var(--accent);font-size:.7rem;padding:.1rem .35rem">+ Pick</button>') +
-    '</div>' +
     (c.code ? '<div class="nces-link"><a href="https://ncesnext.com/search?q=' + encodeURIComponent(c.code) + '" target="_blank" rel="noopener">Compare in NCES ↗</a></div>' : '');
 
   card.addEventListener('click', function(e) {
-    if (e.target.closest('.pick-btn')) return;
-    if (e.target.closest('a')) return;  // regular anchor in meta (NCES link)
-    if (e.target.closest('.unpick-badge')) {
-      removePicked(c.rwh);
-      return;
-    }
+    if (e.target.closest('a')) return;  // NCES link
+    if (e.target.closest('.pick-check')) return;  // checkbox handles itself
+    // Bare-card click: if picked, unpick. If not, select for NCES eval.
     if (PICKED[c.rwh]) {
       removePicked(c.rwh);
       return;
@@ -719,11 +765,11 @@ function renderCard(c) {
     selectCourse(c.rwh);
   });
 
-  var pickBtn = card.querySelector('.pick-btn');
-  if (pickBtn) {
-    pickBtn.addEventListener('click', function(e) {
+  var check = card.querySelector('.pick-check');
+  if (check) {
+    check.addEventListener('change', function(e) {
       e.stopPropagation();
-      if (pickBtn.dataset.action === 'add') {
+      if (check.checked) {
         addPicked(c);
       } else {
         removePicked(c.rwh);
@@ -1106,9 +1152,17 @@ function renderEvalBrowse() {
     var html = '<div class="eval-list">';
     if (d.error) {
       // Upstream NCES API is down (e.g. consolidated /api/v1/courses → 404).
-      // Surface the error instead of pretending there are no courses.
+      // Surface a plain-English message + the per-card "Compare in NCES"
+      // fallback so the user knows what's wrong and what still works.
+      // The raw backend error string is kept as a tooltip for debugging.
       html += '<div class="empty" style="padding:1.5rem;text-align:center;color:var(--warn)">' +
-        escapeHtml(d.error) + '</div>';
+        '<div style="font-size:.9rem;margin-bottom:.4rem">⚠ NCES browse is temporarily unavailable.</div>' +
+        '<div style="font-size:.74rem;color:var(--mut)">The community eval database is not responding right now. ' +
+        'Course search and picking still work — to read reviews for a specific course, ' +
+        'click the "Compare in NCES ↗" link on any course card, or open the course detail ' +
+        'in a new tab.</div>' +
+        '<div style="font-size:.65rem;color:var(--mut);margin-top:.5rem" title="' + escapeHtml(d.error) + '">Backend: ' + escapeHtml(d.error) + '</div>' +
+        '</div>';
     } else if (!items.length) {
       html += '<div class="empty" style="padding:1.5rem;text-align:center">No courses found.</div>';
     } else {
@@ -1622,6 +1676,9 @@ function addPicked(course) {
   renderPicked();
   renderGrid();
   renderBidPanel();
+  updateBidStat();
+  updateSolveCodes();
+  savePicks();
 }
 
 function removePicked(rwh) {
@@ -1636,66 +1693,9 @@ function removePicked(rwh) {
   renderPicked();
   renderGrid();
   renderBidPanel();
-}
-
-function exportICal() {
-  var keys = Object.keys(PICKED);
-  if (!keys.length) {
-    flash('No sections picked — nothing to export.', 'warn');
-    return;
-  }
-  var picks = [];
-  for (var i = 0; i < keys.length; i++) {
-    var c = PICKED[keys[i]];
-    var slots = parseSlotsForIcal(c);
-    for (var j = 0; j < slots.length; j++) {
-      picks.push(slots[j]);
-    }
-  }
-  if (!picks.length) {
-    flash('Picked sections have no parseable schedule — cannot export.', 'warn');
-    return;
-  }
-  var sem = SEMESTER_INFO && SEMESTER_INFO.semester;
-  var xn = sem ? sem.xn : '';
-  var xq = sem ? sem.xq : '';
-  if (!xn || !xq) {
-    flash('No semester info loaded — cannot determine xn/xq.', 'warn');
-    return;
-  }
-  var url = '/api/tis/ical?xn=' + encodeURIComponent(xn) +
-            '&xq=' + encodeURIComponent(xq) +
-            '&picks=' + encodeURIComponent(JSON.stringify(picks));
-  window.location = url;
-}
-
-// Parse a course's slot data into the {weeks, weekday, periods, ...} shape
-// the backend's /api/tis/ical route expects. Each parsed slot becomes one
-// pick. Falls back to [] if the course has no schedule info.
-function parseSlotsForIcal(c) {
-  var out = [];
-  var slots = c.slots || [];
-  for (var i = 0; i < slots.length; i++) {
-    var s = slots[i];
-    if (!s || !s.weeks || !s.weeks.length) continue;
-    var weekdayMap = {'Mon': 0, 'Tue': 1, 'Wed': 2, 'Thu': 3,
-                      'Fri': 4, 'Sat': 5, 'Sun': 6};
-    var wd = s.weekday_int != null ? s.weekday_int
-            : (s.weekday != null && weekdayMap[s.weekday] != null
-               ? weekdayMap[s.weekday] : null);
-    if (wd == null) continue;
-    var periods = s.periods || (s.period_start ? [s.period_start] : []);
-    if (!periods.length) continue;
-    out.push({
-      weeks: s.weeks,
-      weekday: wd,
-      periods: periods,
-      title: (c.name || c.code || 'Class') + (c.class_group ? ' (' + c.class_group + ')' : ''),
-      teacher: (c.teachers || []).join(', '),
-      room: (c.rooms || []).join(', '),
-    });
-  }
-  return out;
+  updateBidStat();
+  updateSolveCodes();
+  savePicks();
 }
 
 function flash(msg, kind) {
@@ -1716,18 +1716,9 @@ function renderPicked() {
     totalCredits += parseFloat(PICKED[keys[i]].credits) || 0;
   }
   PICK_STAT.textContent = keys.length + ' sections · ' + totalCredits.toFixed(1) + ' Credits';
-  // ICAL export button. Calls /api/tis/ical with the picked slots; the
-  // backend resolves each pick's actual meeting dates using the SUSTech
-  // academic calendar (online source) and returns a text/calendar file.
-  if (!window._icalBtn) {
-    var btn = document.createElement('button');
-    btn.className = 'ical-export-btn';
-    btn.textContent = '📅 Export iCal';
-    btn.title = 'Download your picked schedule as an .ics file (Google Calendar / Apple Calendar / Outlook).';
-    btn.onclick = exportICal;
-    PICK_STAT.parentNode.insertBefore(btn, PICK_STAT.nextSibling);
-    window._icalBtn = btn;
-  }
+  // The action buttons (Export ICS, Save, Load, Sync to TIS, Drop all) are
+  // built once by initPickedActions() in DOMContentLoaded. No per-render
+  // button injection here.
 
   if (!keys.length) {
     PICK_LIST.innerHTML = '<div class="loading">No sections picked.</div>';
@@ -2157,6 +2148,10 @@ function renderGrid() {
   if (!keys.length) {
     GRID_ODD.innerHTML = '<tr><td colspan="8" class="empty" style="padding:2rem 0">No picked sections.</td></tr>';
     GRID_EVEN.innerHTML = '<tr><td colspan="8" class="empty" style="padding:2rem 0">No picked sections.</td></tr>';
+    // Clear the color legend too — without this, the legend swatches from
+    // a previous (now-empty) picked set stay visible, making the user
+    // think the courses are still picked.
+    if (GRID_LEGEND) GRID_LEGEND.innerHTML = '';
     return;
   }
 
@@ -3633,7 +3628,308 @@ document.addEventListener('DOMContentLoaded', function() {
   applyModeVisibility();
   loadForMode();
 
+  // Restore any saved picks from localStorage. Done before initPickedActions
+  // so the buttons exist when the user first sees the page, and before
+  // the catalog loads so the saved picks are visible in the catalog cards
+  // the moment they appear.
+  var saved = loadPicksFromStorage();
+  if (saved) applyPicksFromData(saved);
+
+  // ── Picked-panel action buttons (must exist in DOM before any user
+  //     can interact with them, even on a fresh page with no picks). ──
+  initPickedActions();
+
   // ── END DOMContentReady ──────────────────────────────────────────
 });
+// ── END outer IIFE ────────────────────────────────────────────────
+
+// ── Picked-panel actions (safe row + real-actions row) ───────────────────
+// These are built once into #picked-col on DOMContentLoaded so the buttons
+// are always reachable, even on a fresh page with no picks. The buttons
+// are inert (or trigger their own confirm) until the user has something
+// to act on.
+//
+// Layout (matches the CSS in tis.html, see commit aae89b4):
+//   📅 Export ICS · 💾 Save · 📂 Load            ← safe row, no TIS contact
+//   ── "Real actions — talks to TIS" ──          ← labeled divider
+//   📤 Sync to TIS · 🗑 Drop all enrolled        ← real actions, confirm()
+
+function initPickedActions() {
+  var pickedCol = document.getElementById('picked-col');
+  if (!pickedCol) return;
+  // Find the pick-list and inject the action rows right above the
+  // "Enrollment status" details element.
+  var pickList = document.getElementById('pick-list');
+  if (!pickList) return;
+
+  // Avoid double-init
+  if (document.getElementById('picked-safe-actions')) return;
+
+  var safeRow = document.createElement('div');
+  safeRow.id = 'picked-safe-actions';
+  safeRow.className = 'picked-safe-actions';
+  safeRow.innerHTML =
+    '<button class="ics-export-btn" id="btn-export-ics" title="Download schedule as .ics">📅 Export ICS</button>' +
+    '<button class="save-file-btn" id="btn-save-picks" title="Save your selection to a JSON file">💾 Save</button>' +
+    '<button class="load-file-btn" id="btn-load-picks" title="Load a saved selection from JSON">📂 Load</button>';
+
+  var divider = document.createElement('div');
+  divider.className = 'picked-divider';
+  divider.innerHTML =
+    '<span>Real actions — talks to TIS</span>' +
+    '<button class="sync-tis-btn" id="btn-sync-tis" title="Push your picked sections to TIS">📤 Sync to TIS</button>' +
+    '<button class="drop-all-tis-btn" id="btn-drop-all" title="Drop every currently-enrolled section">🗑 Drop all enrolled</button>';
+
+  pickList.parentNode.insertBefore(safeRow, pickList);
+  pickList.parentNode.insertBefore(divider, pickList);
+
+  document.getElementById('btn-export-ics').onclick = exportICS;
+  document.getElementById('btn-save-picks').onclick = savePicksToFile;
+  document.getElementById('btn-load-picks').onclick = loadPicksFromFile;
+  document.getElementById('btn-sync-tis').onclick = syncToTIS;
+  document.getElementById('btn-drop-all').onclick = dropAllEnrolled;
+}
+
+// ── localStorage save/load ───────────────────────────────────────────────
+// Picked is auto-saved on every mutator (see cascade contract in the file
+// header). Restored on page load. The shape is versioned so future format
+// changes can detect old data and discard rather than crash.
+var PICKS_STORAGE_KEY = 'tis-picks-v1';
+
+function savePicks() {
+  try {
+    var picksArr = [];
+    var keys = Object.keys(PICKED);
+    for (var i = 0; i < keys.length; i++) picksArr.push(PICKED[keys[i]]);
+    localStorage.setItem(PICKS_STORAGE_KEY, JSON.stringify({
+      version: 1,
+      picks: picksArr,
+      savedAt: new Date().toISOString(),
+    }));
+  } catch (e) { /* localStorage may be full or disabled — non-fatal */ }
+}
+
+function loadPicksFromStorage() {
+  try {
+    var raw = localStorage.getItem(PICKS_STORAGE_KEY);
+    if (!raw) return null;
+    var data = JSON.parse(raw);
+    if (!data || data.version !== 1) return null;
+    return data;
+  } catch (e) { return null; }
+}
+
+function applyPicksFromData(data) {
+  if (!data || !data.picks) return;
+  for (var i = 0; i < data.picks.length; i++) {
+    var c = data.picks[i];
+    if (c && c.rwh) PICKED[c.rwh] = c;
+  }
+  // Same cascade as the mutators — restoring is a mutation too.
+  renderResults(CAT);
+  renderPicked();
+  renderGrid();
+  renderBidPanel();
+  updateBidStat();
+  updateSolveCodes();
+}
+
+function savePicksToFile() {
+  var keys = Object.keys(PICKED);
+  if (!keys.length) { flash('No sections picked — nothing to save.', 'warn'); return; }
+  var picksArr = [];
+  for (var i = 0; i < keys.length; i++) picksArr.push(PICKED[keys[i]]);
+  var blob = new Blob([JSON.stringify({
+    version: 1, picks: picksArr, savedAt: new Date().toISOString(),
+  }, null, 2)], { type: 'application/json' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  var ts = new Date().toISOString().replace(/[:.]/g, '-').replace(/T/, '_').slice(0, 19);
+  a.href = url; a.download = 'tis-picks-' + ts + '.json';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  flash('Saved ' + keys.length + ' pick(s) to file.', 'ok');
+}
+
+function loadPicksFromFile() {
+  var input = document.createElement('input');
+  input.type = 'file'; input.accept = 'application/json,.json';
+  input.onchange = function() {
+    var file = input.files && input.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function() {
+      try {
+        var data = JSON.parse(reader.result);
+        if (!data || data.version !== 1 || !data.picks) {
+          flash('File is not a valid picks file (missing version or picks).', 'err');
+          return;
+        }
+        applyPicksFromData(data);
+        flash('Loaded ' + data.picks.length + ' pick(s) from file.', 'ok');
+      } catch (e) { flash('Could not parse file: ' + e.message, 'err'); }
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+}
+
+// ── Real actions (talk to TIS) ────────────────────────────────────────────
+// Both use confirm() with a verbose preview. No fake-safety disable — the
+// user must read the preview and click OK to commit a real action. The
+// server is the final gate, so any server-side rejection (auth, course
+// closed, conflict, etc.) is surfaced verbatim by the .catch handlers.
+
+function syncToTIS() {
+  var keys = Object.keys(PICKED);
+  if (!keys.length) { flash('No sections picked — nothing to sync.', 'warn'); return; }
+  // Group by endpoint. Enrolled picks go to updXkxsByyx; cart picks go
+  // to upd_xkxsBygwc. The previous code hardcoded 'cart' for everything,
+  // so bids on already-enrolled sections silently failed.
+  var picksByWhere = { cart: {}, enrolled: {} };
+  for (var k in PICKED_BIDS) {
+    if (PICKED_BIDS.hasOwnProperty(k) && PICKED[k]) {
+      var w = ENROLLED_RWH.has(k) ? 'enrolled' : 'cart';
+      picksByWhere[w][k] = PICKED_BIDS[k];
+    }
+  }
+  var totalPicks = Object.keys(picksByWhere.cart).length + Object.keys(picksByWhere.enrolled).length;
+  if (!totalPicks) { flash('No bids set on any picked section.', 'warn'); return; }
+
+  // Verbose confirm: list every rwh + bid value the user is about to commit.
+  var preview = '';
+  var allKeys = Object.keys(picksByWhere.cart).concat(Object.keys(picksByWhere.enrolled));
+  for (var i = 0; i < allKeys.length; i++) {
+    var rwh = allKeys[i];
+    var c = PICKED[rwh];
+    var bid = PICKED_BIDS[rwh] || 0;
+    preview += '\n  · ' + (c.code || rwh) + ' ' + (c.class_group || '') + ' — ' + bid + ' pts';
+  }
+  if (!confirm('Sync ' + totalPicks + ' bid(s) to TIS? This is a real action — it will overwrite any bids TIS already has.\n\n' + preview)) return;
+
+  function _sendBatch(where, picks) {
+    return postJSON('/api/tis/bids' + sem(), {
+      picks: picks, xkfsdm: ROUND_INFO.xkfsdm || '',
+      where: where, jffs_limit: ROUND_INFO.jffs || null, dry_run: false,
+    });
+  }
+  var batches = [];
+  if (Object.keys(picksByWhere.cart).length) batches.push(_sendBatch('cart', picksByWhere.cart));
+  if (Object.keys(picksByWhere.enrolled).length) batches.push(_sendBatch('enrolled', picksByWhere.enrolled));
+
+  Promise.all(batches).then(function(results) {
+    var merged = { results: [], sum: 0, over_limit: false };
+    for (var i = 0; i < results.length; i++) {
+      var r = results[i] || {};
+      if (r.over_limit) merged.over_limit = true;
+      merged.sum += r.sum || 0;
+      merged.results = merged.results.concat(r.results || []);
+    }
+    if (merged.over_limit) {
+      flash('Over budget: ' + merged.sum + ' > ' + ROUND_INFO.jffs + ' pts. Adjust bids first.', 'err');
+      return;
+    }
+    var okCount = 0; var failed = [];
+    for (var fi = 0; fi < merged.results.length; fi++) {
+      if (merged.results[fi].ok) okCount++;
+      else failed.push(merged.results[fi]);
+    }
+    var failedSummary = '';
+    if (failed.length) {
+      var parts = [];
+      for (var fj = 0; fj < failed.length; fj++) {
+        var f = failed[fj];
+        var code = (PICKED[f.rwh] && PICKED[f.rwh].code) || f.rwh;
+        parts.push(code + ' (' + (f.message || 'no message') + ')');
+      }
+      failedSummary = ' · ' + failed.length + ' failed: ' + parts.join('; ');
+    }
+    flash('Synced: ' + okCount + '/' + merged.results.length + ' bid(s)' +
+      (merged.sum ? ' · total ' + merged.sum + ' pts' : '') + failedSummary,
+      okCount === merged.results.length ? 'ok' : 'err');
+  })['catch'](function(e) { flash('Network error: ' + e.message, 'err'); });
+}
+
+function dropAllEnrolled() {
+  if (!ENROLLED_RWH.size) { flash('No enrolled sections to drop.', 'warn'); return; }
+  // Verbose preview — every rwh the user is about to drop.
+  var preview = '';
+  ENROLLED_RWH.forEach(function(rwh) {
+    var c = PICKED[rwh];
+    preview += '\n  · ' + (c ? (c.code || rwh) + ' ' + (c.class_group || '') : rwh);
+  });
+  if (!confirm('Drop all ' + ENROLLED_RWH.size + ' enrolled section(s)? This is a real action — you can re-add them but the operation is not reversible on the server side.\n\n' + preview)) return;
+
+  // Sequential POSTs so the user can see each result in order. TIS rate-
+  // limits; going one at a time avoids bursting.
+  var rwhs = [];
+  ENROLLED_RWH.forEach(function(rwh) { rwhs.push(rwh); });
+  var okCount = 0; var failed = [];
+  function _next(i) {
+    if (i >= rwhs.length) {
+      flash('Dropped: ' + okCount + '/' + rwhs.length +
+        (failed.length ? ' · ' + failed.length + ' failed' : ''),
+        okCount === rwhs.length ? 'ok' : 'err');
+      loadEnrolled();  // refresh the enrolled set so the next attempt is clean
+      return;
+    }
+    postJSON('/api/tis/drop' + sem(), { rwh: rwhs[i], dry_run: false }).then(function(r) {
+      if (r && r.ok) okCount++;
+      else failed.push({ rwh: rwhs[i], message: (r && r.message) || 'unknown' });
+      _next(i + 1);
+    })['catch'](function(e) {
+      failed.push({ rwh: rwhs[i], message: e.message });
+      _next(i + 1);
+    });
+  }
+  _next(0);
+}
+
+// ── ICS export (was exportICal / parseSlotsForIcal — renamed for consistency) ──
+function exportICS() {
+  var keys = Object.keys(PICKED);
+  if (!keys.length) { flash('No sections picked — nothing to export.', 'warn'); return; }
+  var picks = [];
+  for (var i = 0; i < keys.length; i++) {
+    var c = PICKED[keys[i]];
+    var slots = parseSlotsForICS(c);
+    for (var j = 0; j < slots.length; j++) picks.push(slots[j]);
+  }
+  if (!picks.length) { flash('Picked sections have no parseable schedule — cannot export.', 'warn'); return; }
+  var semInfo = SEMESTER_INFO && SEMESTER_INFO.semester;
+  var xn = semInfo ? semInfo.xn : '';
+  var xq = semInfo ? semInfo.xq : '';
+  if (!xn || !xq) { flash('No semester info loaded — cannot determine xn/xq.', 'warn'); return; }
+  var url = '/api/tis/ical?xn=' + encodeURIComponent(xn) +
+            '&xq=' + encodeURIComponent(xq) +
+            '&picks=' + encodeURIComponent(JSON.stringify(picks));
+  window.location = url;
+}
+
+function parseSlotsForICS(c) {
+  var out = [];
+  var slots = c.slots || [];
+  for (var i = 0; i < slots.length; i++) {
+    var s = slots[i];
+    if (!s || !s.weeks || !s.weeks.length) continue;
+    var weekdayMap = {'Mon': 0, 'Tue': 1, 'Wed': 2, 'Thu': 3,
+                      'Fri': 4, 'Sat': 5, 'Sun': 6};
+    var wd = s.weekday_int != null ? s.weekday_int
+            : (s.weekday != null && weekdayMap[s.weekday] != null
+               ? weekdayMap[s.weekday] : null);
+    if (wd == null) continue;
+    var periods = s.periods || (s.period_start ? [s.period_start] : []);
+    if (!periods.length) continue;
+    out.push({
+      weeks: s.weeks,
+      weekday: wd,
+      periods: periods,
+      title: (c.name || c.code || 'Class') + (c.class_group ? ' (' + c.class_group + ')' : ''),
+      teacher: (c.teachers || []).join(', '),
+      room: (c.rooms || []).join(', '),
+    });
+  }
+  return out;
+}
 // ── END outer IIFE ────────────────────────────────────────────────
 })();
