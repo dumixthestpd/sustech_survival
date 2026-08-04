@@ -1,3 +1,38 @@
+/* ───────────────────────────────────────────────────────────────────────────
+ * TIS page SPA — 4171 lines, single IIFE, no build step.
+ *
+ * Files in this module:
+ *   templates/tis.html  page markup, inline CSS, button labels
+ *   static/tis/tis.js   this file — state, render, cascade, persistence
+ *   blueprints/tis.py   HTTP routes (13 endpoints)
+ *
+ * Sections in this file (the `// ──` headers are the index):
+ *   DOM refs · State · Loading bar · HTTP helpers · Semester helpers ·
+ *   Color/time helpers · Catalog loaders · Results render · NCES brief ·
+ *   NCES eval page · Picked list + mutators · ICS export · Flash/utils ·
+ *   Drag-to-reorder picked · Solve tab · Weekly grid · Tabs · Bid panel ·
+ *   DOMContentLoaded
+ *
+ * Cascade contract — PICKED is the single source of truth. The mutators
+ * addPicked (L1678), removePicked (L1698), applyPicksFromData (used by
+ * localStorage restore + file Load) MUST all call this full set in order:
+ *
+ *     savePicks()              ← localStorage auto-save
+ *     renderPicked()           ← #pick-list + Sync/Drop/Save/Load/ICS buttons
+ *     updateResultsHeader()    ← select-all + count in search results
+ *     renderGrid()             ← weekly grid (clear #grid-legend if empty)
+ *     renderBidPanel()         ← bid boxes + bar + totals
+ *     updateBidStat()          ← right-column "Bids: X/150 pts" summary
+ *     updateSolveCodes()       ← solver "Codes to solve:" chip
+ *
+ * HTTP transport (getJSON L118, postJSON L126): no timeout. TIS over VPN
+ * is slow; a timeout aborts requests the user expects as slow. Callers
+ * own error handling via .catch(); errors surface via flash(msg, kind).
+ *
+ * Module doc: docs/en/webui-architecture.md — facts about this module
+ * only. Workflow, procedure, and "how to use" are NOT in module docs.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
 (function() {
 'use strict';
 
