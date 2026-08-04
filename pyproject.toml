@@ -72,8 +72,16 @@ pms = [
     # PMS auth — pycryptodome for RSA password encryption (联创 PMS).
     "pycryptodome>=3.15",
 ]
+docs = [
+    # MkDocs site build for docs/en/ + docs/zh/ — only needed by doc authors.
+    "mkdocs>=1.6",
+    "mkdocs-material>=9.5",
+    "mkdocs-static-i18n>=1.2",
+]
 all = [
     "sustech-survival[playwright,webui,nces,papers,pms]",
+    # Note: [docs] is intentionally NOT in [all] — it's a doc-author-only
+    # extra. Library users don't need MkDocs.
 ]
 
 [project.urls]
