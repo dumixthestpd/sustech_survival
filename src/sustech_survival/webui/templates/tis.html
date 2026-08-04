@@ -35,7 +35,16 @@ select.filter{flex:1;min-width:60px}
 .c-card{padding:.55rem 1rem;border-bottom:1px solid #1a1f29;cursor:pointer;position:relative}
 .c-card:hover{background:var(--panel)}
 .c-card.active{background:#1d2a3d;border-left:3px solid var(--accent);padding-left:calc(1rem - 3px)}
-.c-card .top{display:flex;gap:.5rem;align-items:baseline}
+.c-card .top{display:flex;gap:.5rem;align-items:center}
+.c-card .pick-check{width:18px;height:18px;cursor:pointer;flex-shrink:0;accent-color:var(--accent);margin:0}
+.c-card .pick-wrap{cursor:pointer;display:inline-flex;align-items:center;padding:2px;border-radius:4px;margin:-2px}
+.c-card .pick-wrap:hover{background:var(--panel2)}
+.c-card.checked{background:rgba(63,185,80,.06)}
+.c-card .pick-check-label{display:flex;align-items:center;gap:.4rem}
+.results-header{padding:.45rem .7rem;display:flex;align-items:center;gap:.6rem;background:var(--panel2);border-bottom:1px solid var(--border);font-size:.78rem;color:var(--txt);position:sticky;top:0;z-index:1;flex-shrink:0}
+.results-header label{cursor:pointer;display:flex;align-items:center;gap:.4rem;user-select:none}
+.results-header input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--accent);margin:0}
+.results-header .count{color:var(--mut);font-size:.72rem;margin-left:auto}
 .c-card .code{font-family:ui-monospace,Menlo,monospace;color:var(--accent);font-size:.82rem;font-weight:600}
 .c-card .grp{color:var(--mut);font-size:.75rem}
 .c-card .nm{font-weight:600;margin-top:.15rem;font-size:.88rem}
@@ -58,9 +67,28 @@ select.filter{flex:1;min-width:60px}
 .flash.err{border-color:var(--bad);color:var(--bad)}
 .flash.ok{border-color:var(--ok);color:var(--ok)}
 @keyframes flash-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
-/* iCal export button */
-.ical-export-btn{margin-left:8px;font-size:.75rem;padding:2px 8px;cursor:pointer;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--txt)}
-.ical-export-btn:hover{border-color:var(--accent)}
+/* ICS export button */
+.ics-export-btn{margin-left:6px;font-size:.75rem;padding:2px 8px;cursor:pointer;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--txt)}
+.ics-export-btn:hover{border-color:var(--accent)}
+.sync-tis-btn{margin-left:6px;font-size:.75rem;padding:2px 8px;cursor:pointer;background:var(--accent);border:1px solid var(--accent);border-radius:6px;color:#fff;font-weight:500}
+.sync-tis-btn:hover{filter:brightness(1.1)}
+.sync-tis-btn:disabled{opacity:.5;cursor:not-allowed}
+.drop-all-tis-btn{margin-left:6px;font-size:.75rem;padding:2px 8px;cursor:pointer;background:transparent;border:1px solid var(--bad);border-radius:6px;color:var(--bad);font-weight:500}
+.drop-all-tis-btn:hover{background:var(--bad);color:#fff}
+.drop-all-tis-btn:disabled{opacity:.5;cursor:not-allowed}
+.save-file-btn{margin-left:6px;font-size:.75rem;padding:2px 8px;cursor:pointer;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--txt)}
+.save-file-btn:hover{border-color:var(--accent)}
+.load-file-btn{margin-left:6px;font-size:.75rem;padding:2px 8px;cursor:pointer;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--txt)}
+.load-file-btn:hover{border-color:var(--accent)}
+/* Two-row button layout in the picked panel. Safe row sits above the
+   "Real actions" divider; the destructive group is below it. */
+.picked-safe-actions{display:flex;flex-wrap:wrap;gap:.25rem;margin-top:.4rem;padding-top:.2rem}
+.picked-safe-actions .ics-export-btn,
+.picked-safe-actions .save-file-btn,
+.picked-safe-actions .load-file-btn{margin-left:0}
+.picked-divider{margin-top:.55rem;padding-top:.5rem;border-top:1px dashed var(--border);font-size:.65rem;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;display:flex;flex-direction:column;gap:.4rem}
+.picked-divider .sync-tis-btn,
+.picked-divider .drop-all-tis-btn{margin-left:0;align-self:flex-start}
 /* filter pills */
 #filter-pills{display:flex;flex-wrap:wrap;gap:.35rem;margin-bottom:.5rem;min-height:0}
 .filter-pill{display:inline-flex;align-items:center;gap:.25rem;padding:.15rem .5rem;border-radius:12px;
@@ -458,6 +486,10 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
       <div class="row"><button class="primary" id="btn-search">Search</button><button class="ghost" id="btn-refresh" title="Force re-fetch from TIS">Refresh catalog</button></div>
     </div>
     <div id="filter-pills"></div>
+    <div class="results-header" id="results-header" style="display:none">
+      <label title="Tick every section visible in the current results"><input type="checkbox" id="select-all-check" /> <span>Select all</span></label>
+      <span class="count" id="results-count"></span>
+    </div>
     <div class="results" id="results"><div class="loading">Loading course catalog…</div></div>
   </div>
 
