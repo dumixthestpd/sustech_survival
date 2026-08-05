@@ -283,10 +283,15 @@ table.grid td{height:38px;position:relative}
 .pick .acts{margin-top:.35rem;display:flex;gap:.25rem;flex-shrink:0}
 .pick .acts button{font-size:.7rem;padding:.15rem .4rem;border-radius:4px}
 .pick .pick-enrolled{display:inline-block;font-size:.65rem;padding:.1rem .3rem;border-radius:3px;background:rgba(63,185,80,.15);color:var(--ok);margin-left:.3rem}
-.pick .pick-class-badge{display:inline-block;font-size:.6rem;padding:.1rem .35rem;border-radius:3px;background:rgba(91,157,255,.15);color:var(--accent);margin-left:.3rem;font-family:ui-monospace,Menlo,monospace;letter-spacing:.02em}
 details summary{cursor:pointer;padding:.5rem .7rem;color:var(--mut);font-size:.8rem}
 pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);border-radius:6px;font-size:.7rem;color:#c2c8d0;overflow:auto;max-height:200px;margin:.4rem 0;white-space:pre-wrap;word-break:break-all}
 .ncn{padding:.5rem .8rem;font-size:.78rem;color:var(--mut);border-bottom:1px solid #1a2030}
+/* Drag-drop overlay: full-screen semi-transparent layer shown while the
+   user is dragging a file over the page. Tells them the drop zone is
+   active and what to drop. */
+.drop-overlay{position:fixed;inset:0;background:rgba(11,15,22,.75);border:3px dashed var(--accent);display:flex;align-items:center;justify-content:center;z-index:9999;pointer-events:none;opacity:0;transition:opacity .12s}
+.drop-overlay.show{opacity:1}
+.drop-overlay-inner{background:var(--panel);border:1px solid var(--accent);border-radius:10px;padding:1.4rem 2rem;font-size:1.1rem;color:var(--accent);box-shadow:0 10px 40px rgba(0,0,0,.6)}
 .ncn.ok{color:var(--ok)}
 .flash{padding:.5rem .8rem;font-size:.78rem;border-bottom:1px solid var(--border)}
 .flash.ok{color:var(--ok)} .flash.err{color:var(--bad)}
@@ -719,7 +724,7 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
     <div class="stat" id="bid-stat" style="display:none;font-size:.72rem;padding:.15rem .7rem .25rem;color:var(--mut);border-bottom:1px solid var(--border);cursor:pointer" onclick="switchTab('bids');return false;">
       <span id="bid-stat-text"></span>
     </div>
-    <div id="pick-list"><div class="loading">No sections picked.</div></div>
+    <div id="pick-list"><div class="loading" style="padding:1rem .7rem;line-height:1.5"><div style="font-size:.85rem;color:var(--txt);margin-bottom:.3rem">No picks loaded</div><div style="font-size:.72rem;color:var(--mut)">Click <b>📂 Load file</b> above, or drag a <code>.json</code> onto the page.</div></div></div>
     <details><summary>Enrollment status</summary>
       <div style="padding:.4rem .7rem"><button id="btn-enrolled">Load my enrolled</button></div>
       <div id="enrolled-out" class="ncn"></div>
