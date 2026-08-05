@@ -1667,11 +1667,13 @@ function renderEvalBrief(d) {
 function addPicked(course) {
   PICKED[course.rwh] = JSON.parse(JSON.stringify(course));
   if (!(course.rwh in PICKED_BIDS)) {
-    // Default to the bid TIS already has for this rwh (if it's an
-    // already-enrolled/cart pick); fall back to 1 for new picks.
+    // Default to 0 for new picks (user may be "showing interest"
+    // without actually bidding on the section). For picks that
+    // already have a bid on TIS (enrolled/cart), keep that value
+    // so we don't zero out something the user already paid for.
     PICKED_BIDS[course.rwh] = EXISTING_BIDS[course.rwh] != null
       ? EXISTING_BIDS[course.rwh]
-      : 1;
+      : 0;
   }
   // Re-render search results so cards reflect the new pick state
   renderResults(CAT);
@@ -1714,12 +1716,24 @@ function flash(msg, kind) {
 }
 
 function renderPicked() {
+  // Display rule: count by UNIQUE course code, sum credits per unique
+  // code. Picked sections of the same code (e.g. MA101 taught by three
+  // teachers) count as one course for credit purposes — the user is
+  // enrolling in MA101 once, not three times.
   var keys = Object.keys(PICKED);
+  var codeCredits = {};   // { code: credits_int }
   var totalCredits = 0;
   for (var i = 0; i < keys.length; i++) {
-    totalCredits += parseFloat(PICKED[keys[i]].credits) || 0;
+    var c = PICKED[keys[i]];
+    var code = c.code;
+    if (!(code in codeCredits)) {
+      codeCredits[code] = parseFloat(c.credits) || 0;
+      totalCredits += codeCredits[code];
+    }
   }
-  PICK_STAT.textContent = keys.length + ' sections · ' + totalCredits.toFixed(1) + ' Credits';
+  PICK_STAT.textContent = keys.length + ' sections · ' +
+    Object.keys(codeCredits).length + ' courses · ' +
+    totalCredits.toFixed(1) + ' Credits';
   // The action buttons (Export ICS, Save, Load, Sync to TIS, Drop all) are
   // built once by initPickedActions() in DOMContentLoaded. No per-render
   // button injection here.
@@ -2487,8 +2501,10 @@ function solve() {
     return;
   }
 
-  var blockedInput = document.getElementById('blocked-input').value;
-  var blocked = parseBlockedInput(blockedInput);
+  // BLOCKED (in-memory) is the source of truth. Round-trip through the
+  // compact input string so the API receives the same shape the old
+  // #blocked-input path produced ([[day, [periods]]] list).
+  var blocked = parseBlockedInput(blockedToInput());
 
   SOLVE_OUT.innerHTML = '<div class="ncn">Solving — trying all combinations…</div>';
 
@@ -3749,12 +3765,14 @@ document.addEventListener('DOMContentLoaded', function() {
     switchTab('solve');
     setTimeout(solve, 100);
   });
-  // Blocked-time text input: keep BLOCKED state in sync with manual edits
-  // (the grid is the primary editor; the input is a fallback for power users)
+  // Block-time editor: BLOCKED is the single source of truth (in-memory).
+  // The block grid (step 2) is the primary editor; the hidden #blocked-input
+  // is a legacy fallback for power users typing the compact syntax directly.
+  // We render the grid unconditionally — it doesn't depend on the input.
+  renderBlockGrid();
   var blockedEl = document.getElementById('blocked-input');
   if (blockedEl) {
-    loadBlockedFromInput();  // initial population
-    renderBlockGrid();       // build the scheduler's single-grid editor
+    loadBlockedFromInput();  // initial population from text (if any)
     blockedEl.addEventListener('change', function() {
       loadBlockedFromInput();
       renderGrid();
