@@ -15,15 +15,18 @@
  *
  * Cascade contract — PICKED is the single source of truth. The mutators
  * addPicked (L1678), removePicked (L1698), applyPicksFromData (used by
- * localStorage restore + file Load) MUST all call this full set in order:
+ * file Load + drag-drop) MUST all call this full set in order:
  *
- *     savePicks()              ← localStorage auto-save
  *     renderPicked()           ← #pick-list + Sync/Drop/Save/Load/ICS buttons
  *     updateResultsHeader()    ← select-all + count in search results
  *     renderGrid()             ← weekly grid (clear #grid-legend if empty)
  *     renderBidPanel()         ← bid boxes + bar + totals
  *     updateBidStat()          ← right-column "Bids: X/150 pts" summary
  *     updateSolveCodes()       ← solver "Codes to solve:" chip
+ *
+ * NO localStorage auto-save — picks live in memory only. The user
+ * explicitly loads (button or drag-drop) and saves (button). See the
+ * "File-based save/load" section below.
  *
  * HTTP transport (getJSON L118, postJSON L126): no timeout. TIS over VPN
  * is slow; a timeout aborts requests the user expects as slow. Callers
@@ -1685,7 +1688,9 @@ function addPicked(course) {
   updateBidStat();
   updateSolveCodes();
   updateExportIcsButton();
-  savePicks();
+  // No localStorage auto-save — picks live in memory until the user
+  // explicitly saves/loads a file. See the "Data model" note at the
+  // top of the file (DOMContentLoaded section).
 }
 
 function removePicked(rwh) {
@@ -1704,7 +1709,6 @@ function removePicked(rwh) {
   updateBidStat();
   updateSolveCodes();
   updateExportIcsButton();
-  savePicks();
 }
 
 function flash(msg, kind) {
@@ -1744,7 +1748,12 @@ function renderPicked() {
   updatePickedActionsState();
 
   if (!keys.length) {
-    PICK_LIST.innerHTML = '<div class="loading">No sections picked.</div>';
+    // Page is blank until the user loads a file. Make the empty state
+    // useful — show a hint pointing at the Load button + drag-drop.
+    PICK_LIST.innerHTML = '<div class="loading" style="padding:1rem .7rem;line-height:1.5">' +
+      '<div style="font-size:.85rem;color:var(--txt);margin-bottom:.3rem">No picks loaded</div>' +
+      '<div style="font-size:.72rem;color:var(--mut)">Click <b>📂 Load file</b> above, or drag a <code>.json</code> onto the page.</div>' +
+      '</div>';
     return;
   }
 
@@ -1789,7 +1798,6 @@ function renderPickItem(c) {
     '</label>' +
     '<div class="pick-body">' +
       '<div class="pn">' + escapeHtml(c.name || c.name_en || '') +
-        (c.class_group ? ' <span class="pick-class-badge" title="Class group">cls ' + escapeHtml(c.class_group) + '</span>' : '') +
         (enrolled ? '<span class="pick-enrolled">enrolled</span>' : '') +
         (conflictMsg ? '<span style="float:right;color:var(--bad);font-size:.65rem">⚠ conflicted</span>' : '') +
       '</div>' +
@@ -1799,6 +1807,7 @@ function renderPickItem(c) {
       '<div class="pm">' +
         '<b>Teacher</b> ' + teachers +
         ' · <b>' + escapeHtml(c.code) + '</b>' +
+        (c.class_group ? ' · ' + escapeHtml(c.class_group) : '') +
         (schedHTML ? ' · ' + schedHTML : '') +
         (conflictMsg ? '<br><span style="color:var(--bad);font-size:.68rem">' + conflictMsg + '</span>' : '') +
       '</div>' +
@@ -2093,7 +2102,7 @@ function renderGridTable(tbody, items) {
               'title="' + escapeHtml(b.code + ' ' + (b.course.class_group || '') + ' ' + dayName(b.day) + ' ' + b.periodStart + '-' + b.periodEnd + (b.conflict ? ' ⚠ CONFLICT' : '')) + '" ' +
               'data-rwh="' + b.rwh + '">' +
               '<span class="t">' + escapeHtml(b.code) + '</span>' +
-              '<span style="font-size:.6rem;opacity:.8;display:block">' + escapeHtml(b.course.name || '') + '</span>' +
+              '<span style="font-size:.6rem;opacity:.8;display:block">' + escapeHtml(b.course.name || '') + (b.course.class_group ? ' <span style="opacity:.7">·' + escapeHtml(b.course.class_group) + '</span>' : '') + '</span>' +
             '</div>';
           });
           h += '</div></td>';
@@ -3810,13 +3819,14 @@ document.addEventListener('DOMContentLoaded', function() {
   // chip active/done classes and shows the right pane.
   switchStep(1);
 
-  // Restore any saved picks from localStorage. Done before initPickedActions
-  // so the buttons exist when the user first sees the page, and before
-  // the catalog loads so the saved picks are visible in the catalog cards
-  // the moment they appear.
-  var saved = loadPicksFromStorage();
-  if (saved) applyPicksFromData(saved);
-
+  // Data model: page starts BLANK. Picks live in memory only. To populate:
+  //   1) click "📂 Load file" and pick a JSON file, OR
+  //   2) drag a JSON file onto the page (anywhere).
+  // There is no localStorage auto-restore — the previous "auto-save on
+  // every change + auto-restore on load" design made the file path
+  // unclear (the data existed in localStorage but no file was shown).
+  // Now the user is always explicit about which file they're working with.
+  initDragDropLoad();
   // ── Picked-panel action buttons (must exist in DOM before any user
   //     can interact with them, even on a fresh page with no picks). ──
   initPickedActions();
@@ -3935,10 +3945,10 @@ function updatePickedActionsState() {
     loadBtn.title = 'Load picks from a JSON file (will replace your ' +
       total + ' current ' + (total === 1 ? 'pick' : 'picks') + ')';
   }
-  // File-info line: shows the last-saved/loaded file so the user knows
-  // what local file their work is anchored to. The localStorage cache is
-  // the authoritative auto-save; this is just a visual reference for the
-  // most recent file-based action.
+  // File-info line: shows the last-saved/loaded file so the user always
+  // knows which file their in-memory picks are anchored to. There is no
+  // localStorage cache — when nothing has been loaded or saved yet, this
+  // line tells the user to use the Load button or drag a JSON file in.
   var fileInfo = document.getElementById('picked-file-info');
   if (fileInfo) {
     if (CURRENT_FILE) {
@@ -3947,7 +3957,7 @@ function updatePickedActionsState() {
         '</span><span class="fi-name" title="' + escapeHtml(CURRENT_FILE.name) + '">' +
         escapeHtml(CURRENT_FILE.name) + '</span>';
     } else {
-      fileInfo.innerHTML = '<span class="fi-label">📄 no file yet — auto-saved to localStorage</span>';
+      fileInfo.innerHTML = '<span class="fi-label">📄 No file loaded — pick a file or drag a JSON onto the page</span>';
     }
   }
 }
@@ -3969,33 +3979,101 @@ function removeSelectedPicks() {
   updatePickedActionsState();
 }
 
-// ── localStorage save/load ───────────────────────────────────────────────
-// Picked is auto-saved on every mutator (see cascade contract in the file
-// header). Restored on page load. The shape is versioned so future format
-// changes can detect old data and discard rather than crash.
-var PICKS_STORAGE_KEY = 'tis-picks-v1';
+// ── File-based save/load (no localStorage) ──────────────────────────────
+// Picks live in memory only. There is no localStorage auto-save/auto-restore
+// — the user explicitly loads a file (via the button or by drag-drop) and
+// explicitly saves to a new timestamped file when they're done.
+//
+// File shape (versioned so future format changes can detect old data and
+// discard rather than crash):
+//   {
+//     version: 1,
+//     picks: [ { ...courseObj... }, ... ],
+//     savedAt: "ISO-8601 string"
+//   }
 
-function savePicks() {
-  try {
-    var picksArr = [];
-    var keys = Object.keys(PICKED);
-    for (var i = 0; i < keys.length; i++) picksArr.push(PICKED[keys[i]]);
-    localStorage.setItem(PICKS_STORAGE_KEY, JSON.stringify({
-      version: 1,
-      picks: picksArr,
-      savedAt: new Date().toISOString(),
-    }));
-  } catch (e) { /* localStorage may be full or disabled — non-fatal */ }
+function loadPicksFromFile() {
+  var input = document.createElement('input');
+  input.type = 'file'; input.accept = 'application/json,.json';
+  input.onchange = function() {
+    var file = input.files && input.files[0];
+    if (!file) return;
+    readPicksFile(file, 'replace');
+  };
+  input.click();
 }
 
-function loadPicksFromStorage() {
-  try {
-    var raw = localStorage.getItem(PICKS_STORAGE_KEY);
-    if (!raw) return null;
-    var data = JSON.parse(raw);
-    if (!data || data.version !== 1) return null;
-    return data;
-  } catch (e) { return null; }
+// Drag-and-drop: drop any *.json onto the page to load it. Shows a visual
+// overlay while dragging so the user knows the drop zone is active.
+function initDragDropLoad() {
+  var overlay = document.createElement('div');
+  overlay.id = 'drop-overlay';
+  overlay.className = 'drop-overlay';
+  overlay.innerHTML = '<div class="drop-overlay-inner">📂 Drop a JSON picks file to load</div>';
+  document.body.appendChild(overlay);
+
+  // dragenter/leave fire on every child — track depth so the overlay
+  // stays visible while the cursor moves over nested elements.
+  var dragDepth = 0;
+  var hasFiles = function(e) {
+    return e.dataTransfer && Array.from(e.dataTransfer.types || []).indexOf('Files') !== -1;
+  };
+  document.addEventListener('dragenter', function(e) {
+    if (!hasFiles(e)) return;
+    dragDepth++;
+    overlay.classList.add('show');
+  });
+  document.addEventListener('dragleave', function() {
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) overlay.classList.remove('show');
+  });
+  document.addEventListener('dragover', function(e) {
+    if (hasFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }
+  });
+  document.addEventListener('drop', function(e) {
+    e.preventDefault();
+    dragDepth = 0;
+    overlay.classList.remove('show');
+    var files = e.dataTransfer && e.dataTransfer.files;
+    if (!files || !files.length) return;
+    // Only the first .json file is loaded; the rest are ignored.
+    var file = null;
+    for (var i = 0; i < files.length; i++) {
+      if (files[i].name && /\.json$/i.test(files[i].name)) { file = files[i]; break; }
+    }
+    if (!file) { flash('Drop a .json picks file to load.', 'err'); return; }
+    readPicksFile(file, 'replace');
+  });
+}
+
+// Shared by the Load button and drag-drop. Validates the JSON shape,
+// then either replaces or merges with the current PICKED set.
+function readPicksFile(file, mode) {
+  mode = mode || 'replace';
+  var reader = new FileReader();
+  reader.onload = function() {
+    try {
+      var data = JSON.parse(reader.result);
+      if (!data || data.version !== 1 || !Array.isArray(data.picks)) {
+        flash('Not a valid picks file (missing version or picks).', 'err');
+        return;
+      }
+      if (mode === 'replace') {
+        // Reset everything that depends on PICKED before applying.
+        PICKED = {};
+        PICKED_BIDS = {};
+        PICKED_CONFLICTS = {};
+        PICKED_CHECKED = {};
+        ACTIVE_RWH = null;
+      }
+      applyPicksFromData(data);
+      CURRENT_FILE = { kind: 'loaded', name: file.name };
+      updatePickedActionsState();
+      flash((mode === 'replace' ? 'Loaded ' : 'Merged ') +
+        data.picks.length + ' pick(s) from ' + file.name, 'ok');
+    } catch (e) { flash('Could not parse file: ' + e.message, 'err'); }
+  };
+  reader.readAsText(file);
 }
 
 function applyPicksFromData(data) {
@@ -4035,31 +4113,6 @@ function savePicksToFile() {
   CURRENT_FILE = { kind: 'saved', name: filename };
   updatePickedActionsState();
   flash('Saved ' + keys.length + ' pick(s) → ' + filename, 'ok');
-}
-
-function loadPicksFromFile() {
-  var input = document.createElement('input');
-  input.type = 'file'; input.accept = 'application/json,.json';
-  input.onchange = function() {
-    var file = input.files && input.files[0];
-    if (!file) return;
-    var reader = new FileReader();
-    reader.onload = function() {
-      try {
-        var data = JSON.parse(reader.result);
-        if (!data || data.version !== 1 || !data.picks) {
-          flash('File is not a valid picks file (missing version or picks).', 'err');
-          return;
-        }
-        applyPicksFromData(data);
-        CURRENT_FILE = { kind: 'loaded', name: file.name };
-        updatePickedActionsState();
-        flash('Loaded ' + data.picks.length + ' pick(s) from ' + file.name, 'ok');
-      } catch (e) { flash('Could not parse file: ' + e.message, 'err'); }
-    };
-    reader.readAsText(file);
-  };
-  input.click();
 }
 
 // ── Real actions (talk to TIS) ────────────────────────────────────────────
