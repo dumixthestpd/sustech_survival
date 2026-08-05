@@ -88,6 +88,7 @@ var BID_CONFLICT_BANNER = document.getElementById('bp-conflict-banner');
 var PICKED_BIDS = {};        // { rwh: bid_int }      parallel to PICKED
 var PICKED_CONFLICTS = {};    // { rwh: bool }        true if this rwh conflicts with another picked rwh
 var PICKED_CHECKED = {};      // { rwh: true }        UI-only: which right-panel checkboxes are ticked for bulk-remove. Not persisted.
+var CURRENT_FILE = null;      // { kind: 'saved'|'loaded', name: 'tis-picks-...json' } — shown in the right panel for reference.
 var ROUND_INFO = { jffs: 0, ksrq: '', jsrq: '', lcmc: '', xkfsdm: '', xkms: '', ok: false, message: '' };
 var BID_DRAG = null;         // { sourceRwh, sourceBox, arrowEl, targetRwh, lastX, lastY }
 var BID_EDIT = null;         // { rwh, originalBid, inputEl }
@@ -1788,6 +1789,7 @@ function renderPickItem(c) {
     '</label>' +
     '<div class="pick-body">' +
       '<div class="pn">' + escapeHtml(c.name || c.name_en || '') +
+        (c.class_group ? ' <span class="pick-class-badge" title="Class group">cls ' + escapeHtml(c.class_group) + '</span>' : '') +
         (enrolled ? '<span class="pick-enrolled">enrolled</span>' : '') +
         (conflictMsg ? '<span style="float:right;color:var(--bad);font-size:.65rem">⚠ conflicted</span>' : '') +
       '</div>' +
@@ -1796,7 +1798,6 @@ function renderPickItem(c) {
         : '') +
       '<div class="pm">' +
         '<b>Teacher</b> ' + teachers +
-        (c.class_group ? ' · ' + escapeHtml(c.class_group) : '') +
         ' · <b>' + escapeHtml(c.code) + '</b>' +
         (schedHTML ? ' · ' + schedHTML : '') +
         (conflictMsg ? '<br><span style="color:var(--bad);font-size:.68rem">' + conflictMsg + '</span>' : '') +
@@ -3847,39 +3848,41 @@ function initPickedActions() {
   if (document.getElementById('picked-data-actions')) return;
 
   // HEADER: select-all + count + remove-selected. Above the pick-list.
+  // Two-row layout to fit in the narrow right column without text wrap:
+  //   row 1: ☑ All  (14 selected)            [✕ Remove N]
+  //   row 2: [💾 Save N picks] [📂 Load file]    ← local file (under save/load)
   var header = document.createElement('div');
   header.id = 'picked-bulk-header';
   header.className = 'picked-bulk-header';
   header.innerHTML =
-    '<label class="picked-select-all-wrap" title="Tick all visible picks">' +
-      '<input type="checkbox" id="picked-select-all">' +
-      '<span>Select all</span>' +
-    '</label>' +
-    '<span class="picked-selected-count" id="picked-selected-count">0 / 0 selected</span>' +
-    '<button class="picked-remove-selected-btn" id="btn-remove-selected" title="Remove all ticked picks (no confirm for 1; confirm for many)">✕ Remove selected</button>';
-
-  // Save + Load: local data ops. Always available — the user may save
-  // mid-selection with conflicts and come back later. Labels are updated
-  // by updatePickedActionsState() to reflect the current PICKED count.
-  var dataRow = document.createElement('div');
-  dataRow.id = 'picked-data-actions';
-  dataRow.className = 'picked-safe-actions';
-  dataRow.innerHTML =
-    '<button class="save-file-btn" id="btn-save-picks" title="Save your selection to a JSON file (works any time, even with conflicts)">💾 Save <span id="save-count">0 picks</span></button>' +
-    '<button class="load-file-btn" id="btn-load-picks" title="Load picks from a JSON file (will replace your current selection)">📂 Load file</button>';
+    '<div class="picked-bulk-row1">' +
+      '<label class="picked-select-all-wrap" title="Tick all visible picks">' +
+        '<input type="checkbox" id="picked-select-all">' +
+        '<span>All</span>' +
+      '</label>' +
+      '<span class="picked-selected-count" id="picked-selected-count">0 / 0 selected</span>' +
+      '<button class="picked-remove-selected-btn" id="btn-remove-selected" title="Remove all ticked picks (confirm for many)">✕ Remove</button>' +
+    '</div>' +
+    '<div class="picked-bulk-row2">' +
+      '<button class="save-file-btn" id="btn-save-picks" title="Save your selection to a JSON file (works any time, even with conflicts)">💾 Save <span id="save-count">0 picks</span></button>' +
+      '<button class="load-file-btn" id="btn-load-picks" title="Load picks from a JSON file (will replace your current selection)">📂 Load file</button>' +
+    '</div>' +
+    '<div class="picked-file-info" id="picked-file-info" title="Local file you last saved/loaded"></div>';
 
   // Drop all enrolled: server-side op on ENROLLED_RWH (different state
   // from PICKED). Different intent from "sync my picks" — kept here
-  // because the right column is where enrollment state is shown.
-  var divider = document.createElement('div');
-  divider.className = 'picked-divider';
-  divider.innerHTML =
-    '<span>Server-side — affects TIS</span>' +
-    '<button class="drop-all-tis-btn" id="btn-drop-all" title="Drop every currently-enrolled section">🗑 Drop all enrolled</button>';
+  // because the right column is where enrollment state is shown. The
+  // button name is the description; no "Server-side — affects TIS"
+  // divider is needed since the title attribute + the confirm() call
+  // already make the destructive intent unambiguous.
+  var dropBtn = document.createElement('div');
+  dropBtn.id = 'picked-drop-wrap';
+  dropBtn.className = 'picked-drop-wrap';
+  dropBtn.innerHTML =
+    '<button class="drop-all-tis-btn" id="btn-drop-all" title="Drop every currently-enrolled section on TIS (destructive — will prompt for confirmation)">🗑 Drop all enrolled courses in TIS</button>';
 
   pickList.parentNode.insertBefore(header, pickList);
-  pickList.parentNode.insertBefore(dataRow, pickList);
-  pickList.parentNode.insertBefore(divider, pickList);
+  pickList.parentNode.insertBefore(dropBtn, pickList);
 
   // Wire the bulk header
   var selectAllCb = document.getElementById('picked-select-all');
@@ -3924,13 +3927,28 @@ function updatePickedActionsState() {
   if (removeBtn) {
     removeBtn.disabled = checked === 0;
     removeBtn.textContent = checked > 0
-      ? '✕ Remove ' + checked + ' selected'
-      : '✕ Remove selected';
+      ? '✕ Remove ' + checked
+      : '✕ Remove';
   }
   var loadBtn = document.getElementById('btn-load-picks');
   if (loadBtn) {
     loadBtn.title = 'Load picks from a JSON file (will replace your ' +
       total + ' current ' + (total === 1 ? 'pick' : 'picks') + ')';
+  }
+  // File-info line: shows the last-saved/loaded file so the user knows
+  // what local file their work is anchored to. The localStorage cache is
+  // the authoritative auto-save; this is just a visual reference for the
+  // most recent file-based action.
+  var fileInfo = document.getElementById('picked-file-info');
+  if (fileInfo) {
+    if (CURRENT_FILE) {
+      fileInfo.innerHTML = '<span class="fi-label">' +
+        (CURRENT_FILE.kind === 'saved' ? '📄 last saved → ' : '📄 loaded ← ') +
+        '</span><span class="fi-name" title="' + escapeHtml(CURRENT_FILE.name) + '">' +
+        escapeHtml(CURRENT_FILE.name) + '</span>';
+    } else {
+      fileInfo.innerHTML = '<span class="fi-label">📄 no file yet — auto-saved to localStorage</span>';
+    }
   }
 }
 
@@ -4001,16 +4019,22 @@ function savePicksToFile() {
   if (!keys.length) { flash('No sections picked — nothing to save.', 'warn'); return; }
   var picksArr = [];
   for (var i = 0; i < keys.length; i++) picksArr.push(PICKED[keys[i]]);
+  var ts = new Date().toISOString().replace(/[:.]/g, '-').replace(/T/, '_').slice(0, 19);
+  var filename = 'tis-picks-' + ts + '.json';
   var blob = new Blob([JSON.stringify({
     version: 1, picks: picksArr, savedAt: new Date().toISOString(),
   }, null, 2)], { type: 'application/json' });
   var url = URL.createObjectURL(blob);
   var a = document.createElement('a');
-  var ts = new Date().toISOString().replace(/[:.]/g, '-').replace(/T/, '_').slice(0, 19);
-  a.href = url; a.download = 'tis-picks-' + ts + '.json';
+  a.href = url; a.download = filename;
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
-  flash('Saved ' + keys.length + ' pick(s) to file.', 'ok');
+  // Track the last-saved filename so the right panel can show it. This
+  // is the file the user *just* downloaded — useful as a reference, but
+  // not authoritative (the user could rename/move it).
+  CURRENT_FILE = { kind: 'saved', name: filename };
+  updatePickedActionsState();
+  flash('Saved ' + keys.length + ' pick(s) → ' + filename, 'ok');
 }
 
 function loadPicksFromFile() {
@@ -4028,7 +4052,9 @@ function loadPicksFromFile() {
           return;
         }
         applyPicksFromData(data);
-        flash('Loaded ' + data.picks.length + ' pick(s) from file.', 'ok');
+        CURRENT_FILE = { kind: 'loaded', name: file.name };
+        updatePickedActionsState();
+        flash('Loaded ' + data.picks.length + ' pick(s) from ' + file.name, 'ok');
       } catch (e) { flash('Could not parse file: ' + e.message, 'err'); }
     };
     reader.readAsText(file);
