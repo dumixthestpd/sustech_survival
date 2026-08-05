@@ -89,6 +89,14 @@ var BID_OVER_BANNER = document.getElementById('bp-over-banner');
 var BID_PANEL = document.querySelector('.bid-panel');
 var BID_CONFLICT_BANNER = document.getElementById('bp-conflict-banner');
 var PICKED_BIDS = {};        // { rwh: bid_int }      parallel to PICKED
+var SAVED_SCHEDULES = [];    // [{label, sections, dropped, ts, totalCredits}] persisted to localStorage
+var FOCUSED_SAVED_IDX = -1;  // -1 = no saved schedule focused (←/→ cycles solver idx instead)
+var SOLVER_FLAT = null;      // last solver result (used by Save + ←/→)
+var SOLVER_IDX = 0;          // current solver index
+var SOLVER_TOTAL_CODES = 0;  // for the "X / Y" coverage line in the Compare pane
+var SOLVER_codeToName = {};  // mirrored from the last solve() — for the Compare pane rendering
+var SOLVER_groups = null;    // groupKey → [sol,...]
+var SOLVER_groupOrder = [];  // order of first appearance in groups
 var PICKED_CONFLICTS = {};    // { rwh: bool }        true if this rwh conflicts with another picked rwh
 var PICKED_CHECKED = {};      // { rwh: true }        UI-only: which right-panel checkboxes are ticked for bulk-remove. Not persisted.
 var CURRENT_FILE = null;      // { kind: 'saved'|'loaded', name: 'tis-picks-...json' } — shown in the right panel for reference.
@@ -2099,10 +2107,13 @@ function renderGridTable(tbody, items) {
               'height:' + spanH + 'px;top:0;' +
               'z-index:' + z + ';' +
               '" ' +
-              'title="' + escapeHtml(b.code + ' ' + (b.course.class_group || '') + ' ' + dayName(b.day) + ' ' + b.periodStart + '-' + b.periodEnd + (b.conflict ? ' ⚠ CONFLICT' : '')) + '" ' +
+              'title="' + escapeHtml(b.code + ' ' + (b.course.class_group || '') + (b.course.teachers && b.course.teachers[0] ? ' · ' + b.course.teachers.join(', ') : '') + ' · ' + dayName(b.day) + ' ' + b.periodStart + '-' + b.periodEnd + (b.conflict ? ' ⚠ CONFLICT' : '')) + '" ' +
               'data-rwh="' + b.rwh + '">' +
               '<span class="t">' + escapeHtml(b.code) + '</span>' +
               '<span style="font-size:.6rem;opacity:.8;display:block">' + escapeHtml(b.course.name || '') + (b.course.class_group ? ' <span style="opacity:.7">·' + escapeHtml(b.course.class_group) + '</span>' : '') + '</span>' +
+              (b.course.teachers && b.course.teachers[0]
+                ? '<span style="font-size:.58rem;opacity:.65;display:block;font-style:italic">' + escapeHtml(b.course.teachers.join(', ')) + '</span>'
+                : '') +
             '</div>';
           });
           h += '</div></td>';
@@ -2566,8 +2577,12 @@ function solve() {
     }
 
     var totalCodes = codeOrder.length;
-    var idx = 0;            // index into the FLAT solutions list (for nav)
+    // Publish to module scope so Save / ←/→ / Compare can reach them
+    SOLVER_IDX = 0;
+    SOLVER_FLAT = solutions;
+    SOLVER_TOTAL_CODES = totalCodes;
     var flat = solutions;
+    var idx = SOLVER_IDX;
     var total = flat.length;
 
     // ── code → name lookup (PICKED first, CAT fallback) ─────────────
@@ -2581,6 +2596,10 @@ function solve() {
     CAT.forEach(function(c) {
       if (c.code && c.name && !codeToName[c.code]) codeToName[c.code] = c.name;
     });
+    // Lift helpers to module scope (used by Save + Compare)
+    SOLVER_codeToName = codeToName;
+    SOLVER_groups = groups;
+    SOLVER_groupOrder = groupOrder;
     function cname(code) { return codeToName[code] || code; }
     // codeAndName(code): returns 'CODE NAME' format with code in blue
     // (class .sc-code) and the name following. The code goes FIRST so
@@ -2594,8 +2613,11 @@ function solve() {
     function joinCodeNames(codes) {
       return codes.map(function(c) { return codeAndName(c); }).join(', ');
     }
-
+    // Keep the inner renderSolveItem working with closure `flat/idx` — the
+    // hoisted version (renderSolverItem) below reads module-scope state
+    // and is what ←/→ actually calls.
     function renderSolveItem() {
+      SOLVER_IDX = idx;  // keep module scope in sync for hoisted ←/→
       var sol = flat[idx];
 
       // ── Per-solution annotations ───────────────────────────────────
@@ -2774,9 +2796,15 @@ function solve() {
           secHtml +
           oneCodeHtml +
           dropHtml +
-          '<div class="sc-apply" style="margin-top:.5rem">' +
-            '<button class="primary" id="solve-apply" style="width:100%;padding:.4rem">Apply This Schedule</button>' +
+          '<div class="sc-apply" style="margin-top:.5rem;display:flex;gap:.5rem">' +
+            '<button class="primary" id="solve-apply" style="flex:1;padding:.4rem">Apply This Schedule</button>' +
+            '<button class="ghost" id="solve-save" style="flex:1;padding:.4rem" title="Save this conflict-free solution to local storage without touching your current picks">💾 Save to Compare</button>' +
           '</div>' +
+          (SAVED_SCHEDULES.length
+            ? '<div class="sc-compare-link" style="margin-top:.4rem;font-size:.72rem;color:var(--accent);text-align:center">' +
+              '📂 ' + SAVED_SCHEDULES.length + ' saved — <a href="#solve-compare" onclick="event.preventDefault();document.getElementById(\'solve-compare\').scrollIntoView({block:\'start\'});return false;" style="color:var(--accent);text-decoration:underline;cursor:pointer">jump to Compare</a>' +
+              '</div>'
+            : '') +
         '</div>' +
         '<div class="grid-wrap" style="border-top:1px solid var(--border);margin-top:.6rem;padding-top:.6rem;font-size:.68rem">' +
           '<div style="margin-bottom:8px">' +
@@ -2808,6 +2836,8 @@ function solve() {
       if (prev) prev.addEventListener('click', function() { if (idx > 0) { idx--; renderSolveItem(); } });
       if (next) next.addEventListener('click', function() { if (idx < total - 1) { idx++; renderSolveItem(); } });
       document.getElementById('solve-apply').addEventListener('click', function() { applySolution(flat[idx]); });
+      var saveBtn = document.getElementById('solve-save');
+      if (saveBtn) saveBtn.addEventListener('click', function() { saveCurrentSolverSchedule(flat[idx]); });
       // Wire group chips: click → jump to first combination in that group
       var groupChips = SOLVE_OUT.querySelectorAll('.sg-chip');
       for (var ci = 0; ci < groupChips.length; ci++) {
@@ -2840,6 +2870,251 @@ function applySolution(sol) {
     sol.sections.length + ' sections picked.' +
     (sol.dropped && sol.dropped.length ? ' <span style="color:var(--bad)">Dropped: ' + escapeHtml(sol.dropped.join(', ')) + '</span>' : '') +
     '</div>';
+  // Applying changes PICKED; the saved schedules in localStorage still
+  // describe the OLD set (correct — they're a historical record). But
+  // unfocus any currently-focused saved card so ←/→ no longer cycles it
+  // (the user is now on the freshly-applied schedule, not a saved one).
+  FOCUSED_SAVED_IDX = -1;
+}
+
+// ── Save / Compare / Focus ───────────────────────────────────────────────
+// Save a solver solution to localStorage. Does NOT touch PICKED — that's
+// what "Apply" is for. The saved schedule is a snapshot you can browse
+// later without changing your current picks.
+function saveCurrentSolverSchedule(sol) {
+  if (!sol || !sol.sections || !sol.sections.length) return;
+  // Compute total credits the same way renderSolveItem does
+  var totalCredits = 0;
+  for (var i = 0; i < sol.sections.length; i++) {
+    totalCredits += parseFloat(sol.sections[i].credits) || 0;
+  }
+  var idx = SAVED_SCHEDULES.length + 1;
+  var label = '#' + idx;
+  // Disambiguate by dropped set if there are multiple groups
+  if (sol.dropped && sol.dropped.length) {
+    label += ' · drop ' + sol.dropped.join(',');
+  }
+  var entry = {
+    label: label,
+    sections: JSON.parse(JSON.stringify(sol.sections)),
+    dropped: sol.dropped || [],
+    ts: Date.now(),
+    totalCredits: totalCredits,
+  };
+  SAVED_SCHEDULES.push(entry);
+  try { localStorage.setItem('tis-saved-schedules', JSON.stringify(SAVED_SCHEDULES)); } catch (e) {}
+  renderComparePane();
+  flash('💾 Saved ' + label + ' — ' + sol.sections.length + ' sections · ' + totalCredits.toFixed(1) + ' cr', 'ok');
+}
+
+function deleteSavedSchedule(i) {
+  if (i < 0 || i >= SAVED_SCHEDULES.length) return;
+  var removed = SAVED_SCHEDULES.splice(i, 1)[0];
+  try { localStorage.setItem('tis-saved-schedules', JSON.stringify(SAVED_SCHEDULES)); } catch (e) {}
+  if (FOCUSED_SAVED_IDX === i) FOCUSED_SAVED_IDX = -1;
+  else if (FOCUSED_SAVED_IDX > i) FOCUSED_SAVED_IDX--;
+  renderComparePane();
+  if (removed) flash('🗑 Deleted ' + removed.label, 'ok');
+}
+
+function applySavedSchedule(i) {
+  if (i < 0 || i >= SAVED_SCHEDULES.length) return;
+  // Wrap as a "solution" object so applySolution can consume it
+  var sol = {
+    sections: SAVED_SCHEDULES[i].sections,
+    dropped: SAVED_SCHEDULES[i].dropped,
+  };
+  applySolution(sol);
+}
+
+function loadSavedSchedules() {
+  try {
+    var raw = localStorage.getItem('tis-saved-schedules');
+    if (raw) {
+      var arr = JSON.parse(raw);
+      if (Array.isArray(arr)) {
+        // Validate each entry has sections
+        SAVED_SCHEDULES = arr.filter(function(e) { return e && Array.isArray(e.sections); });
+      }
+    }
+  } catch (e) {
+    SAVED_SCHEDULES = [];
+  }
+}
+
+// Focus a saved schedule card (toggles visual emphasis; no scroll).
+// The focused card is the one ←/→ cycles between.
+function focusSavedCard(i) {
+  if (i < 0 || i >= SAVED_SCHEDULES.length) return;
+  FOCUSED_SAVED_IDX = (FOCUSED_SAVED_IDX === i) ? -1 : i;  // re-click unfocuses
+  var cards = document.querySelectorAll('#solve-compare .cmp-card');
+  for (var k = 0; k < cards.length; k++) {
+    cards[k].classList.toggle('cmp-focused', k === FOCUSED_SAVED_IDX);
+  }
+  updateSolverFocusHint();
+}
+
+// When a saved card is focused, hint to the user that ←/→ now cycles
+// between saved schedules (instead of solver solutions).
+function updateSolverFocusHint() {
+  // Update the saved-count link at the top to reflect the new state
+  var link = document.querySelector('.sc-compare-link');
+  if (!link) return;
+  if (FOCUSED_SAVED_IDX >= 0) {
+    link.innerHTML = '📂 ' + SAVED_SCHEDULES.length + ' saved — <b>←/→</b> cycles focused card, click anywhere else to switch back';
+  } else {
+    link.innerHTML = '📂 ' + SAVED_SCHEDULES.length + ' saved — <a href="#solve-compare" onclick="event.preventDefault();document.getElementById(\'solve-compare\').scrollIntoView({block:\'start\'});return false;" style="color:var(--accent);text-decoration:underline;cursor:pointer">jump to Compare</a>';
+  }
+}
+
+function cycleFocusedSavedSchedule(dir) {
+  if (!SAVED_SCHEDULES.length) return false;
+  // If nothing focused, focus the first; otherwise cycle
+  if (FOCUSED_SAVED_IDX < 0) {
+    FOCUSED_SAVED_IDX = 0;
+  } else {
+    FOCUSED_SAVED_IDX = (FOCUSED_SAVED_IDX + dir + SAVED_SCHEDULES.length) % SAVED_SCHEDULES.length;
+  }
+  // Update focus class on cards WITHOUT re-rendering (preserves page scroll)
+  var cards = document.querySelectorAll('#solve-compare .cmp-card');
+  for (var k = 0; k < cards.length; k++) {
+    cards[k].classList.toggle('cmp-focused', k === FOCUSED_SAVED_IDX);
+  }
+  updateSolverFocusHint();
+  return true;  // event was consumed
+}
+
+function cycleSolverSolution(dir) {
+  if (!SOLVER_FLAT || !SOLVER_FLAT.length) return false;
+  var newIdx = SOLVER_IDX + dir;
+  if (newIdx < 0 || newIdx >= SOLVER_FLAT.length) return false;
+  // Click the prev/next button so the existing event handler + render
+  // path runs (preserves the group-chip highlight, etc.)
+  var btn = document.getElementById(dir < 0 ? 'solve-prev' : 'solve-next');
+  if (btn && !btn.disabled) btn.click();
+  return true;
+}
+
+// Render the Compare pane below #solve-out. Shows each saved schedule
+// as a full card with sections, dropped-list, and a mini odd/even grid.
+// Page position is preserved across re-renders: this is appended once
+// and only its innerHTML is replaced; the user can stay scrolled to
+// whichever card they're looking at.
+function renderComparePane() {
+  var pane = document.getElementById('solve-compare');
+  if (!SAVED_SCHEDULES.length) {
+    if (pane) pane.innerHTML = '';
+    return;
+  }
+  if (!pane) {
+    pane = document.createElement('div');
+    pane.id = 'solve-compare';
+    pane.style.cssText = 'margin-top:1rem;padding-top:.8rem;border-top:2px solid var(--border)';
+    // Append after SOLVE_OUT (the solver card). If SOLVE_OUT is gone
+    // (e.g. user re-solved and got no solutions), append to its parent
+    // (the step-pane body) instead.
+    if (SOLVE_OUT && SOLVE_OUT.parentNode) {
+      SOLVE_OUT.parentNode.appendChild(pane);
+    }
+  }
+
+  var h = '<div class="sc-compare-h" style="font-size:.85rem;font-weight:600;color:var(--accent);margin-bottom:.5rem;display:flex;align-items:center;gap:.6rem">' +
+    '📂 Compare Saved Schedules <span class="sg-cnt" style="font-size:.7rem">' + SAVED_SCHEDULES.length + '</span>' +
+    '<span style="font-size:.65rem;color:var(--mut);font-weight:400;margin-left:auto">Click a card to focus · ←/→ to cycle · click again to unfocus</span>' +
+    '</div>';
+
+  for (var i = 0; i < SAVED_SCHEDULES.length; i++) {
+    var s = SAVED_SCHEDULES[i];
+    var secList = '';
+    var credSum = 0;
+    for (var si = 0; si < s.sections.length; si++) {
+      var sec = s.sections[si];
+      credSum += parseFloat(sec.credits) || 0;
+      var codeText = escapeHtml(sec.code || '');
+      var clsText = sec.class_group ? ' <span style="color:var(--mut)">cls ' + escapeHtml(sec.class_group) + '</span>' : '';
+      var tchText = sec.teachers && sec.teachers[0] ? ' · ' + escapeHtml(sec.teachers.join(', ')) : '';
+      var schText = sec.schedule || formatSchedule(sec.slots);
+      secList += '<div class="sc-sec" style="font-size:.72rem">' + codeText + clsText + tchText +
+        (sec.credits ? ' · <b>' + sec.credits + '</b> cr' : '') +
+        (schText ? ' · <span style="color:var(--mut)">' + escapeHtml(schText) + '</span>' : '') +
+        '</div>';
+    }
+    var droppedHtml = '';
+    if (s.dropped && s.dropped.length) {
+      droppedHtml = '<div class="sc-drops" style="margin-top:.3rem;font-size:.7rem">' +
+        '<b style="color:var(--bad)">Dropped:</b> ' +
+        s.dropped.map(function(c) {
+          var n = SOLVER_codeToName[c];
+          return n && n !== c
+            ? '<span class="sc-code">' + escapeHtml(c) + '</span> ' + escapeHtml(n)
+            : '<span class="sc-code">' + escapeHtml(c) + '</span>';
+        }).join(', ') +
+        '</div>';
+    }
+
+    h += '<div class="cmp-card' + (i === FOCUSED_SAVED_IDX ? ' cmp-focused' : '') + '" data-idx="' + i + '" ' +
+      'style="background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:.7rem;margin-bottom:.6rem;cursor:pointer;transition:border-color .12s,box-shadow .12s">' +
+      '<div class="cmp-h" style="display:flex;align-items:center;gap:.5rem;margin-bottom:.4rem">' +
+        '<span class="cmp-label" style="font-size:.85rem;font-weight:600;color:var(--accent)">' + escapeHtml(s.label) + '</span>' +
+        '<span class="sg-cnt" style="font-size:.7rem">' + s.sections.length + ' sections · ' + credSum.toFixed(1) + ' cr</span>' +
+        '<span style="margin-left:auto;display:flex;gap:.3rem">' +
+          '<button class="ghost cmp-apply" data-i="' + i + '" style="font-size:.7rem;padding:.2rem .5rem">Apply</button>' +
+          '<button class="ghost cmp-del"  data-i="' + i + '" style="font-size:.7rem;padding:.2rem .5rem;color:var(--bad)">🗑</button>' +
+        '</span>' +
+      '</div>' +
+      '<div class="cmp-body">' + secList + droppedHtml + '</div>' +
+      '<div class="cmp-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-top:.5rem;font-size:.6rem">' +
+        '<div>' +
+          '<div style="font-size:.6rem;color:var(--accent);font-weight:500;margin-bottom:2px">Odd Weeks</div>' +
+          '<table class="grid"><thead><tr><th>Pd</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th></tr></thead>' +
+            '<tbody class="cmp-grid-odd"></tbody></table>' +
+        '</div>' +
+        '<div>' +
+          '<div style="font-size:.6rem;color:var(--accent);font-weight:500;margin-bottom:2px">Even Weeks</div>' +
+          '<table class="grid"><thead><tr><th>Pd</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th></tr></thead>' +
+            '<tbody class="cmp-grid-even"></tbody></table>' +
+        '</div>' +
+      '</div>' +
+      '</div>';
+  }
+
+  pane.innerHTML = h;
+
+  // Wire card click → focus toggle; card buttons (Apply / Delete) → actions
+  var cards = pane.querySelectorAll('.cmp-card');
+  for (var k = 0; k < cards.length; k++) {
+    cards[k].addEventListener('click', function(e) {
+      // If the click was on a button, let that handler run instead
+      if (e.target.closest('.cmp-apply, .cmp-del')) return;
+      focusSavedCard(parseInt(this.dataset.idx, 10));
+    });
+  }
+  var applyBtns = pane.querySelectorAll('.cmp-apply');
+  for (var ai = 0; ai < applyBtns.length; ai++) {
+    applyBtns[ai].addEventListener('click', function() {
+      applySavedSchedule(parseInt(this.dataset.i, 10));
+    });
+  }
+  var delBtns = pane.querySelectorAll('.cmp-del');
+  for (var di = 0; di < delBtns.length; di++) {
+    delBtns[di].addEventListener('click', function() {
+      deleteSavedSchedule(parseInt(this.dataset.i, 10));
+    });
+  }
+
+  // Render mini grids for each card
+  for (var gi = 0; gi < SAVED_SCHEDULES.length; gi++) {
+    var s2 = SAVED_SCHEDULES[gi];
+    var blocks = sectionsToBlocks(s2.sections);
+    var cardEl = pane.querySelector('.cmp-card[data-idx="' + gi + '"]');
+    if (!cardEl) continue;
+    renderGridBlocks(
+      blocks,
+      cardEl.querySelector('.cmp-grid-odd'),
+      cardEl.querySelector('.cmp-grid-even'),
+      null  // no legend in compare mini grid
+    );
+  }
 }
 
 function switchStep(n) {
@@ -2862,7 +3137,7 @@ function switchStep(n) {
   }
 
   // Refresh per-step data
-  if (n === 3) updateSolveCodes();
+  if (n === 3) { updateSolveCodes(); renderComparePane(); }
   if (n === 4) { renderBidPanel(); updateExportIcsButton(); }
 
   // Grid visibility: persistent in steps 1+2, hidden in 3+4 unless
@@ -3139,6 +3414,7 @@ function renderBidPanel() {
   attachBidBoxHandlers();
   BID_MSG.textContent = '';
   BID_MSG.className = 'bp-msg';
+  updateAssignUnbiddedButton();
 }
 
 // ── Click / drag handlers on a bid box ─────────────────────────────────
@@ -3308,6 +3584,65 @@ function updateBidTotals() {
     BID_BAR.innerHTML = segs;
   }
   updateBidStat();
+  updateAssignUnbiddedButton();
+}
+
+// Count how many picked rwhs currently have a 0 (or missing) bid
+function countUnbiddedPicks() {
+  var keys = Object.keys(PICKED);
+  var n = 0;
+  for (var i = 0; i < keys.length; i++) {
+    var b = Number(PICKED_BIDS[keys[i]]) || 0;
+    if (b <= 0) n++;
+  }
+  return n;
+}
+
+// Enable/disable the "Assign 1 to all unbidded" button based on whether
+// any picks are currently zero-bid. Re-runs on every bid change so the
+// button reflects live state.
+function updateAssignUnbiddedButton() {
+  var btn = document.getElementById('btn-bid-fill-unbidded');
+  if (!btn) return;
+  var n = countUnbiddedPicks();
+  if (n <= 0) {
+    btn.disabled = true;
+    btn.style.opacity = '0.4';
+    btn.style.cursor = 'not-allowed';
+    btn.title = 'All picked rwhs already have a bid';
+    // Reset label to the static form (no count) when nothing to do
+    btn.textContent = '+1 to all unbidded';
+  } else {
+    btn.disabled = false;
+    btn.style.opacity = '';
+    btn.style.cursor = '';
+    btn.title = 'Set bid = 1 on ' + n + ' unbidded rwh' + (n === 1 ? '' : 's');
+    // Reflect the count in the button label so the user knows the impact
+    btn.textContent = '+1 to all unbidded (' + n + ')';
+  }
+}
+
+// "Assign 1 point to all unbidded" — set bid = 1 on every picked rwh
+// that currently has 0 (or no bid). Re-renders the bid panel so the
+// bar, totals, and box values update live.
+function assignOneToUnbidded() {
+  if (countUnbiddedPicks() <= 0) return;
+  var keys = Object.keys(PICKED);
+  var n = 0;
+  for (var i = 0; i < keys.length; i++) {
+    var b = Number(PICKED_BIDS[keys[i]]) || 0;
+    if (b <= 0) {
+      PICKED_BIDS[keys[i]] = 1;
+      n++;
+    }
+  }
+  if (n > 0) {
+    flash('Assigned 1 pt to ' + n + ' unbidded pick' + (n === 1 ? '' : 's'), 'ok');
+    // Re-render the panel; updateBidTotals updates totals + assigns the
+    // new box values, but a full renderBidPanel is needed so the .bid-box
+    // children reflect the new value (their <input> is rebuilt by JS).
+    renderBidPanel();
+  }
 }
 
 // updateBidStat: refresh just the compact "X pts used / Y available" summary
@@ -3559,6 +3894,9 @@ loadInfo = function() {
 
 document.addEventListener('DOMContentLoaded', function() {
 
+  // Load any saved schedules from previous sessions (Compare pane source)
+  loadSavedSchedules();
+
   // ── Stepper wiring (4-step workflow) ─────────────────────────────
   // The step chips are the new top-of-center tabs. Clicking a chip
   // jumps to that step. Current step is highlighted in accent; completed
@@ -3581,11 +3919,49 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
+  // ── ←/→ keyboard nav in step 3 ──────────────────────────────────
+  // When on the Schedule step, ←/→ cycles solver solutions (the same
+  // as the ◀/▶ buttons). If a saved-schedule card is focused, ←/→
+  // cycles between saved schedules instead. Page position is preserved
+  // in both cases (the solver re-renders in place; the compare pane
+  // only toggles a CSS class).
+  document.addEventListener('keydown', function(e) {
+    if (CURRENT_STEP !== 3) return;
+    // Skip when typing in an input/textarea/contenteditable
+    var t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (e.key === 'ArrowLeft') {
+      if (FOCUSED_SAVED_IDX >= 0) {
+        if (cycleFocusedSavedSchedule(-1)) e.preventDefault();
+      } else {
+        if (cycleSolverSolution(-1)) e.preventDefault();
+      }
+    } else if (e.key === 'ArrowRight') {
+      if (FOCUSED_SAVED_IDX >= 0) {
+        if (cycleFocusedSavedSchedule(+1)) e.preventDefault();
+      } else {
+        if (cycleSolverSolution(+1)) e.preventDefault();
+      }
+    } else if (e.key === 'Escape' && FOCUSED_SAVED_IDX >= 0) {
+      // Esc unfocuses the saved card (back to solver arrow behavior)
+      FOCUSED_SAVED_IDX = -1;
+      var cards = document.querySelectorAll('#solve-compare .cmp-card');
+      for (var k = 0; k < cards.length; k++) {
+        cards[k].classList.remove('cmp-focused');
+      }
+      updateSolverFocusHint();
+      e.preventDefault();
+    }
+  });
+
   // ── Step 4 terminal action wiring (Export ICS, Sync to TIS) ────────
   var btnExportIcs = document.getElementById('btn-export-ics');
   if (btnExportIcs) btnExportIcs.onclick = exportICS;
   var btnSyncTis = document.getElementById('btn-sync-tis');
   if (btnSyncTis) btnSyncTis.onclick = syncToTIS;
+  // "Assign 1 to all unbidded" — fill in minimum bids on zero-bid picks
+  var btnFillUnbidded = document.getElementById('btn-bid-fill-unbidded');
+  if (btnFillUnbidded) btnFillUnbidded.onclick = assignOneToUnbidded;
 
   // ── NCES detail sheet wiring (replaces the eval tab) ──────────────
   var ncesSheet = document.getElementById('nces-sheet');
