@@ -121,11 +121,17 @@ table.grid td{height:38px;position:relative}
    week tables. Diagonal hatch makes it visible even when overlaid on a
    course block. data-mode="odd" or "even" overrides the full hatch with
    a single-triangle fill (upper-left for odd, lower-right for even) so
-   the user can see week-detail at a glance. */
+   the user can see week-detail at a glance. The triangle fill also
+   uses a gradient (solid at the corner, fading to the diagonal) to
+   match the radial-gradient "leaves room to breathe" feel of "all"
+   mode — not a flat half. */
 .cell.blocked{background:rgba(231,76,60,.22)}
 .cell.blocked[data-mode="all"]{background:repeating-linear-gradient(45deg,rgba(231,76,60,.22) 0,rgba(231,76,60,.22) 6px,transparent 6px,transparent 12px)}
-.cell.blocked[data-mode="odd"]{background:linear-gradient(to top right,rgba(231,76,60,.55) 0,rgba(231,76,60,.55) 50%,transparent 50%,transparent 100%)}
-.cell.blocked[data-mode="even"]{background:linear-gradient(to top right,transparent 0,transparent 50%,rgba(231,76,60,.55) 50%,rgba(231,76,60,.55) 100%)}
+/* odd: upper-left triangle. Solid at top-left, fades to transparent at the
+   diagonal — same "leaves room to breathe" effect as the radial-gradient. */
+.cell.blocked[data-mode="odd"]{background:linear-gradient(to bottom right,rgba(231,76,60,.55) 0%,rgba(231,76,60,.30) 50%,transparent 50%,transparent 100%)}
+/* even: lower-right triangle. Solid at bottom-right, fades to transparent at the diagonal. */
+.cell.blocked[data-mode="even"]{background:linear-gradient(to bottom right,transparent 0%,transparent 50%,rgba(231,76,60,.30) 50%,rgba(231,76,60,.55) 100%)}
 .cell.blocked::after{content:"🚫";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:.85rem;opacity:.55;pointer-events:none;z-index:5}
 /* The 🚫 only makes sense for "all weeks blocked". For odd/even
    per-week blocks, the triangle fill itself is the signal — no overlay. */
@@ -133,16 +139,18 @@ table.grid td{height:38px;position:relative}
 .cell.blocked[data-mode="even"]::after{content:"";opacity:0}
 /* Single-grid block view (scheduler): per-week uses triangle fill.
    "all" = soft radial gradient (fades to edge = "leaves room to breathe"),
-   "odd" = upper-left triangle, "even" = lower-right triangle.
+   "odd" = upper-left triangle with gradient (solid at corner, fading to
+   the diagonal), "even" = lower-right triangle with gradient.
    The CSS `linear-gradient(to bottom right, …)` with a 50% color stop
-   creates the diagonal split — solid above the diagonal for odd, below
-   for even. See user spec: "ui color gradient to edge of the box is
-   'partially blocked' (leaves a room to breathe), upper left triangle
-   division fill is odd week block, lower right for even week block". */
+   creates the diagonal split; the additional stops between 0% and 50%
+   fade the fill inside the triangle so it doesn't read as a flat half.
+   See user spec: "ui color gradient to edge of the box is 'partially
+   blocked' (leaves a room to breathe), upper left triangle division
+   fill is odd week block, lower right for even week block". */
 #block-body td.blocked{background:radial-gradient(circle at center,rgba(231,76,60,.5) 0%,rgba(231,76,60,.35) 50%,rgba(231,76,60,.18) 100%)}
 #block-body td.blocked[data-mode="all"]{background:radial-gradient(circle at center,rgba(231,76,60,.5) 0%,rgba(231,76,60,.35) 50%,rgba(231,76,60,.18) 100%)}
-#block-body td.blocked[data-mode="odd"]{background:linear-gradient(to bottom right,rgba(231,76,60,.55) 0%,rgba(231,76,60,.55) 50%,transparent 50%,transparent 100%)}
-#block-body td.blocked[data-mode="even"]{background:linear-gradient(to bottom right,transparent 0%,transparent 50%,rgba(231,76,60,.55) 50%,rgba(231,76,60,.55) 100%)}
+#block-body td.blocked[data-mode="odd"]{background:linear-gradient(to bottom right,rgba(231,76,60,.55) 0%,rgba(231,76,60,.30) 50%,transparent 50%,transparent 100%)}
+#block-body td.blocked[data-mode="even"]{background:linear-gradient(to bottom right,transparent 0%,transparent 50%,rgba(231,76,60,.30) 50%,rgba(231,76,60,.55) 100%)}
 
 /* Right-click mode-selector panel */
 .block-panel{position:fixed;z-index:1000;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:.4rem;box-shadow:0 6px 20px rgba(0,0,0,.5);font-size:.78rem;min-width:170px}
@@ -152,8 +160,8 @@ table.grid td{height:38px;position:relative}
 .block-panel .bp-opt.bp-current{background:rgba(91,157,255,.18);color:#fff}
 .block-panel .bp-swatch{width:18px;height:18px;border:1px solid #2a3140;border-radius:3px;flex-shrink:0;display:inline-block}
 .block-panel .bp-swatch-all{background:radial-gradient(circle at center,rgba(231,76,60,.5) 0%,rgba(231,76,60,.35) 50%,rgba(231,76,60,.18) 100%)}
-.block-panel .bp-swatch-odd{background:linear-gradient(to bottom right,rgba(231,76,60,.55) 0%,rgba(231,76,60,.55) 50%,transparent 50%,transparent 100%)}
-.block-panel .bp-swatch-even{background:linear-gradient(to bottom right,transparent 0%,transparent 50%,rgba(231,76,60,.55) 50%,rgba(231,76,60,.55) 100%)}
+.block-panel .bp-swatch-odd{background:linear-gradient(to bottom right,rgba(231,76,60,.55) 0%,rgba(231,76,60,.30) 50%,transparent 50%,transparent 100%)}
+.block-panel .bp-swatch-even{background:linear-gradient(to bottom right,transparent 0%,transparent 50%,rgba(231,76,60,.30) 50%,rgba(231,76,60,.55) 100%)}
 .block-panel .bp-swatch-none{background:repeating-linear-gradient(45deg,transparent 0,transparent 3px,#444 3px,#444 4px)}
 .block-panel .bp-label{flex:1}
 .block-panel .bp-check{margin-left:auto;color:var(--accent);font-weight:600}
