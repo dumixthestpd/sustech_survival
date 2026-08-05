@@ -97,6 +97,7 @@ var SOLVER_TOTAL_CODES = 0;  // for the "X / Y" coverage line in the Compare pan
 var SOLVER_codeToName = {};  // mirrored from the last solve() — for the Compare pane rendering
 var SOLVER_groups = null;    // groupKey → [sol,...]
 var SOLVER_groupOrder = [];  // order of first appearance in groups
+var SOLVER_codeOrder = [];   // the priority list of codes used by the last solve() (for saved-schedule round-trip)
 var PICKED_CONFLICTS = {};    // { rwh: bool }        true if this rwh conflicts with another picked rwh
 var PICKED_CHECKED = {};      // { rwh: true }        UI-only: which right-panel checkboxes are ticked for bulk-remove. Not persisted.
 var CURRENT_FILE = null;      // { kind: 'saved'|'loaded', name: 'tis-picks-...json' } — shown in the right panel for reference.
@@ -2581,6 +2582,7 @@ function solve() {
     SOLVER_IDX = 0;
     SOLVER_FLAT = solutions;
     SOLVER_TOTAL_CODES = totalCodes;
+    SOLVER_codeOrder = codeOrder.slice();  // round-trip: saved schedules keep priority
     var flat = solutions;
     var idx = SOLVER_IDX;
     var total = flat.length;
@@ -2894,17 +2896,27 @@ function saveCurrentSolverSchedule(sol) {
   if (sol.dropped && sol.dropped.length) {
     label += ' · drop ' + sol.dropped.join(',');
   }
+  // Also save the blocked time zones + priority so a saved schedule
+  // can recreate the solver input. blocked is the compact input string
+  // (e.g. "1,2-3/3,5-6") parsed by parseBlockedInput; null/empty if
+  // the user hadn't blocked any slots when they saved.
+  var blockedStr = blockedToInput();
+  var blockedCount = blockedStr ? blockedToInput().split('/').filter(function(s) { return s.trim(); }).length : 0;
   var entry = {
     label: label,
     sections: JSON.parse(JSON.stringify(sol.sections)),
     dropped: sol.dropped || [],
     ts: Date.now(),
     totalCredits: totalCredits,
+    // New: blocked + priority snapshot for round-trip reproducibility
+    blocked: blockedStr || null,
+    priority: SOLVER_codeOrder ? SOLVER_codeOrder.slice() : null,
   };
   SAVED_SCHEDULES.push(entry);
   try { localStorage.setItem('tis-saved-schedules', JSON.stringify(SAVED_SCHEDULES)); } catch (e) {}
   renderComparePane();
-  flash('💾 Saved ' + label + ' — ' + sol.sections.length + ' sections · ' + totalCredits.toFixed(1) + ' cr', 'ok');
+  var blockedTag = blockedCount ? ' · ' + blockedCount + ' blocked slot' + (blockedCount === 1 ? '' : 's') : '';
+  flash('💾 Saved ' + label + ' — ' + sol.sections.length + ' sections · ' + totalCredits.toFixed(1) + ' cr' + blockedTag, 'ok');
 }
 
 function deleteSavedSchedule(i) {
@@ -2919,12 +2931,35 @@ function deleteSavedSchedule(i) {
 
 function applySavedSchedule(i) {
   if (i < 0 || i >= SAVED_SCHEDULES.length) return;
+  var saved = SAVED_SCHEDULES[i];
   // Wrap as a "solution" object so applySolution can consume it
   var sol = {
-    sections: SAVED_SCHEDULES[i].sections,
-    dropped: SAVED_SCHEDULES[i].dropped,
+    sections: saved.sections,
+    dropped: saved.dropped,
   };
   applySolution(sol);
+  // Also restore the saved blocked time zones (if any). This is a
+  // snapshot — the user explicitly chose to apply THIS schedule, so
+  // their current BLOCKED is replaced (not merged). Show a status
+  // message so they know it happened.
+  if (saved.blocked) {
+    // Clear current BLOCKED, then re-apply from the saved compact string.
+    for (var k in BLOCKED) if (BLOCKED.hasOwnProperty(k)) delete BLOCKED[k];
+    var parsed = parseBlockedInput(saved.blocked);
+    for (var pi = 0; pi < parsed.length; pi++) {
+      var day = parsed[pi][0];
+      var periods = parsed[pi][1];
+      for (var pj = 0; pj < periods.length; pj++) {
+        BLOCKED[day + ':' + periods[pj]] = true;
+      }
+    }
+    // Sync the text input + re-render the scheduler grid so the user
+    // sees the restored blocked cells.
+    syncBlockedInput();
+    renderBlockGrid();
+    renderGrid();  // also reflect the blocked state in the main grid
+    flash('Restored ' + parsed.length + ' blocked slot' + (parsed.length === 1 ? '' : 's') + ' from ' + saved.label, 'ok');
+  }
 }
 
 function loadSavedSchedules() {
@@ -3054,9 +3089,12 @@ function renderComparePane() {
 
     h += '<div class="cmp-card' + (i === FOCUSED_SAVED_IDX ? ' cmp-focused' : '') + '" data-idx="' + i + '" ' +
       'style="background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:.7rem;margin-bottom:.6rem;cursor:pointer;transition:border-color .12s,box-shadow .12s">' +
-      '<div class="cmp-h" style="display:flex;align-items:center;gap:.5rem;margin-bottom:.4rem">' +
+      '<div class="cmp-h" style="display:flex;align-items:center;gap:.5rem;margin-bottom:.4rem;flex-wrap:wrap">' +
         '<span class="cmp-label" style="font-size:.85rem;font-weight:600;color:var(--accent)">' + escapeHtml(s.label) + '</span>' +
         '<span class="sg-cnt" style="font-size:.7rem">' + s.sections.length + ' sections · ' + credSum.toFixed(1) + ' cr</span>' +
+        (s.blocked
+          ? '<span class="sg-cnt" style="font-size:.7rem;background:rgba(231,76,60,.18);color:#ff8a73" title="This schedule was saved with these blocked time zones. Click Apply to restore them.">🚫 ' + s.blocked.split('/').filter(function(x) { return x.trim(); }).length + ' blocked</span>'
+          : '') +
         '<span style="margin-left:auto;display:flex;gap:.3rem">' +
           '<button class="ghost cmp-apply" data-i="' + i + '" style="font-size:.7rem;padding:.2rem .5rem">Apply</button>' +
           '<button class="ghost cmp-del"  data-i="' + i + '" style="font-size:.7rem;padding:.2rem .5rem;color:var(--bad)">🗑</button>' +
@@ -4424,6 +4462,12 @@ function initDragDropLoad() {
 
 // Shared by the Load button and drag-drop. Validates the JSON shape,
 // then either replaces or merges with the current PICKED set.
+// ── Picks file load with rwh verification ──────────────────────────────
+// readPicksFile → verifyPicksBeforeLoad → (user confirms) → applyPicksFromData.
+// Each rwh in the saved file is pinged against /api/tis/course/<rwh>;
+// if TIS returns 404 the section has been removed/renamed since the
+// file was saved. We surface that BEFORE applying (otherwise the user
+// would see "I picked this, but Sync to TIS just rejects it" later).
 function readPicksFile(file, mode) {
   mode = mode || 'replace';
   var reader = new FileReader();
@@ -4434,22 +4478,211 @@ function readPicksFile(file, mode) {
         flash('Not a valid picks file (missing version or picks).', 'err');
         return;
       }
-      if (mode === 'replace') {
-        // Reset everything that depends on PICKED before applying.
-        PICKED = {};
-        PICKED_BIDS = {};
-        PICKED_CONFLICTS = {};
-        PICKED_CHECKED = {};
-        ACTIVE_RWH = null;
+      // No picks to load — nothing to verify, just apply (which is a no-op)
+      if (!data.picks.length) {
+        applyPicksFromData(data);
+        return;
       }
-      applyPicksFromData(data);
-      CURRENT_FILE = { kind: 'loaded', name: file.name };
-      updatePickedActionsState();
-      flash((mode === 'replace' ? 'Loaded ' : 'Merged ') +
-        data.picks.length + ' pick(s) from ' + file.name, 'ok');
+      verifyPicksBeforeLoad(data, file, mode);
     } catch (e) { flash('Could not parse file: ' + e.message, 'err'); }
   };
   reader.readAsText(file);
+}
+
+// Ping /api/tis/course/<rwh> for every pick in parallel, then show a
+// confirmation modal with the breakdown: N found, M gone, K errored.
+// The user picks what to do next.
+function verifyPicksBeforeLoad(data, file, mode) {
+  // Reset PICKED_BIDS only if we're replacing (so partial apply doesn't
+  // nuke the existing bids). The mutator does the full reset in
+  // applyPicksFromData → but we need to do it NOW, before the user
+  // confirms, so the empty/loading state is consistent.
+  // We delay the reset until the user actually confirms.
+  var picks = data.picks;
+  var pending = picks.length;
+  var verified = [];   // { rwh, status: 'ok'|'gone'|'error', pick, error? }
+  var allDone = false;
+  var xn = currentXn(), xq = currentXq();
+
+  var showModal = function() {
+    var found = verified.filter(function(v) { return v.status === 'ok'; });
+    var gone = verified.filter(function(v) { return v.status === 'gone'; });
+    var errs = verified.filter(function(v) { return v.status === 'error'; });
+    showPicksVerifyModal({
+      fileName: file.name,
+      found: found, gone: gone, errors: errs,
+      onCancel: function() {
+        flash('Load cancelled — file left untouched.', 'warn');
+      },
+      onLoadFoundOnly: function() {
+        var filtered = { version: 1, picks: found.map(function(v) { return v.pick; }) };
+        finishLoad(filtered, file, mode);
+      },
+      onLoadAll: function() {
+        finishLoad(data, file, mode);
+      },
+    });
+  };
+
+  var finishLoad = function(loadedData, loadedFile, loadedMode) {
+    // Reset PICKED + dependents if we're replacing (the original
+    // readPicksFile behavior). applyPicksFromData will re-render.
+    if (loadedMode === 'replace') {
+      PICKED = {};
+      PICKED_BIDS = {};
+      PICKED_CONFLICTS = {};
+      PICKED_CHECKED = {};
+      ACTIVE_RWH = null;
+    }
+    applyPicksFromData(loadedData);
+    CURRENT_FILE = { kind: 'loaded', name: loadedFile.name };
+    updatePickedActionsState();
+    var loadedCount = loadedData.picks.length;
+    var skipCount = picks.length - loadedCount;
+    var skipMsg = skipCount ? ' (' + skipCount + ' skipped — no longer in catalog)' : '';
+    flash((loadedMode === 'replace' ? 'Loaded ' : 'Merged ') +
+      loadedCount + ' pick(s) from ' + loadedFile.name + skipMsg, 'ok');
+  };
+
+  // If verification is fast, don't flash the modal. If any are gone,
+  // always show the modal (that's the point — let the user decide).
+  // To keep UX responsive, we collect results as they arrive and only
+  // show the modal when we know there's a non-trivial decision.
+  var startTime = Date.now();
+  var MIN_LATENCY_MS = 250;  // only show "loading" flash if it takes longer
+
+  for (var i = 0; i < picks.length; i++) {
+    (function(pick) {
+      if (!pick || !pick.rwh) {
+        verified.push({ rwh: '?', status: 'error', pick: pick, error: 'no rwh' });
+        pending--;
+        if (pending === 0) allDone = true;
+        return;
+      }
+      var url = '/api/tis/course/' + encodeURIComponent(pick.rwh) + sem();
+      fetch(url).then(function(resp) {
+        if (resp.status === 200) verified.push({ rwh: pick.rwh, status: 'ok', pick: pick });
+        else if (resp.status === 404) verified.push({ rwh: pick.rwh, status: 'gone', pick: pick });
+        else verified.push({ rwh: pick.rwh, status: 'error', pick: pick, code: resp.status });
+      }).catch(function(e) {
+        verified.push({ rwh: pick.rwh, status: 'error', pick: pick, error: e.message });
+      }).then(function() {
+        pending--;
+        if (pending === 0 && !allDone) {
+          allDone = true;
+          var foundCount = verified.filter(function(v) { return v.status === 'ok'; }).length;
+          var goneCount = verified.filter(function(v) { return v.status === 'ok' ? 0 : 1; }).length;
+          // If everything verified OK and no decision needed, skip the modal
+          if (goneCount === 0) {
+            finishLoad(data, file, mode);
+          } else {
+            showModal();
+          }
+        }
+      });
+    })(picks[i]);
+  }
+
+  // While verification is running, if it takes a while, flash a status
+  setTimeout(function() {
+    if (allDone) return;
+    flash('Verifying ' + pending + ' section(s) against current catalog…', 'ok');
+  }, MIN_LATENCY_MS);
+}
+
+// Build and show the verify-load modal. Returns when user clicks a
+// button. The modal is dismissable via "Cancel" or Esc.
+function showPicksVerifyModal(opts) {
+  var overlay = document.createElement('div');
+  overlay.className = 'pv-modal-overlay';
+  overlay.innerHTML = '<div class="pv-modal" role="dialog" aria-labelledby="pv-title">' +
+    '<div class="pv-modal-h">' +
+      '<span class="pv-modal-t" id="pv-title">📂 Load "' + escapeHtml(opts.fileName) + '"</span>' +
+      '<button class="pv-modal-x" aria-label="Close">×</button>' +
+    '</div>' +
+    '<div class="pv-modal-body"></div>' +
+    '<div class="pv-modal-actions"></div>' +
+  '</div>';
+  document.body.appendChild(overlay);
+
+  var body = overlay.querySelector('.pv-modal-body');
+  var actions = overlay.querySelector('.pv-modal-actions');
+
+  var renderRow = function(label, items, kindClass, emptyText) {
+    if (!items.length) {
+      return '<div class="pv-row pv-empty"><span class="pv-tag ' + kindClass + '">' + label + ' (0)</span><span class="pv-empty-text">' + emptyText + '</span></div>';
+    }
+    var lis = items.map(function(v) {
+      var p = v.pick || {};
+      var codeText = escapeHtml(p.code || '?');
+      var clsText = p.class_group ? ' <span style="color:var(--mut)">cls ' + escapeHtml(p.class_group) + '</span>' : '';
+      var t = p.teachers && p.teachers.length ? p.teachers.join(', ') : '';
+      var tchText = t ? ' · ' + escapeHtml(t) : '';
+      return '<li class="pv-li pv-' + kindClass + '" data-rwh="' + escapeHtml(v.rwh || '') + '">' +
+        '<code class="pv-code">' + codeText + '</code>' +
+        clsText + tchText +
+        (kindClass === 'gone' ? ' <span class="pv-tag-mini">removed</span>' : '') +
+        (kindClass === 'error' ? ' <span class="pv-tag-mini">error</span>' : '') +
+      '</li>';
+    }).join('');
+    return '<div class="pv-row">' +
+      '<span class="pv-tag ' + kindClass + '">' + label + ' (' + items.length + ')</span>' +
+      '<ul class="pv-list">' + lis + '</ul>' +
+    '</div>';
+  };
+
+  body.innerHTML =
+    renderRow('✓ Found', opts.found, 'ok', 'None of the saved sections are still available.') +
+    renderRow('✗ Removed from catalog', opts.gone, 'gone', 'Nothing was removed.') +
+    renderRow('⚠ Verification errored', opts.errors, 'error', 'No errors.');
+
+  var cancel = function() {
+    document.body.removeChild(overlay);
+    opts.onCancel();
+  };
+  var loadFound = function() {
+    if (!opts.found.length) { cancel(); return; }
+    document.body.removeChild(overlay);
+    opts.onLoadFoundOnly();
+  };
+  var loadAll = function() {
+    document.body.removeChild(overlay);
+    opts.onLoadAll();
+  };
+
+  // Action buttons — Cancel is on the LEFT (always available).
+  // "Load only found" is the SAFE default and is visually primary
+  // (it's what most users want). "Load all anyway" is the demoted,
+  // danger option — it lets the user proceed but TIS will reject
+  // missing rwhs at sync time.
+  var html = '<button class="pv-btn pv-btn-cancel">Cancel</button>';
+  if (opts.found.length) {
+    html += '<button class="pv-btn pv-btn-primary">Load only found (' + opts.found.length + ')</button>';
+  } else {
+    html += '<button class="pv-btn" disabled>Nothing to load</button>';
+  }
+  if (opts.gone.length || opts.errors.length) {
+    html += '<button class="pv-btn pv-btn-danger">Load all anyway (' + (opts.gone.length + opts.errors.length) + ' may fail)</button>';
+  }
+  actions.innerHTML = html;
+
+  // Wire handlers
+  overlay.querySelector('.pv-modal-x').addEventListener('click', cancel);
+  var btns = actions.querySelectorAll('.pv-btn');
+  btns[0].addEventListener('click', cancel);  // Cancel
+  if (opts.found.length) btns[1].addEventListener('click', loadFound);
+  if (opts.gone.length || opts.errors.length) {
+    btns[btns.length - 1].addEventListener('click', loadAll);
+  }
+  // Esc cancels
+  var escHandler = function(e) {
+    if (e.key === 'Escape') { cancel(); document.removeEventListener('keydown', escHandler); }
+  };
+  document.addEventListener('keydown', escHandler);
+  // Backdrop click also cancels
+  overlay.addEventListener('click', function(e) {
+    if (e.target === overlay) cancel();
+  });
 }
 
 function applyPicksFromData(data) {
