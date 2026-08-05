@@ -248,12 +248,29 @@ table.grid td{height:38px;position:relative}
 
 /* picked / my selection -- FIX for overlap bug */
 .picked{display:flex;flex-direction:column}
-.pick{position:relative;padding:.6rem .7rem;border-bottom:1px solid #1a2030;clear:both;margin-bottom:0;overflow:visible;cursor:grab}
+.pick{position:relative;padding:.6rem .7rem;border-bottom:1px solid #1a2030;clear:both;margin-bottom:0;overflow:visible;cursor:grab;display:flex;gap:.55rem;align-items:flex-start}
 .pick:active{cursor:grabbing}
 .pick.dragging{opacity:.4;outline:2px dashed var(--accent)}
 .pick.drag-over-above{box-shadow:0 -2px 0 var(--accent) inset,0 -2px 4px var(--accent)}
 .pick.drag-over-below{box-shadow:0 2px 0 var(--accent) inset,0 2px 4px var(--accent)}
 .pick .pn{font-weight:600;font-size:.84rem}
+.pick-body{flex:1;min-width:0}
+/* Per-card checkbox on the picked panel (right side, mirrors the left
+   panel's pick-check pattern but with its own class to avoid selector
+   collisions with the left panel's catalog-card checkboxes). */
+.picked-check-wrap{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;padding-top:.2rem;cursor:pointer;margin:0}
+.picked-check{width:1.1rem;height:1.1rem;cursor:pointer;accent-color:var(--accent)}
+/* Bulk header above the pick-list (select-all + count + remove-selected) */
+.picked-bulk-header{display:flex;align-items:center;gap:.5rem;padding:.45rem .7rem;border-bottom:1px solid var(--border);background:var(--panel);position:sticky;top:0;z-index:2;font-size:.75rem}
+.picked-select-all-wrap{display:inline-flex;align-items:center;gap:.4rem;cursor:pointer;color:var(--mut);user-select:none}
+.picked-select-all-wrap input{width:1rem;height:1rem;cursor:pointer;accent-color:var(--accent)}
+.picked-selected-count{color:var(--mut);font-variant-numeric:tabular-nums;margin-left:.15rem}
+.picked-remove-selected-btn{background:transparent;border:1px solid var(--bad);color:var(--bad);font-size:.72rem;padding:.25rem .55rem;border-radius:4px;cursor:pointer;margin-left:auto;font-family:inherit}
+.picked-remove-selected-btn:hover{background:rgba(231,76,60,.12)}
+.picked-remove-selected-btn:disabled{opacity:.4;cursor:not-allowed;border-color:var(--border);color:var(--mut)}
+.picked-remove-selected-btn:disabled:hover{background:transparent}
+/* Save button: the dynamic count badge inside */
+.save-file-btn #save-count{color:var(--mut);font-weight:normal;margin-left:.15rem}
 .pick .pm{color:var(--mut);font-size:.72rem;margin-top:.1rem}
 .pick .pm b{color:#c2c8d0;font-weight:500}
 .pick .acts{margin-top:.35rem;display:flex;gap:.25rem;flex-shrink:0}

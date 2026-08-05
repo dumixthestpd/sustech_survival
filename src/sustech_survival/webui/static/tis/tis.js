@@ -87,6 +87,7 @@ var BID_PANEL = document.querySelector('.bid-panel');
 var BID_CONFLICT_BANNER = document.getElementById('bp-conflict-banner');
 var PICKED_BIDS = {};        // { rwh: bid_int }      parallel to PICKED
 var PICKED_CONFLICTS = {};    // { rwh: bool }        true if this rwh conflicts with another picked rwh
+var PICKED_CHECKED = {};      // { rwh: true }        UI-only: which right-panel checkboxes are ticked for bulk-remove. Not persisted.
 var ROUND_INFO = { jffs: 0, ksrq: '', jsrq: '', lcmc: '', xkfsdm: '', xkms: '', ok: false, message: '' };
 var BID_DRAG = null;         // { sourceRwh, sourceBox, arrowEl, targetRwh, lastX, lastY }
 var BID_EDIT = null;         // { rwh, originalBid, inputEl }
@@ -1690,6 +1691,7 @@ function removePicked(rwh) {
   delete PICKED[rwh];
   delete PICKED_BIDS[rwh];
   delete PICKED_CONFLICTS[rwh];
+  delete PICKED_CHECKED[rwh];  // any tick for bulk-remove is moot now
   // Re-render search results so cards reflect the unpicked state
   renderResults(CAT);
   if (ACTIVE_RWH === rwh) {
@@ -1734,9 +1736,11 @@ function renderPicked() {
   PICK_STAT.textContent = keys.length + ' sections · ' +
     Object.keys(codeCredits).length + ' courses · ' +
     totalCredits.toFixed(1) + ' Credits';
-  // The action buttons (Export ICS, Save, Load, Sync to TIS, Drop all) are
-  // built once by initPickedActions() in DOMContentLoaded. No per-render
-  // button injection here.
+  // The action buttons (Save, Load, Drop-all, Remove-selected, Select-all)
+  // are built once by initPickedActions() in DOMContentLoaded. Per-render
+  // updates: the Save button label + the Select-all header count need to
+  // stay in sync with the current PICKED size.
+  updatePickedActionsState();
 
   if (!keys.length) {
     PICK_LIST.innerHTML = '<div class="loading">No sections picked.</div>';
@@ -1778,27 +1782,39 @@ function renderPickItem(c) {
   }
 
   div.innerHTML =
-    '<div class="pn">' + escapeHtml(c.name || c.name_en || '') +
-      (enrolled ? '<span class="pick-enrolled">enrolled</span>' : '') +
-      (conflictMsg ? '<span style="float:right;color:var(--bad);font-size:.65rem">⚠ conflicted</span>' : '') +
-    '</div>' +
-    (c.section_name && c.section_name !== c.name
-      ? '<div class="pm" style="margin-top:.15rem">' + escapeHtml(c.section_name) + '</div>'
-      : '') +
-    '<div class="pm">' +
-      '<b>Teacher</b> ' + teachers +
-      (c.class_group ? ' · ' + escapeHtml(c.class_group) : '') +
-      ' · <b>' + escapeHtml(c.code) + '</b>' +
-      (schedHTML ? ' · ' + schedHTML : '') +
-      (conflictMsg ? '<br><span style="color:var(--bad);font-size:.68rem">' + conflictMsg + '</span>' : '') +
-    '</div>' +
-    '<div class="acts">' +
-      '<button class="ghost act-remove" style="color:var(--bad)" title="Remove from selection">✕ Remove</button>' +
+    '<label class="picked-check-wrap" title="Tick to mark for bulk remove">' +
+      '<input type="checkbox" class="picked-check" data-rwh="' + escapeHtml(c.rwh) + '"' +
+        (PICKED_CHECKED[c.rwh] ? ' checked' : '') + '>' +
+    '</label>' +
+    '<div class="pick-body">' +
+      '<div class="pn">' + escapeHtml(c.name || c.name_en || '') +
+        (enrolled ? '<span class="pick-enrolled">enrolled</span>' : '') +
+        (conflictMsg ? '<span style="float:right;color:var(--bad);font-size:.65rem">⚠ conflicted</span>' : '') +
+      '</div>' +
+      (c.section_name && c.section_name !== c.name
+        ? '<div class="pm" style="margin-top:.15rem">' + escapeHtml(c.section_name) + '</div>'
+        : '') +
+      '<div class="pm">' +
+        '<b>Teacher</b> ' + teachers +
+        (c.class_group ? ' · ' + escapeHtml(c.class_group) : '') +
+        ' · <b>' + escapeHtml(c.code) + '</b>' +
+        (schedHTML ? ' · ' + schedHTML : '') +
+        (conflictMsg ? '<br><span style="color:var(--bad);font-size:.68rem">' + conflictMsg + '</span>' : '') +
+      '</div>' +
     '</div>';
 
-  div.querySelector('.act-remove').addEventListener('click', function() {
-    removePicked(c.rwh);
+  // Per-card checkbox — toggles the PICKED_CHECKED set. The label wrapper
+  // captures the click; the checkbox state itself drives the visual.
+  var cb = div.querySelector('.picked-check');
+  cb.addEventListener('change', function() {
+    if (cb.checked) PICKED_CHECKED[c.rwh] = true;
+    else delete PICKED_CHECKED[c.rwh];
+    updatePickedActionsState();
   });
+  // Prevent checkbox clicks from starting a drag (drag-to-reorder is on
+  // the whole card; the checkbox must not initiate it).
+  cb.addEventListener('mousedown', function(e) { e.stopPropagation(); });
+  cb.addEventListener('dragstart', function(e) { e.preventDefault(); });
 
   return div;
 }
@@ -3813,6 +3829,16 @@ document.addEventListener('DOMContentLoaded', function() {
 // Load) + the one server-side op on ENROLLED_RWH (Drop all). The terminal
 // actions on the picks (Export ICS, Sync to TIS) live in step ④ of the
 // stepper — see addStep4TerminalActions() in commit 2.
+//
+// Layout (top → bottom in the right column):
+//   [pick-stat]   ← "14 sections · 10 courses · 25.0 Credits"
+//   [bid-stat]    ← hidden when PICKED is empty
+//   [HEADER]      ← ☐ Select-all · 0 / 14 selected · [✕ Remove selected]
+//   [pick-list]   ← per-card checkboxes (mirrors the left-panel pattern)
+//   [dataRow]     ← 💾 Save 14 picks · 📂 Load file
+//   [divider]     ← "Server-side — affects TIS"
+//                   [🗑 Drop all enrolled]
+//   [enrolled]
 function initPickedActions() {
   var pickedCol = document.getElementById('picked-col');
   if (!pickedCol) return;
@@ -3820,14 +3846,27 @@ function initPickedActions() {
   if (!pickList) return;
   if (document.getElementById('picked-data-actions')) return;
 
+  // HEADER: select-all + count + remove-selected. Above the pick-list.
+  var header = document.createElement('div');
+  header.id = 'picked-bulk-header';
+  header.className = 'picked-bulk-header';
+  header.innerHTML =
+    '<label class="picked-select-all-wrap" title="Tick all visible picks">' +
+      '<input type="checkbox" id="picked-select-all">' +
+      '<span>Select all</span>' +
+    '</label>' +
+    '<span class="picked-selected-count" id="picked-selected-count">0 / 0 selected</span>' +
+    '<button class="picked-remove-selected-btn" id="btn-remove-selected" title="Remove all ticked picks (no confirm for 1; confirm for many)">✕ Remove selected</button>';
+
   // Save + Load: local data ops. Always available — the user may save
-  // mid-selection with conflicts and come back later.
+  // mid-selection with conflicts and come back later. Labels are updated
+  // by updatePickedActionsState() to reflect the current PICKED count.
   var dataRow = document.createElement('div');
   dataRow.id = 'picked-data-actions';
   dataRow.className = 'picked-safe-actions';
   dataRow.innerHTML =
-    '<button class="save-file-btn" id="btn-save-picks" title="Save your selection to a JSON file (works any time, even with conflicts)">💾 Save</button>' +
-    '<button class="load-file-btn" id="btn-load-picks" title="Load a saved selection from JSON">📂 Load</button>';
+    '<button class="save-file-btn" id="btn-save-picks" title="Save your selection to a JSON file (works any time, even with conflicts)">💾 Save <span id="save-count">0 picks</span></button>' +
+    '<button class="load-file-btn" id="btn-load-picks" title="Load picks from a JSON file (will replace your current selection)">📂 Load file</button>';
 
   // Drop all enrolled: server-side op on ENROLLED_RWH (different state
   // from PICKED). Different intent from "sync my picks" — kept here
@@ -3838,12 +3877,78 @@ function initPickedActions() {
     '<span>Server-side — affects TIS</span>' +
     '<button class="drop-all-tis-btn" id="btn-drop-all" title="Drop every currently-enrolled section">🗑 Drop all enrolled</button>';
 
+  pickList.parentNode.insertBefore(header, pickList);
   pickList.parentNode.insertBefore(dataRow, pickList);
   pickList.parentNode.insertBefore(divider, pickList);
 
+  // Wire the bulk header
+  var selectAllCb = document.getElementById('picked-select-all');
+  selectAllCb.addEventListener('change', function() {
+    var want = selectAllCb.checked;
+    var keys = Object.keys(PICKED);
+    if (want) {
+      for (var i = 0; i < keys.length; i++) PICKED_CHECKED[keys[i]] = true;
+    } else {
+      PICKED_CHECKED = {};
+    }
+    renderPicked();  // re-render so per-card checkboxes reflect the new state
+  });
+
+  document.getElementById('btn-remove-selected').onclick = removeSelectedPicks;
   document.getElementById('btn-save-picks').onclick = savePicksToFile;
   document.getElementById('btn-load-picks').onclick = loadPicksFromFile;
   document.getElementById('btn-drop-all').onclick = dropAllEnrolled;
+
+  // Sync the new header/button labels to the CURRENT pick state. The
+  // init order is: loadPicksFromStorage() → applyPicksFromData() (which
+  // triggers renderPicked → updatePickedActionsState, but the elements
+  // didn't exist yet) → initPickedActions (now). So we sync once more here.
+  updatePickedActionsState();
+}
+
+// Refresh the bulk-header state + save-button label from current PICKED
+// and PICKED_CHECKED. Called from renderPicked() (which is in the cascade).
+function updatePickedActionsState() {
+  var total = Object.keys(PICKED).length;
+  var checked = Object.keys(PICKED_CHECKED).length;
+  var countEl = document.getElementById('picked-selected-count');
+  if (countEl) countEl.textContent = checked + ' / ' + total + ' selected';
+  var selectAllCb = document.getElementById('picked-select-all');
+  if (selectAllCb) {
+    selectAllCb.checked = total > 0 && checked === total;
+    selectAllCb.indeterminate = checked > 0 && checked < total;
+  }
+  var saveCount = document.getElementById('save-count');
+  if (saveCount) saveCount.textContent = total + (total === 1 ? ' pick' : ' picks');
+  var removeBtn = document.getElementById('btn-remove-selected');
+  if (removeBtn) {
+    removeBtn.disabled = checked === 0;
+    removeBtn.textContent = checked > 0
+      ? '✕ Remove ' + checked + ' selected'
+      : '✕ Remove selected';
+  }
+  var loadBtn = document.getElementById('btn-load-picks');
+  if (loadBtn) {
+    loadBtn.title = 'Load picks from a JSON file (will replace your ' +
+      total + ' current ' + (total === 1 ? 'pick' : 'picks') + ')';
+  }
+}
+
+function removeSelectedPicks() {
+  var rwhs = Object.keys(PICKED_CHECKED);
+  if (!rwhs.length) return;
+  var msg = rwhs.length === 1
+    ? 'Remove 1 picked section?'
+    : 'Remove ' + rwhs.length + ' picked sections?';
+  if (!confirm(msg)) return;
+  // Snapshot the keys before mutating (removePicked touches PICKED_CHECKED
+  // and we don't want to mutate-while-iterating).
+  var toRemove = rwhs.slice();
+  for (var i = 0; i < toRemove.length; i++) {
+    removePicked(toRemove[i]);
+  }
+  PICKED_CHECKED = {};
+  updatePickedActionsState();
 }
 
 // ── localStorage save/load ───────────────────────────────────────────────
