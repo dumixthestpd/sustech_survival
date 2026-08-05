@@ -343,6 +343,12 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
 .sc-code{color:#5fc7ff;font-family:'SF Mono','Menlo','Consolas',monospace;font-weight:600}
 .sc-drop-row .sc-code, .sc-onecode-row .sc-code{font-size:.82rem}
 
+/* Compare pane — saved schedules below the solver card. */
+.cmp-card{position:relative}
+.cmp-card:hover{border-color:var(--accent)}
+.cmp-card.cmp-focused{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent),0 0 12px rgba(91,157,255,.4);background:var(--panel2)}
+.cmp-card.cmp-focused::before{content:"◀/▶ focused";position:absolute;top:-0.55rem;right:0.5rem;background:var(--accent);color:#fff;font-size:.58rem;padding:.05rem .4rem;border-radius:8px;font-weight:600;letter-spacing:.05em}
+
 /* eval */
 .eval-toolbar{display:flex;gap:.5rem;align-items:center;padding:.6rem 1rem;background:var(--panel);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:5;flex-wrap:wrap}
 .eval-toolbar select{font-size:.78rem}
@@ -694,6 +700,7 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
           <div class="bid-panel bid-panel-relaxed">
             <div class="bp-h">
               <span class="bp-t" style="font-size:1rem;font-weight:600;color:var(--accent)">🎯 Bids</span>
+              <button class="ghost" id="btn-bid-fill-unbidded" style="font-size:.68rem;padding:.15rem .5rem;margin-left:.4rem" title="Set bid = 1 on every picked rwh that currently has 0 (or no bid)">+1 to all unbidded</button>
               <span class="bp-meta" id="bp-meta" style="font-size:.72rem;color:var(--mut)"></span>
               <span class="bp-jffs" id="bp-jffs" style="margin-left:auto;font-size:.9rem;color:var(--accent);font-weight:600">— pts</span>
             </div>
