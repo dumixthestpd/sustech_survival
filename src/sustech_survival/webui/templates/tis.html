@@ -665,6 +665,11 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
       <span class="step-connector"></span>
       <button class="step-chip" data-step="4">
         <span class="step-num">4</span>
+        <span class="step-label">Compare</span>
+      </button>
+      <span class="step-connector"></span>
+      <button class="step-chip" data-step="5">
+        <span class="step-num">5</span>
         <span class="step-label">Bid &amp; sync</span>
       </button>
       <span class="step-toggle-grid" id="step-toggle-grid" title="Show/hide the weekly grid">
@@ -732,9 +737,29 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
         </div>
       </div>
 
-      <!-- STEP 4: Bid & sync — bid management + terminal actions
-           (Export ICS, Sync to TIS). -->
+      <!-- STEP 4: Compare candidates — review + load + export. The
+           solver output (step 3) lets you "Add to candidates" or
+           "Export as JSON" per solution. This step is where you
+           bring them together: load multiple JSONs (single- or
+           multi-schedule), see them side-by-side, then apply ONE
+           to push into step 5 (Bid & sync). -->
       <div class="step-pane" data-step-pane="4" style="display:none">
+        <div class="step-pane-body">
+          <p class="step-hint">Candidates you've added from step 3 + JSON files you've loaded. Pick one and apply it — that overwrites your current picks and jumps to Bid &amp; sync.</p>
+          <div class="cmp-toolbar" style="display:flex;gap:.4rem;align-items:center;margin-bottom:.6rem;flex-wrap:wrap">
+            <button class="ghost" id="btn-load-candidates" style="font-size:.75rem;padding:.3rem .6rem" title="Load one or more .json files (single schedule or multi-schedule)">📂 Load JSONs</button>
+            <button class="ghost" id="btn-clear-candidates" style="font-size:.75rem;padding:.3rem .6rem" title="Remove all candidates from this session (does not affect localStorage copies)">🗑 Clear all</button>
+            <span style="flex:1"></span>
+            <button class="ghost" id="btn-export-candidates-zip" style="font-size:.75rem;padding:.3rem .6rem" title="Download all candidates as a single .zip (one JSON per candidate)">📦 Export all as .zip</button>
+          </div>
+          <input type="file" id="candidates-file-input" accept=".json" multiple style="display:none">
+          <div id="solve-compare" style="margin-top:.4rem"></div>
+        </div>
+      </div>
+
+      <!-- STEP 5: Bid & sync — bid management + terminal actions
+           (Export ICS, Sync to TIS). -->
+      <div class="step-pane" data-step-pane="5" style="display:none">
         <div class="step-pane-body bid-step">
           <p class="step-hint">Set bid amounts for your picked sections. Click a bid to edit, drag between boxes to transfer. <b>积分选课</b> — use higher bids for competitive sections.</p>
           <div class="bid-panel bid-panel-relaxed">

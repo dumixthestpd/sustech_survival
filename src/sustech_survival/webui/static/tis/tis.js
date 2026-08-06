@@ -1974,8 +1974,32 @@ function sectionsToBlocks(sections) {
   var allBlocks = [];
   for (var pi = 0; pi < sections.length; pi++) {
     var c = sections[pi];
-    var slots = c.slots || [];
     var color = colorFor(c.code);
+    // Two accepted shapes per section:
+    //   SOLVER format:  { slots: [{day, period_start, period_end, weeks}, ...] }
+    //   FLAT picks-file format: { day, period_start, period_end, weeks_odd/even/all }
+    // We treat both uniformly below.
+    var slots = c.slots;
+    if (!slots || !slots.length) {
+      // Synthesize a single slot from top-level fields. weeks_all means
+      // it appears in both odd and even weeks; weeks_odd/even narrow it.
+      if (c.day && c.period_start && c.period_end) {
+        var wArr = [];
+        if (c.weeks_all) { wArr.push(0, 1); }
+        else {
+          if (c.weeks_odd)  wArr.push(0);
+          if (c.weeks_even) wArr.push(1);
+        }
+        slots = [{
+          day: c.day,
+          period_start: c.period_start,
+          period_end: c.period_end,
+          weeks: wArr.length ? wArr : [0, 1]  // default to all if unspecified
+        }];
+      } else {
+        slots = [];
+      }
+    }
     for (var si = 0; si < slots.length; si++) {
       var s = slots[si];
       var weeks = s.weeks || [];
@@ -2800,11 +2824,12 @@ function solve() {
           dropHtml +
           '<div class="sc-apply" style="margin-top:.5rem;display:flex;gap:.5rem">' +
             '<button class="primary" id="solve-apply" style="flex:1;padding:.4rem">Apply This Schedule</button>' +
-            '<button class="ghost" id="solve-save" style="flex:1;padding:.4rem" title="Save this conflict-free solution to local storage without touching your current picks">💾 Save to Compare</button>' +
+            '<button class="ghost" id="solve-add" style="flex:1;padding:.4rem" title="Add this solution to the candidates list in step 4 (Compare) without touching your current picks">➕ Add to candidates</button>' +
+            '<button class="ghost" id="solve-export" style="flex:1;padding:.4rem" title="Download this solution as a .json file (one schedule per file)">💾 Export as JSON</button>' +
           '</div>' +
           (SAVED_SCHEDULES.length
             ? '<div class="sc-compare-link" style="margin-top:.4rem;font-size:.72rem;color:var(--accent);text-align:center">' +
-              '📂 ' + SAVED_SCHEDULES.length + ' saved — <a href="#solve-compare" onclick="event.preventDefault();document.getElementById(\'solve-compare\').scrollIntoView({block:\'start\'});return false;" style="color:var(--accent);text-decoration:underline;cursor:pointer">jump to Compare</a>' +
+              '📂 ' + SAVED_SCHEDULES.length + ' candidate' + (SAVED_SCHEDULES.length === 1 ? '' : 's') + ' — <a href="#" onclick="event.preventDefault();switchStep(4);return false;" style="color:var(--accent);text-decoration:underline;cursor:pointer">open Compare (step 4)</a>' +
               '</div>'
             : '') +
         '</div>' +
@@ -2838,8 +2863,10 @@ function solve() {
       if (prev) prev.addEventListener('click', function() { if (idx > 0) { idx--; renderSolveItem(); } });
       if (next) next.addEventListener('click', function() { if (idx < total - 1) { idx++; renderSolveItem(); } });
       document.getElementById('solve-apply').addEventListener('click', function() { applySolution(flat[idx]); });
-      var saveBtn = document.getElementById('solve-save');
-      if (saveBtn) saveBtn.addEventListener('click', function() { saveCurrentSolverSchedule(flat[idx]); });
+      var addBtn = document.getElementById('solve-add');
+      if (addBtn) addBtn.addEventListener('click', function() { saveCurrentSolverSchedule(flat[idx]); });
+      var exportBtn = document.getElementById('solve-export');
+      if (exportBtn) exportBtn.addEventListener('click', function() { exportSolverScheduleAsJson(flat[idx]); });
       // Wire group chips: click → jump to first combination in that group
       var groupChips = SOLVE_OUT.querySelectorAll('.sg-chip');
       for (var ci = 0; ci < groupChips.length; ci++) {
@@ -2916,7 +2943,54 @@ function saveCurrentSolverSchedule(sol) {
   try { localStorage.setItem('tis-saved-schedules', JSON.stringify(SAVED_SCHEDULES)); } catch (e) {}
   renderComparePane();
   var blockedTag = blockedCount ? ' · ' + blockedCount + ' blocked slot' + (blockedCount === 1 ? '' : 's') : '';
-  flash('💾 Saved ' + label + ' — ' + sol.sections.length + ' sections · ' + totalCredits.toFixed(1) + ' cr' + blockedTag, 'ok');
+  flash('➕ Added candidate ' + label + ' — ' + sol.sections.length + ' sections · ' + totalCredits.toFixed(1) + ' cr' + blockedTag + ' · go to step 4 to review', 'ok');
+}
+
+// exportSolverScheduleAsJson: download a single solver solution as a
+// standalone .json file. The format is the same as a saved-schedule
+// entry (so the file can be re-loaded into the Compare step later),
+// wrapped in a tiny envelope with version + ts.
+function exportSolverScheduleAsJson(sol) {
+  if (!sol || !sol.sections || !sol.sections.length) return;
+  var totalCredits = 0;
+  for (var i = 0; i < sol.sections.length; i++) {
+    totalCredits += parseFloat(sol.sections[i].credits) || 0;
+  }
+  var idx = SOLVER_IDX + 1;
+  var blockedStr = blockedToInput() || null;
+  var envelope = {
+    version: 2,
+    type: 'tis-candidate',
+    ts: Date.now(),
+    schedule: {
+      label: 'solution-' + idx,
+      sections: sol.sections,
+      dropped: sol.dropped || [],
+      totalCredits: totalCredits,
+      blocked: blockedStr,
+      priority: SOLVER_codeOrder ? SOLVER_codeOrder.slice() : null,
+    }
+  };
+  var filename = 'tis-solution-' + idx + '.json';
+  var blob = new Blob([JSON.stringify(envelope, null, 2)], { type: 'application/json' });
+  triggerDownload(blob, filename);
+  flash('💾 Exported ' + filename + ' — ' + sol.sections.length + ' sections', 'ok');
+}
+
+// triggerDownload: helper to download a Blob as a file (used by JSON
+// and ZIP export). Click-anchored; works without server support.
+function triggerDownload(blob, filename) {
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function() {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 0);
 }
 
 function deleteSavedSchedule(i) {
@@ -2960,6 +3034,287 @@ function applySavedSchedule(i) {
     renderGrid();  // also reflect the blocked state in the main grid
     flash('Restored ' + parsed.length + ' blocked slot' + (parsed.length === 1 ? '' : 's') + ' from ' + saved.label, 'ok');
   }
+  // Jump to the Bid & sync step (was step 4; now step 5 in the 5-step
+  // flow) so the user can review the applied schedule and assign bids.
+  switchStep(5);
+}
+
+// clearAllCandidates: empty the in-memory + localStorage candidate list.
+// Confirmation prompt since this is destructive. The user is also given
+// a hint that re-loading the same JSONs later will re-populate.
+function clearAllCandidates() {
+  if (!SAVED_SCHEDULES.length) {
+    flash('No candidates to clear', 'warn');
+    return;
+  }
+  if (!confirm('Remove all ' + SAVED_SCHEDULES.length + ' candidate(s)?\n\nThis clears the in-memory + localStorage copy. JSON files you exported are not deleted.')) return;
+  SAVED_SCHEDULES = [];
+  FOCUSED_SAVED_IDX = -1;
+  try { localStorage.removeItem('tis-saved-schedules'); } catch (e) {}
+  renderComparePane();
+  flash('🗑 Cleared all candidates', 'ok');
+}
+
+// exportAllCandidatesAsZip: bundle every candidate as its own JSON
+// file inside a single .zip (one file per schedule, named after the
+// candidate label). Uses an inline minimal STORE-method zip writer —
+// no external library needed.
+//
+// ZIP format reference: APPNOTE.TXT (PKWARE). Layout:
+//   [Local file header + file data] * N
+//   [Central directory header]     * N
+//   [End of central directory record] (1)
+function exportAllCandidatesAsZip() {
+  if (!SAVED_SCHEDULES.length) {
+    flash('No candidates to export', 'warn');
+    return;
+  }
+  var files = [];
+  for (var i = 0; i < SAVED_SCHEDULES.length; i++) {
+    var s = SAVED_SCHEDULES[i];
+    var name = sanitizeFilename(s.label || ('candidate-' + (i + 1))) + '.json';
+    var envelope = {
+      version: 2,
+      type: 'tis-candidate',
+      ts: s.ts || Date.now(),
+      schedule: {
+        label: s.label,
+        sections: s.sections,
+        dropped: s.dropped || [],
+        totalCredits: s.totalCredits || 0,
+        blocked: s.blocked || null,
+        priority: s.priority || null,
+      }
+    };
+    var data = new TextEncoder().encode(JSON.stringify(envelope, null, 2));
+    files.push({ name: name, data: data });
+  }
+  var zipBlob = buildZip(files);
+  var ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  triggerDownload(zipBlob, 'tis-candidates-' + ts + '.zip');
+  flash('📦 Exported ' + files.length + ' candidate(s) as zip', 'ok');
+}
+
+// buildZip: minimal ZIP writer (STORE method, no compression).
+// Returns a Blob. ~80 lines, no external deps.
+function buildZip(files) {
+  // Precomputed CRC-32 table (IEEE 802.3 polynomial 0xEDB88320).
+  var crcTable = (function() {
+    var t = new Uint32Array(256);
+    for (var n = 0; n < 256; n++) {
+      var c = n;
+      for (var k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+  function crc32(bytes) {
+    var c = 0xFFFFFFFF;
+    for (var i = 0; i < bytes.length; i++) c = crcTable[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+    return (c ^ 0xFFFFFFFF) >>> 0;
+  }
+  // Dos-time/date for the local headers — set to 2020-01-01 00:00:00
+  // (a fixed recent timestamp). We don't track real mod-times per file.
+  var dosTime = 0;       // 00:00:00
+  var dosDate = (1 << 5) | 1;  // 1980-01-01  (will be set to 2020 below)
+  // 2020-01-01 → dosDate = ((2020 - 1980) << 9) | (1 << 5) | 1
+  dosDate = ((2020 - 1980) << 9) | (1 << 5) | 1;
+  var enc = new TextEncoder();
+  var parts = [];
+  var central = [];
+  var offset = 0;
+  for (var i = 0; i < files.length; i++) {
+    var f = files[i];
+    var nameBytes = enc.encode(f.name);
+    var data = f.data;
+    var crc = crc32(data);
+    // Local file header (30 bytes + name)
+    var lfh = new Uint8Array(30 + nameBytes.length);
+    var lv = new DataView(lfh.buffer);
+    lv.setUint32(0, 0x04034b50, true);            // signature
+    lv.setUint16(4, 20, true);                    // version needed (2.0)
+    lv.setUint16(6, 0, true);                     // flags
+    lv.setUint16(8, 0, true);                     // compression: store
+    lv.setUint16(10, dosTime, true);              // mod time
+    lv.setUint16(12, dosDate, true);              // mod date
+    lv.setUint32(14, crc, true);                  // CRC-32
+    lv.setUint32(18, data.length, true);          // compressed size
+    lv.setUint32(22, data.length, true);          // uncompressed size
+    lv.setUint16(26, nameBytes.length, true);     // file name length
+    lv.setUint16(28, 0, true);                    // extra field length
+    lfh.set(nameBytes, 30);
+    parts.push(lfh, data);
+    // Central directory header (46 bytes + name)
+    var cdh = new Uint8Array(46 + nameBytes.length);
+    var cv = new DataView(cdh.buffer);
+    cv.setUint32(0, 0x02014b50, true);            // signature
+    cv.setUint16(4, 20, true);                    // version made by
+    cv.setUint16(6, 20, true);                    // version needed
+    cv.setUint16(8, 0, true);                     // flags
+    cv.setUint16(10, 0, true);                    // compression
+    cv.setUint16(12, dosTime, true);              // mod time
+    cv.setUint16(14, dosDate, true);              // mod date
+    cv.setUint32(16, crc, true);                  // CRC-32
+    cv.setUint32(20, data.length, true);          // compressed size
+    cv.setUint32(24, data.length, true);          // uncompressed size
+    cv.setUint16(28, nameBytes.length, true);     // file name length
+    cv.setUint16(30, 0, true);                    // extra field
+    cv.setUint16(32, 0, true);                    // comment length
+    cv.setUint16(34, 0, true);                    // disk number
+    cv.setUint16(36, 0, true);                    // internal attrs
+    cv.setUint32(38, 0, true);                    // external attrs
+    cv.setUint32(42, offset, true);               // local header offset
+    cdh.set(nameBytes, 46);
+    central.push(cdh);
+    offset += lfh.length + data.length;
+  }
+  var cdSize = central.reduce(function(a, b) { return a + b.length; }, 0);
+  var cdOffset = offset;
+  // End of central directory record (22 bytes)
+  var eocd = new Uint8Array(22);
+  var ev = new DataView(eocd.buffer);
+  ev.setUint32(0, 0x06054b50, true);              // signature
+  ev.setUint16(4, 0, true);                       // disk number
+  ev.setUint16(6, 0, true);                       // disk w/ cd start
+  ev.setUint16(8, files.length, true);            // entries on this disk
+  ev.setUint16(10, files.length, true);           // total entries
+  ev.setUint32(12, cdSize, true);                 // cd size
+  ev.setUint32(16, cdOffset, true);               // cd offset
+  ev.setUint16(20, 0, true);                      // comment length
+  return new Blob([].concat(parts, central, [eocd]), { type: 'application/zip' });
+}
+
+// sanitizeFilename: turn a label into something safe for filesystems
+// (no /, no \x00, max 64 chars). Used for zip entry names.
+function sanitizeFilename(name) {
+  return String(name)
+    .replace(/[\\/:*?"<>|\x00-\x1f]/g, '_')
+    .replace(/\s+/g, '_')
+    .slice(0, 64) || 'candidate';
+}
+
+// loadCandidatesFromFiles: read one or more JSON files selected by
+// the user. Each file is normalized to a schedule object and pushed
+// onto SAVED_SCHEDULES. Two on-disk formats are supported:
+//
+//   1. Single-schedule envelope:  { "type": "tis-candidate", "schedule": { ... } }
+//   2. Multi-schedule array:     { "version": 2, "schedules": [ {...}, {...} ] }
+//
+// Files matching either shape are accepted; unknown shapes are
+// reported in a single toast so the user knows which file failed.
+function loadCandidatesFromFiles(fileList) {
+  var files = Array.prototype.slice.call(fileList || []);
+  if (!files.length) return;
+  var pending = files.length;
+  var added = 0;
+  var failed = 0;
+  var errs = [];
+  function onAllDone() {
+    if (added) {
+      try { localStorage.setItem('tis-saved-schedules', JSON.stringify(SAVED_SCHEDULES)); } catch (e) {}
+      renderComparePane();
+      flash('📂 Loaded ' + added + ' candidate' + (added === 1 ? '' : 's') +
+        (failed ? ' · ' + failed + ' failed' : ''), added && !failed ? 'ok' : 'warn');
+    } else if (failed) {
+      flash('✗ Failed to load ' + failed + ' file' + (failed === 1 ? '' : 's') + ' — see toast', 'bad');
+    }
+    if (errs.length) console.warn('Candidate load errors:', errs);
+  }
+  function ingestFile(file) {
+    var reader = new FileReader();
+    reader.onload = function() {
+      try {
+        var data = JSON.parse(reader.result);
+        var items = normalizeCandidateFile(data, file.name);
+        for (var i = 0; i < items.length; i++) {
+          // Re-label to avoid clobbering with existing #N names
+          items[i].label = (items[i].label || ('loaded-' + (SAVED_SCHEDULES.length + 1)));
+          // If a label collides, suffix with a counter
+          var base = items[i].label;
+          var n = 1;
+          while (SAVED_SCHEDULES.some(function(e) { return e.label === items[i].label; })) {
+            items[i].label = base + ' (' + (++n) + ')';
+          }
+          SAVED_SCHEDULES.push(items[i]);
+          added++;
+        }
+      } catch (e) {
+        failed++;
+        errs.push(file.name + ': ' + e.message);
+      }
+      if (--pending === 0) onAllDone();
+    };
+    reader.onerror = function() {
+      failed++;
+      errs.push(file.name + ': read error');
+      if (--pending === 0) onAllDone();
+    };
+    reader.readAsText(file);
+  }
+  for (var i = 0; i < files.length; i++) ingestFile(files[i]);
+}
+
+// normalizeCandidateFile: turn a parsed JSON object into an array of
+// schedule entries (candidates). Returns [] on any shape mismatch.
+function normalizeCandidateFile(data, fileName) {
+  if (!data || typeof data !== 'object') throw new Error('not an object');
+  // Multi-schedule: {version, schedules: [...]}
+  if (Array.isArray(data.schedules)) {
+    var out = [];
+    for (var i = 0; i < data.schedules.length; i++) {
+      out.push(scheduleEntryFromObject(data.schedules[i], fileName + '#' + (i + 1)));
+    }
+    return out;
+  }
+  // Single-schedule envelope: {type:'tis-candidate', schedule: {...}}
+  if (data.type === 'tis-candidate' && data.schedule) {
+    return [scheduleEntryFromObject(data.schedule, fileName)];
+  }
+  // Legacy raw schedule: {sections, dropped, ...} at the top level
+  if (Array.isArray(data.sections)) {
+    return [scheduleEntryFromObject(data, fileName)];
+  }
+  // Picks-file format: {picks: [...], version: 1}
+  if (Array.isArray(data.picks)) {
+    return [picksToCandidateEntry(data, fileName)];
+  }
+  throw new Error('unrecognized format');
+}
+
+// scheduleEntryFromObject: coerce a single schedule object into the
+// SAVED_SCHEDULES entry shape. Missing fields are filled with safe
+// defaults so the renderer doesn't blow up.
+function scheduleEntryFromObject(obj, fileName) {
+  if (!obj || !Array.isArray(obj.sections)) throw new Error('no sections array');
+  var credSum = 0;
+  for (var i = 0; i < obj.sections.length; i++) credSum += parseFloat(obj.sections[i].credits) || 0;
+  return {
+    label: obj.label || fileName,
+    sections: JSON.parse(JSON.stringify(obj.sections)),
+    dropped: Array.isArray(obj.dropped) ? obj.dropped.slice() : [],
+    ts: obj.ts || Date.now(),
+    totalCredits: obj.totalCredits || credSum,
+    blocked: obj.blocked || null,
+    priority: Array.isArray(obj.priority) ? obj.priority.slice() : null,
+  };
+}
+
+// picksToCandidateEntry: convert the legacy picks-file shape
+// ({version, picks: [...]}) into a candidate entry. Each pick is a
+// flat section object with snake_case fields; we just pass them
+// through as sections.
+function picksToCandidateEntry(data, fileName) {
+  var credSum = 0;
+  for (var i = 0; i < data.picks.length; i++) credSum += parseFloat(data.picks[i].credits) || 0;
+  return {
+    label: fileName,
+    sections: JSON.parse(JSON.stringify(data.picks)),
+    dropped: [],
+    ts: data.ts || Date.now(),
+    totalCredits: credSum,
+    blocked: null,
+    priority: null,
+  };
 }
 
 function loadSavedSchedules() {
@@ -2996,9 +3351,9 @@ function updateSolverFocusHint() {
   var link = document.querySelector('.sc-compare-link');
   if (!link) return;
   if (FOCUSED_SAVED_IDX >= 0) {
-    link.innerHTML = '📂 ' + SAVED_SCHEDULES.length + ' saved — <b>←/→</b> cycles focused card, click anywhere else to switch back';
+    link.innerHTML = '📂 ' + SAVED_SCHEDULES.length + ' candidate' + (SAVED_SCHEDULES.length === 1 ? '' : 's') + ' — <b>←/→</b> cycles focused card, click anywhere else to switch back';
   } else {
-    link.innerHTML = '📂 ' + SAVED_SCHEDULES.length + ' saved — <a href="#solve-compare" onclick="event.preventDefault();document.getElementById(\'solve-compare\').scrollIntoView({block:\'start\'});return false;" style="color:var(--accent);text-decoration:underline;cursor:pointer">jump to Compare</a>';
+    link.innerHTML = '📂 ' + SAVED_SCHEDULES.length + ' candidate' + (SAVED_SCHEDULES.length === 1 ? '' : 's') + ' — <a href="#" onclick="event.preventDefault();switchStep(4);return false;" style="color:var(--accent);text-decoration:underline;cursor:pointer">open Compare (step 4)</a>';
   }
 }
 
@@ -3030,31 +3385,25 @@ function cycleSolverSolution(dir) {
   return true;
 }
 
-// Render the Compare pane below #solve-out. Shows each saved schedule
-// as a full card with sections, dropped-list, and a mini odd/even grid.
-// Page position is preserved across re-renders: this is appended once
-// and only its innerHTML is replaced; the user can stay scrolled to
-// whichever card they're looking at.
+// Render the Compare pane inside #solve-compare (a static div in
+// step 4). Shows each candidate as a full card with sections, dropped
+// list, and a mini odd/even grid. Page position is preserved across
+// re-renders: this only replaces innerHTML, so the user can stay
+// scrolled to whichever card they're looking at.
 function renderComparePane() {
   var pane = document.getElementById('solve-compare');
+  if (!pane) return;  // step 4 not in the DOM yet (e.g. before init)
   if (!SAVED_SCHEDULES.length) {
-    if (pane) pane.innerHTML = '';
+    pane.innerHTML = '<div class="cmp-empty" style="text-align:center;padding:2.5rem 1rem;color:var(--mut);font-size:.85rem;line-height:1.6">' +
+      '<div style="font-size:1.6rem;margin-bottom:.3rem;opacity:.4">📂</div>' +
+      '<div>No candidates yet.</div>' +
+      '<div style="margin-top:.5rem;font-size:.75rem">Go to step 3 (Schedule) and click <b>➕ Add to candidates</b> on a solution you like, or click <b>📂 Load JSONs</b> above to bring in a file you exported earlier.</div>' +
+      '</div>';
     return;
-  }
-  if (!pane) {
-    pane = document.createElement('div');
-    pane.id = 'solve-compare';
-    pane.style.cssText = 'margin-top:1rem;padding-top:.8rem;border-top:2px solid var(--border)';
-    // Append after SOLVE_OUT (the solver card). If SOLVE_OUT is gone
-    // (e.g. user re-solved and got no solutions), append to its parent
-    // (the step-pane body) instead.
-    if (SOLVE_OUT && SOLVE_OUT.parentNode) {
-      SOLVE_OUT.parentNode.appendChild(pane);
-    }
   }
 
   var h = '<div class="sc-compare-h" style="font-size:.85rem;font-weight:600;color:var(--accent);margin-bottom:.5rem;display:flex;align-items:center;gap:.6rem">' +
-    '📂 Compare Saved Schedules <span class="sg-cnt" style="font-size:.7rem">' + SAVED_SCHEDULES.length + '</span>' +
+    '📂 Candidates <span class="sg-cnt" style="font-size:.7rem">' + SAVED_SCHEDULES.length + '</span>' +
     '<span style="font-size:.65rem;color:var(--mut);font-weight:400;margin-left:auto">Click a card to focus · ←/→ to cycle · click again to unfocus</span>' +
     '</div>';
 
@@ -3156,7 +3505,7 @@ function renderComparePane() {
 }
 
 function switchStep(n) {
-  if (typeof n !== 'number' || n < 1 || n > 4) n = 1;
+  if (typeof n !== 'number' || n < 1 || n > 5) n = 1;
   CURRENT_STEP = n;
 
   // Update step chip styles
@@ -3175,10 +3524,11 @@ function switchStep(n) {
   }
 
   // Refresh per-step data
-  if (n === 3) { updateSolveCodes(); renderComparePane(); }
-  if (n === 4) { renderBidPanel(); updateExportIcsButton(); }
+  if (n === 3) { updateSolveCodes(); }
+  if (n === 4) { renderComparePane(); }
+  if (n === 5) { renderBidPanel(); updateExportIcsButton(); }
 
-  // Grid visibility: persistent in steps 1+2, hidden in 3+4 unless
+  // Grid visibility: persistent in steps 1+2, hidden in 3+4+5 unless
   // the user toggled it on.
   GRID_VISIBLE = (n === 1 || n === 2);
   var gridToggle = document.getElementById('step-toggle-grid');
@@ -3226,7 +3576,7 @@ function updateExportIcsButton() {
 function switchTab(name) {
   if (name === 'grid') return switchStep(1);
   if (name === 'solve') return switchStep(3);
-  if (name === 'bids') return switchStep(4);
+  if (name === 'bids') return switchStep(5);
   if (name === 'eval') {
     openNcesSheet();
     return;
@@ -3935,11 +4285,11 @@ document.addEventListener('DOMContentLoaded', function() {
   // Load any saved schedules from previous sessions (Compare pane source)
   loadSavedSchedules();
 
-  // ── Stepper wiring (4-step workflow) ─────────────────────────────
+  // ── Stepper wiring (5-step workflow) ─────────────────────────────
   // The step chips are the new top-of-center tabs. Clicking a chip
   // jumps to that step. Current step is highlighted in accent; completed
   // steps turn OK green. The "Grid" toggle shows/hides the weekly grid
-  // in steps 3-4 (it's persistent by default in 1-2).
+  // in steps 3-4-5 (it's persistent by default in 1-2).
   var stepChips = document.querySelectorAll('.step-chip');
   for (var sci = 0; sci < stepChips.length; sci++) {
     stepChips[sci].addEventListener('click', function() {
@@ -3957,29 +4307,52 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
-  // ── ←/→ keyboard nav in step 3 ──────────────────────────────────
-  // When on the Schedule step, ←/→ cycles solver solutions (the same
-  // as the ◀/▶ buttons). If a saved-schedule card is focused, ←/→
-  // cycles between saved schedules instead. Page position is preserved
-  // in both cases (the solver re-renders in place; the compare pane
-  // only toggles a CSS class).
+  // ── ←/→ keyboard nav in steps 3 + 4 ──────────────────────────────────
+  // In step 3 (Schedule), ←/→ cycles solver solutions. In step 4
+  // (Compare), ←/→ cycles between candidate cards (when one is
+  // focused). Esc unfocuses. Page position is preserved (the solver
+  // re-renders in place; the compare pane only toggles a CSS class).
   document.addEventListener('keydown', function(e) {
-    if (CURRENT_STEP !== 3) return;
+    if (CURRENT_STEP !== 3 && CURRENT_STEP !== 4) return;
     // Skip when typing in an input/textarea/contenteditable
     var t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (e.key === 'ArrowLeft') {
       if (FOCUSED_SAVED_IDX >= 0) {
         if (cycleFocusedSavedSchedule(-1)) e.preventDefault();
-      } else {
+      } else if (CURRENT_STEP === 3) {
         if (cycleSolverSolution(-1)) e.preventDefault();
+      } else if (CURRENT_STEP === 4 && SAVED_SCHEDULES.length) {
+        FOCUSED_SAVED_IDX = 0;  // focus first when nothing focused
+        updateSolverFocusHint();
+        var cards = document.querySelectorAll('#solve-compare .cmp-card');
+        for (var k = 0; k < cards.length; k++) {
+          cards[k].classList.toggle('cmp-focused', k === FOCUSED_SAVED_IDX);
+        }
+        e.preventDefault();
       }
     } else if (e.key === 'ArrowRight') {
       if (FOCUSED_SAVED_IDX >= 0) {
         if (cycleFocusedSavedSchedule(+1)) e.preventDefault();
-      } else {
+      } else if (CURRENT_STEP === 3) {
         if (cycleSolverSolution(+1)) e.preventDefault();
+      } else if (CURRENT_STEP === 4 && SAVED_SCHEDULES.length) {
+        FOCUSED_SAVED_IDX = 0;
+        updateSolverFocusHint();
+        var cards2 = document.querySelectorAll('#solve-compare .cmp-card');
+        for (var m = 0; m < cards2.length; m++) {
+          cards2[m].classList.toggle('cmp-focused', m === FOCUSED_SAVED_IDX);
+        }
+        e.preventDefault();
       }
+    } else if (e.key === 'Escape' && FOCUSED_SAVED_IDX >= 0) {
+      FOCUSED_SAVED_IDX = -1;
+      var cards3 = document.querySelectorAll('#solve-compare .cmp-card');
+      for (var n = 0; n < cards3.length; n++) {
+        cards3[n].classList.toggle('cmp-focused', false);
+      }
+      updateSolverFocusHint();
+      e.preventDefault();
     } else if (e.key === 'Escape' && FOCUSED_SAVED_IDX >= 0) {
       // Esc unfocuses the saved card (back to solver arrow behavior)
       FOCUSED_SAVED_IDX = -1;
@@ -4205,6 +4578,27 @@ document.addEventListener('DOMContentLoaded', function() {
     switchTab('solve');
     setTimeout(solve, 100);
   });
+
+  // ── Compare-step (step 4) toolbar wiring ────────────────────────
+  // The compare step has three primary actions: load more JSONs into
+  // the candidate list, clear the candidate list, and export the
+  // whole list as a single .zip. We also support drag-drop of JSON
+  // files anywhere on the page (handled in the file-loader section
+  // below) — these bindings only cover the explicit toolbar buttons.
+  var btnLoadCandidates = document.getElementById('btn-load-candidates');
+  var candidatesFileInput = document.getElementById('candidates-file-input');
+  if (btnLoadCandidates && candidatesFileInput) {
+    btnLoadCandidates.addEventListener('click', function() { candidatesFileInput.click(); });
+    candidatesFileInput.addEventListener('change', function(e) {
+      loadCandidatesFromFiles(e.target.files);
+      // Reset the input so the same file can be loaded twice in a row
+      e.target.value = '';
+    });
+  }
+  var btnClearCandidates = document.getElementById('btn-clear-candidates');
+  if (btnClearCandidates) btnClearCandidates.addEventListener('click', clearAllCandidates);
+  var btnExportZip = document.getElementById('btn-export-candidates-zip');
+  if (btnExportZip) btnExportZip.addEventListener('click', exportAllCandidatesAsZip);
   // Block-time editor: BLOCKED is the single source of truth (in-memory).
   // The block grid (step 2) is the primary editor; the hidden #blocked-input
   // is a legacy fallback for power users typing the compact syntax directly.
