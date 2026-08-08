@@ -121,6 +121,11 @@ var COLLEGE_MAP = {};       // college-name → college-code (for p_kkyx on TIS 
 var LANGUAGE_MAP = {'中文': '1', '英文': '2', '双语': '3'}; // language-name → TIS code
 var CATEGORY_MAP = {};      // category-name → kclbdm code (e.g. 美育类→0907).
                             // Populated from /api/tis/info.category_codes on first load.
+var LOAD_BY_RWH = {};       // { rwh: enrolled_int } — live "currently selected" count
+                            // from TIS. Populated on demand by the "Refresh load"
+                            // button; cached in localStorage 10 min so cards keep
+                            // showing the count across search/filter/page changes.
+var LOAD_FETCHED_AT = 0;    // Date.now() of the last successful refresh-load.
 var MODE = 'personal';      // 'personal' (我要选课, default) or 'campus' (全校课表, browse-only)
 var CURRENT_STEP = 1;        // active step in the 4-step workflow (1..4)
 var GRID_VISIBLE = true;     // whether the weekly grid is shown (toggle in stepper header)
@@ -731,8 +736,56 @@ function renderResults(courses) {
 }
 
 function escapeHtml(s) {
-  if (typeof s !== 'string') s = String(s);
+  if (s == null) return '';
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');
+}
+
+// rerenderAllWithLoad: re-render every surface that shows a load badge
+// after LOAD_BY_RWH changes (button click, cache hydrate, etc.). We
+// touch only the surfaces that carry course data — search results,
+// picked list, compare pane — so other UI is undisturbed.
+function rerenderAllWithLoad() {
+  // Search results (step 1) — CAT is module-scoped; renderResults(CAT)
+  // is the canonical pattern used after every search (see lines 631,
+  // 1749, 2952).
+  if (typeof renderResults === 'function' && typeof CAT !== 'undefined') {
+    try { renderResults(CAT); } catch (e) { /* CAT may be empty during init */ }
+  }
+  // Picked list (right column)
+  if (typeof renderPicked === 'function') {
+    try { renderPicked(); } catch (e) {}
+  }
+  // Compare pane (step 4) — cards show load on each section
+  if (typeof renderComparePane === 'function') {
+    try { renderComparePane(); } catch (e) {}
+  }
+}
+
+// renderLoadBadge: build the "[N] / [M]" load badge for a course card.
+//   c = course dict (must have rwh; capacity is optional)
+//   N (current load) is looked up from LOAD_BY_RWH (set by Refresh load button)
+//   M (capacity) is shown in darker theme color when known, muted otherwise.
+// Returns "" if neither N nor M is available (old-style cards stay clean).
+// Style: N in accent blue (#5b9dff), M in a slightly darker variant (#3a7ad9).
+function renderLoadBadge(c) {
+  var cap = c.capacity;
+  var n = LOAD_BY_RWH[c.rwh];
+  // Use the API-provided enrolled count as a baseline so the badge
+  // shows something the moment a search response arrives (before the
+  // user clicks Refresh load). User-provided counts always win.
+  if (n == null && typeof c.enrolled === 'number') n = c.enrolled;
+  var hasN = (n != null);
+  var hasM = (cap != null && cap > 0);
+  if (!hasN && !hasM) return '';
+  var nHtml = hasN
+    ? '<b style="color:var(--accent);font-weight:600">' + n + '</b>'
+    : '<span style="color:var(--mut)" title="Click 🔄 Refresh load to fetch live count">?</span>';
+  var mHtml = hasM
+    ? '<b style="color:#3a7ad9;font-weight:600">' + cap + '</b>'
+    : '<span style="color:var(--mut)">?</span>';
+  return '<span class="load-badge" title="Selected / Capacity (live)">' +
+    nHtml + ' / ' + mHtml +
+    '</span>';
 }
 
 function renderCard(c) {
@@ -765,7 +818,7 @@ function renderCard(c) {
     '<div class="meta">' +
       (hasRealTeacher ? '<b>Teacher</b> ' + escapeHtml(teachers) : '<span style="color:var(--mut)"><b>Teacher</b> TBD</span>') +
       (c.credits ? ' · <b>Credits</b> ' + c.credits : '') +
-      (c.capacity ? ' · <b>Capacity</b> ' + c.capacity : '') +
+      ' · ' + (renderLoadBadge(c) || '<b>Load</b> ?') +
     '</div>' +
     (schedHTML ? '<div class="sched"><span class="sched-lbl">Schedule</span>' + schedHTML + '</div>' : '') +
     (c.code ? '<div class="nces-link"><a href="https://ncesnext.com/search?q=' + encodeURIComponent(c.code) + '" target="_blank" rel="noopener">Compare in NCES ↗</a></div>' : '');
@@ -1818,6 +1871,7 @@ function renderPickItem(c) {
         ' · <b>' + escapeHtml(c.code) + '</b>' +
         (c.class_group ? ' · ' + escapeHtml(c.class_group) : '') +
         (schedHTML ? ' · ' + schedHTML : '') +
+        (renderLoadBadge(c) ? ' · ' + renderLoadBadge(c) : '') +
         (conflictMsg ? '<br><span style="color:var(--bad);font-size:.68rem">' + conflictMsg + '</span>' : '') +
       '</div>' +
     '</div>';
@@ -3420,6 +3474,7 @@ function renderComparePane() {
       var schText = sec.schedule || formatSchedule(sec.slots);
       secList += '<div class="sc-sec" style="font-size:.72rem">' + codeText + clsText + tchText +
         (sec.credits ? ' · <b>' + sec.credits + '</b> cr' : '') +
+        (renderLoadBadge(sec) ? ' · ' + renderLoadBadge(sec) : '') +
         (schText ? ' · <span style="color:var(--mut)">' + escapeHtml(schText) + '</span>' : '') +
         '</div>';
     }
@@ -4585,6 +4640,96 @@ document.addEventListener('DOMContentLoaded', function() {
       STAT.textContent = 'Refresh error: ' + e.message;
     });
   });
+
+  // Refresh load: fetch live "currently selected" counts from TIS's
+  // personal-mode search (Xsxk/queryKxrw) for the current filter set.
+  // Result merges into LOAD_BY_RWH and re-renders all visible cards so
+  // the [N] / [M] badges fill in.
+  document.getElementById('btn-refresh-load').addEventListener('click', function() {
+    var btn = document.getElementById('btn-refresh-load');
+    if (btn.disabled) return;  // already in flight
+    btn.disabled = true;
+    var prev = btn.textContent;
+    btn.textContent = '⏳ Refreshing load…';
+    var qs = sem() + '&mode=personal';
+    qs += '&keyword=' + encodeURIComponent(KW.value);
+    qs += '&teacher=' + encodeURIComponent(F_TEACHER.value);
+    if (MODE === 'personal' && F_COL.value && COLLEGE_MAP[F_COL.value]) {
+      qs += '&college=' + encodeURIComponent(COLLEGE_MAP[F_COL.value]);
+    } else {
+      qs += '&college=' + encodeURIComponent(F_COL.value);
+    }
+    qs += '&campus=' + encodeURIComponent(F_CAM.value);
+    if (MODE === 'personal' && F_CAT.value && CATEGORY_MAP[F_CAT.value]) {
+      qs += '&category=' + encodeURIComponent(CATEGORY_MAP[F_CAT.value]);
+    } else {
+      qs += '&category=' + encodeURIComponent(F_CAT.value);
+    }
+    if (MODE === 'personal' && F_LANG.value && LANGUAGE_MAP[F_LANG.value]) {
+      qs += '&language=' + encodeURIComponent(LANGUAGE_MAP[F_LANG.value]);
+    } else {
+      qs += '&language=' + encodeURIComponent(F_LANG.value);
+    }
+    qs += '&cultivation=' + encodeURIComponent(F_CULT.value);
+    qs += '&xkfsdm=' + encodeURIComponent((document.getElementById('f-xkfsdm') || {}).value || '');
+    qs += '&ignore_conflicts=' + (document.getElementById('f-ign-conf') && document.getElementById('f-ign-conf').checked ? '1' : '');
+    qs += '&ignore_zero_capacity=' + (document.getElementById('f-ign-zero') && document.getElementById('f-ign-zero').checked ? '1' : '');
+    qs += '&weekday=' + encodeURIComponent((document.getElementById('f-wday') || {}).value || '');
+    qs += '&period_start=' + encodeURIComponent((document.getElementById('f-ps') || {}).value || '');
+    qs += '&period_end=' + encodeURIComponent((document.getElementById('f-pe') || {}).value || '');
+    qs += '&page_size=500';
+
+    postJSON('/api/tis/refresh-load' + qs, {}).then(function(d) {
+      btn.disabled = false;
+      btn.textContent = prev;
+      if (!d.ok) {
+        STAT.textContent = '⚠ Load refresh unavailable: ' + (d.message || d.error || 'unknown');
+        return;
+      }
+      var n = d.with_count || 0;
+      var fetched = d.fetched || 0;
+      // Merge: only overwrite entries for rwhs that came back with a
+      // count, so old cache survives for rwhs not in this search's
+      // page (rare — the call is paginated, but defensive).
+      var keys = Object.keys(d.loads || {});
+      for (var i = 0; i < keys.length; i++) {
+        LOAD_BY_RWH[keys[i]] = d.loads[keys[i]];
+      }
+      LOAD_FETCHED_AT = Date.now();
+      try {
+        localStorage.setItem('tis-load-cache', JSON.stringify({
+          ts: LOAD_FETCHED_AT,
+          loads: LOAD_BY_RWH,
+        }));
+      } catch (e) {}
+      // Re-render every surface that shows a load badge.
+      rerenderAllWithLoad();
+      STAT.textContent = '✓ Load refreshed: ' + n + ' / ' + fetched + ' courses got live counts';
+    })['catch'](function(e) {
+      btn.disabled = false;
+      btn.textContent = prev;
+      STAT.textContent = '⚠ Load refresh failed: ' + e.message;
+    });
+  });
+
+  // Hydrate load cache from localStorage on init so a returning user
+  // sees last-known counts while the TIS call is in flight.
+  try {
+    var raw = localStorage.getItem('tis-load-cache');
+    if (raw) {
+      var c = JSON.parse(raw);
+      // TTL: 10 min — TIS numbers move in real time but re-hitting
+      // every load is what triggers their rate limit. A fresh click
+      // overwrites.
+      if (c && c.ts && (Date.now() - c.ts) < 10 * 60 * 1000 && c.loads) {
+        LOAD_BY_RWH = c.loads;
+        LOAD_FETCHED_AT = c.ts;
+        rerenderAllWithLoad();
+      } else {
+        localStorage.removeItem('tis-load-cache');
+      }
+    }
+  } catch (e) {}
 
   // Enter key on search input — fire immediately, cancel any debounce
   KW.addEventListener('keydown', function(e) {
