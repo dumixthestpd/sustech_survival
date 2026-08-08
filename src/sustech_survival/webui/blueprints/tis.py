@@ -99,6 +99,7 @@ def _course_to_dict(c) -> dict:
         "undergrad_seats": c.undergrad_seats, "grad_seats": c.grad_seats,
         "cultivation": c.cultivation,
         "enrolled": c.enrolled,
+        "id": c.id,
         "rooms": c.rooms, "teachers": c.teachers,
         "schedule": c.schedule_str,
         "slots": c.slots_raw,
@@ -622,12 +623,18 @@ def api_bids():
 
     Body:
       {
-        "picks":   {rwh: bid, ...},   # the user's desired bid per course
-        "round_code": "...",          # current selection round code (TIS xkfsdm)
-        "where":   "cart" | "enrolled",
-        "jffs_limit": <float>,       # optional: from /api/tis/round
-        "pylx":   "1" | "2",
-        "dry_run": <bool>            # default True
+        "picks":     {rwh: bid, ...},    # the user's desired bid per course
+        "id_map":    {rwh: id_hex, ...}, # optional: 32-char hex UUID per rwh
+                                        # (TIS write-key). If missing, we
+                                        # run a personal-mode search to
+                                        # populate Course.id on the client
+                                        # cache, then look up.
+        "round_code": "...",             # selection round code (TIS xkfsdm)
+        "xkfsdm":    "...",              # optional override; defaults to "yixuan"
+        "where":     "cart" | "enrolled",
+        "jffs_limit": <float>,           # optional: from /api/tis/round
+        "pylx":      "1" | "2",
+        "dry_run":   <bool>              # default True
       }
 
     Always returns 200 with structured result. TIS per-course failures
@@ -635,7 +642,9 @@ def api_bids():
     """
     b = request.get_json(silent=True) or {}
     picks = b.get("picks") or {}
+    id_map = b.get("id_map") or {}
     round_code = b.get("round_code", "") or ""
+    xkfsdm = b.get("xkfsdm") or None
     where = b.get("where", "cart") or "cart"
     pylx = b.get("pylx")
     dry_run = bool(b.get("dry_run", True))
@@ -654,9 +663,22 @@ def api_bids():
     xn, xq = _parse_sem(request.args)
     try:
         c = _client(xn, xq)
+        # If id_map wasn't supplied, run a personal search first so the
+        # catalog's Course.id field gets populated. Then look up.
+        if not id_map:
+            try:
+                c.search_personal(round_code=round_code or None,
+                                  page_size=500)
+            except Exception:
+                pass
+            for rwh in picks.keys():
+                hit = c._lookup_id(rwh)
+                if hit:
+                    id_map[rwh] = hit
         result = c.submit_bids(picks, round_code=round_code, where=where,
                                jffs_limit=jffs_limit, pylx=pylx,
-                               dry_run=dry_run)
+                               dry_run=dry_run, id_map=id_map,
+                               xkfsdm=xkfsdm)
         return jsonify(result)
     except Exception as e:
         return jsonify({"ok": False, "error": str(e), "results": []}), 200

@@ -23,7 +23,12 @@ TIS_TUIKE_URL = f"{TIS_BASE}/Xsxk/tuike"
 TIS_ADD_GOUWUCHE_URL = f"{TIS_BASE}/Xsxk/addGouwuche"
 TIS_DEL_GOUWUCHE_URL = f"{TIS_BASE}/Xsxk/delGouwuche"
 TIS_UPD_XKXS_BY_YX = f"{TIS_BASE}/Xsxk/updXkxsByyx"
-TIS_UPD_XKXS_BY_GWC = f"{TIS_BASE}/Xsxk/upd_xkxsBygwc"
+# NOTE: there is NO upd_xkxsBygwc endpoint on TIS — the HAR only shows
+# addGouwuche/updXkxsByyx/tuike. Cart-update is folded into addGouwuche.
+# `where="cart"` in submit_bids routes to addGouwuche (which behaves like
+# an upsert for cart entries). Kept as an alias for back-compat but
+# the URL is the same as addGouwuche.
+TIS_UPD_XKXS_BY_GWC = TIS_ADD_GOUWUCHE_URL  # legacy alias — was a 404 phantom
 
 # xktjz (选课提交至) values — where the action lands. Discovered from
 # the user's HAR (tis.sustech.edu.cn.har, 2026-08-08): every write
