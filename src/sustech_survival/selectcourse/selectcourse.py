@@ -134,6 +134,8 @@ class SelectCourseClient:
                 cultivation=c["cultivation"],
                 rooms=c["rooms"], teachers=c["teachers"],
                 slots_raw=c["slots_raw"],
+                id=c.get("id", ""),
+                enrolled=c.get("enrolled"),
             )
             out.append(course)
         return out
@@ -153,6 +155,8 @@ class SelectCourseClient:
                     "grad_seats": c.grad_seats, "cultivation": c.cultivation,
                     "rooms": c.rooms, "teachers": c.teachers,
                     "slots_raw": c.slots_raw,
+                    "id": c.id,
+                    "enrolled": c.enrolled,
                 }
                 for c in courses
             ],
@@ -399,6 +403,20 @@ class SelectCourseClient:
         kxrw = d.get("kxrwList") or {}
         raw_list = kxrw.get("list") or []
         courses = [Course.from_api(item) for item in raw_list]
+        # Merge personal-mode results into the in-memory catalog so
+        # `_lookup_id()` can find the 32-char hex `id` for any rwh the
+        # user is about to write to. Personal-mode rows carry the id;
+        # catalog rows (queryRwxxcxList) don't. Without this merge the
+        # write path silently fails with 操作失败.
+        if self._courses is None:
+            self._courses = []
+        existing = {c.rwh: i for i, c in enumerate(self._courses)}
+        for course in courses:
+            if course.rwh in existing:
+                # Replace catalog row with personal-mode row (carries id)
+                self._courses[existing[course.rwh]] = course
+            else:
+                self._courses.append(course)
         ct = d.get("xkgzszOne") or d.get("xsxkPage", {}).get("xkgzszOne") or {}
         return {
             "ok": True,
@@ -486,6 +504,24 @@ class SelectCourseClient:
         return None
 
     # ── Personal enrollment ──────────────────────────────────────────────────
+
+    def _lookup_id(self, rwh: str) -> str:
+        """Look up the 32-char hex `id` (TIS write-key) for an rwh.
+
+        Walk the cached catalog for a course with matching rwh. Returns
+        "" if not found — callers should treat empty as "id unknown".
+
+        The catalog's queryRwxxcxList doesn't carry `id` — only
+        queryKxrw does. So this lookup only succeeds after a personal
+        search has populated `Course.id` on those rows. If the user
+        runs a personal search then a write, this works. If they skip
+        the personal search and try to write, this returns "" and the
+        write endpoint rejects with 操作失败.
+        """
+        for c in self._ensure_loaded():
+            if c.rwh == rwh and c.id:
+                return c.id
+        return ""
 
     def _fetch_dq(self) -> dict:
         """Cached queryXkdqXnxq response.

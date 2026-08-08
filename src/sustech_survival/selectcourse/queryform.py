@@ -25,14 +25,27 @@ from typing import Optional
 
 def build_queryform(*, sem,            # Semester
                     auth,            # TISAuth (for _fetch_dq)
-                    rwh: Optional[str] = None,
+                    id_field: Optional[str] = None,
                     ids: Optional[list] = None,
                     xktjz: Optional[str] = None,
+                    xkfsdm: Optional[str] = None,
                     pylx: Optional[str] = None,
                     ignore_conflicts: bool = False,
                     ignore_zero_capacity: bool = False,
                     bid: Optional[int] = None) -> dict:
     """Build the TIS `queryform` payload for write-side endpoints.
+
+    `id_field` is the 32-char hex UUID from `queryKxrw`'s row.id — this is
+    what TIS expects as `p_id`. DO NOT pass the human-readable `rwh`
+    (e.g. "2026-2027-1-MSE301-002"); TIS silently 操作失败 with that.
+    The hex UUID is only populated by the personal-mode search
+    (`queryKxrw`); the campus catalog (`queryRwxxcxList`) doesn't carry
+    it. Callers that don't have it must run a personal search first.
+
+    `xkfsdm` is the round code (e.g. "bxxk" for 通识必修选课, "yixuan"
+    for 已选). HAR shows it's set on every successful write. Common
+    values seen: "bxxk" for addGouwuche; "yixuan" for updXkxsByyx/tuike.
+    Default "" matches HAR for fields that explicitly omit it.
 
     `bid` is the 选课系数 (selection coefficient, aka the credit bid
     in 积分选课). Goes into `p_xkxs`. Leave None to omit (TIS then
@@ -77,14 +90,14 @@ def build_queryform(*, sem,            # Semester
         "p_dqxn": dq.get("p_dqxn", ""),              # CURRENT TIS active term xn
         "p_dqxq": dq.get("p_dqxq", ""),              # CURRENT TIS active term xq
         "p_dqxnxq": dq.get("p_dqxnxq", ""),          # CURRENT TIS active term xnxq
-        "p_xkfsdm": "",                              # 选课方式代码 (set by caller via separate param)
+        "p_xkfsdm": xkfsdm or "",                    # 选课方式代码 (HAR: yixuan|bxxk|...)
         "p_xiaoqu": "",                              # 校区
         "p_kkyx": "",                                # 开课院系
         "p_kclb": "",                                # 课程类别
         "p_xkxs": bid if bid is not None else "",    # 选课系数 / 积分选课的 bid
         "p_dyc": "",                                 # 多语种
         "p_kkxnxq": "",                              # 开课学年学期
-        "p_id": rwh,                                 # ★ 课程id（任务号rwh）
+        "p_id": id_field,                            # ★ 课程id (32-char hex UUID from queryKxrw)
         "p_ids": ids if ids is not None else [],     # ★ 批量id列表
         "p_sfhlctkc": "1" if ignore_conflicts else "0",      # 是否忽略冲突课程
         "p_sfhllrlkc": "1" if ignore_zero_capacity else "0", # 是否忽略零容量课程

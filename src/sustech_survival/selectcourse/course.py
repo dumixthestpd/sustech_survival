@@ -26,7 +26,7 @@ class Course:
     name: str                      # kcmc — "生命科学概论"
     name_en: str                   # rwmc_en — "Life Science Introduction"
     class_group: str              # kxh — "001" / "002"
-    rwh: str                       # rwh — "2025-2026-2-BIO101-001" (unique ID)
+    rwh: str                       # rwh — "2025-2026-2-BIO101-001" (human label)
     college: str                   # kkyxmc — "生命科学学院"
     category: str                  # kclbmc — "大类基础"
     nature: str                    # kcxzmc — "必修" / "选修"
@@ -37,7 +37,6 @@ class Course:
     undergrad_seats: Optional[int] # bksrl — 本科生人数
     grad_seats: Optional[int]      # yjsrl — 研究生人数
     cultivation: str               # pylx — "本科" / "研究生"
-    enrolled: Optional[int] = None # 当前已选人数 (live from queryKxrw; None if unknown)
     rooms: List[str] = field(default_factory=list)         # distinct rooms in kcxx
     teachers: List[str] = field(default_factory=list)      # from dgjsmc (preferred) or kcxx 教师 list
     slots_raw: List[dict] = field(default_factory=list)    # parsed ScheduleSlot dicts
@@ -46,6 +45,12 @@ class Course:
     college_code: str = ""            # kkyx — college ID code (e.g. "010030" for 化学系)
     section_name: str = ""            # rwmc — section name, e.g. "体育I-中文-空手道1班"
     section_name_en: str = ""         # rwmc_en — section name English
+    enrolled: Optional[int] = None # 当前已选人数 (live from queryKxrw; None if unknown)
+    id: str = ""                   # 32-char hex UUID — the actual TIS write-key.
+                                   # Only present in queryKxrw rows; empty in the
+                                   # catalog (queryRwxxcxList) which is read-only.
+                                   # Write endpoints (addXuanke/tuike/updXkxsByyx/...)
+                                   # take `p_id=<this hex>`, NOT the rwh.
 
     @property
     def has_schedule(self) -> bool:
@@ -147,6 +152,12 @@ class Course:
                 raw.get("bkrs") or raw.get("yxrs") or raw.get("xkrs")
                 or raw.get("kchsrl") or raw.get("bkylrs") or raw.get("yxzrs")
             ),
+            # TIS write-key: the 32-char hex UUID used as `p_id` on every
+            # write endpoint (addXuanke/tuike/updXkxsByyx/...). Catalog
+            # rows (queryRwxxcxList) don't have this — only queryKxrw
+            # personal-mode rows do. Default "" so the catalog path is
+            # unaffected.
+            id=raw.get("id") or "",
             rooms=rooms,
             teachers=teachers,
             slots_raw=slot_dicts,
