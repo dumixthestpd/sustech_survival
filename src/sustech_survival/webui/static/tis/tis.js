@@ -826,12 +826,9 @@ function renderCard(c) {
   card.addEventListener('click', function(e) {
     if (e.target.closest('a')) return;  // NCES link
     if (e.target.closest('.pick-check')) return;  // checkbox handles itself
-    // Bare-card click: if picked, unpick. If not, select for NCES eval.
-    if (PICKED[c.rwh]) {
-      removePicked(c.rwh);
-      return;
-    }
-    selectCourse(c.rwh);
+    // Bare-card click → open the NCES detail modal for this course.
+    // Unpick via the checkbox on the card.
+    openCourseNcesModal(c.rwh);
   });
 
   var check = card.querySelector('.pick-check');
@@ -3641,7 +3638,31 @@ function switchTab(name) {
 
 // ── NCES detail sheet ──────────────────────────────────────────────────
 // The old eval tab is gone — NCES is now a hover-brief on each card.
-// "View NCES detail" (from the brief) opens this right-side sheet.
+// Clicking a course card opens this near-fullscreen modal (the sheet).
+// "View NCES detail" (from the brief) opens the same sheet.
+function openCourseNcesModal(rwh) {
+  // Look up the course by rwh, open the sheet, and fetch its brief.
+  var course = null;
+  if (rwh && PICKED[rwh]) course = PICKED[rwh];
+  if (!course && rwh) {
+    for (var j = 0; j < CAT.length; j++) {
+      if (CAT[j].rwh === rwh) { course = CAT[j]; break; }
+    }
+  }
+  if (!course) { openNcesSheet(); return; }
+  ACTIVE_RWH = rwh;
+  var sheet = document.getElementById('nces-sheet');
+  var content = document.getElementById('nces-sheet-content');
+  if (!sheet || !content) return;
+  content.innerHTML = '<div class="ncn" style="padding:2rem;text-align:center">Loading NCES…</div>';
+  sheet.classList.add('show');
+  // Route the eval renderers into the sheet content, not the old eval-out.
+  var oldEvalOut = EVAL_OUT;
+  EVAL_OUT = content;
+  sheet._restoreEvalOut = function() { EVAL_OUT = oldEvalOut; };
+  fetchEval(course.code, course.teachers && course.teachers.join(','), ++_evalLoadId);
+}
+
 function openNcesSheet() {
   // If we have a focused card (ACTIVE_RWH), fetch + render it; otherwise
   // show the browse view as a fallback.
@@ -3652,7 +3673,14 @@ function openNcesSheet() {
   sheet.classList.add('show');
   if (ACTIVE_RWH) {
     var c = PICKED[ACTIVE_RWH] || (CAT || []).find(function(x) { return x.rwh === ACTIVE_RWH; });
-    if (c) { fetchEval(c.code, c.teachers && c.teachers[0]); return; }
+    if (c) {
+      // Route eval renderers into the sheet content (eval-out is gone).
+      var oldEvalOut2 = EVAL_OUT;
+      EVAL_OUT = content;
+      sheet._restoreEvalOut = function() { EVAL_OUT = oldEvalOut2; };
+      fetchEval(c.code, c.teachers && c.teachers[0], ++_evalLoadId);
+      return;
+    }
   }
   // Fallback: show browse
   content.innerHTML = '<div class="eval-toolbar">' +

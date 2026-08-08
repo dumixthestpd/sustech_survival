@@ -151,16 +151,31 @@ class NCESScraper:
         self.session.headers["User-Agent"] = self.USER_AGENT
         self._course_cache: dict[str, tuple[float, NCESCourse]] = {}
         self._teacher_cache: dict[str, tuple[float, list[NCESCourse]]] = {}
+        # brief() result cache — keyed by (code, teacher, xn, xq).
+        # Repeat hovers for the same card return instantly instead of
+        # paying 2-4 sequential NCES API roundtrips each time.
+        # Value is None for cached "not found" responses (negative cache).
+        self._brief_cache: dict[tuple, tuple[float, dict | None]] = {}
         self._last_request_at: float = 0.0
-        # Throttle: NCES API rate-limits aggressively; 1 req / 200ms is safe.
+        # Throttle: NCES rate-limits aggressively. 0.2s is the floor; we
+        # back off further when the server returns 429 (see _throttle).
         self._min_interval = 0.2
+        self._backoff_until: float = 0.0
 
     def _throttle(self) -> None:
         now = time.time()
+        if now < self._backoff_until:
+            time.sleep(self._backoff_until - now)
+            now = time.time()
         wait = self._last_request_at + self._min_interval - now
         if wait > 0:
             time.sleep(wait)
         self._last_request_at = time.time()
+
+    def _on_429(self) -> None:
+        """NCES told us to slow down. Back off exponentially, capped at 30s."""
+        self._consecutive_429 = getattr(self, "_consecutive_429", 0) + 1
+        self._backoff_until = time.time() + min(30, 2 ** self._consecutive_429)
 
     # ── Browse / search (NCES API supports these directly) ────────────────
     def browse(self, *, page: int = 1, per_page: int = 30, sort: str = "rating") -> dict:
@@ -197,11 +212,11 @@ class NCESScraper:
     def course_detail(self, nces_id: int) -> dict | None:
         """Full course detail (one section) by NCES id, including reviews.
 
-        Uses the direct /api/v1/courses/<id> + /api/v1/courses/<id>/reviews
+        Uses the direct /api/v1/course/<id> + /api/v1/course/<id>/reviews
         endpoints — no walking required.
         """
         self._throttle()
-        r = self.session.get(f"{self.BASE}/api/v1/courses/{nces_id}", timeout=15)
+        r = self.session.get(f"{self.BASE}/api/v1/course/{nces_id}", timeout=15)
         if r.status_code == 404:
             return None
         r.raise_for_status()
@@ -210,7 +225,7 @@ class NCESScraper:
         rate = c.get("rate") or {}
 
         self._throttle()
-        r2 = self.session.get(f"{self.BASE}/api/v1/courses/{nces_id}/reviews", timeout=15)
+        r2 = self.session.get(f"{self.BASE}/api/v1/course/{nces_id}/reviews", timeout=15)
         reviews_raw = []
         if r2.status_code == 200:
             reviews_raw = r2.json().get("items", []) or []
@@ -269,10 +284,10 @@ class NCESScraper:
         }
 
     def _api_search_for_browse(self, *, page: int, per_page: int) -> dict:
-        """GET /api/v1/courses?page=N&per_page=M → {items, total, pages, ...}."""
+        """GET /api/v1/course?page=N&per_page=M → {items, total, pages, ...}."""
         self._throttle()
         r = self.session.get(
-            f"{self.BASE}/api/v1/courses",
+            f"{self.BASE}/api/v1/course",
             params={"page": page, "per_page": per_page},
             timeout=15,
         )
@@ -284,6 +299,10 @@ class NCESScraper:
         """GET /api/v1/search?q=<code> → {courses, reviews} JSON."""
         self._throttle()
         r = self.session.get(self.API_SEARCH, params={"q": code}, timeout=15)
+        if r.status_code == 429:
+            self._on_429()
+            self._throttle()
+            r = self.session.get(self.API_SEARCH, params={"q": code}, timeout=15)
         r.raise_for_status()
         return r.json()
 
@@ -520,7 +539,7 @@ class NCESScraper:
         teacher-name search when a teacher is specified, so reviews for
         teachers outside the top-5-by-reviews are reachable.
 
-        Then hits the direct ``/api/v1/courses/{id}/reviews`` endpoint
+        Then hits the direct ``/api/v1/course/{id}/reviews`` endpoint
         for the chosen section so we get ALL of that section's reviews
         (the /search endpoint only returns page 1 of the teacher's review
         set, not the full count).
@@ -556,7 +575,7 @@ class NCESScraper:
         try:
             self._throttle()
             rr = self.session.get(
-                f"{self.BASE}/api/v1/courses/{target_id}/reviews",
+                f"{self.BASE}/api/v1/course/{target_id}/reviews",
                 timeout=15,
             )
             rr.raise_for_status()
@@ -623,12 +642,25 @@ class NCESScraper:
         """Structured hover-brief data for one course code.
 
         Returns the exact shape the UI consumes, or None if the course
-        isn\'t in NCES (callers should use ``not_found(code)`` for that).
+        isn't in NCES (callers should use ``not_found(code)`` for that).
+
+        Result is cached in-memory by ``(code, teacher, xn, xq)`` for
+        ``TTL`` seconds (default 5 min). Repeat hovers for the same card
+        — e.g. moving the mouse across multiple picks of the same course
+        in the compare pane — return instantly without hitting NCES.
         """
+        cache_key = (code.upper(), teacher, xn, xq)
+        cached = self._brief_cache.get(cache_key)
+        if cached and (time.time() - cached[0]) < self.TTL:
+            return cached[1]
+
         course, exact_match, alternatives = self.search_course(
             code, teacher=teacher, xn=xn, xq=xq,
         )
         if course is None:
+            # Cache the negative result too — repeat hovers on a not-found
+            # card shouldn't re-walk either. Use a sentinel via brief=None.
+            self._brief_cache[cache_key] = (time.time(), None)
             return None
         # When a TIS teacher was specified but no NCES section matches it,
         # don't pretend the data belongs to the TIS teacher — surface a
@@ -650,7 +682,7 @@ class NCESScraper:
                 tis_teachers, exclude_code=course.code,
             )
 
-        return {
+        result = {
             "available": True,
             "code": course.code,
             "name": course.name,
@@ -684,6 +716,8 @@ class NCESScraper:
             "alternatives": alternatives,
             "teacher_other": teacher_other,  # other courses the TIS teacher teaches (for mismatch fallback)
         }
+        self._brief_cache[cache_key] = (time.time(), result)
+        return result
 
     def not_found(self, code: str) -> dict:
         return {
