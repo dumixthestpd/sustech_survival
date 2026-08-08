@@ -110,14 +110,20 @@ table.grid th,table.grid td{border:1px solid #1a2030;padding:0;vertical-align:to
 table.grid th{background:var(--panel);color:var(--mut);padding:.3rem;position:sticky;top:0;z-index:2;font-weight:500;text-align:center}
 table.grid th:first-child{width:2.6rem}
 table.grid td{height:38px;position:relative}
-/* Alternating-column tint (~8% white overlay) — helps the eye track
- * which day a multi-row block belongs to so the user doesn't tick the
- * wrong day/period when blocking or selecting. Tints thead + tbody;
- * block .cell-inner fills override the underlying tint. */
-table.grid thead th:nth-child(odd)  { background: rgba(255,255,255,0.040); }
-table.grid thead th:nth-child(even) { background: rgba(255,255,255,0.080); }
-table.grid tbody td:nth-child(odd)  { background: rgba(255,255,255,0.040); }
-table.grid tbody td:nth-child(even) { background: rgba(255,255,255,0.080); }
+/* Alternating-row tint (~8% white overlay) — helps the eye track which
+ * period range a block belongs to when scanning vertically down a day
+ * column. Tints thead + tbody; block .cell-inner fills override the
+ * underlying tint. (Was column-tinted; flipped 2026-08-08 because row
+ * striping follows the time axis, which is what the user reads when
+ * marking blocked periods.) */
+table.grid thead th:nth-child(1),
+table.grid tbody tr:nth-child(odd)  td,
+table.grid tbody tr:nth-child(odd)  th { background: rgba(255,255,255,0.080); }
+table.grid thead th:nth-child(2),
+table.grid tbody tr:nth-child(even) td,
+table.grid tbody tr:nth-child(even) th { background: rgba(255,255,255,0.040); }
+/* Keep the leading period-label column readable (don't double-tint it) */
+table.grid tbody tr th { background: var(--panel); }
 .cell{padding:0;height:38px;position:relative;overflow:visible;isolation:isolate}
 .cell-inner{position:relative;width:100%;height:0}
 .blk{position:absolute;left:1px;right:1px;z-index:1;border-radius:4px;padding:.15rem .25rem;color:#fff;font-size:.65rem;line-height:1.25;overflow:hidden;cursor:pointer;min-height:20px;border:1px solid rgba(255,255,255,.15);pointer-events:auto}
