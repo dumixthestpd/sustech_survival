@@ -225,6 +225,8 @@ table.grid td{height:38px;position:relative}
 .bid-panel-relaxed .bid-box .bb-bid::after{font-size:.7rem;color:var(--mut);font-weight:400;margin-left:.25rem}
 .bid-panel-relaxed .bid-box .bb-code{font-size:.72rem;font-weight:500;color:var(--accent);font-family:ui-monospace,Menlo,monospace}
 .bid-panel-relaxed .bid-box .bb-name{font-size:.78rem;color:var(--txt);margin-top:auto;line-height:1.3;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.bid-panel-relaxed .bid-box .bb-edit{font:inherit;font-size:1.5rem;font-weight:700;width:auto;max-width:6ch;color:var(--accent);background:transparent;border:0;border-bottom:1px dashed var(--accent);border-radius:0;padding:0 .15rem;line-height:1.1;font-variant-numeric:tabular-nums;outline:none;-moz-appearance:textfield;-webkit-appearance:none;appearance:none}
+.bid-panel-relaxed .bid-box .bb-edit::-webkit-outer-spin-button,.bid-panel-relaxed .bid-box .bb-edit::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;display:none}
 
 /* Arrow layer for the bid drag — fixed position overlay where the
    SVG arrow is drawn. The arrow persists for ~600ms after drop. */
@@ -572,9 +574,10 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
 .bid-box .bb-bid{font-size:1.1rem;font-weight:600;color:var(--accent);font-variant-numeric:tabular-nums}
 .bid-box .bb-bid::after{content:" pts";font-size:.62rem;color:var(--mut);font-weight:400;margin-left:.15rem}
 .bid-box .bb-name{font-size:.72rem;color:var(--txt);margin-top:.1rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.bid-box .bb-edit{display:none;width:100%;font-size:1.1rem;font-weight:600;color:var(--accent);background:var(--panel);border:1px solid var(--accent);border-radius:3px;padding:0 .2rem;font-variant-numeric:tabular-nums}
+.bid-box .bb-edit{display:none;width:auto;max-width:6ch;font:inherit;font-weight:600;color:var(--accent);background:transparent;border:0;border-bottom:1px dashed var(--accent);border-radius:0;padding:0 .15rem;font-variant-numeric:tabular-nums;outline:none;-moz-appearance:textfield;text-align:left;-webkit-appearance:none;appearance:none}
+.bid-box .bb-edit::-webkit-outer-spin-button,.bid-box .bb-edit::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;display:none}
 .bid-box.editing .bb-bid,.bid-box.editing .bb-code,.bid-box.editing .bb-name{display:none}
-.bid-box.editing .bb-edit{display:block}
+.bid-box.editing .bb-edit{display:inline-block}
 .bid-arrow{position:fixed;pointer-events:none;z-index:9999;color:var(--accent);font-size:1.2rem;line-height:1}
 .bid-arrow svg{stroke:var(--accent);stroke-width:2;fill:none}
 .bid-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:9998}
