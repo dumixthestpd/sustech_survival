@@ -1,192 +1,79 @@
 """
-sustech_survival.selectcourse.selectcourse — Live client for TIS course browsing + enrollment.
+sustech_survival.selectcourse.selectcourse — Read-side TIS client.
 
-ONE class. ALL operations on the 选课 catalog, your enrolled courses,
-and (with `dry_run=False`) course add/drop.
+Orchestrator: catalog browse (any xq), personal enrollment lookup,
+and (via `dry_run=False`) the 5 write methods in `writes.py`.
 
-Architecture mirrors classroom.ClassroomOccupancy — same auth, same cache,
-same TIS campus_schedule endpoint. The difference: this client is
+Architecture mirrors classroom.ClassroomOccupancy — same auth, same
+cache, same TIS catalog endpoints. The difference: this client is
 course-centric (one row per offering), not room-centric.
 
-Endpoints used:
-    Xsxktz/queryRwxxcxList          — public course catalog (any xq, including
-                                       summer xq=3) — READ
-    xszykb/queryxszykbzong           — your enrolled courses for a semester — READ
-    xszykb/queryxszykbzhou           — your enrolled courses for a specific week — READ
-    Xsxk/addXuanke                   — submit shopping cart → enrolled — WRITE
-    Xsxk/tuike                       — drop a course — WRITE
-    Xsxk/addGouwuche                 — add to shopping cart — WRITE
-    Xsxk/delGouwuche                 — remove from shopping cart — WRITE
-    Xsxk/updXuefeijiaofei            — tuition payment (not wrapped; TIS-internal flow)
-    Xsxk/updXkxsByyx                 — update by enrolled status
-    Xsxk/updXkxsBygwc                — update by cart status
+Files in this package (post-split, 2026-08-08):
+  selectcourse.py (this file) — client orchestrator, cache, READ methods
+  course.py                  — Course dataclass
+  maps.py                    — CATEGORY_MAP, language_to_code, etc.
+  endpoints.py               — TIS URL constants + XKTJZ_*
+  queryform.py               — TIS wire-format payload builder (1 function)
+  errors.py                  — EnrollmentError
+  writes.py                  — 5 write methods + _post_xsxk helper
+  ical.py                    — ICS calendar export (unchanged)
+  __main__.py                — CLI entry (unchanged)
+  __init__.py                — singleton + re-exports (unchanged)
 
-Write-side (AddCourse / DropCourse) was discovered by walking the
-`/pub/xkgl/xsxk/xsxk-*.js` bundle on 2026-06-19. Endpoints + payload
-shape documented in `references/tis-api.md`. The `dry_run=True` default
-on `add_course()` / `drop_course()` means they print what would be POSTed
-without actually mutating your enrollment — flip to `dry_run=False` to
-fire the real request.
+Endpoints used (read side):
+    Xsxktz/queryRwxxcxList          — public course catalog
+    xszykb/queryxszykbzong          — your enrolled courses
+    xszykb/queryxszykbzhou          — your enrolled courses for a week
+    Xsxk/queryKxrw                  — 选课 search (personal)
+    Xsxk/queryYxkc                  — course-type tabs
+    Xsxk/queryXkdqXnxq              — current TIS active term
+
+Write-side (add_course / drop_course / submit_bids / ...) lives in
+`writes.py`. Every write defaults to `dry_run=True` and prints what
+would be POSTed. Discovery doc: references/tis-api.md.
 """
 from __future__ import annotations
 
 import json
-import re
-import threading
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
-
-import requests
+from typing import List, Optional
 
 from ..semester import Semester
-from .schema import Course
+from .course import Course
+from .endpoints import (
+    TIS_CAMPUS_SCHEDULE_URL,
+    XKTJZ_TASK_TO_CART,  # re-export for back-compat
+)
 
-
-TIS_BASE = "https://tis.sustech.edu.cn"
-TIS_CAMPUS_SCHEDULE_URL = f"{TIS_BASE}/Xsxktz/queryRwxxcxList"
-TIS_PERSONAL_SCHEDULE_URL = f"{TIS_BASE}/xszykb/queryxszykbzong"
-TIS_PERSONAL_WEEK_URL = f"{TIS_BASE}/xszykb/queryxszykbzhou"
-TIS_QUERY_KXRW_URL = f"{TIS_BASE}/Xsxk/queryKxrw"  # 选课 search (personal selection)
-TIS_ADD_XUANKE_URL = f"{TIS_BASE}/Xsxk/addXuanke"
-TIS_TUIKE_URL = f"{TIS_BASE}/Xsxk/tuike"
-TIS_ADD_GOUWUCHE_URL = f"{TIS_BASE}/Xsxk/addGouwuche"
-TIS_DEL_GOUWUCHE_URL = f"{TIS_BASE}/Xsxk/delGouwuche"
-TIS_UPD_XKXS_BY_YX = f"{TIS_BASE}/Xsxk/updXkxsByyx"
-TIS_UPD_XKXS_BY_GWC = f"{TIS_BASE}/Xsxk/upd_xkxsBygwc"
+# DEFAULT_TTL was previously module-level here. Kept here (not in
+# endpoints.py) because it's a client-behavior constant, not a TIS API
+# constant.
 DEFAULT_TTL = 3600
-
-# xktjz (选课提交至) values — where the action lands. Discovered from
-# the user's HAR (tis.sustech.edu.cn.har, 2026-08-08): every write
-# endpoint the user actually called — addGouwuche, updXkxsByyx, tuike,
-# queryKxrw, queryYxkc — uses `p_xktjz=rwtjzyx` (任务提交至已选).
-# Despite the endpoint name `addGouwuche` (add to cart), TIS does NOT
-# accept `p_xktjz=rwtjzgwc` for it — that returns 操作失败 silently.
-# Only `addXuanke` uses `gwctjzyx` (cart → enrolled finalization).
-XKTJZ_CART_TO_ENROLLED = "gwctjzyx"        # used by addXuanke (cart final → enrolled)
-XKTJZ_TASK_TO_ENROLLED = "rwtjzyx"        # used by addGouwuche / updXkxsByyx / tuike
-# Back-compat alias (the OLD constant value was wrong; keep the name so
-# old callers don't AttributeError, but point it to the correct value).
-XKTJZ_TASK_TO_CART = XKTJZ_TASK_TO_ENROLLED  # legacy alias; semantically "task → enrolled"
-
-# kclbdm (课程类别代码) map — display name → DM code.
-# Discovered from the TIS kclb SPA bundle (`inco.component.kclb-*.js`)
-# endpoint `component/queryKclb` (NOT `/Xsxk/queryKclb` which 404s).
-# Full discovery: sustech-dev/references/tis-kclbdm-discovery-2026-07-08.md
-#
-# Personal mode TIS search expects the kclbdm code in `p_kclb`. Passing
-# the display name silently returns 0 results. Use this to translate
-# dropdown values before hitting TIS.
-#
-# Public name is CATEGORY_MAP (semantic, no TIS jargon). KCLBDM_MAP kept
-# as an alias for any external code that imported it.
-#
-# Sub-categories (level 2 like 0901-0909) are stored in TIS response
-# kclbmc as `<parent>-<sub>` (e.g. "通识选修课-美育类"). The frontend
-# dropdown shows only the bare sub-name (e.g. "美育类") so the bare
-# name → code mapping covers the dropdown cases.
-CATEGORY_MAP: dict = {
-    # Top-level (level 1) — undergrad
-    "专业基础课": "03",
-    "专业必修课": "04",   # 04 (undergrad) and 10 both named "专业必修课"
-    "专业选修课": "05",
-    "专业核心课": "07",
-    "通识必修课": "08",
-    "通识选修课": "09",
-    "实践": "11",
-    "国际化人才培养": "13",
-    "任选": "98",
-    "其他": "99",
-    "辅修专业选修学分": "998",
-    "辅修专业必修学分": "999",
-    # Sub-categories (level 2) — child of 09 通识选修课
-    "人文类": "0901",
-    "社科类": "0902",
-    "艺术类": "0903",
-    "其它任选类": "0904",
-    "外语类": "0905",
-    "劳育类": "0906",
-    "美育类": "0907",
-    "国学类": "0908",
-    "专业导论类": "0909",
-    # Graduate-only (level 1) — pylb=2
-    "培养环节": "01",     # grad only (pylb=1 has no 培养环节 — it's a 研究生 thing)
-    "校外共享课": "200",
-}
-
-# Reverse: code → display name (for /api/tis/info payload).
-CATEGORY_REVERSE: dict = {v: k for k, v in CATEGORY_MAP.items()}
-# Back-compat alias for any external code that imported the old name.
-KCLBDM_MAP: dict = CATEGORY_MAP
-KCLBDM_REVERSE: dict = CATEGORY_REVERSE
-
-# kclbmc (TIS response format) — can be "通识选修课" or "通识选修课-美育类".
-# When translating from a TIS response kclbmc to a code, strip the
-# parent prefix if present.
-def category_name_to_code(name: str) -> str:
-    """Translate TIS response `kclbmc` (category display name) to its
-    internal code.
-
-    Handles both bare names (`美育类`) and hyphenated names
-    (`通识选修课-美育类`). If the input is already a digit code
-    (`0907`), pass it through. Returns empty string if not recognized
-    (callers should treat unknown as no-filter).
-    """
-    if not name:
-        return ""
-    s = name.strip()
-    # Pass-through: already a digit code
-    if s.isdigit():
-        return s
-    # Direct lookup first
-    if s in CATEGORY_MAP:
-        return CATEGORY_MAP[s]
-    # Try stripping "<parent>-" prefix
-    if "-" in s:
-        suffix = s.split("-", 1)[1]
-        if suffix in CATEGORY_MAP:
-            return CATEGORY_MAP[suffix]
-    return ""
-# Back-compat alias (the old TIS-jargon name).
-kclbmc_to_code = category_name_to_code
-
-# Language code (p_skyy) — TIS personal mode expects a code, not name.
-# 1=中文, 2=英文, 3=双语. Verified by trial 2026-07-07.
-LANGUAGE_MAP: dict = {
-    "中文": "1",
-    "英文": "2",
-    "双语": "3",
-}
-
-
-def language_to_code(language: str) -> str:
-    """Translate display language name to TIS code. Returns input as-is
-    if already a code (or unrecognized)."""
-    if not language:
-        return ""
-    return LANGUAGE_MAP.get(language.strip(), language.strip())
-
-
-class EnrollmentError(RuntimeError):
-    """Raised when TIS rejects a write-side enrollment action."""
-    def __init__(self, jg: str, message: str, *, endpoint: str, rwh: str):
-        self.jg = jg              # '0' or '-1' or other non-success code
-        self.message = message
-        self.endpoint = endpoint
-        self.rwh = rwh
-        super().__init__(f"[{endpoint}] rwh={rwh} jg={jg}: {message}")
-
+from .maps import (
+    CATEGORY_MAP, CATEGORY_REVERSE,
+    KCLBDM_MAP, KCLBDM_REVERSE,
+    category_name_to_code, kclbmc_to_code,
+    language_to_code,
+)
+from .errors import EnrollmentError  # re-export
+from .writes import (  # mix into SelectCourseClient below
+    add_course, drop_course, add_to_cart, remove_from_cart,
+    update_bid, submit_bids,
+)
 
 
 class SelectCourseClient:
-    """TIS course selection helper — read side.
+    """TIS course selection helper.
 
-    Provides catalog browse (any xq) and personal enrollment lookup.
-    Write side (AddCourse / DropCourse) is NOT wrapped — see the SKILL
-    notes for the open question.
+    Read side: catalog browse (any xq), personal enrollment lookup,
+    filter options, by-code lookup.
+
+    Write side: see `writes.py` — methods are bound onto this class at
+    the bottom of this file. Every write defaults to `dry_run=True`.
     """
 
-    BASE_URL = TIS_BASE
+    BASE_URL = "https://tis.sustech.edu.cn"
 
     def __init__(self, *, semester: Optional[Semester] = None,
                  xn: str = "2025-2026", xq: str = "2",
@@ -422,7 +309,7 @@ class SelectCourseClient:
                        weekday: Optional[int] = None,
                        period_start: Optional[int] = None,
                        period_end: Optional[int] = None,
-                       round_code: Optional[str] = None,  # TIS xkfsdm — selection round code
+                       round_code: Optional[str] = None,
                        page: int = 1,
                        page_size: int = 50,
                        ) -> dict:
@@ -431,19 +318,13 @@ class SelectCourseClient:
         Returns dict with: ok, courses, total, enrolled, cart, message,
         course_types, current_type, round.
 
-        Note: TIS rejects with "操作失败" if the queryform is incomplete.
-        The full payload (extracted from `pub/xkgl/xsxk/xsxk-*.js`) requires
-        not just the target xn/xq + round_code, but also the CURRENT term
-        (p_dqxn/p_dqxq/p_dqxnxq) and several behavior flags. We populate
-        those from a queryXkdqXnxq round-trip (cached 5 min).
-
         `round_code` is the selection round code (e.g. "bxxk" for
         通识必修选课). Required by TIS to know which round to query.
         """
         self._auth.ensure()
         # Round-trip: get the current TIS active term for the dq fields.
         # Cached — the term does not change during a session, and re-fetching
-        # on every call is what triggers "查询请求频率过高".
+        # on every call is what triggers TIS's "查询请求频率过高".
         dq = self._fetch_dq()
         # Translate display names → TIS DM codes. TIS's personal-mode
         # search silently returns 0 if given a display name in any of
@@ -665,353 +546,19 @@ class SelectCourseClient:
                 rwhs.add(rwh)
         return rwhs
 
-    # ── WRITE side: add / drop courses ───────────────────────────────────────
-    #
-    # Discovered 2026-06-19 by walking /pub/xkgl/xsxk/xsxk-*.js.
-    # See references/tis-api.md for the full payload shape + every Xsxk/* endpoint.
-    #
-    # The "click select" flow is:
-    #   1. TIS UI calls Xsxk/cxmtctPd (POST) — conflict check
-    #   2. If OK, calls Xsxk/addGouwuche (add to cart) OR Xsxk/addXuanke (direct enroll)
-    #   3. If tuition-based, also calls Xsxk/updXuefeijiaofei
-    #
-    # For "click drop":
-    #   1. TIS UI calls Xsxk/tuike (POST) — drop by id
-    #
-    # The `p_id` field is the row's `id` from queryKxrw/queryYxkc — we
-    # assume it matches `rwh` from queryRwxxcxList (both are 任务号/task
-    # number). If TIS rejects, the error message will say so and you can
-    # pass a different `id_field` value.
-    #
-    # All write methods default to `dry_run=True` — they print what would
-    # be POSTed without touching TIS. Set `dry_run=False` to fire the real
-    # request. We don't auto-flip this; course selection is a state-mutating
-    # operation and the user must opt in explicitly.
 
-    def _build_queryform(self, *, rwh: Optional[str] = None,
-                         ids: Optional[list] = None,
-                         xktjz: Optional[str] = None,
-                         pylx: Optional[str] = None,
-                         ignore_conflicts: bool = False,
-                         ignore_zero_capacity: bool = False,
-                         bid: Optional[int] = None) -> dict:
-        """Build the TIS `queryform` payload for write-side endpoints.
-
-        Mirrors the keys seen in `pub/xkgl/xsxk/xsxk-*.js` queryform
-        definition, calibrated against a live HAR capture
-        (tis.sustech.edu.cn.har, 2026-08-08) of a successful
-        `updXkxsByyx` call. The previous version missed several required
-        fields (cxsfmt, mxpylx, p_chaxunxkfsdm, pageNum, pageSize,
-        p_dqxn/p_dqxq/p_dqxnxq) and used a wrong flag for p_sfsyxkgwc,
-        which together caused every write to silently fail with
-        操作失败 — the user-visible symptom was "bidsync does nothing."
-
-        `bid` is the 选课系数 (selection coefficient, aka the credit bid
-        in 积分选课). Goes into `p_xkxs`. Leave None to omit (TIS then
-        uses the default 1 — fine for round tables that don't score).
-
-        `pylx` is the 培养类型 code (1=本科, 2=研究生). Defaults to "1"
-        (undergrad) when the caller passes None — TIS rejects missing
-        pylx with 操作失败 for undergrad students.
-        """
-        # queryXkdqXnxq is required for p_dqxn/p_dqxq/p_dqxnxq/cxsfmt
-        # (TIS's CURRENT active term, used as the round context). It's
-        # cached for the session, so this is one HTTP call per session.
-        try:
-            dq = self._fetch_dq()
-        except Exception:
-            # Offline / no auth: fall back to empty strings. The request
-            # will still be sent (it'll just be rejected by TIS), so the
-            # caller sees a clean error instead of a confusing 500.
-            dq = {"p_dqxn": "", "p_dqxq": "", "p_dqxnxq": "", "cxsfmt": ""}
-        # p_xnxq = "2026-20271" (学年 + 学期) — combine xn + xq directly.
-        xnxq = self._sem.xn + self._sem.xq
-        return {
-            # ── Top-level (no p_ prefix in HAR) ─────────────────────────
-            "cxsfmt": dq.get("cxsfmt", "0"),
-            "mxpylx": pylx if pylx is not None else "1",  # 培养类型 (mirror of p_pylx)
-            # ── queryform fields (HAR-derived, 2026-08-08) ──────────────
-            "p_pylx": pylx if pylx is not None else "1",  # 1=本科, 2=研究生
-            "p_sfgldjr": "0",                            # 是否管理端进入
-            "p_sfredis": "0",                            # 是否Redis缓存 (HAR: 0)
-            "p_sfsyxkgwc": "0",                          # 是否使用选课购物车 (HAR: 0)
-            "p_xktjz": xktjz,                            # 选课提交至 — see XKTJZ_* constants
-            "p_chaxunxh": "",                            # 管理端查询学号
-            "p_chaxunxkfsdm": "",                        # mirrors p_xkfsdm in HAR
-            "p_gjz": "",                                 # 关键字
-            "p_skjs": "",                                # 上课教师
-            "p_xn": self._sem.xn,                        # 学年
-            "p_xq": self._sem.xq,                        # 学期
-            "p_xnxq": xnxq,                              # 学年学期合并 "2026-20271"
-            "p_dqxn": dq.get("p_dqxn", ""),              # CURRENT TIS active term xn
-            "p_dqxq": dq.get("p_dqxq", ""),              # CURRENT TIS active term xq
-            "p_dqxnxq": dq.get("p_dqxnxq", ""),          # CURRENT TIS active term xnxq
-            "p_xkfsdm": "",                              # 选课方式代码 (set by caller via separate param)
-            "p_xiaoqu": "",                              # 校区
-            "p_kkyx": "",                                # 开课院系
-            "p_kclb": "",                                # 课程类别
-            "p_xkxs": bid if bid is not None else "",    # 选课系数 / 积分选课的 bid
-            "p_dyc": "",                                 # 多语种
-            "p_kkxnxq": "",                              # 开课学年学期
-            "p_id": rwh,                                 # ★ 课程id（任务号rwh）
-            "p_ids": ids if ids is not None else [],     # ★ 批量id列表
-            "p_sfhlctkc": "1" if ignore_conflicts else "0",      # 是否忽略冲突课程
-            "p_sfhllrlkc": "1" if ignore_zero_capacity else "0", # 是否忽略零容量课程
-            "p_kxsj_xqj": "", "p_kxsj_ksjc": "", "p_kxsj_jsjc": "",
-            "p_kcdm_js": "", "p_kcdm_cxrw": "", "p_kcdm_cxrw_zckc": "",
-            "p_kc_gjz": "",
-            "p_xzcxtjz_nj": "", "p_xzcxtjz_yx": "", "p_xzcxtjz_zy": "",
-            "p_xzcxtjz_zyfx": "", "p_xzcxtjz_bj": "",
-            "p_sfxsgwckb": "1",                          # 是否显示购物课表
-            "p_skyy": "",                                # 上课语言
-            "p_sfmxzj": "",                              # 满足性自荐 (HAR: empty)
-            "pageNum": "1",
-            "pageSize": "19",
-        }
-
-    def _post_xsxk(self, endpoint: str, payload: dict, *,
-                   dry_run: bool, rwh: str) -> dict:
-        """POST to a write-side Xsxk/* endpoint.
-
-        With `dry_run=True`, returns a synthetic "would-post" response
-        without sending anything. With `dry_run=False`, logs in via TIS
-        and fires the real POST.
-
-        Response shape: `{jg: '1'|'0'|'-1', message: '...', ...}`
-        Raises EnrollmentError when jg != '1'.
-        """
-        if dry_run:
-            return {
-                "dry_run": True,
-                "endpoint": endpoint,
-                "would_post": payload,
-                "jg": None, "message": "(dry_run: no request sent)",
-            }
-
-        self._auth.ensure()
-        r = self._auth.post(endpoint, data=payload, timeout=30,
-                            headers={"X-Requested-With": "XMLHttpRequest"})
-        r.raise_for_status()
-        res = r.json() if r.content else {}
-        jg = str(res.get("jg", ""))
-        if jg != "1":
-            raise EnrollmentError(jg, res.get("message", "(no message)"),
-                                  endpoint=endpoint, rwh=rwh)
-        return res
-
-    def add_course(self, rwh: str, *,
-                   bid: int = 1,
-                   dry_run: bool = True,
-                   ignore_conflicts: bool = False,
-                   ignore_zero_capacity: bool = False,
-                   pylx: Optional[str] = None) -> dict:
-        """Add a course to your enrolled list (直接选课).
-
-        `rwh`: the 任务号 (task number) from `Course.rwh` or `my_courses()`.
-               Used as `p_id` in the POST body.
-
-        `bid`: 选课系数 (the credit bid in 积分选课). 1 = minimum (the
-               default — TIS will use this if `p_xkxs` is missing).
-               Pass higher numbers to outbid others on a popular class;
-               see `references/credit-based-selection.md` for the auction
-               mechanic.
-
-        `dry_run=True` (default): returns what would be POSTed without
-                                  firing the request. SAFE.
-        `dry_run=False`: actually fires `Xsxk/addXuanke`. This MUTATES
-                         your enrollment — use only after reviewing.
-
-        `ignore_conflicts`/`ignore_zero_capacity`: pass through to the
-            TIS form's `p_sfhlctkc` / `p_sfhllrlkc`. Note that TIS may
-            still reject based on its own rules even when these are True.
-
-        Returns the TIS response dict. On dry_run, includes `dry_run=True`
-        and `would_post=<full payload>`. On real call, includes `jg='1'`
-        and `message='选课成功'` (or similar) on success.
-
-        Raises EnrollmentError on real-call failure (jg != '1').
-        """
-        payload = self._build_queryform(
-            rwh=rwh,
-            xktjz=XKTJZ_CART_TO_ENROLLED,
-            pylx=pylx,
-            ignore_conflicts=ignore_conflicts,
-            ignore_zero_capacity=ignore_zero_capacity,
-            bid=bid,
-        )
-        return self._post_xsxk(TIS_ADD_XUANKE_URL, payload,
-                               dry_run=dry_run, rwh=rwh)
-
-    def drop_course(self, rwh: str, *, dry_run: bool = True,
-                    pylx: Optional[str] = None) -> dict:
-        """Drop a course (退课) by 任务号.
-
-        Same `dry_run` semantics as `add_course`. Fires `Xsxk/tuike`.
-        """
-        payload = self._build_queryform(rwh=rwh, pylx=pylx)
-        return self._post_xsxk(TIS_TUIKE_URL, payload,
-                               dry_run=dry_run, rwh=rwh)
-
-    def add_to_cart(self, rwh: str, *, bid: int = 1,
-                    dry_run: bool = True,
-                    pylx: Optional[str] = None,
-                    xktjz: str = XKTJZ_TASK_TO_CART) -> dict:
-        """Add a course to your shopping cart (购物车).
-
-        `xktjz` defaults to `rwtjzgwc` (任务→购物车). Set to
-        `gwctjzyx` (购物车→已选) to commit the cart in one step
-        (equivalent to `add_course`).
-
-        `bid`: 选课系数 (the credit bid). Sent as `p_xkxs`. TIS will
-               reject with 操作失败 if the round uses 积分 mode and the
-               bid is missing/0/non-integer.
-
-        Fires `Xsxk/addGouwuche`.
-        """
-        payload = self._build_queryform(rwh=rwh, xktjz=xktjz, pylx=pylx, bid=bid)
-        return self._post_xsxk(TIS_ADD_GOUWUCHE_URL, payload,
-                               dry_run=dry_run, rwh=rwh)
-
-    def remove_from_cart(self, rwh: str, *, dry_run: bool = True,
-                         pylx: Optional[str] = None) -> dict:
-        """Remove a course from your shopping cart.
-
-        Fires `Xsxk/delGouwuche`.
-        """
-        payload = self._build_queryform(rwh=rwh, pylx=pylx)
-        return self._post_xsxk(TIS_DEL_GOUWUCHE_URL, payload,
-                               dry_run=dry_run, rwh=rwh)
-
-    # ── Bid (积分 / 选课系数) ────────────────────────────────────────────────
-
-    def update_bid(self, rwh: str, bid: int, *,
-                   where: str = "enrolled",
-                   pylx: Optional[str] = None,
-                   dry_run: bool = True) -> dict:
-        """Update the bid (选课系数) on an already-picked course.
-
-        `where`: "enrolled" (已选 → calls Xsxk/updXkxsByyx)
-                 or  "cart"    (购物车 → calls Xsxk/upd_xkxsBygwc)
-
-        `bid`: positive integer. TIS rejects if the round uses 积分
-               mode and bid is missing / 0 / non-integer.
-
-        For NEW picks (not yet in cart/enrolled), use `add_to_cart(bid=…)`
-        or `add_course(bid=…)` instead — they pass the bid on the create.
-        """
-        bid = int(bid)
-        if bid < 1:
-            raise ValueError(f"bid must be a positive integer, got {bid}")
-        if where == "enrolled":
-            url = TIS_UPD_XKXS_BY_YX
-        elif where == "cart":
-            url = TIS_UPD_XKXS_BY_GWC
-        else:
-            raise ValueError(f"where must be 'enrolled' or 'cart', got {where!r}")
-        payload = self._build_queryform(rwh=rwh, pylx=pylx, bid=bid)
-        return self._post_xsxk(url, payload, dry_run=dry_run, rwh=rwh)
-
-    def submit_bids(self, picks: dict, *,
-                    round_code: str = "",
-                    where: str = "cart",
-                    jffs_limit: Optional[float] = None,
-                    pylx: Optional[str] = None,
-                    dry_run: bool = True) -> dict:
-        """Submit a batch of bid values for the user's picked courses.
-
-        `picks`:  {rwh: bid_int, ...} — the user's desired bid per course.
-        `round_code`: the active round code (informational; not strictly
-                       required by the wire but useful for context).
-                       Same as TIS `xkfsdm`.
-        `where`:  "enrolled" (call updXkxsByyx) or "cart" (call
-                  upd_xkxsBygwc) — same as `update_bid`.
-        `jffs_limit`: if provided, validate that `sum(picks.values())`
-                      does not exceed it (the 剩余积分 from the round).
-                      If sum > jffs_limit, return ok=False without any
-                      TIS calls.
-
-        Returns a dict:
-          {
-            "ok": True/False,
-            "results": [{rwh, bid, ok, message}, ...],
-            "sum": N,
-            "jffs_limit": X or None,
-            "over_limit": True/False,
-            "round_code": str,
-          }
-
-        Each TIS call still respects `dry_run` — the loop is read+write
-        either way; `dry_run` only controls whether the actual POST
-        fires. Validation (jffs check) always runs.
-
-        If `sum(picks.values()) > jffs_limit`, the function short-circuits
-        BEFORE making any TIS calls (including dry-run). The result
-        includes the picks you asked for so the caller can show them
-        back to the user.
-        """
-        results: list = []
-
-        # Pre-compute the total. If it would blow the budget, return
-        # WITHOUT firing any TIS calls (including dry-run). Build a
-        # synthetic per-pick result so the caller can render what was
-        # rejected.
-        try:
-            coerced = {rwh: int(b) for rwh, b in picks.items()}
-        except (TypeError, ValueError):
-            return {
-                "ok": False, "results": [],
-                "error": "all bid values must be integers",
-                "sum": 0, "jffs_limit": jffs_limit, "over_limit": False,
-                "round_code": round_code, "dry_run": dry_run,
-            }
-        total = sum(max(0, b) for b in coerced.values())
-        if jffs_limit is not None and total > jffs_limit:
-            results = [{"rwh": rwh, "bid": b, "ok": False,
-                        "message": f"over budget ({total} > {jffs_limit})",
-                        "dry_run": dry_run}
-                       for rwh, b in coerced.items() if b >= 1]
-            return {
-                "ok": False,
-                "results": results,
-                "sum": total,
-                "jffs_limit": jffs_limit,
-                "over_limit": True,
-                "round_code": round_code,
-                "dry_run": dry_run,
-            }
-
-        for rwh, bid in coerced.items():
-            if bid < 1:
-                results.append({"rwh": rwh, "bid": bid, "ok": False,
-                                "message": "bid must be ≥ 1",
-                                "dry_run": dry_run})
-                continue
-            try:
-                res = self.update_bid(rwh, bid, where=where, pylx=pylx,
-                                      dry_run=dry_run)
-                results.append({
-                    "rwh": rwh,
-                    "bid": bid,
-                    "ok": res.get("jg") == "1" or res.get("dry_run"),
-                    "message": res.get("message", ""),
-                    "dry_run": res.get("dry_run", False),
-                })
-            except Exception as e:
-                results.append({"rwh": rwh, "bid": bid, "ok": False,
-                                "message": str(e),
-                                "dry_run": dry_run})
-        return {
-            "ok": all(r["ok"] for r in results),
-            "results": results,
-            "sum": total,
-            "jffs_limit": jffs_limit,
-            "over_limit": False,
-            "round_code": round_code,
-            "dry_run": dry_run,
-        }
+# ── Mix in write methods ────────────────────────────────────────────────
+# Defined in writes.py (split 2026-08-08). Bound here so callers can use
+# `client.add_course(...)` exactly as before the split.
+SelectCourseClient.add_course = add_course
+SelectCourseClient.drop_course = drop_course
+SelectCourseClient.add_to_cart = add_to_cart
+SelectCourseClient.remove_from_cart = remove_from_cart
+SelectCourseClient.update_bid = update_bid
+SelectCourseClient.submit_bids = submit_bids
 
 
-# ── Singleton factory ────────────────────────────────────────────────────────
+# ── Singleton factory ────────────────────────────────────────────────────
 
 
 def selectcourse(*, semester: Optional[Semester] = None,

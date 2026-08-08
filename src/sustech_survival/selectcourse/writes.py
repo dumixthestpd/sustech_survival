@@ -1,0 +1,286 @@
+"""
+sustech_survival.selectcourse.writes — Course add/drop/update_bid methods.
+
+Split from `selectcourse.py` (2026-08-08) so the read-side client stays
+narrow. These methods mutate enrollment on TIS — every one defaults to
+`dry_run=True` and prints the payload that WOULD be POSTed. The user
+must explicitly set `dry_run=False` to fire a real write.
+
+The 5 public methods:
+  add_course(rwh)         — Xsxk/addXuanke       (direct enroll)
+  drop_course(rwh)        — Xsxk/tuike           (drop)
+  add_to_cart(rwh)        — Xsxk/addGouwuche     (add to cart)
+  remove_from_cart(rwh)   — Xsxk/delGouwuche     (remove from cart)
+  update_bid(rwh, bid)    — Xsxk/updXkxsByyx|gwc (set bid on existing pick)
+  submit_bids(picks)      — bulk wrapper around update_bid
+
+Discovery doc: references/tis-api.md
+"""
+from __future__ import annotations
+
+from typing import Optional
+
+from .endpoints import (
+    TIS_ADD_XUANKE_URL, TIS_TUIKE_URL, TIS_ADD_GOUWUCHE_URL, TIS_DEL_GOUWUCHE_URL,
+    TIS_UPD_XKXS_BY_YX, TIS_UPD_XKXS_BY_GWC,
+    XKTJZ_CART_TO_ENROLLED, XKTJZ_TASK_TO_CART,
+)
+from .errors import EnrollmentError
+from .queryform import build_queryform
+
+
+# ── POST helper ────────────────────────────────────────────────────────
+
+def _post_xsxk(self, endpoint: str, payload: dict, *,
+               dry_run: bool, rwh: str) -> dict:
+    """POST to a write-side Xsxk/* endpoint.
+
+    With `dry_run=True`, returns a synthetic "would-post" response
+    without sending anything. With `dry_run=False`, logs in via TIS
+    and fires the real POST.
+
+    Response shape: `{jg: '1'|'0'|'-1', message: '...', ...}`
+    Raises EnrollmentError when jg != '1'.
+    """
+    if dry_run:
+        return {
+            "dry_run": True,
+            "endpoint": endpoint,
+            "would_post": payload,
+            "jg": None, "message": "(dry_run: no request sent)",
+        }
+
+    self._auth.ensure()
+    r = self._auth.post(endpoint, data=payload, timeout=30,
+                        headers={"X-Requested-With": "XMLHttpRequest"})
+    r.raise_for_status()
+    res = r.json() if r.content else {}
+    jg = str(res.get("jg", ""))
+    if jg != "1":
+        raise EnrollmentError(jg, res.get("message", "(no message)"),
+                              endpoint=endpoint, rwh=rwh)
+    return res
+
+
+def _build(self, **kw) -> dict:
+    """Shorthand for build_queryform bound to this client."""
+    return build_queryform(sem=self._sem, auth=self._auth, **kw)
+
+
+# ── Single-pick writes ──────────────────────────────────────────────────
+
+def add_course(self, rwh: str, *,
+               bid: int = 1,
+               dry_run: bool = True,
+               ignore_conflicts: bool = False,
+               ignore_zero_capacity: bool = False,
+               pylx: Optional[str] = None) -> dict:
+    """Add a course to your enrolled list (直接选课).
+
+    `rwh`: the 任务号 (task number) from `Course.rwh` or `my_courses()`.
+           Used as `p_id` in the POST body.
+
+    `bid`: 选课系数 (the credit bid in 积分选课). 1 = minimum (the
+           default — TIS will use this if `p_xkxs` is missing).
+           Pass higher numbers to outbid others on a popular class;
+           see `references/credit-based-selection.md` for the auction
+           mechanic.
+
+    `dry_run=True` (default): returns what would be POSTed without
+                              firing the request. SAFE.
+    `dry_run=False`: actually fires `Xsxk/addXuanke`. This MUTATES
+                     your enrollment — use only after reviewing.
+
+    `ignore_conflicts`/`ignore_zero_capacity`: pass through to the
+        TIS form's `p_sfhlctkc` / `p_sfhllrlkc`. Note that TIS may
+        still reject based on its own rules even when these are True.
+
+    Returns the TIS response dict. On dry_run, includes `dry_run=True`
+    and `would_post=<full payload>`. On real call, includes `jg='1'`
+    and `message='选课成功'` (or similar) on success.
+
+    Raises EnrollmentError on real-call failure (jg != '1').
+    """
+    payload = _build(self,
+                     rwh=rwh,
+                     xktjz=XKTJZ_CART_TO_ENROLLED,
+                     pylx=pylx,
+                     ignore_conflicts=ignore_conflicts,
+                     ignore_zero_capacity=ignore_zero_capacity,
+                     bid=bid,
+                     )
+    return _post_xsxk(self, TIS_ADD_XUANKE_URL, payload,
+                       dry_run=dry_run, rwh=rwh)
+
+
+def drop_course(self, rwh: str, *, dry_run: bool = True,
+                pylx: Optional[str] = None) -> dict:
+    """Drop a course (退课) by 任务号.
+
+    Same `dry_run` semantics as `add_course`. Fires `Xsxk/tuike`.
+    """
+    payload = _build(self, rwh=rwh, pylx=pylx)
+    return _post_xsxk(self, TIS_TUIKE_URL, payload,
+                       dry_run=dry_run, rwh=rwh)
+
+
+def add_to_cart(self, rwh: str, *, bid: int = 1,
+                dry_run: bool = True,
+                pylx: Optional[str] = None,
+                xktjz: str = XKTJZ_TASK_TO_CART) -> dict:
+    """Add a course to your shopping cart (购物车).
+
+    `xktjz` defaults to `rwtjzyx` (任务→已选). Set to
+    `gwctjzyx` (购物车→已选) to commit the cart in one step
+    (equivalent to `add_course`).
+
+    `bid`: 选课系数 (the credit bid). Sent as `p_xkxs`. TIS will
+           reject with 操作失败 if the round uses 积分 mode and the
+           bid is missing/0/non-integer.
+
+    Fires `Xsxk/addGouwuche`.
+    """
+    payload = _build(self, rwh=rwh, xktjz=xktjz, pylx=pylx, bid=bid)
+    return _post_xsxk(self, TIS_ADD_GOUWUCHE_URL, payload,
+                       dry_run=dry_run, rwh=rwh)
+
+
+def remove_from_cart(self, rwh: str, *, dry_run: bool = True,
+                     pylx: Optional[str] = None) -> dict:
+    """Remove a course from your shopping cart.
+
+    Fires `Xsxk/delGouwuche`.
+    """
+    payload = _build(self, rwh=rwh, pylx=pylx)
+    return _post_xsxk(self, TIS_DEL_GOUWUCHE_URL, payload,
+                       dry_run=dry_run, rwh=rwh)
+
+
+# ── Bid (积分 / 选课系数) ──────────────────────────────────────────────
+
+def update_bid(self, rwh: str, bid: int, *,
+               where: str = "enrolled",
+               pylx: Optional[str] = None,
+               dry_run: bool = True) -> dict:
+    """Update the bid (选课系数) on an already-picked course.
+
+    `where`: "enrolled" (已选 → calls Xsxk/updXkxsByyx)
+             or  "cart"    (购物车 → calls Xsxk/upd_xkxsBygwc)
+
+    `bid`: positive integer. TIS rejects if the round uses 积分
+           mode and bid is missing / 0 / non-integer.
+
+    For NEW picks (not yet in cart/enrolled), use `add_to_cart(bid=…)`
+    or `add_course(bid=…)` instead — they pass the bid on the create.
+    """
+    bid = int(bid)
+    if bid < 1:
+        raise ValueError(f"bid must be a positive integer, got {bid}")
+    if where == "enrolled":
+        url = TIS_UPD_XKXS_BY_YX
+    elif where == "cart":
+        url = TIS_UPD_XKXS_BY_GWC
+    else:
+        raise ValueError(f"where must be 'enrolled' or 'cart', got {where!r}")
+    payload = _build(self, rwh=rwh, pylx=pylx, bid=bid)
+    return _post_xsxk(self, url, payload, dry_run=dry_run, rwh=rwh)
+
+
+def submit_bids(self, picks: dict, *,
+                round_code: str = "",
+                where: str = "cart",
+                jffs_limit: Optional[float] = None,
+                pylx: Optional[str] = None,
+                dry_run: bool = True) -> dict:
+    """Submit a batch of bid values for the user's picked courses.
+
+    `picks`:  {rwh: bid_int, ...} — the user's desired bid per course.
+    `round_code`: the active round code (informational; not strictly
+                   required by the wire but useful for context).
+                   Same as TIS `xkfsdm`.
+    `where`:  "enrolled" (call updXkxsByyx) or "cart" (call
+              upd_xkxsBygwc) — same as `update_bid`.
+    `jffs_limit`: if provided, validate that `sum(picks.values())`
+                  does not exceed it (the 剩余积分 from the round).
+                  If sum > jffs_limit, return ok=False without any
+                  TIS calls.
+
+    Returns a dict:
+      {
+        "ok": True/False,
+        "results": [{rwh, bid, ok, message}, ...],
+        "sum": N,
+        "jffs_limit": X or None,
+        "over_limit": True/False,
+        "round_code": str,
+      }
+
+    Each TIS call still respects `dry_run` — the loop is read+write
+    either way; `dry_run` only controls whether the actual POST
+    fires. Validation (jffs check) always runs.
+
+    If `sum(picks.values()) > jffs_limit`, the function short-circuits
+    BEFORE making any TIS calls (including dry-run). The result
+    includes the picks you asked for so the caller can show them
+    back to the user.
+    """
+    results: list = []
+
+    # Pre-compute the total. If it would blow the budget, return
+    # WITHOUT firing any TIS calls (including dry-run). Build a
+    # synthetic per-pick result so the caller can render what was
+    # rejected.
+    try:
+        coerced = {rwh: int(b) for rwh, b in picks.items()}
+    except (TypeError, ValueError):
+        return {
+            "ok": False, "results": [],
+            "error": "all bid values must be integers",
+            "sum": 0, "jffs_limit": jffs_limit, "over_limit": False,
+            "round_code": round_code, "dry_run": dry_run,
+        }
+    total = sum(max(0, b) for b in coerced.values())
+    if jffs_limit is not None and total > jffs_limit:
+        results = [{"rwh": rwh, "bid": b, "ok": False,
+                    "message": f"over budget ({total} > {jffs_limit})",
+                    "dry_run": dry_run}
+                   for rwh, b in coerced.items() if b >= 1]
+        return {
+            "ok": False,
+            "results": results,
+            "sum": total,
+            "jffs_limit": jffs_limit,
+            "over_limit": True,
+            "round_code": round_code,
+            "dry_run": dry_run,
+        }
+
+    for rwh, bid in coerced.items():
+        if bid < 1:
+            results.append({"rwh": rwh, "bid": bid, "ok": False,
+                            "message": "bid must be ≥ 1",
+                            "dry_run": dry_run})
+            continue
+        try:
+            res = update_bid(self, rwh, bid, where=where, pylx=pylx,
+                             dry_run=dry_run)
+            results.append({
+                "rwh": rwh,
+                "bid": bid,
+                "ok": res.get("jg") == "1" or res.get("dry_run"),
+                "message": res.get("message", ""),
+                "dry_run": res.get("dry_run", False),
+            })
+        except Exception as e:
+            results.append({"rwh": rwh, "bid": bid, "ok": False,
+                            "message": str(e),
+                            "dry_run": dry_run})
+    return {
+        "ok": all(r["ok"] for r in results),
+        "results": results,
+        "sum": total,
+        "jffs_limit": jffs_limit,
+        "over_limit": False,
+        "round_code": round_code,
+        "dry_run": dry_run,
+    }
