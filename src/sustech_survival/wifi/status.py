@@ -67,73 +67,118 @@ def _wifi_interface() -> str:
 
 def current_association(interface: str | None = None) -> dict | None:
     """
-    Run `airport -I` and parse the result. Returns dict with keys:
-      ssid, bssid, signal_dbm, channel, mac, security
+    Read current Wi-Fi association. Returns dict with keys:
+      ssid, bssid, signal_dbm, channel, mac, security, phy_mode
     or None if not currently associated with any SSID.
 
-    `airport` lives at /System/Library/PrivateFrameworks/Apple80211.framework/...
-    — symlinked from the macOS Location Services prompt. Falls back to
-    `networksetup -getairportnetwork` if airport is missing or interface
-    is not Wi-Fi.
+    Detection strategy (newer macOS):
+      1. `networksetup -getinfo "Wi-Fi"` — if it returns an IP, Wi-Fi is up.
+         On newer macOS `networksetup -getairportnetwork` lies ("not associated"
+         even when it is); we don't trust it.
+      2. `system_profiler SPAirPortDataType` — parses "Current Network
+         Information:" block. Slow (~3-5s) but reliable across macOS versions,
+         including when the `airport` binary is gone (which it is on 14+).
+      3. `ipconfig getsummary <iface>` — fallback for BSSID + DHCP lease
+         when system_profiler is unavailable.
 
-    `interface` defaults to auto-detected Wi-Fi port (en1 on Mac Mini, en0
-    on most others).
+    `interface` defaults to the auto-detected Wi-Fi port (en1 on Mac Mini,
+    en0 on most others).
     """
     if interface is None:
         interface = _wifi_interface()
 
-    airport = "/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport"
+    info: dict = {"interface": interface}
 
+    # ── Try system_profiler (most reliable on 14+) ──
     try:
-        proc = subprocess.run(
-            [airport, "-I"],
-            capture_output=True, text=True, timeout=5,
+        text_proc = subprocess.run(
+            ["system_profiler", "SPAirPortDataType"],
+            capture_output=True, text=True, timeout=15,
         )
-        text = proc.stdout
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        # Fallback: just check which SSID we're on (less detail)
+        if text_proc.returncode == 0:
+            block = _parse_current_network_block(text_proc.stdout)
+            if block:
+                info.update(block)
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        pass
+
+    # ── ipconfig fallback for BSSID + DHCP info ──
+    if "bssid" not in info:
         try:
             proc = subprocess.run(
-                ["networksetup", "-getairportnetwork", interface],
+                ["ipconfig", "getsummary", interface],
                 capture_output=True, text=True, timeout=5,
             )
-            out = proc.stdout.strip()
-            m = re.search(r"Current Wi-Fi Network:\s*(.*)", out)
-            if m and m.group(1).strip():
-                return {"ssid": m.group(1).strip(), "interface": interface}
-            return None
+            m = re.search(r"BSSID\s*:\s*(\S+)", proc.stdout)
+            if m:
+                info["bssid"] = m.group(1).upper()
         except Exception:
-            return None
-
-    info: dict = {"interface": interface}
-    for line in text.splitlines():
-        if ":" not in line:
-            continue
-        k, _, v = line.partition(":")
-        k = k.strip().lower()
-        v = v.strip()
-        if k == "ssid":
-            info["ssid"] = v
-        elif k == "bssid":
-            info["bssid"] = v
-        elif k == "agrctlrssi":
-            try:
-                info["signal_dbm"] = int(v)
-            except ValueError:
-                pass
-        elif k == "channel":
-            try:
-                info["channel"] = int(v.split()[0])
-            except (ValueError, IndexError):
-                info["channel"] = v
-        elif k == "mac":
-            info["mac"] = v
-        elif k == "security":
-            info["security"] = v
+            pass
 
     if not info.get("ssid"):
         return None
     return info
+
+
+def _parse_current_network_block(text: str) -> dict | None:
+    """
+    Parse the `system_profiler SPAirPortDataType` text output. The relevant
+    block starts at "Current Network Information:" — the next indented line
+    is the SSID, then a fixed list of fields. The block ends when we hit
+    a line indented LESS than the SSID (i.e. we've left the per-SSID dict).
+
+    Fields captured:
+      - PHY Mode: 802.11ac
+      - Channel: 52 (5GHz, 40MHz)
+      - Security: WPA2 Enterprise  (or "None")
+      - Signal / Noise: -52 dBm / -98 dBm  → signal_dbm
+    """
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        if "Current Network Information" in lines[i] and ":" in lines[i]:
+            # Next non-empty line is the SSID — capture its indent depth
+            i += 1
+            while i < len(lines) and not lines[i].strip():
+                i += 1
+            if i >= len(lines):
+                return None
+            ssid_line = lines[i]
+            ssid_indent = len(ssid_line) - len(ssid_line.lstrip())
+            ssid = ssid_line.strip().rstrip(":")
+            info: dict = {"ssid": ssid}
+            i += 1
+            # Walk indented lines, but stop the moment indent < ssid_indent
+            while i < len(lines):
+                line = lines[i]
+                if not line.strip():
+                    i += 1
+                    continue
+                indent = len(line) - len(line.lstrip())
+                if indent < ssid_indent:
+                    break  # exited the per-SSID dict
+                stripped = line.strip()
+                if ":" in stripped:
+                    k, _, v = stripped.partition(":")
+                    k = k.strip()
+                    v = v.strip()
+                    if k == "PHY Mode":
+                        info["phy_mode"] = v
+                    elif k == "Channel":
+                        m = re.match(r"(\d+)\s*\(([^)]+)\)", v)
+                        if m:
+                            info["channel"] = int(m.group(1))
+                            info["band"] = m.group(2)
+                    elif k == "Security":
+                        info["security"] = v
+                    elif k.startswith("Signal"):
+                        m = re.search(r"(-?\d+)\s*dBm", v)
+                        if m:
+                            info["signal_dbm"] = int(m.group(1))
+                i += 1
+            return info
+        i += 1
+    return None
 
 
 # ── Recent events ────────────────────────────────────────────────────────────
