@@ -362,10 +362,55 @@ def api_enrolled():
     sem = request.args.get("semester") or f"{xn}-{xq}"
     try:
         c = _client(xn, xq)
-        items = c.my_courses(sem)
+        raw = c.my_courses(sem)
     except Exception as e:
         return jsonify({"error": str(e), "enrolled": []}), 200
+    # `my_courses` returns TIS personal-schedule rows — one row per
+    # (rwh × schedule-block × week-parity × 校区), NOT per enrolled
+    # course. Dedupe by rwh and lift the kcmc / section out of the
+    # multi-line SKSJ string so the frontend renders one card per
+    # actually-enrolled course, not 4-13 mostly-empty cards.
+    by_rwh: "dict[str, dict]" = {}
+    for row in raw:
+        rwh = row.get("RWH") or row.get("rwh") or ""
+        if not rwh:
+            continue
+        if rwh in by_rwh:
+            continue
+        sksj = row.get("SKSJ") or ""
+        # SKSJ shape (newline-joined):
+        #   kcmc                     ← course name
+        #   [teacher, ...]           ← teacher list
+        #   [section / class group]
+        #   [weeks][day][periods]
+        #   [room]
+        lines = [ln.strip() for ln in sksj.splitlines() if ln.strip()]
+        name = lines[0] if lines else ""
+        # Drop [brackets] from the section line for a clean display.
+        section = lines[2] if len(lines) >= 3 else ""
+        if section.startswith("[") and section.endswith("]"):
+            section = section[1:-1]
+        by_rwh[rwh] = {
+            "rwh": rwh,
+            "name": name,
+            "section": section,
+            "code": rwh_to_code(rwh),
+        }
+    items = list(by_rwh.values())
     return jsonify({"semester": sem, "enrolled": items})
+
+
+def rwh_to_code(rwh: str) -> str:
+    """Extract the course code from an rwh like '2026-2027-1-MSE307-002' → 'MSE307'."""
+    if not rwh:
+        return ""
+    parts = rwh.split("-")
+    # parts: ['2026', '2027', '1', 'MSE307', '002']
+    if len(parts) >= 5:
+        return parts[3]
+    if len(parts) >= 4:
+        return parts[3]
+    return ""
 
 
 # ── Solver: non-conflicting section combinations with priority dropping ─────
