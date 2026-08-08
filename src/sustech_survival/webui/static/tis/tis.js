@@ -114,7 +114,13 @@ var ALL_CAT = [];           // cached full catalog for client-side filtering
 var PICKED = {};            // { rwh: courseDict }
 var ACTIVE_RWH = null;      // last clicked card rwh (for eval)
 var EVAL_CACHE = {};        // { code: evalResponse }
-var ENROLLED_RWH = new Set(); // rwhs currently enrolled
+var ENROLLED_RWH = new Set(); // rwhs currently enrolled on TIS
+var IGNORE_TIS_ENROLLED = true;  // when TRUE (default): module treats TIS-enrolled as informational;
+                                 // user can drop / re-bid / etc. When FALSE: TIS-enrolled is
+                                 // "unquestionable" — pinned picks that win every conflict, can't
+                                 // be dropped, and the solver keeps them even at the cost of
+                                 // dropping other picked courses. The 🗑 Drop-all-enrolled button
+                                 // hides when this is FALSE.
 var COLORS_CACHE = {};      // { code: color }
 var SEMESTER_INFO = null;   // cached /api/tis/info response
 var COLLEGE_MAP = {};       // college-name → college-code (for p_kkyx on TIS personal search)
@@ -1837,12 +1843,17 @@ function renderPickItem(c) {
   var schedHTML = c.slots && c.slots.length ? formatScheduleHTML(c.slots) : '';
   var teachers = c.teachers && c.teachers.length ? escapeHtml(c.teachers.join(', ')) : '<span style="color:var(--mut)">TBD</span>';
 
-  // Check if this picked course conflicts with any other picked course
+  // Check if this picked course conflicts with any other picked course.
+  // When TIS-enrolled is "unquestionable" (IGNORE_TIS_ENROLLED off), an
+  // enrolled rwh doesn't get the "conflicts with X" badge — it wins,
+  // so the warning would be confusing.
   var conflictMsg = '';
   var keys = Object.keys(PICKED);
   var slotsA = c.slots || [];
   for (var pi = 0; pi < keys.length; pi++) {
     if (PICKED[keys[pi]].rwh === c.rwh) continue;
+    if (!IGNORE_TIS_ENROLLED && enrolled) break;  // enrolled wins, skip
+    if (!IGNORE_TIS_ENROLLED && ENROLLED_RWH.has(keys[pi])) continue;  // the other side is enrolled — we still conflict, not it
     var slotsB = PICKED[keys[pi]].slots || [];
     if (sectionsConflict(slotsA, slotsB)) {
       conflictMsg = ' ⚠ conflicts with ' + escapeHtml(PICKED[keys[pi]].code);
@@ -2578,6 +2589,12 @@ function loadEnrolled() {
       return;
     }
     var html = '';
+    // When TIS-enrolled is "unquestionable" (IGNORE_TIS_ENROLLED = false),
+    // surface that visually so the user remembers the rule. Header note
+    // explains which way the flag is set.
+    var flagNote = IGNORE_TIS_ENROLLED
+      ? ''
+      : '<div class="ncn" style="background:rgba(91,157,255,.10);color:var(--accent);font-weight:600;border-left:2px solid var(--accent)">🔒 TIS-enrolled courses are locked — solver keeps them, cannot be dropped from here</div>';
     for (var i = 0; i < list.length; i++) {
       var item = list[i];
       var rwh = item.rwh || '';
@@ -2589,12 +2606,17 @@ function loadEnrolled() {
       var head = escapeHtml(item.code || item.name || '');
       if (item.name && item.code) head = escapeHtml(item.code) + ' · ' + escapeHtml(item.name);
       var sub = item.section ? '<div style="font-size:.65rem;color:var(--mut)">' + escapeHtml(item.section) + '</div>' : '';
+      // Locked-style badge when the flag is off, "in picked" badge when
+      // the user also has this rwh in their picked list (which doesn't
+      // really happen — enrolled rwhs aren't auto-added — but harmless).
+      var lockBadge = !IGNORE_TIS_ENROLLED ? ' <span style="font-size:.6rem;color:var(--accent);font-weight:600">🔒 locked</span>' : '';
+      var pickedBadge = isPicked ? ' ✓ in picked' : '';
       html += '<div class="ncn' + (isPicked ? ' ok' : '') + '">' +
-        head + sub +
-        (isPicked ? ' ✓ in picked' : '') +
+        head + lockBadge + sub +
+        pickedBadge +
       '</div>';
     }
-    ENROLLED_OUT.innerHTML = html;
+    ENROLLED_OUT.innerHTML = flagNote + html;
     renderPicked();
   })['catch'](function(e) {
     ENROLLED_OUT.innerHTML = '<div class="flash err">' + escapeHtml(e.message) + '</div>';
@@ -2631,6 +2653,10 @@ function solve() {
     priority: codeOrder,
     rwhs: Object.keys(PICKED),
     blocked: blocked,
+    // When TIS-enrolled is "unquestionable", the solver must keep
+    // those rwhs in every solution (drop other picked courses first).
+    // When the flag is on (default), the solver is free to drop them.
+    locked_rwhs: IGNORE_TIS_ENROLLED ? [] : Array.from(ENROLLED_RWH),
     max: 30
   }).then(function(d) {
     var solutions = d.solutions || [];
@@ -3754,6 +3780,14 @@ function computePickedConflicts() {
       var b = PICKED[keys[j]];
       if (!b || !b.slots) continue;
       if (sectionsConflict(a.slots, b.slots)) {
+        // When TIS-enrolled is "unquestionable" (IGNORE_TIS_ENROLLED off),
+        // enrolled rwhs WIN conflicts — don't flag them as conflicted.
+        // The non-enrolled rwh on the other side is still flagged.
+        var aEnrolled = ENROLLED_RWH.has(keys[i]);
+        var bEnrolled = ENROLLED_RWH.has(keys[j]);
+        if (!IGNORE_TIS_ENROLLED && aEnrolled && bEnrolled) continue;
+        if (!IGNORE_TIS_ENROLLED && aEnrolled) { PICKED_CONFLICTS[keys[j]] = true; continue; }
+        if (!IGNORE_TIS_ENROLLED && bEnrolled) { PICKED_CONFLICTS[keys[i]] = true; continue; }
         PICKED_CONFLICTS[keys[i]] = true;
         PICKED_CONFLICTS[keys[j]] = true;
       }
@@ -4898,11 +4932,33 @@ function initPickedActions() {
   // button name is the description; no "Server-side — affects TIS"
   // divider is needed since the title attribute + the confirm() call
   // already make the destructive intent unambiguous.
+  //
+  // Visibility is gated on IGNORE_TIS_ENROLLED: when the user has
+  // marked TIS-enrolled as "unquestionable" (toggle = off), we hide
+  // this button entirely — the entire point of the flag is "you can't
+  // touch TIS-enrolled." Toggle is right next to it so the user sees
+  // the relationship.
   var dropBtn = document.createElement('div');
   dropBtn.id = 'picked-drop-wrap';
   dropBtn.className = 'picked-drop-wrap';
   dropBtn.innerHTML =
+    '<label class="ignore-tis-enrolled-wrap" title="When OFF, TIS-enrolled courses are unquestionable — solver keeps them, can\'t be dropped here, win every conflict">' +
+      '<input type="checkbox" id="ignore-tis-enrolled" checked>' +
+      '<span>Ignore TIS enrolled</span>' +
+    '</label>' +
     '<button class="drop-all-tis-btn" id="btn-drop-all" title="Drop every currently-enrolled section on TIS (destructive — will prompt for confirmation)">🗑 Drop all enrolled courses in TIS</button>';
+
+  // Wire the toggle. Hide/show the drop button + nudge the solver to
+  // pass locked_rwhs when the flag flips.
+  var ignoreChk = dropBtn.querySelector('#ignore-tis-enrolled');
+  var dropBtnEl = dropBtn.querySelector('#btn-drop-all');
+  function _syncIgnoreFlag() {
+    IGNORE_TIS_ENROLLED = ignoreChk.checked;
+    dropBtnEl.style.display = IGNORE_TIS_ENROLLED ? '' : 'none';
+    if (ENROLLED_OUT) ENROLLED_OUT.dataset.ignoreFlag = IGNORE_TIS_ENROLLED ? '1' : '0';
+  }
+  ignoreChk.addEventListener('change', _syncIgnoreFlag);
+  _syncIgnoreFlag();
 
   pickList.parentNode.insertBefore(header, pickList);
   pickList.parentNode.insertBefore(dropBtn, pickList);

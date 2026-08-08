@@ -451,17 +451,24 @@ def api_solve():
     (lower priority first).
 
     Request body:
-      codes    — list of course codes (deduplicated)
-      priority — same codes in priority order (most important first)
-      rwhs     — list of RWH strings the user actually picked
-      blocked  — list of [day, [periods]] to exclude
-      max      — max solutions total (default 30)
+      codes       — list of course codes (deduplicated)
+      priority    — same codes in priority order (most important first)
+      rwhs        — list of RWH strings the user actually picked
+      blocked     — list of [day, [periods]] to exclude
+      locked_rwhs — list of RWH strings that MUST appear in every
+                    solution. Their codes get the highest priority
+                    (index 0) and the solver drops other codes first.
+                    Use this for "TIS-enrolled is unquestionable":
+                    TIS-enrolled rwhs go in here, and the solver drops
+                    other picked courses to make them fit.
+      max         — max solutions total (default 30)
     """
     body = request.get_json(silent=True) or {}
     codes: list = body.get("codes", [])
-    priority: list = body.get("priority", codes)
+    priority: list = list(body.get("priority", codes))
     rwhs: list = body.get("rwhs", [])
     blocked: list = body.get("blocked", [])
+    locked_rwhs: list = body.get("locked_rwhs", []) or []
     max_res = int(body.get("max", 30))
 
     xn, xq = _parse_sem(request.args)
@@ -485,6 +492,21 @@ def api_solve():
 
     blocked_slots = [(b[0], set(b[1])) for b in blocked]
 
+    # Compute locked codes (codes that have at least one locked rwh).
+    # When the user marks TIS-enrolled as "unquestionable", these
+    # codes win every conflict — solver drops other picked courses
+    # before touching them. We prepend them to priority so they sort
+    # first (lowest pidx = highest priority = last dropped).
+    locked_set = set(locked_rwhs)
+    locked_codes: list = []
+    for code, secs in by_code.items():
+        if any(s.rwh in locked_set for s in secs):
+            locked_codes.append(code)
+    for code in locked_codes:
+        if code in priority:
+            priority.remove(code)
+        priority.insert(0, code)
+
     # Build priority index for sorting subsets
     pidx = {code: i for i, code in enumerate(priority)}
 
@@ -504,8 +526,16 @@ def api_solve():
             if i == len(subset_codes):
                 result.append([_course_to_dict(x) for x in current])
                 return
-            for sec in by_code[subset_codes[i]]:
+            code = subset_codes[i]
+            for sec in by_code[code]:
                 if not sec.has_schedule:
+                    continue
+                # Locked rwhs MUST appear in every solution — never pick
+                # an alternative section for a code that has a locked
+                # rwh. (There's exactly one section per locked rwh — the
+                # actual enrolled slot — so this filter just enforces
+                # "use the enrolled section, not a phantom alternative.")
+                if code in locked_codes and sec.rwh not in locked_set:
                     continue
                 if _conflicts_blocked(sec.slots_raw, blocked_slots):
                     continue
@@ -519,20 +549,50 @@ def api_solve():
         return result
 
     n = len(active_codes)
+    # Locked codes MUST be in every subset — restrict the iteration to
+    # subsets that contain all of them. The solver would still try
+    # dropping them otherwise (it's a global "drop lowest priority"
+    # rule), which is exactly what the user said NO to.
+    free_codes = [c for c in active_codes if c not in set(locked_codes)]
+    if locked_codes and not free_codes:
+        # Only locked codes present; trivially solve if compatible
+        return jsonify({
+            "solutions": [{
+                "sections": [_course_to_dict(s) for s in
+                             [sec for code in locked_codes for sec in by_code[code]
+                              if sec.rwh in locked_set and sec.has_schedule]],
+                "covered": len(locked_codes),
+                "total": n,
+                "dropped": [],
+                "size": len(locked_codes),
+            }],
+            "count": 1,
+            "codes": active_codes,
+            "priority": priority,
+        })
+    # The max subset size is len(free_codes) + len(locked_codes) — every
+    # solution must include all locked codes.
+    max_subset_size = len(free_codes) + len(locked_codes)
+    # Min size is locked_codes (at least — if they fit alone)
+    min_subset_size = len(locked_codes)
+
     final_solutions: list = []
     remaining_budget = max_res
 
-    # Try sizes from n down to 1 — like c.x-d.fun's dfsWithSkips
-    for size in range(n, 0, -1):
+    # Try sizes from max down to min. For each size, enumerate
+    # combinations of free_codes (size - len(locked_codes)) and
+    # always include locked_codes.
+    for size in range(max_subset_size, min_subset_size - 1, -1):
         if remaining_budget <= 0:
             break
-        # All subsets of this size, sorted by priority (higher priority = better)
-        subsets: List[tuple] = list(itertools.combinations(active_codes, size))
+        free_needed = size - len(locked_codes)
+        subsets: List[tuple] = list(itertools.combinations(free_codes, free_needed))
+        # Sort by priority sum: lower pidx = higher priority = preferred.
         subsets.sort(key=lambda s: sum(pidx.get(c, 999) for c in s))
         for subset in subsets:
             if remaining_budget <= 0:
                 break
-            subset_list = list(subset)
+            subset_list = list(locked_codes) + list(subset)
             solutions = _solve_subset(subset_list, remaining_budget)
             if solutions:
                 kept_codes = set(s["code"] for s in solutions[0])
