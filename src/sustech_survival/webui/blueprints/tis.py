@@ -160,8 +160,8 @@ def api_info():
     # (e.g. "通识必修课-外语类" the catalog sometimes produces) still show
     # in the dropdown but won't have a code suffix. Frontend can use
     # `category_codes` as a translation dict before sending the filter.
-    from sustech_survival.selectcourse import KCLBDM_MAP, LANGUAGE_MAP
-    category_codes = {name: KCLBDM_MAP.get(name, "") for name in opts["categories"]}
+    from sustech_survival.selectcourse import CATEGORY_MAP, LANGUAGE_MAP
+    category_codes = {name: CATEGORY_MAP.get(name, "") for name in opts["categories"]}
     return jsonify({
         "semester": {"xn": xn, "xq": xq, "label": semester_label},
         "count": len(c.list_courses()),
@@ -210,7 +210,7 @@ def api_courses():
                 weekday=_int_or_none(request.args.get("weekday")),
                 period_start=_int_or_none(request.args.get("period_start")),
                 period_end=_int_or_none(request.args.get("period_end")),
-                xkfsdm=request.args.get("xkfsdm") or None,
+                round_code=request.args.get("round_code") or request.args.get("xkfsdm") or None,
                 page=int(request.args.get("page", "1")),
                 page_size=int(request.args.get("page_size", "50")),
             )
@@ -528,14 +528,14 @@ def api_round():
     kxrwlbsfxsxkxqxgkc = whether 选课显示结果 (TIS-side UI flag)
     """
     xn, xq = _parse_sem(request.args)
-    xkfsdm = request.args.get("xkfsdm", "") or ""
+    round_code = request.args.get("round_code", "") or request.args.get("xkfsdm", "")
     try:
         c = _client(xn, xq)
-        res = c.search_personal(xkfsdm=xkfsdm, page=1, page_size=1)
+        res = c.search_personal(round_code=round_code, page=1, page_size=1)
         ct = res.get("current_type") or {}
         return jsonify({
             "ok": res.get("ok", False),
-            "xkfsdm": ct.get("xkfsdm", xkfsdm),
+            "xkfsdm": ct.get("xkfsdm", round_code),
             "jffs": float(ct.get("jfxs") or 0),
             "ksrq": ct.get("ksrq", ""),
             "jsrq": ct.get("jsrq", ""),
@@ -554,11 +554,11 @@ def api_bids():
     Body:
       {
         "picks":   {rwh: bid, ...},   # the user's desired bid per course
-        "xkfsdm":  "...",              # current round code (informational)
+        "round_code": "...",          # current selection round code (TIS xkfsdm)
         "where":   "cart" | "enrolled",
-        "jffs_limit": <float>,         # optional: from /api/tis/round
+        "jffs_limit": <float>,       # optional: from /api/tis/round
         "pylx":   "1" | "2",
-        "dry_run": <bool>              # default True
+        "dry_run": <bool>            # default True
       }
 
     Always returns 200 with structured result. TIS per-course failures
@@ -566,7 +566,7 @@ def api_bids():
     """
     b = request.get_json(silent=True) or {}
     picks = b.get("picks") or {}
-    xkfsdm = b.get("xkfsdm", "") or ""
+    round_code = b.get("round_code", "") or ""
     where = b.get("where", "cart") or "cart"
     pylx = b.get("pylx")
     dry_run = bool(b.get("dry_run", True))
@@ -585,7 +585,7 @@ def api_bids():
     xn, xq = _parse_sem(request.args)
     try:
         c = _client(xn, xq)
-        result = c.submit_bids(picks, xkfsdm=xkfsdm, where=where,
+        result = c.submit_bids(picks, round_code=round_code, where=where,
                                jffs_limit=jffs_limit, pylx=pylx,
                                dry_run=dry_run)
         return jsonify(result)

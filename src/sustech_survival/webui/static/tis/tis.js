@@ -4052,24 +4052,47 @@ function updateBidStat() {
 function onBidEditKey(evt) {
   if (!BID_EDIT) return;
   if (evt.key === 'Escape') {
+    // Revert: undo any in-flight PICKED_BIDS updates and refresh
+    PICKED_BIDS[BID_EDIT.rwh] = BID_EDIT.originalBid;
+    var rwhEsc = BID_EDIT.rwh;
     cancelBidEdit();
+    renderBidPanel();
+    updateBidTotals();
     evt.preventDefault();
   } else if (evt.key === 'Enter') {
     var v = parseInt(BID_EDIT.inputEl.value, 10);
-    if (!isNaN(v) && v >= 1) {
-      PICKED_BIDS[BID_EDIT.rwh] = v;
-      var rwh = BID_EDIT.rwh;
-      cancelBidEdit();
-      renderBidPanel();
+    var valid = !isNaN(v) && v >= 1;
+    var rwhEnter = BID_EDIT.rwh;
+    if (valid) {
+      PICKED_BIDS[rwhEnter] = v;
     } else {
-      cancelBidEdit();
+      PICKED_BIDS[rwhEnter] = BID_EDIT.originalBid;
     }
+    cancelBidEdit();
+    renderBidPanel();
+    updateBidTotals();
     evt.preventDefault();
   }
 }
 
 function onBidEditBlur() {
-  if (BID_EDIT) cancelBidEdit();
+  // Same commit-or-revert semantics as Enter. Without this, PICKED_BIDS
+  // was getting the new value from onBidEditInput (so the bar updated)
+  // while the visible number reverted to originalBid on blur — leaving
+  // the display out of sync with the bar.
+  if (!BID_EDIT) return;
+  var v = parseInt(BID_EDIT.inputEl.value, 10);
+  var valid = !isNaN(v) && v >= 1;
+  var rwh = BID_EDIT.rwh;
+  if (valid) {
+    PICKED_BIDS[rwh] = v;
+  } else {
+    // Invalid input (empty, zero, negative, NaN) — revert to original
+    PICKED_BIDS[rwh] = BID_EDIT.originalBid;
+  }
+  cancelBidEdit();
+  renderBidPanel();
+  updateBidTotals();
 }
 
 function cancelBidEdit() {
@@ -4079,7 +4102,11 @@ function cancelBidEdit() {
   BID_EDIT.inputEl.removeEventListener('blur', onBidEditBlur);
   var box = BID_EDIT.inputEl.parentNode;
   box.classList.remove('editing');
-  BID_EDIT.inputEl.value = String(BID_EDIT.originalBid);
+  // Don't restore input.value — the caller will renderBidPanel(), which
+  // rebuilds the box HTML from the (now committed or reverted)
+  // PICKED_BIDS[rwh]. Restoring the value here caused a desync where
+  // the bar showed the new number but the visible bid reverted to the
+  // old one.
   BID_EDIT = null;
 }
 
@@ -5031,16 +5058,19 @@ function showPicksVerifyModal(opts) {
     renderRow('⚠ Verification errored', opts.errors, 'error', 'No errors.');
 
   var cancel = function() {
-    document.body.removeChild(overlay);
+    document.removeEventListener('keydown', escHandler);
+    if (overlay.parentNode) document.body.removeChild(overlay);
     opts.onCancel();
   };
   var loadFound = function() {
+    document.removeEventListener('keydown', escHandler);
+    if (overlay.parentNode) document.body.removeChild(overlay);
     if (!opts.found.length) { cancel(); return; }
-    document.body.removeChild(overlay);
     opts.onLoadFoundOnly();
   };
   var loadAll = function() {
-    document.body.removeChild(overlay);
+    document.removeEventListener('keydown', escHandler);
+    if (overlay.parentNode) document.body.removeChild(overlay);
     opts.onLoadAll();
   };
 
@@ -5070,7 +5100,7 @@ function showPicksVerifyModal(opts) {
   }
   // Esc cancels
   var escHandler = function(e) {
-    if (e.key === 'Escape') { cancel(); document.removeEventListener('keydown', escHandler); }
+    if (e.key === 'Escape') { cancel(); }
   };
   document.addEventListener('keydown', escHandler);
   // Backdrop click also cancels
@@ -5153,7 +5183,7 @@ function syncToTIS() {
 
   function _sendBatch(where, picks) {
     return postJSON('/api/tis/bids' + sem(), {
-      picks: picks, xkfsdm: ROUND_INFO.xkfsdm || '',
+      picks: picks, round_code: ROUND_INFO.xkfsdm || '',
       where: where, jffs_limit: ROUND_INFO.jffs || null, dry_run: false,
     });
   }

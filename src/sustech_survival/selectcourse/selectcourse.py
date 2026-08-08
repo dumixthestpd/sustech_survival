@@ -56,9 +56,18 @@ TIS_UPD_XKXS_BY_YX = f"{TIS_BASE}/Xsxk/updXkxsByyx"
 TIS_UPD_XKXS_BY_GWC = f"{TIS_BASE}/Xsxk/upd_xkxsBygwc"
 DEFAULT_TTL = 3600
 
-# xktjz (选课提交至) values — where the action lands
-XKTJZ_CART_TO_ENROLLED = "gwctjzyx"   # 购物车提交至已选 (cart → enrolled) — used by addXuanke
-XKTJZ_TASK_TO_CART = "rwtjzgwc"      # 任务提交至购物车 (task → cart) — used by addGouwuche
+# xktjz (选课提交至) values — where the action lands. Discovered from
+# the user's HAR (tis.sustech.edu.cn.har, 2026-08-08): every write
+# endpoint the user actually called — addGouwuche, updXkxsByyx, tuike,
+# queryKxrw, queryYxkc — uses `p_xktjz=rwtjzyx` (任务提交至已选).
+# Despite the endpoint name `addGouwuche` (add to cart), TIS does NOT
+# accept `p_xktjz=rwtjzgwc` for it — that returns 操作失败 silently.
+# Only `addXuanke` uses `gwctjzyx` (cart → enrolled finalization).
+XKTJZ_CART_TO_ENROLLED = "gwctjzyx"        # used by addXuanke (cart final → enrolled)
+XKTJZ_TASK_TO_ENROLLED = "rwtjzyx"        # used by addGouwuche / updXkxsByyx / tuike
+# Back-compat alias (the OLD constant value was wrong; keep the name so
+# old callers don't AttributeError, but point it to the correct value).
+XKTJZ_TASK_TO_CART = XKTJZ_TASK_TO_ENROLLED  # legacy alias; semantically "task → enrolled"
 
 # kclbdm (课程类别代码) map — display name → DM code.
 # Discovered from the TIS kclb SPA bundle (`inco.component.kclb-*.js`)
@@ -69,11 +78,14 @@ XKTJZ_TASK_TO_CART = "rwtjzgwc"      # 任务提交至购物车 (task → cart) 
 # the display name silently returns 0 results. Use this to translate
 # dropdown values before hitting TIS.
 #
+# Public name is CATEGORY_MAP (semantic, no TIS jargon). KCLBDM_MAP kept
+# as an alias for any external code that imported it.
+#
 # Sub-categories (level 2 like 0901-0909) are stored in TIS response
 # kclbmc as `<parent>-<sub>` (e.g. "通识选修课-美育类"). The frontend
 # dropdown shows only the bare sub-name (e.g. "美育类") so the bare
-# key is what callers send.
-KCLBDM_MAP: dict = {
+# name → code mapping covers the dropdown cases.
+CATEGORY_MAP: dict = {
     # Top-level (level 1) — undergrad
     "专业基础课": "03",
     "专业必修课": "04",   # 04 (undergrad) and 10 both named "专业必修课"
@@ -103,34 +115,40 @@ KCLBDM_MAP: dict = {
 }
 
 # Reverse: code → display name (for /api/tis/info payload).
-KCLBDM_REVERSE: dict = {v: k for k, v in KCLBDM_MAP.items()}
+CATEGORY_REVERSE: dict = {v: k for k, v in CATEGORY_MAP.items()}
+# Back-compat alias for any external code that imported the old name.
+KCLBDM_MAP: dict = CATEGORY_MAP
+KCLBDM_REVERSE: dict = CATEGORY_REVERSE
 
 # kclbmc (TIS response format) — can be "通识选修课" or "通识选修课-美育类".
 # When translating from a TIS response kclbmc to a code, strip the
 # parent prefix if present.
-def kclbmc_to_code(kclbmc: str) -> str:
-    """Translate TIS response `kclbmc` to a kclbdm code.
+def category_name_to_code(name: str) -> str:
+    """Translate TIS response `kclbmc` (category display name) to its
+    internal code.
 
     Handles both bare names (`美育类`) and hyphenated names
     (`通识选修课-美育类`). If the input is already a digit code
     (`0907`), pass it through. Returns empty string if not recognized
     (callers should treat unknown as no-filter).
     """
-    if not kclbmc:
+    if not name:
         return ""
-    s = kclbmc.strip()
+    s = name.strip()
     # Pass-through: already a digit code
     if s.isdigit():
         return s
     # Direct lookup first
-    if s in KCLBDM_MAP:
-        return KCLBDM_MAP[s]
+    if s in CATEGORY_MAP:
+        return CATEGORY_MAP[s]
     # Try stripping "<parent>-" prefix
     if "-" in s:
         suffix = s.split("-", 1)[1]
-        if suffix in KCLBDM_MAP:
-            return KCLBDM_MAP[suffix]
+        if suffix in CATEGORY_MAP:
+            return CATEGORY_MAP[suffix]
     return ""
+# Back-compat alias (the old TIS-jargon name).
+kclbmc_to_code = category_name_to_code
 
 # Language code (p_skyy) — TIS personal mode expects a code, not name.
 # 1=中文, 2=英文, 3=双语. Verified by trial 2026-07-07.
@@ -404,7 +422,7 @@ class SelectCourseClient:
                        weekday: Optional[int] = None,
                        period_start: Optional[int] = None,
                        period_end: Optional[int] = None,
-                       xkfsdm: Optional[str] = None,     # course type code (xkfsdm)
+                       round_code: Optional[str] = None,  # TIS xkfsdm — selection round code
                        page: int = 1,
                        page_size: int = 50,
                        ) -> dict:
@@ -415,9 +433,12 @@ class SelectCourseClient:
 
         Note: TIS rejects with "操作失败" if the queryform is incomplete.
         The full payload (extracted from `pub/xkgl/xsxk/xsxk-*.js`) requires
-        not just the target xn/xq + xkfsdm, but also the CURRENT term
+        not just the target xn/xq + round_code, but also the CURRENT term
         (p_dqxn/p_dqxq/p_dqxnxq) and several behavior flags. We populate
         those from a queryXkdqXnxq round-trip (cached 5 min).
+
+        `round_code` is the selection round code (e.g. "bxxk" for
+        通识必修选课). Required by TIS to know which round to query.
         """
         self._auth.ensure()
         # Round-trip: get the current TIS active term for the dq fields.
@@ -426,9 +447,9 @@ class SelectCourseClient:
         dq = self._fetch_dq()
         # Translate display names → TIS DM codes. TIS's personal-mode
         # search silently returns 0 if given a display name in any of
-        # these params — see KCLBDM_MAP docstring. Pass-through if the
+        # these params — see CATEGORY_MAP docstring. Pass-through if the
         # input is already a code (digits) or unrecognized.
-        kclb_code = kclbmc_to_code(category) if category else ""
+        category_code = category_name_to_code(category) if category else ""
         skyy_code = language_to_code(language) if language else ""
         queryform = {
             "p_pylx": "1",
@@ -445,10 +466,10 @@ class SelectCourseClient:
             "p_dqxn": dq.get("p_dqxn", ""),
             "p_dqxq": dq.get("p_dqxq", ""),
             "p_dqxnxq": dq.get("p_dqxnxq", ""),
-            "p_xkfsdm": xkfsdm or "",
+            "p_xkfsdm": round_code or "",
             "p_xiaoqu": campus or "",
             "p_kkyx": college or "",
-            "p_kclb": kclb_code,
+            "p_kclb": category_code,
             "p_xkxs": None,
             "p_dyc": None,
             "p_kkxnxq": "",
@@ -510,7 +531,7 @@ class SelectCourseClient:
             # Bid-panel fields — extracted from the current_type config so
             # the bid panel does not need a second TIS call.
             "round": {
-                "xkfsdm": ct.get("xkfsdm", xkfsdm or ""),
+                "xkfsdm": ct.get("xkfsdm", round_code or ""),
                 "jffs": float(ct.get("jfxs") or 0),
                 "ksrq": ct.get("ksrq", ""),
                 "jsrq": ct.get("jsrq", ""),
@@ -677,44 +698,75 @@ class SelectCourseClient:
         """Build the TIS `queryform` payload for write-side endpoints.
 
         Mirrors the keys seen in `pub/xkgl/xsxk/xsxk-*.js` queryform
-        definition. Values not provided default to safe no-ops.
+        definition, calibrated against a live HAR capture
+        (tis.sustech.edu.cn.har, 2026-08-08) of a successful
+        `updXkxsByyx` call. The previous version missed several required
+        fields (cxsfmt, mxpylx, p_chaxunxkfsdm, pageNum, pageSize,
+        p_dqxn/p_dqxq/p_dqxnxq) and used a wrong flag for p_sfsyxkgwc,
+        which together caused every write to silently fail with
+        操作失败 — the user-visible symptom was "bidsync does nothing."
 
         `bid` is the 选课系数 (selection coefficient, aka the credit bid
         in 积分选课). Goes into `p_xkxs`. Leave None to omit (TIS then
         uses the default 1 — fine for round tables that don't score).
+
+        `pylx` is the 培养类型 code (1=本科, 2=研究生). Defaults to "1"
+        (undergrad) when the caller passes None — TIS rejects missing
+        pylx with 操作失败 for undergrad students.
         """
+        # queryXkdqXnxq is required for p_dqxn/p_dqxq/p_dqxnxq/cxsfmt
+        # (TIS's CURRENT active term, used as the round context). It's
+        # cached for the session, so this is one HTTP call per session.
+        try:
+            dq = self._fetch_dq()
+        except Exception:
+            # Offline / no auth: fall back to empty strings. The request
+            # will still be sent (it'll just be rejected by TIS), so the
+            # caller sees a clean error instead of a confusing 500.
+            dq = {"p_dqxn": "", "p_dqxq": "", "p_dqxnxq": "", "cxsfmt": ""}
+        # p_xnxq = "2026-20271" (学年 + 学期) — combine xn + xq directly.
+        xnxq = self._sem.xn + self._sem.xq
         return {
-            "p_pylx": pylx,                          # 1=本科, 2=研究生
-            "p_sfgldjr": "0",                        # 是否管理端进入
-            "p_sfredis": "",                         # 是否Redis缓存
-            "p_sfsyxkgwc": "1",                      # 是否使用选课购物车
-            "p_xktjz": xktjz,                        # 选课提交至 (gwctjzyx / rwtjzgwc)
-            "p_chaxunxh": "",                        # 管理端查询学号
-            "p_gjz": "",                             # 关键字
-            "p_skjs": "",                            # 上课教师
-            "p_xn": self._sem.xn,                         # 学年
-            "p_xq": self._sem.xq,                         # 学期
-            "p_xnxq": None,                          # 学年学期（合并）
-            "p_dqxn": None, "p_dqxq": None, "p_dqxnxq": None,
-            "p_xkfsdm": "",                          # 选课方式代码
-            "p_xiaoqu": "",                          # 校区
-            "p_kkyx": "",                            # 开课院系
-            "p_kclb": "",                            # 课程类别
-            "p_xkxs": bid if bid is not None else None,  # 选课系数 / 积分选课的 bid
-            "p_dyc": None,                           # 多语种
-            "p_kkxnxq": "",                          # 开课学年学期
-            "p_id": rwh,                             # ★ 课程id（任务号rwh）
-            "p_ids": ids if ids is not None else [], # ★ 批量id列表
-            "p_sfhlctkc": "1" if ignore_conflicts else "0",     # 是否忽略冲突课程
+            # ── Top-level (no p_ prefix in HAR) ─────────────────────────
+            "cxsfmt": dq.get("cxsfmt", "0"),
+            "mxpylx": pylx if pylx is not None else "1",  # 培养类型 (mirror of p_pylx)
+            # ── queryform fields (HAR-derived, 2026-08-08) ──────────────
+            "p_pylx": pylx if pylx is not None else "1",  # 1=本科, 2=研究生
+            "p_sfgldjr": "0",                            # 是否管理端进入
+            "p_sfredis": "0",                            # 是否Redis缓存 (HAR: 0)
+            "p_sfsyxkgwc": "0",                          # 是否使用选课购物车 (HAR: 0)
+            "p_xktjz": xktjz,                            # 选课提交至 — see XKTJZ_* constants
+            "p_chaxunxh": "",                            # 管理端查询学号
+            "p_chaxunxkfsdm": "",                        # mirrors p_xkfsdm in HAR
+            "p_gjz": "",                                 # 关键字
+            "p_skjs": "",                                # 上课教师
+            "p_xn": self._sem.xn,                        # 学年
+            "p_xq": self._sem.xq,                        # 学期
+            "p_xnxq": xnxq,                              # 学年学期合并 "2026-20271"
+            "p_dqxn": dq.get("p_dqxn", ""),              # CURRENT TIS active term xn
+            "p_dqxq": dq.get("p_dqxq", ""),              # CURRENT TIS active term xq
+            "p_dqxnxq": dq.get("p_dqxnxq", ""),          # CURRENT TIS active term xnxq
+            "p_xkfsdm": "",                              # 选课方式代码 (set by caller via separate param)
+            "p_xiaoqu": "",                              # 校区
+            "p_kkyx": "",                                # 开课院系
+            "p_kclb": "",                                # 课程类别
+            "p_xkxs": bid if bid is not None else "",    # 选课系数 / 积分选课的 bid
+            "p_dyc": "",                                 # 多语种
+            "p_kkxnxq": "",                              # 开课学年学期
+            "p_id": rwh,                                 # ★ 课程id（任务号rwh）
+            "p_ids": ids if ids is not None else [],     # ★ 批量id列表
+            "p_sfhlctkc": "1" if ignore_conflicts else "0",      # 是否忽略冲突课程
             "p_sfhllrlkc": "1" if ignore_zero_capacity else "0", # 是否忽略零容量课程
             "p_kxsj_xqj": "", "p_kxsj_ksjc": "", "p_kxsj_jsjc": "",
             "p_kcdm_js": "", "p_kcdm_cxrw": "", "p_kcdm_cxrw_zckc": "",
             "p_kc_gjz": "",
             "p_xzcxtjz_nj": "", "p_xzcxtjz_yx": "", "p_xzcxtjz_zy": "",
             "p_xzcxtjz_zyfx": "", "p_xzcxtjz_bj": "",
-            "p_sfxsgwckb": "1",
-            "p_skyy": "",
-            "p_sfmxzj": "0",
+            "p_sfxsgwckb": "1",                          # 是否显示购物课表
+            "p_skyy": "",                                # 上课语言
+            "p_sfmxzj": "",                              # 满足性自荐 (HAR: empty)
+            "pageNum": "1",
+            "pageSize": "19",
         }
 
     def _post_xsxk(self, endpoint: str, payload: dict, *,
@@ -860,7 +912,7 @@ class SelectCourseClient:
         return self._post_xsxk(url, payload, dry_run=dry_run, rwh=rwh)
 
     def submit_bids(self, picks: dict, *,
-                    xkfsdm: str = "",
+                    round_code: str = "",
                     where: str = "cart",
                     jffs_limit: Optional[float] = None,
                     pylx: Optional[str] = None,
@@ -868,8 +920,9 @@ class SelectCourseClient:
         """Submit a batch of bid values for the user's picked courses.
 
         `picks`:  {rwh: bid_int, ...} — the user's desired bid per course.
-        `xkfsdm`: the active round code (informational; not strictly
-                  required by the wire but useful for context).
+        `round_code`: the active round code (informational; not strictly
+                       required by the wire but useful for context).
+                       Same as TIS `xkfsdm`.
         `where`:  "enrolled" (call updXkxsByyx) or "cart" (call
                   upd_xkxsBygwc) — same as `update_bid`.
         `jffs_limit`: if provided, validate that `sum(picks.values())`
@@ -884,6 +937,7 @@ class SelectCourseClient:
             "sum": N,
             "jffs_limit": X or None,
             "over_limit": True/False,
+            "round_code": str,
           }
 
         Each TIS call still respects `dry_run` — the loop is read+write
@@ -908,7 +962,7 @@ class SelectCourseClient:
                 "ok": False, "results": [],
                 "error": "all bid values must be integers",
                 "sum": 0, "jffs_limit": jffs_limit, "over_limit": False,
-                "xkfsdm": xkfsdm, "dry_run": dry_run,
+                "round_code": round_code, "dry_run": dry_run,
             }
         total = sum(max(0, b) for b in coerced.values())
         if jffs_limit is not None and total > jffs_limit:
@@ -922,7 +976,7 @@ class SelectCourseClient:
                 "sum": total,
                 "jffs_limit": jffs_limit,
                 "over_limit": True,
-                "xkfsdm": xkfsdm,
+                "round_code": round_code,
                 "dry_run": dry_run,
             }
 
@@ -952,7 +1006,7 @@ class SelectCourseClient:
             "sum": total,
             "jffs_limit": jffs_limit,
             "over_limit": False,
-            "xkfsdm": xkfsdm,
+            "round_code": round_code,
             "dry_run": dry_run,
         }
 
