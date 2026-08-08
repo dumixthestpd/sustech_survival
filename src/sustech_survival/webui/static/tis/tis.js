@@ -2583,9 +2583,14 @@ function loadEnrolled() {
       var rwh = item.rwh || '';
       ENROLLED_RWH.add(rwh);
       var isPicked = !!PICKED[rwh];
+      // Backend now emits one row per rwh (deduped from TIS's
+      // per-schedule-block rows). Fields: rwh, code (e.g. MSE307),
+      // name (kcmc from SKSJ line 0), section (line 2, brackets stripped).
+      var head = escapeHtml(item.code || item.name || '');
+      if (item.name && item.code) head = escapeHtml(item.code) + ' · ' + escapeHtml(item.name);
+      var sub = item.section ? '<div style="font-size:.65rem;color:var(--mut)">' + escapeHtml(item.section) + '</div>' : '';
       html += '<div class="ncn' + (isPicked ? ' ok' : '') + '">' +
-        escapeHtml(item.code || item.name || '') +
-        (item.class_group ? ' ' + escapeHtml(item.class_group) : '') +
+        head + sub +
         (isPicked ? ' ✓ in picked' : '') +
       '</div>';
     }
