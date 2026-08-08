@@ -49,6 +49,7 @@ examples of each pattern.
 from .authorizer import Authorizer, AuthorizerError, CAS_BASE, UA, require_auth
 from .providers.cas import CASAuthorizer
 from .providers.shibboleth import ShibbolethAuthorizer
+from .providers.wifi import WiFiAuth
 from .providers.ws import WSProvider
 
 __all__ = [
@@ -58,6 +59,7 @@ __all__ = [
     "UA",
     "CASAuthorizer",
     "ShibbolethAuthorizer",
+    "WiFiAuth",
     "TISAuth",
     "BBAuth",
     "LibAuth",
