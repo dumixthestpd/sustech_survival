@@ -37,6 +37,7 @@ class Course:
     undergrad_seats: Optional[int] # bksrl — 本科生人数
     grad_seats: Optional[int]      # yjsrl — 研究生人数
     cultivation: str               # pylx — "本科" / "研究生"
+    enrolled: Optional[int] = None # 当前已选人数 (live from queryKxrw; None if unknown)
     rooms: List[str] = field(default_factory=list)         # distinct rooms in kcxx
     teachers: List[str] = field(default_factory=list)      # from dgjsmc (preferred) or kcxx 教师 list
     slots_raw: List[dict] = field(default_factory=list)    # parsed ScheduleSlot dicts
@@ -139,6 +140,13 @@ class Course:
             undergrad_seats=_int(raw.get("bksrl")),
             grad_seats=_int(raw.get("yjsrl")),
             cultivation=raw.get("pylx_label") or {"1": "本科", "2": "研究生"}.get(raw.get("pylx", "")) or raw.get("pylx") or "",
+            # Live "currently selected" count — only present in some TIS
+            # payloads (personal-mode search and a few others). The field
+            # name varies by year/round; try the common ones defensively.
+            enrolled=_int(
+                raw.get("bkrs") or raw.get("yxrs") or raw.get("xkrs")
+                or raw.get("kchsrl") or raw.get("bkylrs") or raw.get("yxzrs")
+            ),
             rooms=rooms,
             teachers=teachers,
             slots_raw=slot_dicts,

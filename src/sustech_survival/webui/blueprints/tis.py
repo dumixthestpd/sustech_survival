@@ -98,6 +98,7 @@ def _course_to_dict(c) -> dict:
         "capacity": c.capacity,
         "undergrad_seats": c.undergrad_seats, "grad_seats": c.grad_seats,
         "cultivation": c.cultivation,
+        "enrolled": c.enrolled,
         "rooms": c.rooms, "teachers": c.teachers,
         "schedule": c.schedule_str,
         "slots": c.slots_raw,
@@ -271,6 +272,74 @@ def api_refresh():
         return jsonify({"ok": True, "count": n})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@bp.route("/api/tis/refresh-load", methods=["POST"])
+def api_refresh_load():
+    """Fetch live "currently selected" counts for the current search filters.
+
+    Hits TIS's personal-mode search (`Xsxk/queryKxrw`) which is the only
+    endpoint that exposes per-row enrollment (`bkrs`/`yxrs`/`xkrs`).
+    Returns a `{rwh: enrolled_count}` map for every row the search
+    returned — the frontend can then merge these into its local COURSES
+    map and re-render so the `[N] / [M]` load badge fills in.
+
+    Query params mirror `/api/tis/courses` (personal-mode filters):
+      keyword, teacher, college, campus, category, language,
+      cultivation, ignore_conflicts, ignore_zero_capacity,
+      weekday, period_start, period_end, round_code, page_size
+
+    If the personal endpoint is unavailable (round not open, TIS
+    rate-limit, etc.) the response is `ok=false` with a friendly
+    message and `loads={}` — the frontend should keep showing `? / M`
+    on cards in that case.
+    """
+    xn, xq = _parse_sem(request.args)
+    try:
+        c = _client(xn, xq)
+        result = c.search_personal(
+            keyword=request.args.get("keyword", ""),
+            teacher=request.args.get("teacher") or "",
+            college=request.args.get("college") or None,
+            campus=request.args.get("campus") or None,
+            category=request.args.get("category") or None,
+            language=request.args.get("language") or None,
+            cultivation=request.args.get("cultivation") or None,
+            ignore_conflicts=request.args.get("ignore_conflicts") == "1",
+            ignore_zero_capacity=request.args.get("ignore_zero_capacity") == "1",
+            weekday=_int_or_none(request.args.get("weekday")),
+            period_start=_int_or_none(request.args.get("period_start")),
+            period_end=_int_or_none(request.args.get("period_end")),
+            round_code=request.args.get("round_code") or request.args.get("xkfsdm") or None,
+            page=int(request.args.get("page", "1")),
+            page_size=int(request.args.get("page_size", "500")),
+        )
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e), "loads": {}}), 200
+
+    if not result["ok"]:
+        msg = result["message"]
+        if msg == "操作失败":
+            msg = ("Course selection period not yet open — cannot "
+                   "fetch live load. Try again later, or use Catalog mode.")
+        elif not msg:
+            msg = "Personal selection unavailable."
+        return jsonify({"ok": False, "message": msg, "loads": {}}), 200
+
+    # Build the rwh → enrolled map. Skip rows where enrolled is None
+    # (TIS doesn't always send it, and guessing wrong is worse than
+    # leaving it blank — the UI shows `? / M` until known).
+    loads = {}
+    for course in result["courses"]:
+        if course.enrolled is not None:
+            loads[course.rwh] = course.enrolled
+    return jsonify({
+        "ok": True,
+        "loads": loads,
+        "fetched": len(result["courses"]),
+        "with_count": len(loads),
+        "round": result.get("round", {}),
+    })
 
 
 @bp.route("/api/tis/course/<rwh>")
