@@ -469,6 +469,97 @@ def context_cmd(level: str, as_json: bool) -> None:
 
 
 # ========================================================================
+# wifi — SUSTech campus Wi-Fi (SUSTC-Wifi / SUSTC-Wifi-5G)
+# ========================================================================
+
+@click.group(name="wifi", help="SUSTech campus Wi-Fi: status, login, recent events.")
+def wifi_cmd() -> None:
+    pass
+
+
+@wifi_cmd.command(name="status", help="Current Wi-Fi association (SSID, BSSID, signal, MAC).")
+@click.option("--json", "as_json", is_flag=True)
+def wifi_status(as_json: bool) -> None:
+    from ..wifi import current_association
+    assoc = current_association()
+    if as_json:
+        click.echo(_json.dumps(assoc, ensure_ascii=False, indent=2))
+        return
+    if assoc is None:
+        click.echo("Not associated with any Wi-Fi network.")
+        return
+    ssid = assoc.get("ssid", "?")
+    iface = assoc.get("interface", "?")
+    click.echo(f"SSID: {ssid}  (interface {iface})")
+    if "bssid" in assoc:
+        click.echo(f"BSSID: {assoc['bssid']}")
+    if "signal_dbm" in assoc:
+        click.echo(f"Signal: {assoc['signal_dbm']} dBm")
+    if "channel" in assoc:
+        click.echo(f"Channel: {assoc['channel']}")
+    if "security" in assoc:
+        click.echo(f"Security: {assoc['security']}")
+    if "mac" in assoc:
+        click.echo(f"MAC: {assoc['mac']}")
+
+
+@wifi_cmd.command(name="login", help="CAS-authenticate to the campus Wi-Fi gateway.")
+@click.option("--headless/--headed", default=True,
+              help="Headless (default) or open a browser if captcha appears.")
+def wifi_login(headless: bool) -> None:
+    """
+    Run `WiFiAuth().ensure()` to log into the campus Wi-Fi CAS.
+
+    Note: this completes the CAS auth step. The gateway at
+    http://172.16.16.20/srun_portal_sso may require an additional POST
+    with the device MAC / IP — that step is not yet implemented. See
+    the wifi module docstring for details.
+    """
+    from ..sso import WiFiAuth
+    from ..exceptions import InvalidCredentials, NetworkError
+    auth = WiFiAuth()
+    try:
+        if headless:
+            ok, reason = auth.ensure()
+        else:
+            ok = auth.login(headless=False)
+            reason = "" if ok else "browser login failed"
+    except InvalidCredentials as e:
+        click.echo(f"auth failed: invalid credentials — {e}", err=True)
+        raise SystemExit(2)
+    except NetworkError as e:
+        click.echo(f"auth failed: network — {e}", err=True)
+        raise SystemExit(3)
+    if ok:
+        click.echo("CAS auth: OK (gateway registration: pending — see wifi module docs)")
+    else:
+        click.echo(f"auth failed: {reason}", err=True)
+        raise SystemExit(1)
+
+
+@wifi_cmd.command(name="events", help="Recent SUSTC-Wifi events from the macOS unified log.")
+@click.option("--minutes", "-m", type=int, default=60, show_default=True,
+              help="How far back to scan.")
+@click.option("--limit", "-n", type=int, default=20, show_default=True,
+              help="Max events to show.")
+@click.option("--json", "as_json", is_flag=True)
+def wifi_events(minutes: int, limit: int, as_json: bool) -> None:
+    from ..wifi import list_recent_events
+    events = list_recent_events(minutes=minutes)
+    if as_json:
+        click.echo(_json.dumps([e.as_dict() for e in events[:limit]],
+                               ensure_ascii=False, indent=2))
+        return
+    if not events:
+        click.echo(f"(no SUSTC-Wifi events in the last {minutes} minutes)")
+        return
+    for ev in events[:limit]:
+        click.echo(f"[{ev.timestamp}] [{ev.category}] "
+                   f"ssid={ev.ssid} bssid={ev.bssid}")
+        click.echo(f"  {ev.message}")
+
+
+# ========================================================================
 # Top-level group — register everything under `sustech`
 # ========================================================================
 
@@ -501,4 +592,5 @@ def build_cli() -> click.Group:
     cli.add_command(lib_booking_cmd)
     cli.add_command(selectcourse_cmd)
     cli.add_command(papers_cmd)
+    cli.add_command(wifi_cmd)
     return cli
