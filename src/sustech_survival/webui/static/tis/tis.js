@@ -698,6 +698,47 @@ function filterResultsClientSide() {
   renderResults(CAT);
 }
 
+// Hydrate every "View course page" link on the page with the nces_id
+// from BRIEF_CACHE if a matching (code, teacher) entry exists. Called
+// after renderResults() so users see upgraded URLs even before hovering
+// (the BRIEF_CACHE survives within a session — it persists across
+// filter changes, picked toggles, and any other re-render).
+function hydrateViewCourseLinks() {
+  document.querySelectorAll('.view-course-link').forEach(function(a) {
+    if (a.dataset.viewCode === undefined) return;
+    var teacher = a.dataset.viewTeacher || '';
+    var cacheKey = a.dataset.viewCode + '::' + teacher;
+    var cached = BRIEF_CACHE[cacheKey];
+    if (cached && cached.available && cached.nces_id) {
+      a.href = 'https://ncesnext.com/course/' + cached.nces_id + '/';
+      a.title = 'Open NCES page for ' + a.dataset.viewCode + ' (id ' + cached.nces_id + ')';
+    }
+  });
+}
+
+// Hydrate every mini-card's NCES rating from BRIEF_CACHE. Same rationale
+// as hydrateViewCourseLinks — re-renders (filter, pick toggle, etc.)
+// should restore the rating immediately if the user already hovered over
+// that card in this session. Load is already live (renderLoadBadge reads
+// LOAD_BY_RWH every render), so we only need to fill the rating here.
+function hydrateMiniCards() {
+  document.querySelectorAll('.mini-card').forEach(function(m) {
+    if (m.dataset.miniCode === undefined) return;
+    var teacher = m.dataset.miniTeacher || '';
+    var cacheKey = m.dataset.miniCode + '::' + teacher;
+    var cached = BRIEF_CACHE[cacheKey];
+    if (cached && cached.available && (cached.rating || cached.rating === 0)) {
+      var valEl = m.querySelector('.mc-rating .mc-val');
+      if (valEl) {
+        valEl.textContent = cached.rating.toFixed(1) + '/10';
+        var reviews = cached.review_count || 0;
+        m.querySelector('.mc-rating').title =
+          'NCES rating: ' + cached.rating.toFixed(1) + '/10 · ' + reviews + ' review' + (reviews === 1 ? '' : 's');
+      }
+    }
+  });
+}
+
 function renderResults(courses) {
   RESULTS.innerHTML = '';
   // Sticky results header — shows "Select all" + count, plus a small
@@ -718,6 +759,14 @@ function renderResults(courses) {
   for (var i = 0; i < courses.length; i++) {
     RESULTS.appendChild(renderCard(courses[i]));
   }
+  // After every render: upgrade any "View course page" links whose
+  // (code, teacher) match the BRIEF_CACHE. Cheap DOM walk; gives the
+  // user the direct /course/<nces_id>/ URL immediately on page reload
+  // if they had hovered over those cards in this session.
+  hydrateViewCourseLinks();
+  // Same idea for the inline NCES rating badge on each card's mini-card —
+  // fill the placeholder dash with the cached rating if available.
+  hydrateMiniCards();
   // Wire up the "Select all" header checkbox. Wire-once, since the
   // header element survives re-renders of the results list.
   var sel = document.getElementById('select-all-check');
@@ -829,6 +878,20 @@ function renderCard(c) {
       '<span class="code">' + escapeHtml(c.code) + '</span>' +
       '<span class="nm">' + escapeHtml(c.name || c.name_en || '') + '</span>' +
       (c.class_group ? '<span class="grp">' + escapeHtml(c.class_group) + '</span>' : '') +
+      // Small mini-card pinned to the right of the title row. Shows:
+      //   - NCES rating (⭐ X.X/10) — placeholder dash before briefFetch
+      //     populates BRIEF_CACHE; hydrated from cache on re-render.
+      //   - TIS load ([N]/[M]) — current/capacity, always live.
+      // Kept compact so it doesn't push the schedule/meta down on long
+      // course lists. data-nces-code + data-nces-teacher let briefFetch
+      // and the hydrate pass target just this card.
+      '<span class="mini-card" data-mini-code="' + escapeHtml(c.code) + '" ' +
+        'data-mini-teacher="' + escapeHtml((c.teachers || []).join(',')) + '">' +
+        '<span class="mc-rating" title="NCES rating (hover to load)">⭐<span class="mc-val">—</span></span>' +
+        '<span class="mc-load" title="TIS enrollment — current / capacity">' +
+          (renderLoadBadge(c) || '<span class="mc-val mc-muted">Load?</span>') +
+        '</span>' +
+      '</span>' +
     '</div>' +
     (c.section_name && c.section_name !== c.name
       ? '<div class="sect">' + escapeHtml(c.section_name) + (c.section_name_en ? ' <span class="sect-en">' + escapeHtml(c.section_name_en) + '</span>' : '') + '</div>'
@@ -836,10 +899,23 @@ function renderCard(c) {
     '<div class="meta">' +
       (hasRealTeacher ? '<b>Teacher</b> ' + escapeHtml(teachers) : '<span style="color:var(--mut)"><b>Teacher</b> TBD</span>') +
       (c.credits ? ' · <b>Credits</b> ' + c.credits : '') +
-      ' · ' + (renderLoadBadge(c) || '<b>Load</b> ?') +
+      // TIS load is now in the title-row mini-card (.mc-load) so it sits
+      // next to the NCES rating where the user can scan both at once.
     '</div>' +
     (schedHTML ? '<div class="sched"><span class="sched-lbl">Schedule</span>' + schedHTML + '</div>' : '') +
-    (c.code ? '<div class="nces-link"><a href="https://ncesnext.com/search?q=' + encodeURIComponent(c.code) + '" target="_blank" rel="noopener">Compare in NCES ↗</a></div>' : '');
+    (c.code ? '<div class="nces-link">' +
+      '<a href="https://ncesnext.com/search?q=' + encodeURIComponent(c.code) + '" target="_blank" rel="noopener">Compare in NCES ↗</a>' +
+      // Direct course page (e.g. /course/123/) — opens the specific section
+      // the card represents, not the multi-section search. Falls back to
+      // the search URL until the brief cache hydrates with the nces_id.
+      // briefFetch() updates the href on every matching card once the
+      // nces_id is known. data-code + data-teacher uniquely identify the
+      // (code, teacher) pair that briefFetch keyed the lookup by.
+      '<a class="view-course-link" data-view-code="' + escapeHtml(c.code) + '" ' +
+        'data-view-teacher="' + escapeHtml((c.teachers || []).join(',')) + '" ' +
+        'href="https://ncesnext.com/search?q=' + encodeURIComponent(c.code) + '" ' +
+        'target="_blank" rel="noopener" title="Open the NCES detail page for this section">View course page ↗</a>' +
+    '</div>' : '');
 
   card.addEventListener('click', function(e) {
     if (e.target.closest('a')) return;  // NCES link
@@ -1055,6 +1131,38 @@ function briefFetch(code, teacher, evt) {
       BRIEF_CACHE[code + '::' + (teacher || '')] = d;
       if (BRIEF_ACTIVE_CODE === code) {
         BRIEF_CARD.innerHTML = briefRender(d);
+      }
+      // If the brief resolved to a specific NCES section (nces_id
+      // present), upgrade every card's "View course page" link for this
+      // (code, teacher) pair so it opens /course/<nces_id>/ instead of
+      // the generic /search?q=<code>/ fallback. Done via DOM walk on
+      // data-view-code / data-view-teacher rather than re-rendering the
+      // entire results list — keeps the cost of one hover negligible.
+      if (d && d.available && d.nces_id) {
+        document.querySelectorAll('.view-course-link').forEach(function(a) {
+          if (a.dataset.viewCode !== code) return;
+          if ((a.dataset.viewTeacher || '') !== (teacher || '')) return;
+          a.href = 'https://ncesnext.com/course/' + d.nces_id + '/';
+          a.title = 'Open NCES page for ' + code + ' (id ' + d.nces_id + ')';
+        });
+      }
+      // Fill in the inline NCES rating badge on every matching mini-card.
+      // The rating is the headline number the user wants at-a-glance; it
+      // was a "—" placeholder until hover triggered this fetch. The
+      // review_count gives context ("how reliable is this number?").
+      if (d && d.available && (d.rating || d.rating === 0)) {
+        var rating = d.rating;
+        var reviews = d.review_count || 0;
+        document.querySelectorAll('.mini-card').forEach(function(m) {
+          if (m.dataset.miniCode !== code) return;
+          if ((m.dataset.miniTeacher || '') !== (teacher || '')) return;
+          var valEl = m.querySelector('.mc-rating .mc-val');
+          if (valEl) {
+            valEl.textContent = rating.toFixed(1) + '/10';
+            m.querySelector('.mc-rating').title =
+              'NCES rating: ' + rating.toFixed(1) + '/10 · ' + reviews + ' review' + (reviews === 1 ? '' : 's');
+          }
+        });
       }
     })
     .catch(function(e) {
@@ -2082,9 +2190,13 @@ function sectionsToBlocks(sections) {
       if (typeof weeks === 'string') {
         weeks = weeks.split(',').map(function(x) { return parseInt(x, 10); });
       }
+      // enrolled flag flows through from the section shape so renderGridBlocks
+      // can color the legend swatch differently (and pass it down to
+      // _tagEnrolled for the block-level lock styling).
       allBlocks.push({
         day: s.day, periodStart: s.period_start, periodEnd: s.period_end,
-        weeks: weeks, course: c, rwh: c.rwh, code: c.code, color: color
+        weeks: weeks, course: c, rwh: c.rwh, code: c.code, color: color,
+        enrolled: c.__enrolled || false,
       });
     }
   }
@@ -2261,16 +2373,23 @@ function renderGridBlocks(allBlocks, targetOdd, targetEven, legendTarget) {
   // Legend
   if (legendTarget) {
     var seenCodes = {};
+    var lockedMode = (typeof IGNORE_TIS_ENROLLED !== 'undefined') && !IGNORE_TIS_ENROLLED;
     for (var li = 0; li < allBlocks.length; li++) {
-      var code = allBlocks[li].code;
+      var lb = allBlocks[li];
+      var code = lb.code;
       if (seenCodes[code]) continue;
       seenCodes[code] = true;
+      // When in locked mode, give enrolled entries a distinct legend swatch
+      // (accent blue) and a 🔒 suffix so the user can scan the legend and
+      // know "these are TIS-enrolled, unquestionable" without looking at
+      // the grid.
+      var isEnrolled = !!lb.enrolled;
       var sw = document.createElement('span');
-      sw.className = 'sw';
-      sw.style.background = allBlocks[li].color;
+      sw.className = 'sw' + (isEnrolled && lockedMode ? ' sw-enrolled-locked' : '');
+      sw.style.background = (isEnrolled && lockedMode) ? 'var(--accent)' : lb.color;
       var sl = document.createElement('span');
-      sl.className = 'sl';
-      sl.textContent = code;
+      sl.className = 'sl' + (isEnrolled && lockedMode ? ' sl-locked' : '');
+      sl.textContent = code + (isEnrolled && lockedMode ? ' 🔒' : '');
       legendTarget.appendChild(sw);
       legendTarget.appendChild(sl);
     }
@@ -2375,8 +2494,20 @@ function renderGrid3() {
   // course can have multiple picked rwhs, only the enrolled one should
   // get the lock). Done by walking the rendered DOM after
   // renderGridBlocks has set the colors.
+  //
+  // Two styling modes:
+  //   - lockedMode=false (default, IGNORE_TIS_ENROLLED is true): use
+  //     .blk-enrolled — subtle dashed border + small 🔒. Tells the user
+  //     "this is TIS-enrolled" without screaming "LOCKED" since it's
+  //     still a soft pick they can drop.
+  //   - lockedMode=true (IGNORE_TIS_ENROLLED is false): use
+  //     .blk-enrolled-locked — accent-blue gradient + solid border +
+  //     larger 🔒. The user explicitly flipped "Ignore TIS enrolled" off
+  //     meaning "treat enrolled as unquestionable", so the visual should
+  //     scream that distinction.
   var enrolledRwhs = {};
   ENROLLED_RWH.forEach(function(r) { enrolledRwhs[r] = true; });
+  var lockedMode = !IGNORE_TIS_ENROLLED;
   function _tagEnrolled(tbody) {
     tbody.querySelectorAll('.blk').forEach(function(b) {
       var rwh = b.dataset.rwh || '';
@@ -2384,7 +2515,7 @@ function renderGrid3() {
       // PICKED wins over ENROLLED — if the user also has this rwh
       // picked, don't override their view of it as their own pick.
       if (PICKED[rwh]) return;
-      b.classList.add('blk-enrolled');
+      b.classList.add(lockedMode ? 'blk-enrolled-locked' : 'blk-enrolled');
       if (!b.querySelector('.blk-lock')) {
         var lock = document.createElement('span');
         lock.className = 'blk-lock';

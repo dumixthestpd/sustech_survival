@@ -36,6 +36,22 @@ select.filter{flex:1;min-width:60px}
 .c-card:hover{background:var(--panel)}
 .c-card.active{background:#1d2a3d;border-left:3px solid var(--accent);padding-left:calc(1rem - 3px)}
 .c-card .top{display:flex;gap:.5rem;align-items:center}
+.c-card .top .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Mini-card pinned to the right of the title row. Two compact badges
+   showing NCES rating (placeholder dash until briefFetch hydrates) and
+   TIS load (current/capacity, always live). Kept small + right-aligned
+   so it doesn't push the schedule/meta row when the course name is
+   long. The two badges use distinct accent colors so the eye can scan
+   them separately at a glance. */
+.c-card .mini-card{display:inline-flex;gap:.3rem;align-items:center;flex-shrink:0;margin-left:auto;font-size:.68rem}
+.c-card .mini-card .mc-rating,
+.c-card .mini-card .mc-load{display:inline-flex;align-items:center;gap:.15rem;padding:.1rem .4rem;border-radius:4px;font-weight:500;line-height:1.3}
+.c-card .mini-card .mc-rating{background:rgba(91,157,255,.10);color:var(--accent);border:1px solid rgba(91,157,255,.25)}
+.c-card .mini-card .mc-load{background:rgba(91,157,255,.10);color:#b0c4e8;border:1px solid rgba(91,157,255,.18)}
+.c-card .mini-card .mc-load b{color:var(--accent);font-weight:600}
+.c-card .mini-card .mc-load .cap{color:#3a7ad9;font-weight:500}
+.c-card .mini-card .mc-val{font-variant-numeric:tabular-nums}
+.c-card .mini-card .mc-muted{color:var(--mut);font-weight:normal}
 .c-card .pick-check{width:18px;height:18px;cursor:pointer;flex-shrink:0;accent-color:var(--accent);margin:0}
 .c-card .pick-wrap{cursor:pointer;display:inline-flex;align-items:center;padding:2px;border-radius:4px;margin:-2px}
 .c-card .pick-wrap:hover{background:var(--panel2)}
@@ -56,9 +72,11 @@ select.filter{flex:1;min-width:60px}
 .c-card .sched .sched-lbl{display:block;color:var(--txt);font-weight:600;font-size:.7rem;margin-bottom:.15rem;width:100%;flex-basis:100%}
 .slot-tag{display:inline-block;padding:.08rem .4rem;border-radius:4px;background:#1a2230;font-size:.7rem;color:#b0b8c8;white-space:nowrap;line-height:1.6}
 .c-card .actions{position:absolute;top:.45rem;right:.7rem;display:flex;gap:.25rem}
-.c-card .nces-link{display:flex;justify-content:flex-end;margin-top:.4rem;padding-top:.35rem;border-top:1px solid #1a2030}
+.c-card .nces-link{display:flex;justify-content:flex-end;gap:.75rem;margin-top:.4rem;padding-top:.35rem;border-top:1px solid #1a2030}
 .c-card .nces-link a{color:var(--accent);text-decoration:none;font-size:.7rem;opacity:.85;transition:opacity .12s}
 .c-card .nces-link a:hover{opacity:1;text-decoration:underline}
+.c-card .nces-link a.view-course-link{color:var(--txt);opacity:.75}
+.c-card .nces-link a.view-course-link:hover{color:var(--accent);opacity:1}
 .badge{font-size:.68rem;padding:.08rem .35rem;border-radius:4px;background:#1e2733;color:var(--mut);display:inline-block}
 .badge.must{color:var(--ok)} .badge.opt{color:#c084fc}
 /* flash messages */
@@ -184,6 +202,8 @@ table.grid tbody tr th { background: var(--panel); }
 .palette{display:flex;gap:.3rem;flex-wrap:wrap;align-items:center;padding:.3rem 0}
 .palette .sw{display:inline-block;width:12px;height:12px;border-radius:3px;flex-shrink:0}
 .palette .sl{font-size:.72rem;color:var(--mut)}
+.palette .sl-locked{color:var(--accent);font-weight:600}
+.palette .sw-enrolled-locked{outline:1.5px solid var(--accent);outline-offset:1px}
 
 /* ── Stepper (replaces tabs) ────────────────────────────────────
    A 4-step workflow: Pick → Mark unavailable → Schedule → Bid & sync.
@@ -355,7 +375,19 @@ table.grid tbody tr th { background: var(--panel); }
    sits inline at the start of the block; a thicker dashed border makes
    the visual distinction survive at small sizes / many overlapping
    blocks. Color comes from the per-course palette, same as picks. */
+/* Enrolled blocks — two modes:
+   - .blk-enrolled (default, when IGNORE_TIS_ENROLLED is true) — dashed
+     border + small 🔒 badge; same course color as if it were a pick.
+   - .blk-enrolled-locked (when IGNORE_TIS_ENROLLED is false) — distinct
+     "locked" palette so the user can SEE the enrolled block is
+     unquestionable, not a soft pick that can be dropped. Solid border,
+     accent-blue gradient background, larger 🔒 badge. The color difference
+     is the whole point — the user asked for picked vs enrolled to be
+     visually distinct when the toggle is OFF. */
 .blk-enrolled{border:1.5px dashed rgba(255,255,255,.55)!important;outline:1px solid rgba(91,157,255,.45);outline-offset:-1px}
+.blk-enrolled-locked{background:linear-gradient(135deg,var(--accent) 0%,#3a7ad9 100%)!important;border:1.5px solid var(--accent)!important;color:#fff;box-shadow:0 0 0 1px rgba(255,255,255,.25) inset,0 0 8px rgba(91,157,255,.35);z-index:5!important}
+.blk-enrolled-locked .t{color:#fff;font-weight:600}
+.blk-enrolled-locked .blk-lock{font-size:.7rem;opacity:1}
 .blk-lock{display:inline-block;font-size:.55rem;margin-right:.15rem;opacity:.85}
 /* Save button: the dynamic count badge inside */
 .save-file-btn #save-count{color:var(--mut);font-weight:normal;margin-left:.15rem}
