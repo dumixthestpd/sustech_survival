@@ -209,12 +209,27 @@ table.grid tbody tr th { background: var(--panel); }
 .step-pane-body{padding:1rem 1.4rem;display:flex;flex-direction:column;gap:1rem;flex:1}
 .step-hint{color:var(--mut);font-size:.84rem;line-height:1.45;margin:0}
 
-/* Persistent weekly grid container inside steps 1 and 2. The actual
+/* Persistent weekly grid container inside steps 1, 2, and 3. The actual
    table contents (odd/even weeks + legend) are populated by renderGrid. */
 .persistent-grid{display:flex;flex-direction:column;gap:1rem;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:1rem;flex:1;min-height:0}
 .persistent-grid .grid-legend-h{display:flex;align-items:center;gap:.5rem;margin-bottom:.4rem}
 .persistent-grid .grid-legend-h .grid-legend{flex:1;min-height:0}
-.persistent-grid .grid-weeks{display:grid;grid-template-columns:1fr 1fr;gap:1rem;flex:1;min-height:0}
+/* Two layout variants for `.grid-weeks`:
+     .grid-weeks-side-by-side (default — used by step 3) — odd/even weeks
+       stacked HORIZONTALLY (1fr 1fr columns). Step 3 shows the user's
+       final schedule (picked + TIS-enrolled together), one cell = one
+       block, no mass selection needed; the wider cells aren't useful.
+     .grid-weeks-stacked (used by step 1) — odd/even weeks stacked
+       VERTICALLY (single full-width column). Step 1 does mass selection
+       (the user may have 4-5 candidates for the same code, all ticking
+       the search results), so each cell needs to fit MULTIPLE
+       overlapping blocks at the same time slot. Full-width cells give
+       the block-packing enough horizontal room to show several
+       candidates side-by-side without the labels getting squashed.
+   Both variants share the same DOM shape — only the grid-template-columns
+   differs. */
+.persistent-grid .grid-weeks-side-by-side{display:grid;grid-template-columns:1fr 1fr;gap:1rem;flex:1;min-height:0}
+.persistent-grid .grid-weeks-stacked{display:grid;grid-template-columns:1fr;gap:1rem;flex:1;min-height:0}
 .persistent-grid .grid-week-section{display:flex;flex-direction:column;gap:.3rem;min-height:0}
 .persistent-grid .grid-week-section .grid-week-h{font-size:.72rem;color:var(--accent);font-weight:500;text-transform:uppercase;letter-spacing:.04em}
 
@@ -336,6 +351,12 @@ table.grid tbody tr th { background: var(--panel); }
 .ignore-tis-enrolled-wrap{display:flex;align-items:center;gap:.4rem;font-size:.72rem;color:var(--mut);padding:.15rem 0 .4rem;cursor:pointer;user-select:none}
 .ignore-tis-enrolled-wrap input[type=checkbox]{margin:0;cursor:pointer}
 .ignore-tis-enrolled-wrap:hover{color:var(--accent)}
+/* Step-3 enrolled block (TIS-side course, not user's pick). Lock badge
+   sits inline at the start of the block; a thicker dashed border makes
+   the visual distinction survive at small sizes / many overlapping
+   blocks. Color comes from the per-course palette, same as picks. */
+.blk-enrolled{border:1.5px dashed rgba(255,255,255,.55)!important;outline:1px solid rgba(91,157,255,.45);outline-offset:-1px}
+.blk-lock{display:inline-block;font-size:.55rem;margin-right:.15rem;opacity:.85}
 /* Save button: the dynamic count badge inside */
 .save-file-btn #save-count{color:var(--mut);font-weight:normal;margin-left:.15rem}
 .pick .pm{color:var(--mut);font-size:.72rem;margin-top:.1rem}
@@ -714,7 +735,7 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
             <div class="grid-legend-h">
               <div class="palette grid-legend" id="grid-legend"></div>
             </div>
-            <div class="grid-weeks">
+            <div class="grid-weeks grid-weeks-stacked">
               <div class="grid-week-section">
                 <div class="grid-week-h">Odd weeks</div>
                 <table class="grid"><thead><tr><th>Pd</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th></tr></thead>
@@ -746,11 +767,36 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
       </div>
 
       <!-- STEP 3: Schedule — solver output. The user picks the
-           conflict-free combination here. -->
+           conflict-free combination here. Above the solver panel we
+           show the **full weekly grid** (picked + TIS-enrolled), so the
+           user can see what their schedule will look like and verify
+           the solver output makes sense. Reuses the same
+           `.persistent-grid` layout class as step 1 — odd/even weeks
+           are side-by-side (horizontal), legend on top, color-coded
+           blocks per course. Enrolled sections render with a 🔒 badge
+           and a slightly different border so they're distinguishable
+           from the user's own picks. -->
       <div class="step-pane" data-step-pane="3" style="display:none">
         <div class="step-pane-body">
           <p class="step-hint">Generates non-conflicting section combinations from your picked course codes. The schedule is conflict-free when no picked rwh has a conflict.</p>
-          <div style="color:var(--mut);font-size:.82rem;margin-bottom:.5rem">
+          <div class="persistent-grid">
+            <div class="grid-legend-h">
+              <div class="palette grid-legend" id="grid-legend-3"></div>
+            </div>
+            <div class="grid-weeks grid-weeks-side-by-side">
+              <div class="grid-week-section">
+                <div class="grid-week-h">Odd weeks</div>
+                <table class="grid"><thead><tr><th>Pd</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th></tr></thead>
+                  <tbody id="grid-body-odd-3"></tbody></table>
+              </div>
+              <div class="grid-week-section">
+                <div class="grid-week-h">Even weeks</div>
+                <table class="grid"><thead><tr><th>Pd</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th></tr></thead>
+                  <tbody id="grid-body-even-3"></tbody></table>
+              </div>
+            </div>
+          </div>
+          <div style="color:var(--mut);font-size:.82rem;margin-top:.4rem">
             <b style="color:var(--txt)">Codes to solve:</b> <span id="solve-codes">none</span>
           </div>
           <button class="primary" id="btn-solve">Solve combinations</button>

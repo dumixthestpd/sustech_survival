@@ -19,7 +19,8 @@
  *
  *     renderPicked()           ← #pick-list + Sync/Drop/Save/Load/ICS buttons
  *     updateResultsHeader()    ← select-all + count in search results
- *     renderGrid()             ← weekly grid (clear #grid-legend if empty)
+ *     renderGrid()             ← step-1 weekly grid (clear #grid-legend if empty)
+ *     renderGrid3()            ← step-3 weekly grid (picked + TIS-enrolled)
  *     renderBidPanel()         ← bid boxes + bar + totals
  *     updateBidStat()          ← right-column "Bids: X/150 pts" summary
  *     updateSolveCodes()       ← solver "Codes to solve:" chip
@@ -54,6 +55,13 @@ var STAT = document.getElementById('stat');
 var RESULTS = document.getElementById('results');
 var GRID_ODD = document.getElementById('grid-body-odd');
 var GRID_EVEN = document.getElementById('grid-body-even');
+// Step 3 grid — same layout (odd/even side-by-side) but shows picked
+// + TIS-enrolled together. Separate DOM IDs so renderGrid (step 1) and
+// renderGrid3 (step 3) don't trample each other when the user toggles
+// between steps.
+var GRID_ODD_3 = document.getElementById('grid-body-odd-3');
+var GRID_EVEN_3 = document.getElementById('grid-body-even-3');
+var GRID_LEGEND_3 = document.getElementById('grid-legend-3');
 var BLOCK_BODY = document.getElementById('block-body');
 var PICK_STAT = document.getElementById('pick-stat');
 var PICK_LIST = document.getElementById('pick-list');
@@ -115,6 +123,10 @@ var PICKED = {};            // { rwh: courseDict }
 var ACTIVE_RWH = null;      // last clicked card rwh (for eval)
 var EVAL_CACHE = {};        // { code: evalResponse }
 var ENROLLED_RWH = new Set(); // rwhs currently enrolled on TIS
+// Full enrolled-item data keyed by rwh. Populated by loadEnrolled() so
+// renderGrid3() can pull each enrolled course's slots/name/section for
+// the step-3 weekly grid (which shows picked + enrolled together).
+var ENROLLED_DATA = {};
 var IGNORE_TIS_ENROLLED = true;  // when TRUE (default): module treats TIS-enrolled as informational;
                                  // user can drop / re-bid / etc. When FALSE: TIS-enrolled is
                                  // "unquestionable" — pinned picks that win every conflict, can't
@@ -1749,6 +1761,7 @@ function addPicked(course) {
   renderResults(CAT);
   renderPicked();
   renderGrid();
+  renderGrid3();  // step-3 grid shows picked + enrolled together
   renderBidPanel();
   updateBidStat();
   updateSolveCodes();
@@ -1770,6 +1783,7 @@ function removePicked(rwh) {
   }
   renderPicked();
   renderGrid();
+  renderGrid3();  // step-3 grid shows picked + enrolled together
   renderBidPanel();
   updateBidStat();
   updateSolveCodes();
@@ -2311,6 +2325,80 @@ function renderGrid() {
   applyBlockedVisual(GRID_EVEN);
 }
 
+// Step 3 weekly grid — combines picked + TIS-enrolled into one view so
+// the user can see what their final schedule looks like (including the
+// classes they're not actively managing). Uses the same odd/even
+// side-by-side layout as step 1 (.persistent-grid, inherited). Enrolled
+// sections render with a 🔒 lock badge so they're visually distinct from
+// the user's own picks. No clicking — this grid is read-only (the user
+// picks from step 1, blocks from step 2; step 3 is solver-driven).
+function renderGrid3() {
+  if (!GRID_ODD_3 || !GRID_EVEN_3) return;
+
+  // Build the combined section list: picked + enrolled. Enrolled entries
+  // get a `__enrolled: true` marker that sectionsToBlocks / the legend
+  // can use to differentiate them. The `enrolled` flag in the section
+  // shape mirrors what /api/tis/enrolled now returns, so if the user has
+  // run a personal search and an enrolled rwh is also in PICKED, we
+  // dedupe by rwh (PICKED wins — user-owned state overrides TIS view).
+  var sections = [];
+  var seenRwh = {};
+  Object.keys(PICKED).forEach(function(rwh) {
+    sections.push(Object.assign({}, PICKED[rwh], { __enrolled: false }));
+    seenRwh[rwh] = true;
+  });
+  ENROLLED_RWH.forEach(function(rwh) {
+    if (seenRwh[rwh]) return;
+    var enrolled = ENROLLED_DATA[rwh];  // full {slots, code, name, ...}
+    if (!enrolled || !enrolled.slots || !enrolled.slots.length) return;
+    sections.push({
+      rwh: rwh,
+      code: enrolled.code,
+      name: enrolled.name,
+      section_name: enrolled.section,
+      slots: enrolled.slots,
+      has_schedule: true,
+      __enrolled: true,
+    });
+  });
+
+  if (!sections.length) {
+    GRID_ODD_3.innerHTML = '<tr><td colspan="8" class="empty" style="padding:2rem 0">No picked or enrolled sections.</td></tr>';
+    GRID_EVEN_3.innerHTML = '<tr><td colspan="8" class="empty" style="padding:2rem 0">No picked or enrolled sections.</td></tr>';
+    if (GRID_LEGEND_3) GRID_LEGEND_3.innerHTML = '';
+    return;
+  }
+  var allBlocks = sectionsToBlocks(sections);
+  renderGridBlocks(allBlocks, GRID_ODD_3, GRID_EVEN_3, GRID_LEGEND_3);
+  // Tag enrolled blocks with a 🔒 so the user can tell them apart from
+  // picks at a glance. Match by rwh (more precise than code — same
+  // course can have multiple picked rwhs, only the enrolled one should
+  // get the lock). Done by walking the rendered DOM after
+  // renderGridBlocks has set the colors.
+  var enrolledRwhs = {};
+  ENROLLED_RWH.forEach(function(r) { enrolledRwhs[r] = true; });
+  function _tagEnrolled(tbody) {
+    tbody.querySelectorAll('.blk').forEach(function(b) {
+      var rwh = b.dataset.rwh || '';
+      if (!enrolledRwhs[rwh]) return;
+      // PICKED wins over ENROLLED — if the user also has this rwh
+      // picked, don't override their view of it as their own pick.
+      if (PICKED[rwh]) return;
+      b.classList.add('blk-enrolled');
+      if (!b.querySelector('.blk-lock')) {
+        var lock = document.createElement('span');
+        lock.className = 'blk-lock';
+        lock.textContent = '🔒';
+        b.insertBefore(lock, b.firstChild);
+      }
+    });
+  }
+  _tagEnrolled(GRID_ODD_3);
+  _tagEnrolled(GRID_EVEN_3);
+  applyBlockedVisual(GRID_ODD_3);
+  applyBlockedVisual(GRID_EVEN_3);
+}
+
 // Week-detail mode for a blocked cell:
 function _setBlockMode(key, mode) {
   if (mode === 'all' || !mode) {
@@ -2579,6 +2667,7 @@ function loadEnrolled() {
   ENROLLED_OUT.innerHTML = '<div class="ncn">Loading…</div>';
   getJSON('/api/tis/enrolled' + sem()).then(function(d) {
     ENROLLED_RWH = new Set();
+    ENROLLED_DATA = {};
     if (d.error) {
       ENROLLED_OUT.innerHTML = '<div class="flash err">' + escapeHtml(d.error) + '</div>';
       return;
@@ -2599,10 +2688,12 @@ function loadEnrolled() {
       var item = list[i];
       var rwh = item.rwh || '';
       ENROLLED_RWH.add(rwh);
+      ENROLLED_DATA[rwh] = item;  // cache full data for renderGrid3()
       var isPicked = !!PICKED[rwh];
       // Backend now emits one row per rwh (deduped from TIS's
       // per-schedule-block rows). Fields: rwh, code (e.g. MSE307),
-      // name (kcmc from SKSJ line 0), section (line 2, brackets stripped).
+      // name (kcmc from SKSJ line 0), section (line 2, brackets stripped),
+      // slots (lifted from raw rows for the step-3 weekly grid).
       var head = escapeHtml(item.code || item.name || '');
       if (item.name && item.code) head = escapeHtml(item.code) + ' · ' + escapeHtml(item.name);
       var sub = item.section ? '<div style="font-size:.65rem;color:var(--mut)">' + escapeHtml(item.section) + '</div>' : '';
@@ -2618,6 +2709,7 @@ function loadEnrolled() {
     }
     ENROLLED_OUT.innerHTML = flagNote + html;
     renderPicked();
+    renderGrid3();  // step 3 grid shows enrolled + picked together
   })['catch'](function(e) {
     ENROLLED_OUT.innerHTML = '<div class="flash err">' + escapeHtml(e.message) + '</div>';
   });
@@ -4948,8 +5040,21 @@ function initPickedActions() {
     '</label>' +
     '<button class="drop-all-tis-btn" id="btn-drop-all" title="Drop every currently-enrolled section on TIS (destructive — will prompt for confirmation)">🗑 Drop all enrolled courses in TIS</button>';
 
-  // Wire the toggle. Hide/show the drop button + nudge the solver to
-  // pass locked_rwhs when the flag flips.
+  // Wire the toggle. Three things flip when the user changes this:
+//
+//   1. The local IGNORE_TIS_ENROLLED state flag (read by the solver,
+//      conflict banner, and conflict-badges code).
+//   2. The 🗑 Drop-all-enrolled button visibility (hidden when locked
+//      — "unquestionable" means we won't let the user mass-drop them).
+//   3. The right-panel 🔒 lock badges + lock banner (re-rendered).
+//
+// And the toggle ALSO doubles as the trigger to load TIS-enrolled data.
+// The user might never click "Load my enrolled" explicitly — flipping
+// this checkbox to OFF is the more meaningful action (now that TIS-
+// enrolled is locked, they need it visible). If ENROLLED_RWH is empty
+// when the toggle fires, we call loadEnrolled() so the grid + right
+// panel + solver all have the data they need. If we already loaded,
+// we just re-render the affected views (no refetch).
   var ignoreChk = dropBtn.querySelector('#ignore-tis-enrolled');
   var dropBtnEl = dropBtn.querySelector('#btn-drop-all');
   function _syncIgnoreFlag() {
@@ -4957,7 +5062,41 @@ function initPickedActions() {
     dropBtnEl.style.display = IGNORE_TIS_ENROLLED ? '' : 'none';
     if (ENROLLED_OUT) ENROLLED_OUT.dataset.ignoreFlag = IGNORE_TIS_ENROLLED ? '1' : '0';
   }
-  ignoreChk.addEventListener('change', _syncIgnoreFlag);
+  function _onIgnoreFlagChange() {
+    var prevIgnore = IGNORE_TIS_ENROLLED;
+    IGNORE_TIS_ENROLLED = ignoreChk.checked;
+    dropBtnEl.style.display = IGNORE_TIS_ENROLLED ? '' : 'none';
+    if (ENROLLED_OUT) ENROLLED_OUT.dataset.ignoreFlag = IGNORE_TIS_ENROLLED ? '1' : '0';
+    // Re-render the right-panel enrolled list (badge/banner state changed)
+    // and the step-3 grid (solver-affecting change). We don't refetch if
+    // the data is already loaded — flag flipping alone doesn't change the
+    // underlying TIS state, only how the module treats it.
+    if (ENROLLED_RWH.size === 0) {
+      // Cold start — flip = "go fetch the data so I can see the locks"
+      loadEnrolled();
+      return;
+    }
+    // Hot reload — data is in memory, just re-render the views that read
+    // the flag. renderPicked() picks up the 🔒 badge change on already-
+    // loaded picks; renderGrid3() re-runs with the same data; the solver
+    // re-runs only if its results are already on screen (step 3 was the
+    // active pane when the user flipped).
+    renderPicked();
+    renderGrid3();
+    // Refresh the right-panel enrollment list. The simplest path is to
+    // call loadEnrolled() again — it's a single GET, idempotent, and
+    // re-renders the panel from scratch with the correct flag-driven UI.
+    loadEnrolled();
+    // If the solver result is currently visible on step 3, re-run it so
+    // the new locked_rwhs take effect on the suggested combinations.
+    if (typeof SOLVE_OUT !== 'undefined' && SOLVE_OUT && SOLVE_OUT.innerHTML &&
+        SOLVE_OUT.querySelector('.solved')) {
+      // Triggered by user flipping the flag — don't show a separate
+      // "solving…" status, the grid already updates.
+      solve();
+    }
+  }
+  ignoreChk.addEventListener('change', _onIgnoreFlagChange);
   _syncIgnoreFlag();
 
   pickList.parentNode.insertBefore(header, pickList);
@@ -5353,6 +5492,7 @@ function applyPicksFromData(data) {
   renderResults(CAT);
   renderPicked();
   renderGrid();
+  renderGrid3();  // step-3 grid shows picked + enrolled together
   renderBidPanel();
   updateBidStat();
   updateSolveCodes();
