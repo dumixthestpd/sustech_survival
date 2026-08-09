@@ -369,7 +369,9 @@ def api_enrolled():
     # (rwh × schedule-block × week-parity × 校区), NOT per enrolled
     # course. Dedupe by rwh and lift the kcmc / section out of the
     # multi-line SKSJ string so the frontend renders one card per
-    # actually-enrolled course, not 4-13 mostly-empty cards.
+    # actually-enrolled course, not 4-13 mostly-empty cards. We also
+    # lift the schedule slots out of the raw row fields so the step-3
+    # weekly grid can render TIS-enrolled alongside picked sections.
     by_rwh: "dict[str, dict]" = {}
     for row in raw:
         rwh = row.get("RWH") or row.get("rwh") or ""
@@ -390,11 +392,31 @@ def api_enrolled():
         section = lines[2] if len(lines) >= 3 else ""
         if section.startswith("[") and section.endswith("]"):
             section = section[1:-1]
+        # The first schedule-block row for this rwh has the meta that
+        # kcmc/section came from, but every block for the rwh shares
+        # those (only KEY / KSJC / JSJC / ZC differ per block). We need
+        # to walk ALL blocks to build the full slot list, so iterate
+        # the raw rows once more for this rwh.
+        slots: list = []
+        for sb in raw:
+            if (sb.get("RWH") or sb.get("rwh") or "") != rwh:
+                continue
+            slot = _raw_schedule_slot(sb)
+            if slot is not None:
+                slots.append(slot)
         by_rwh[rwh] = {
             "rwh": rwh,
             "name": name,
             "section": section,
             "code": rwh_to_code(rwh),
+            # Schedule data so the step-3 grid can render the enrolled
+            # course block alongside picked sections. Same shape as
+            # `Course.slots_raw` (a list of {day, period_start,
+            # period_end, weeks: [...]}). `weeks` uses 0=odd, 1=even
+            # to match sectionsToBlocks().
+            "slots": slots,
+            "has_schedule": bool(slots),
+            "enrolled": True,  # marker so frontend can show 🔒 badge
         }
     items = list(by_rwh.values())
     return jsonify({"semester": sem, "enrolled": items})
@@ -411,6 +433,55 @@ def rwh_to_code(rwh: str) -> str:
     if len(parts) >= 4:
         return parts[3]
     return ""
+
+
+def _raw_schedule_slot(row: dict) -> "dict | None":
+    """Build a Course.slots_raw-shaped dict from a raw TIS schedule row.
+
+    Raw fields used:
+      KEY = "xq<N>_jc<M>"     — N is weekday (1-7), M is period start
+      KSJC                   — start period (matches M when present)
+      JSJC                   — period count (e.g. JSJC=8 means periods M..M+7)
+      ZC = "01010101..."      — 32-char binary week-parity pattern
+
+    Returns a dict with day / period_start / period_end / weeks, or None
+    if the row doesn't have enough data to build one.
+    """
+    key = row.get("KEY") or ""
+    ksjc = row.get("KSJC")
+    jsjc = row.get("JSJC")
+    zc = row.get("ZC") or ""
+    # Parse weekday out of KEY: "xq3_jc1" → 3
+    m = key.split("_") if key else []
+    if not m or len(m) < 2:
+        return None
+    try:
+        # weekday = int(part0 after "xq"), period_start = int(part1 after "jc")
+        weekday = int(m[0].lstrip("xq")) if m[0].startswith("xq") else None
+        period_start = int(m[1].lstrip("jc")) if m[1].startswith("jc") else ksjc
+    except (TypeError, ValueError):
+        return None
+    if weekday is None or weekday < 1 or weekday > 7:
+        return None
+    if period_start is None or jsjc is None:
+        return None
+    period_end = period_start + int(jsjc) - 1
+    # Parse ZC: 32-char binary string, position = week - 1, '1' = active.
+    # We use the two-parity convention (0=odd, 1=even) so the parity
+    # values match sectionsToBlocks() in the frontend.
+    weeks: list = []
+    for i, ch in enumerate(zc):
+        if ch == "1":
+            weeks.append(i + 1)  # actual week number
+    if not weeks:
+        return None
+    return {
+        "day": weekday,
+        "period_start": int(period_start),
+        "period_end": int(period_end),
+        "weeks": weeks,
+        "room": (row.get("JASMC") or ""),  # classroom name if available
+    }
 
 
 # ── Solver: non-conflicting section combinations with priority dropping ─────
