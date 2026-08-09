@@ -2795,54 +2795,34 @@ function loadBlockedFromInput() {
 // ── Enrolled ──────────────────────────────────────────────────────────────
 
 function loadEnrolled() {
-  ENROLLED_OUT.innerHTML = '<div class="ncn">Loading…</div>';
+  // User removed the dedicated "Enrollment status" right-panel display,
+  // so loadEnrolled() no longer writes any visible content into
+  // #enrolled-out. It still:
+  //   - fetches /api/tis/enrolled and populates ENROLLED_RWH +
+  //     ENROLLED_DATA (used by step-3 weekly grid + pick-list 🔒 badges)
+  //   - re-renders pick list + step-3 grid so newly-locked courses
+  //     get their visual treatment
+  // The lock banner that used to live in #enrolled-out is also gone —
+  // the toggle's title text + 🔒 badges in the pick list + locked-mode
+  // blue blocks in step 3 grid are the remaining indicators.
   getJSON('/api/tis/enrolled' + sem()).then(function(d) {
     ENROLLED_RWH = new Set();
     ENROLLED_DATA = {};
     if (d.error) {
-      ENROLLED_OUT.innerHTML = '<div class="flash err">' + escapeHtml(d.error) + '</div>';
+      console.warn('enrolled load failed:', d.error);
       return;
     }
     var list = d.enrolled || [];
-    if (!list.length) {
-      ENROLLED_OUT.innerHTML = '<div class="ncn">No enrolled courses found.</div>';
-      return;
-    }
-    var html = '';
-    // When TIS-enrolled is "unquestionable" (IGNORE_TIS_ENROLLED = false),
-    // surface that visually so the user remembers the rule. Header note
-    // explains which way the flag is set.
-    var flagNote = IGNORE_TIS_ENROLLED
-      ? ''
-      : '<div class="ncn" style="background:rgba(91,157,255,.10);color:var(--accent);font-weight:600;border-left:2px solid var(--accent)">🔒 TIS-enrolled courses are locked — solver keeps them, cannot be dropped from here</div>';
     for (var i = 0; i < list.length; i++) {
       var item = list[i];
       var rwh = item.rwh || '';
       ENROLLED_RWH.add(rwh);
       ENROLLED_DATA[rwh] = item;  // cache full data for renderGrid3()
-      var isPicked = !!PICKED[rwh];
-      // Backend now emits one row per rwh (deduped from TIS's
-      // per-schedule-block rows). Fields: rwh, code (e.g. MSE307),
-      // name (kcmc from SKSJ line 0), section (line 2, brackets stripped),
-      // slots (lifted from raw rows for the step-3 weekly grid).
-      var head = escapeHtml(item.code || item.name || '');
-      if (item.name && item.code) head = escapeHtml(item.code) + ' · ' + escapeHtml(item.name);
-      var sub = item.section ? '<div style="font-size:.65rem;color:var(--mut)">' + escapeHtml(item.section) + '</div>' : '';
-      // Locked-style badge when the flag is off, "in picked" badge when
-      // the user also has this rwh in their picked list (which doesn't
-      // really happen — enrolled rwhs aren't auto-added — but harmless).
-      var lockBadge = !IGNORE_TIS_ENROLLED ? ' <span style="font-size:.6rem;color:var(--accent);font-weight:600">🔒 locked</span>' : '';
-      var pickedBadge = isPicked ? ' ✓ in picked' : '';
-      html += '<div class="ncn' + (isPicked ? ' ok' : '') + '">' +
-        head + lockBadge + sub +
-        pickedBadge +
-      '</div>';
     }
-    ENROLLED_OUT.innerHTML = flagNote + html;
-    renderPicked();
-    renderGrid3();  // step 3 grid shows enrolled + picked together
+    renderPicked();           // 🔒 badges on already-loaded picks
+    renderGrid3();            // step-3 weekly grid re-renders with locks
   })['catch'](function(e) {
-    ENROLLED_OUT.innerHTML = '<div class="flash err">' + escapeHtml(e.message) + '</div>';
+    console.warn('enrolled load error:', e.message);
   });
 }
 
@@ -4917,27 +4897,30 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
-  // Refresh catalog
-  document.getElementById('btn-refresh').addEventListener('click', function() {
-    postJSON('/api/tis/refresh' + sem(), {}).then(function(d) {
+  // ── Refresh: catalog + load — single button now (formerly two
+  //    buttons: "Refresh catalog" + "🔄 Refresh load"). User feedback
+  //    that the info is "stable" and only needs refreshing on page
+  //    entry / explicit manual action — no need for two separate
+  //    triggers. Both happen sequentially: refresh catalog first
+  //    (so the user's filter set has fresh course data), then refresh
+  //    load (so the [N] / [M] badges fill in).
+  function _doRefreshCatalog(after) {
+    return postJSON('/api/tis/refresh' + sem(), {}).then(function(d) {
       if (d.ok) {
         STAT.textContent = 'Refreshed: ' + d.count + ' courses.';
         loadInfo();
+        if (after) after(null, d);
       } else {
         STAT.textContent = 'Refresh failed: ' + (d.error || 'unknown');
+        if (after) after(new Error(d.error || 'refresh failed'));
       }
     })['catch'](function(e) {
       STAT.textContent = 'Refresh error: ' + e.message;
+      if (after) after(e);
     });
-  });
-
-  // Refresh load: fetch live "currently selected" counts from TIS's
-  // personal-mode search (Xsxk/queryKxrw) for the current filter set.
-  // Result merges into LOAD_BY_RWH and re-renders all visible cards so
-  // the [N] / [M] badges fill in.
-  document.getElementById('btn-refresh-load').addEventListener('click', function() {
-    var btn = document.getElementById('btn-refresh-load');
-    if (btn.disabled) return;  // already in flight
+  }
+  function _doRefreshLoad(btn, after) {
+    if (btn.disabled) return Promise.resolve();
     btn.disabled = true;
     var prev = btn.textContent;
     btn.textContent = '⏳ Refreshing load…';
@@ -4969,11 +4952,12 @@ document.addEventListener('DOMContentLoaded', function() {
     qs += '&period_end=' + encodeURIComponent((document.getElementById('f-pe') || {}).value || '');
     qs += '&page_size=500';
 
-    postJSON('/api/tis/refresh-load' + qs, {}).then(function(d) {
+    return postJSON('/api/tis/refresh-load' + qs, {}).then(function(d) {
       btn.disabled = false;
       btn.textContent = prev;
       if (!d.ok) {
         STAT.textContent = '⚠ Load refresh unavailable: ' + (d.message || d.error || 'unknown');
+        if (after) after(new Error(d.message || d.error || 'load failed'));
         return;
       }
       var n = d.with_count || 0;
@@ -4994,11 +4978,34 @@ document.addEventListener('DOMContentLoaded', function() {
       } catch (e) {}
       // Re-render every surface that shows a load badge.
       rerenderAllWithLoad();
-      STAT.textContent = '✓ Load refreshed: ' + n + ' / ' + fetched + ' courses got live counts';
+      STAT.textContent = '✓ Catalog + load refreshed: ' + n + ' / ' + fetched + ' got live counts';
+      if (after) after(null, d);
     })['catch'](function(e) {
       btn.disabled = false;
       btn.textContent = prev;
       STAT.textContent = '⚠ Load refresh failed: ' + e.message;
+      if (after) after(e);
+    });
+  }
+
+  // Single combined button — runs catalog refresh first, then load refresh.
+  // User said the underlying data is stable, so one combined trigger
+  // covers both without making them pick.
+  document.getElementById('btn-refresh-all').addEventListener('click', function() {
+    var btn = document.getElementById('btn-refresh-all');
+    var prev = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Refreshing…';
+    _doRefreshCatalog(function(err) {
+      if (err) {
+        btn.disabled = false;
+        btn.textContent = prev;
+        return;
+      }
+      _doRefreshLoad(btn, function() {
+        btn.disabled = false;
+        btn.textContent = prev;
+      });
     });
   });
 
@@ -5026,8 +5033,10 @@ document.addEventListener('DOMContentLoaded', function() {
     if (e.key === 'Enter') onFilterChangeImmediate();
   });
 
-  // Enrolled
-  document.getElementById('btn-enrolled').addEventListener('click', loadEnrolled);
+  // Enrolled: no longer exposed via a button. The "Ignore TIS enrolled"
+  // tickbox (further down) drives loadEnrolled() — flipping it triggers
+  // the load automatically. User feedback that the explicit button was
+  // redundant noise in the right panel.
 
   // Solve
   document.getElementById('btn-solve').addEventListener('click', solve);
