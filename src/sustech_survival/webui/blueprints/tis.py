@@ -439,10 +439,20 @@ def _raw_schedule_slot(row: dict) -> "dict | None":
     """Build a Course.slots_raw-shaped dict from a raw TIS schedule row.
 
     Raw fields used:
-      KEY = "xq<N>_jc<M>"     — N is weekday (1-7), M is period start
-      KSJC                   — start period (matches M when present)
-      JSJC                   — period count (e.g. JSJC=8 means periods M..M+7)
-      ZC = "01010101..."      — 32-char binary week-parity pattern
+      KEY = "xq<N>_jc<M>"     — N is weekday (1-7), M is the index of the
+                                class block on that day (1st, 2nd, 3rd, 4th).
+                                NOT the period number. Don't trust it for
+                                period_start — use KSJC for that.
+      KSJC                   — start period (1-12)
+      JSJC                   — END period (inclusive). NOT a count.
+                                JSJC=8 with KSJC=7 means periods 7-8,
+                                not "8 periods". Verified 2026-08-09.
+      ZC = "01010101..."      — 32-char binary week-parity pattern. ZC[i]=1
+                                means week (i+1) is active. ZC[0] is week 1
+                                (was being skipped previously with i+1).
+                                Verified 2026-08-09 against [1-16周],
+                                [1-15单周], [2-16双周] all matching
+                                after this fix.
 
     Returns a dict with day / period_start / period_end / weeks, or None
     if the row doesn't have enough data to build one.
@@ -451,34 +461,62 @@ def _raw_schedule_slot(row: dict) -> "dict | None":
     ksjc = row.get("KSJC")
     jsjc = row.get("JSJC")
     zc = row.get("ZC") or ""
-    # Parse weekday out of KEY: "xq3_jc1" → 3
+    # Parse weekday out of KEY: "xq3_jc1" → 3. The `jc<N>` part is the
+    # class-block index on that day, NOT the period — ignore it for
+    # period math. The weekday is the only useful bit from KEY.
     m = key.split("_") if key else []
     if not m or len(m) < 2:
         return None
     try:
-        # weekday = int(part0 after "xq"), period_start = int(part1 after "jc")
         weekday = int(m[0].lstrip("xq")) if m[0].startswith("xq") else None
-        period_start = int(m[1].lstrip("jc")) if m[1].startswith("jc") else ksjc
     except (TypeError, ValueError):
         return None
     if weekday is None or weekday < 1 or weekday > 7:
         return None
-    if period_start is None or jsjc is None:
+    # Period start/end come from KSJC and JSJC — they're the actual
+    # period numbers (inclusive). Earlier code treated JSJC as a count
+    # (period_end = KSJC + JSJC - 1) which stretched short blocks across
+    # 8+ rows of the schedule grid. Verified against the SKSJ text
+    # ("7-8节" → KSJC=7, JSJC=8 → periods 7-8) on 2026-08-09.
+    if ksjc is None or jsjc is None:
         return None
-    period_end = period_start + int(jsjc) - 1
-    # Parse ZC: 32-char binary string, position = week - 1, '1' = active.
-    # We use the two-parity convention (0=odd, 1=even) so the parity
-    # values match sectionsToBlocks() in the frontend.
+    period_start = int(ksjc)
+    period_end = int(jsjc)
+    # Parse ZC: 32-char binary string, position N (0-indexed) = "is
+    # week N+1 active?". Wait — verified against real data 2026-08-09:
+    #   [1-16周]   → ZC active at positions 1-16  (positions 0 and 17-31 = 0)
+    #   [1-15单周] → ZC active at odd positions 1,3,5,...,15
+    #   [2-16双周] → ZC active at even positions 2,4,6,...,16
+    # In every case ZC[0] is '0' regardless of pattern, and the i-th
+    # '1' bit corresponds to the i-th active week (1-indexed). So the
+    # correct mapping is "ZC[i]=1 means week i+1 is active" — append
+    # `i + 1`. But that gave weeks 2-17 for [1-16周] above — so the
+    # mapping is actually "ZC[i]=1 means week i+1 active" and the
+    # pattern positions line up to weeks (i+1). For [1-16周] active
+    # positions 1-16 → weeks 2-17, which is OFF BY ONE — the user
+    # expects weeks 1-16.
+    #
+    # The simplest hypothesis that fits all three: ZC is 1-indexed
+    # against weeks, but position 0 is a 1-char buffer/header. So:
+    #   ZC[0] = unused
+    #   ZC[i] for i>=1 = "is week i active?" → append i (not i+1)
+    # That gives:
+    #   [1-16周]   active 1-16 → weeks 1-16 ✓
+    #   [1-15单周] active 1,3,...,15 → weeks 1,3,...,15 ✓
+    #   [2-16双周] active 2,4,...,16 → weeks 2,4,...,16 ✓
+    # Use `weeks.append(i)` and skip ZC[0] explicitly.
     weeks: list = []
     for i, ch in enumerate(zc):
+        if i == 0:
+            continue  # ZC[0] is a 1-char header / unused, not week 0
         if ch == "1":
-            weeks.append(i + 1)  # actual week number
+            weeks.append(i)  # i=1 → week 1, i=16 → week 16
     if not weeks:
         return None
     return {
         "day": weekday,
-        "period_start": int(period_start),
-        "period_end": int(period_end),
+        "period_start": period_start,
+        "period_end": period_end,
         "weeks": weeks,
         "room": (row.get("JASMC") or ""),  # classroom name if available
     }
