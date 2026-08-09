@@ -75,8 +75,12 @@ select.filter{flex:1;min-width:60px}
 .c-card .nces-link{display:flex;justify-content:flex-end;gap:.75rem;margin-top:.4rem;padding-top:.35rem;border-top:1px solid #1a2030}
 .c-card .nces-link a{color:var(--accent);text-decoration:none;font-size:.7rem;opacity:.85;transition:opacity .12s}
 .c-card .nces-link a:hover{opacity:1;text-decoration:underline}
-.c-card .nces-link a.view-course-link{color:var(--txt);opacity:.75}
-.c-card .nces-link a.view-course-link:hover{color:var(--accent);opacity:1}
+/* "View course page" used to get a subdued white override so it'd
+   feel secondary. But against "Compare in NCES" (accent blue) it ended
+   up looking unrelated — like a stray link from a different card.
+   Drop the override so both links read as the same accent-blue action
+   pair. The text labels ("Compare in NCES" vs "View course page") are
+   enough to distinguish intent. */
 .badge{font-size:.68rem;padding:.08rem .35rem;border-radius:4px;background:#1e2733;color:var(--mut);display:inline-block}
 .badge.must{color:var(--ok)} .badge.opt{color:#c084fc}
 /* flash messages */
