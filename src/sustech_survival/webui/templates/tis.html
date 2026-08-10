@@ -375,6 +375,10 @@ table.grid tbody tr th { background: var(--panel); }
 .ignore-tis-enrolled-wrap{display:flex;align-items:center;gap:.4rem;font-size:.72rem;color:var(--mut);padding:.15rem 0 .4rem;cursor:pointer;user-select:none}
 .ignore-tis-enrolled-wrap input[type=checkbox]{margin:0;cursor:pointer}
 .ignore-tis-enrolled-wrap:hover{color:var(--accent)}
+.enrolled-status{display:block;font-size:.68rem;color:var(--mut);padding:0 0 .3rem;line-height:1.4}
+.enrolled-status.ok{color:var(--ok,#4caf50)}
+.enrolled-status.err{color:var(--bad)}
+.enrolled-status.loading{color:var(--accent)}
 /* Step-3 enrolled block (TIS-side course, not user's pick). Lock badge
    sits inline at the start of the block; a thicker dashed border makes
    the visual distinction survive at small sizes / many overlapping
