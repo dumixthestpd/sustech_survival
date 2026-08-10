@@ -657,6 +657,18 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
 .bid-box .bb-edit::-webkit-outer-spin-button,.bid-box .bb-edit::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;display:none}
 .bid-box.editing .bb-bid,.bid-box.editing .bb-code,.bid-box.editing .bb-name{display:none}
 .bid-box.editing .bb-edit{display:inline-block}
+/* Locked-enrolled bid box (IGNORE_TIS_ENROLLED off) — read-only display
+   of a course the user is enrolled in on TIS but hasn't picked here.
+   Visually distinct (accent-blue gradient + dashed border) so the user
+   sees it's not an editable pick. No .bb-edit input. */
+.bid-box.bid-box-locked{cursor:default;border:1px dashed rgba(91,157,255,.55);background:linear-gradient(135deg,rgba(91,157,255,.10),rgba(91,157,255,.04))}
+.bid-box.bid-box-locked:hover{border-color:rgba(91,157,255,.55);transform:none}
+.bid-box.bid-box-locked .bb-code{color:var(--accent)}
+.bid-box.bid-box-locked .bb-lock{font-size:.72rem;margin-left:.15rem}
+.bid-box.bid-box-locked .bb-locked-note{font-size:.6rem;color:var(--accent);margin-top:.15rem;font-style:italic}
+/* Locked-enrolled bar segment — same accent-blue family so the bar
+   reads as "committed on TIS, not editable" vs the editable picks. */
+.bid-seg.bid-seg-locked{background:repeating-linear-gradient(45deg,rgba(91,157,255,.35),rgba(91,157,255,.35) 6px,rgba(91,157,255,.55) 6px,rgba(91,157,255,.55) 12px);border-right-color:rgba(91,157,255,.7)}
 .bid-arrow{position:fixed;pointer-events:none;z-index:9999;color:var(--accent);font-size:1.2rem;line-height:1}
 .bid-arrow svg{stroke:var(--accent);stroke-width:2;fill:none}
 .bid-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:9998}
