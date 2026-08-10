@@ -5612,7 +5612,17 @@ function updatePickedActionsState() {
     selectAllCb.indeterminate = checked > 0 && checked < total;
   }
   var saveCount = document.getElementById('save-count');
-  if (saveCount) saveCount.textContent = total + (total === 1 ? ' pick' : ' picks');
+  if (saveCount) {
+    var enrolledExtra = (!IGNORE_TIS_ENROLLED && ENROLLED_RWH.size)
+      ? Array.from(ENROLLED_RWH).filter(function(rwh) { return !PICKED[rwh]; }).length
+      : 0;
+    var label = total + (total === 1 ? ' pick' : ' picks');
+    if (enrolledExtra) label += ' + ' + enrolledExtra + ' enrolled';
+    saveCount.textContent = label;
+    saveCount.title = enrolledExtra
+      ? 'In locked mode, TIS-enrolled courses are included in the saved file.'
+      : '';
+  }
   var removeBtn = document.getElementById('btn-remove-selected');
   if (removeBtn) {
     removeBtn.disabled = checked === 0;
@@ -5973,9 +5983,30 @@ function applyPicksFromData(data) {
 
 function savePicksToFile() {
   var keys = Object.keys(PICKED);
-  if (!keys.length) { flash('No sections picked — nothing to save.', 'warn'); return; }
+  // In locked mode, enrolled courses are saveable even with zero picks.
+  var enrolledToAdd = (!IGNORE_TIS_ENROLLED && ENROLLED_RWH.size)
+    ? Array.from(ENROLLED_RWH).filter(function(rwh) { return !PICKED[rwh]; })
+    : [];
+  if (!keys.length && !enrolledToAdd.length) {
+    flash('No sections picked — nothing to save.', 'warn');
+    return;
+  }
   var picksArr = [];
   for (var i = 0; i < keys.length; i++) picksArr.push(PICKED[keys[i]]);
+  // Locked mode (IGNORE_TIS_ENROLLED off): the TIS-enrolled courses are
+  // part of the user's schedule even though they're not in PICKED. Save
+  // them too (tagged __enrolled) so the file round-trips the full
+  // schedule — otherwise a save with 0 picks + 7 enrolled would write an
+  // empty file and the user would lose the enrolled half of the picture.
+  var enrolledAdded = 0;
+  for (var ei = 0; ei < enrolledToAdd.length; ei++) {
+    var item = ENROLLED_DATA[enrolledToAdd[ei]];
+    if (!item) continue;
+    var copy = JSON.parse(JSON.stringify(item));
+    copy.__enrolled = true;
+    picksArr.push(copy);
+    enrolledAdded++;
+  }
   var ts = new Date().toISOString().replace(/[:.]/g, '-').replace(/T/, '_').slice(0, 19);
   var filename = 'tis-picks-' + ts + '.json';
   var blob = new Blob([JSON.stringify({
@@ -5991,7 +6022,9 @@ function savePicksToFile() {
   // not authoritative (the user could rename/move it).
   CURRENT_FILE = { kind: 'saved', name: filename };
   updatePickedActionsState();
-  flash('Saved ' + keys.length + ' pick(s) → ' + filename, 'ok');
+  flash('Saved ' + keys.length + ' pick(s)' +
+    (enrolledAdded ? ' + ' + enrolledAdded + ' enrolled' : '') +
+    ' → ' + filename, 'ok');
 }
 
 // ── Real actions (talk to TIS) ────────────────────────────────────────────
