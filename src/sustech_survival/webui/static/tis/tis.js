@@ -184,6 +184,71 @@ function loadingEnd(id) {
   setTimeout(function() { LB.classList.remove('active'); }, 400);
 }
 
+// ── Sync progress overlay ─────────────────────────────────────────────
+// Distinct from the 2px shimmer bar (which fires for every fetch). The
+// overlay is for TIS-mutating operations (Sync to TIS, Drop all enrolled)
+// so the user can clearly see (a) a real write is in flight, (b) the
+// request is still pending, and (c) the outcome when it returns. Also
+// gates a beforeunload warning so an accidental close/refresh in the
+// middle of a write gets a confirm dialog.
+var SP = document.getElementById('sync-progress');
+var SP_ICON = SP ? SP.querySelector('.sp-icon') : null;
+var SP_TEXT = SP ? SP.querySelector('.sp-text') : null;
+var SP_DETAIL = SP ? SP.querySelector('.sp-detail') : null;
+var SP_TIMER = null;
+var SYNC_IN_FLIGHT = 0;             // nested counter for in-flight mutating ops
+
+function syncStart(msg, detail) {
+  // Wrap the generic shimmer bar too — sync writes hit the network and
+  // would otherwise light the bar without context.
+  var lbId = loadingStart();
+  SYNC_IN_FLIGHT++;
+  if (SP_TIMER) { clearTimeout(SP_TIMER); SP_TIMER = null; }
+  SP.classList.remove('success', 'error');
+  SP_ICON.textContent = '⟳';
+  SP_ICON.classList.add('spin');
+  SP_TEXT.textContent = msg;
+  SP_DETAIL.textContent = detail || 'Don\'t close this tab until complete.';
+  SP.classList.add('active');
+  return lbId;
+}
+
+function syncEnd(lbId, opts) {
+  // opts = { kind: 'success' | 'error' | 'info', text, detail, sticky }
+  // Default: auto-hide after 3s. Pass sticky=true to leave it visible
+  // (the caller's flash message will sit beside it).
+  opts = opts || {};
+  loadingEnd(lbId);
+  if (SYNC_IN_FLIGHT > 0) SYNC_IN_FLIGHT--;
+  if (SYNC_IN_FLIGHT < 0) SYNC_IN_FLIGHT = 0;  // safety
+  var kind = opts.kind || 'info';
+  SP.classList.remove('success', 'error');
+  SP_ICON.classList.remove('spin');
+  SP_ICON.textContent = kind === 'success' ? '✓' : kind === 'error' ? '⚠' : 'ℹ';
+  if (kind === 'success') SP.classList.add('success');
+  else if (kind === 'error') SP.classList.add('error');
+  SP_TEXT.textContent = opts.text || '';
+  SP_DETAIL.textContent = opts.detail || '';
+  if (SP_TIMER) { clearTimeout(SP_TIMER); SP_TIMER = null; }
+  if (!opts.sticky) {
+    SP_TIMER = setTimeout(function() {
+      SP.classList.remove('active', 'success', 'error');
+      SP_TIMER = null;
+    }, 3000);
+  }
+}
+
+// beforeunload — only when a sync write is actually pending. Plain page
+// navigations / tab closes during normal browsing don't trigger this.
+window.addEventListener('beforeunload', function(e) {
+  if (SYNC_IN_FLIGHT > 0) {
+    e.preventDefault();
+    // Modern browsers ignore the return value but still show the dialog.
+    e.returnValue = 'A sync to TIS is in progress. Leaving now may leave partial changes.';
+    return e.returnValue;
+  }
+});
+
 // ── HTTP helpers (transport only — UI updates are caller's job) ──────────
 // No timeout: TIS is frequently slow over VPN, and a hard timeout would
 // abort requests the user knows to expect as slow. The caller owns error
@@ -5962,6 +6027,14 @@ function syncToTIS() {
   }
   if (!confirm('Sync ' + totalPicks + ' bid(s) to TIS? This is a real action — it will overwrite any bids TIS already has.\n\n' + preview)) return;
 
+  // Lock the button so a double-click can't fire a second sync. The
+  // syncStart overlay makes the in-flight status obvious.
+  var btn = document.getElementById('btn-sync-tis');
+  var prevLabel = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '⟳ Syncing…'; }
+  var lbId = syncStart('Syncing ' + totalPicks + ' bid(s) to TIS…',
+                        'This writes to TIS — keep this tab open until done.');
+
   function _sendBatch(where, picks) {
     return postJSON('/api/tis/bids' + sem(), {
       picks: picks, round_code: ROUND_INFO.xkfsdm || '',
@@ -5973,6 +6046,7 @@ function syncToTIS() {
   if (Object.keys(picksByWhere.enrolled).length) batches.push(_sendBatch('enrolled', picksByWhere.enrolled));
 
   Promise.all(batches).then(function(results) {
+    if (btn) { btn.disabled = false; btn.textContent = prevLabel || '📤 Sync to TIS'; }
     var merged = { results: [], sum: 0, over_limit: false };
     for (var i = 0; i < results.length; i++) {
       var r = results[i] || {};
@@ -5981,7 +6055,9 @@ function syncToTIS() {
       merged.results = merged.results.concat(r.results || []);
     }
     if (merged.over_limit) {
-      flash('Over budget: ' + merged.sum + ' > ' + ROUND_INFO.jffs + ' pts. Adjust bids first.', 'err');
+      var msg = 'Over budget: ' + merged.sum + ' > ' + ROUND_INFO.jffs + ' pts. Adjust bids first.';
+      syncEnd(lbId, { kind: 'error', text: msg, detail: 'No bids were committed.', sticky: true });
+      flash(msg, 'err');
       return;
     }
     var okCount = 0; var failed = [];
@@ -5999,10 +6075,26 @@ function syncToTIS() {
       }
       failedSummary = ' · ' + failed.length + ' failed: ' + parts.join('; ');
     }
-    flash('Synced: ' + okCount + '/' + merged.results.length + ' bid(s)' +
-      (merged.sum ? ' · total ' + merged.sum + ' pts' : '') + failedSummary,
-      okCount === merged.results.length ? 'ok' : 'err');
-  })['catch'](function(e) { flash('Network error: ' + e.message, 'err'); });
+    var flashMsg = 'Synced: ' + okCount + '/' + merged.results.length + ' bid(s)' +
+      (merged.sum ? ' · total ' + merged.sum + ' pts' : '') + failedSummary;
+    var allOk = okCount === merged.results.length;
+    syncEnd(lbId, {
+      kind: allOk ? 'success' : 'error',
+      text: flashMsg,
+      detail: allOk ? 'TIS now has your bids.' : 'Some bids did not commit — see flash for details.',
+      sticky: !allOk,
+    });
+    flash(flashMsg, allOk ? 'ok' : 'err');
+  })['catch'](function(e) {
+    if (btn) { btn.disabled = false; btn.textContent = prevLabel || '📤 Sync to TIS'; }
+    syncEnd(lbId, {
+      kind: 'error',
+      text: 'Network error during sync',
+      detail: e.message + ' · TIS state is unknown — refresh the page to check.',
+      sticky: true,
+    });
+    flash('Network error: ' + e.message, 'err');
+  });
 }
 
 function dropAllEnrolled() {
@@ -6020,14 +6112,29 @@ function dropAllEnrolled() {
   var rwhs = [];
   ENROLLED_RWH.forEach(function(rwh) { rwhs.push(rwh); });
   var okCount = 0; var failed = [];
+  var lbId = syncStart('Dropping ' + rwhs.length + ' enrolled section(s)…',
+                       'This writes to TIS — keep this tab open until done.');
+  // Update the overlay label as we go so the user sees incremental progress.
+  function _refreshDetail(done) {
+    SP_TEXT.textContent = 'Dropping ' + rwhs.length + ' section(s) · ' + done + '/' + rwhs.length + ' done';
+  }
+  _refreshDetail(0);
   function _next(i) {
     if (i >= rwhs.length) {
-      flash('Dropped: ' + okCount + '/' + rwhs.length +
-        (failed.length ? ' · ' + failed.length + ' failed' : ''),
-        okCount === rwhs.length ? 'ok' : 'err');
+      var allOk = okCount === rwhs.length;
+      var flashMsg = 'Dropped: ' + okCount + '/' + rwhs.length +
+        (failed.length ? ' · ' + failed.length + ' failed' : '');
+      syncEnd(lbId, {
+        kind: allOk ? 'success' : 'error',
+        text: flashMsg,
+        detail: allOk ? 'TIS no longer has these enrollments.' : 'Some drops did not commit — see flash for details.',
+        sticky: !allOk,
+      });
+      flash(flashMsg, allOk ? 'ok' : 'err');
       loadEnrolled();  // refresh the enrolled set so the next attempt is clean
       return;
     }
+    _refreshDetail(i);
     postJSON('/api/tis/drop' + sem(), { rwh: rwhs[i], dry_run: false }).then(function(r) {
       if (r && r.ok) okCount++;
       else failed.push({ rwh: rwhs[i], message: (r && r.message) || 'unknown' });
