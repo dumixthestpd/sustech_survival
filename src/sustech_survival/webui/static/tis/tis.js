@@ -4467,6 +4467,13 @@ function drawArrow(srcBox, x, y) {
 function _bidIsLockedEnrolled(rwh) {
   return !IGNORE_TIS_ENROLLED && ENROLLED_RWH.has(rwh) && !PICKED[rwh];
 }
+
+// Unified course lookup — picks AND locked-enrolled courses share the
+// same shape (name/code/slots/class_group), so callers don't need to
+// branch on which store the rwh lives in.
+function getCourseByRwh(rwh) {
+  return PICKED[rwh] || ENROLLED_DATA[rwh] || null;
+}
 function _bidRead(rwh) {
   return _bidIsLockedEnrolled(rwh)
     ? (Number(EXISTING_BIDS[rwh]) || 0)
@@ -4680,10 +4687,18 @@ function _bidBoxName(c) {
 }
 
 function showTransferOverlay(srcRwh, dstRwh) {
-  var src = PICKED[srcRwh];
-  var dst = PICKED[dstRwh];
-  var srcBid = Number(PICKED_BIDS[srcRwh]) || 0;
-  var dstBid = Number(PICKED_BIDS[dstRwh]) || 0;
+  // Works for any combination of picks / locked-enrolled — we read
+  // course objects via getCourseByRwh (PICKED ∪ ENROLLED_DATA) and
+  // bid values via _bidRead (PICKED_BIDS for picks, EXISTING_BIDS for
+  // locked-enrolled). This used to only handle pick→pick; drag-to-
+  // transfer involving a locked-enrolled course silently rendered the
+  // overlay with src/dst = undefined.
+  var src = getCourseByRwh(srcRwh);
+  var dst = getCourseByRwh(dstRwh);
+  if (!src || !dst) return;
+  var srcBid = _bidRead(srcRwh);
+  var dstBid = _bidRead(dstRwh);
+  if (srcBid < 2) return;          // need at least 2 to leave 1 behind
   var srcName = _bidBoxName(src) + ' (' + (src.class_group || '?') + ')';
   var dstName = _bidBoxName(dst) + ' (' + (dst.class_group || '?') + ')';
 
@@ -4741,8 +4756,8 @@ function showTransferOverlay(srcRwh, dstRwh) {
         input.style.borderColor = 'var(--bad)';
         return;
       }
-      PICKED_BIDS[srcRwh] = srcBid - amt;
-      PICKED_BIDS[dstRwh] = dstBid + amt;
+      _bidWrite(srcRwh, srcBid - amt);
+      _bidWrite(dstRwh, dstBid + amt);
       cleanup();
       renderBidPanel();
       e.preventDefault();
