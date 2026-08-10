@@ -4103,8 +4103,13 @@ function closeNcesSheet() {
 // + no schedule conflicts. Refreshes the round info on every render.
 function bidShouldShow() {
   if (MODE !== 'personal') return false;
-  if (!Object.keys(PICKED).length) return false;
-  return true;
+  if (Object.keys(PICKED).length) return true;
+  // No picks — but if locked-enrolled exist and locked mode is on, show
+  // the panel so the user can SEE their committed-on-TIS bids (otherwise
+  // flipping "Ignore TIS enrolled" off with zero picks leaves the bid
+  // step completely blank, which looks like the fix didn't work).
+  if (!IGNORE_TIS_ENROLLED && ENROLLED_RWH.size) return true;
+  return false;
 }
 
 function loadRound() {
