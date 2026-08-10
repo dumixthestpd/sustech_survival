@@ -4309,23 +4309,26 @@ function renderBidPanel() {
       '<input class="bb-edit" type="number" min="1" step="1" value="' + bid2 + '"/>' +
       '</div>';
   }
-  // Locked-enrolled (IGNORE_TIS_ENROLLED off) — read-only bid boxes for
-  // courses the user is enrolled in on TIS but hasn't picked here. Shows
-  // their EXISTING_BIDS so the user can see committed budget; no edit
-  // input because the app can't change a TIS-side enrollment bid. Submit
-  // skips them (it only iterates PICKED_BIDS).
+  // Locked-enrolled (IGNORE_TIS_ENROLLED off) — the COURSE is locked
+  // (can't be dropped or replaced — that's what the toggle promises),
+  // but the bid is still editable: TIS accepts bid updates on already-
+  // enrolled sections via the 'enrolled' endpoint (updXkxsByyx), and
+  // submitBids() already routes them there. So we render the same
+  // editable input as a regular pick — just keep the 🔒 badge and
+  // "Already enrolled" note so the user sees the enrollment state.
   if (!IGNORE_TIS_ENROLLED) {
     ENROLLED_RWH.forEach(function(rwh) {
       if (PICKED[rwh]) return;  // already rendered above as a regular pick
       var ec = ENROLLED_DATA[rwh] || {};
       var ebid = Number(EXISTING_BIDS[rwh]) || 0;
       var edisplay = ec.name || ec.section || '';
-      boxes += '<div class="bid-box bid-box-locked" data-rwh="' + escapeHtml(rwh) + '" data-locked-enrolled="1" title="Already enrolled on TIS — locked, no bid change needed">' +
+      boxes += '<div class="bid-box bid-box-locked" data-rwh="' + escapeHtml(rwh) + '" data-locked-enrolled="1" title="Already enrolled on TIS — locked (can\'t drop), bid still editable">' +
         '<div class="bb-code">' + escapeHtml(ec.code || '') +
           (ec.section ? ' · ' + escapeHtml(ec.section) : '') +
           ' <span class="bb-lock">🔒</span></div>' +
         '<div class="bb-bid">' + ebid + '</div>' +
         '<div class="bb-name" title="' + escapeHtml(edisplay) + '">' + escapeHtml(edisplay) + '</div>' +
+        '<input class="bb-edit" type="number" min="1" step="1" value="' + ebid + '"/>' +
         '<div class="bb-locked-note">Already enrolled</div>' +
         '</div>';
     });
@@ -4456,33 +4459,53 @@ function drawArrow(srcBox, x, y) {
 }
 
 // ── Single-click edit ───────────────────────────────────────────────────
+// Picks read/write PICKED_BIDS. Locked-enrolled (ENROLLED_RWH minus
+// PICKED, in locked mode) read/write EXISTING_BIDS — that's the source
+// of truth TIS gave us, and it's what submitBids routes to the
+// 'enrolled' endpoint. The flag is captured into BID_EDIT so the input
+///blur/key handlers know which store to touch.
+function _bidIsLockedEnrolled(rwh) {
+  return !IGNORE_TIS_ENROLLED && ENROLLED_RWH.has(rwh) && !PICKED[rwh];
+}
+function _bidRead(rwh) {
+  return _bidIsLockedEnrolled(rwh)
+    ? (Number(EXISTING_BIDS[rwh]) || 0)
+    : (Number(PICKED_BIDS[rwh]) || 0);
+}
+function _bidWrite(rwh, v) {
+  if (_bidIsLockedEnrolled(rwh)) EXISTING_BIDS[rwh] = v;
+  else PICKED_BIDS[rwh] = v;
+}
+
 function startBidEdit(rwh, box) {
   if (BID_EDIT) cancelBidEdit();
-  var original = Number(PICKED_BIDS[rwh]) || 0;
+  var isLocked = _bidIsLockedEnrolled(rwh);
+  var original = _bidRead(rwh);
   var input = box.querySelector('.bb-edit');
   box.classList.add('editing');
   input.value = String(original);
   input.focus();
   input.select();
-  BID_EDIT = { rwh: rwh, originalBid: original, inputEl: input };
+  BID_EDIT = { rwh: rwh, originalBid: original, inputEl: input, isLockedEnrolled: isLocked };
   input.addEventListener('keydown', onBidEditKey);
   input.addEventListener('input', onBidEditInput);
   input.addEventListener('blur', onBidEditBlur);
 }
 
 // onBidEditInput: live-update the bid total + bar + compact summary as
-// the user types. We don't touch the bb-bid div (it's hidden during edit).
+// the user types. Writes to the right store based on the box's lock state.
 function onBidEditInput() {
   if (!BID_EDIT) return;
   var v = parseInt(BID_EDIT.inputEl.value, 10);
   if (isNaN(v) || v < 1) return;        // keep last valid until user types a real number
-  PICKED_BIDS[BID_EDIT.rwh] = v;
+  _bidWrite(BID_EDIT.rwh, v);
   updateBidTotals();
 }
 
 // updateBidTotals: refresh the live bits of the bid panel (header total,
 // segment bar, compact right-column summary) without rebuilding the boxes
-// (which would destroy the edit input).
+// (which would destroy the edit input). Includes locked-enrolled segments
+// in the bar so editing a locked-enrolled bid reflects immediately.
 function updateBidTotals() {
   var jffs = ROUND_INFO.jffs;
   var total = bidTotal();
@@ -4500,6 +4523,15 @@ function updateBidTotals() {
       var pct = (bid / scale) * 100;
       segs += '<div class="bid-seg" data-ix="' + (i % 8) + '" data-rwh="' +
         escapeHtml(keys[i]) + '" style="width:' + pct.toFixed(2) + '%">' + bid + '</div>';
+    }
+    if (!IGNORE_TIS_ENROLLED) {
+      ENROLLED_RWH.forEach(function(rwh) {
+        if (PICKED[rwh]) return;
+        var ebid = Number(EXISTING_BIDS[rwh]) || 0;
+        var pct = (ebid / scale) * 100;
+        segs += '<div class="bid-seg bid-seg-locked" data-rwh="' + escapeHtml(rwh) +
+                '" style="width:' + pct.toFixed(2) + '%">🔒' + ebid + '</div>';
+      });
     }
     BID_BAR.innerHTML = segs;
   }
@@ -4584,8 +4616,8 @@ function updateBidStat() {
 function onBidEditKey(evt) {
   if (!BID_EDIT) return;
   if (evt.key === 'Escape') {
-    // Revert: undo any in-flight PICKED_BIDS updates and refresh
-    PICKED_BIDS[BID_EDIT.rwh] = BID_EDIT.originalBid;
+    // Revert: undo any in-flight writes and refresh
+    _bidWrite(BID_EDIT.rwh, BID_EDIT.originalBid);
     var rwhEsc = BID_EDIT.rwh;
     cancelBidEdit();
     renderBidPanel();
@@ -4596,9 +4628,9 @@ function onBidEditKey(evt) {
     var valid = !isNaN(v) && v >= 1;
     var rwhEnter = BID_EDIT.rwh;
     if (valid) {
-      PICKED_BIDS[rwhEnter] = v;
+      _bidWrite(rwhEnter, v);
     } else {
-      PICKED_BIDS[rwhEnter] = BID_EDIT.originalBid;
+      _bidWrite(rwhEnter, BID_EDIT.originalBid);
     }
     cancelBidEdit();
     renderBidPanel();
@@ -4608,7 +4640,7 @@ function onBidEditKey(evt) {
 }
 
 function onBidEditBlur() {
-  // Same commit-or-revert semantics as Enter. Without this, PICKED_BIDS
+  // Same commit-or-revert semantics as Enter. Without this, the store
   // was getting the new value from onBidEditInput (so the bar updated)
   // while the visible number reverted to originalBid on blur — leaving
   // the display out of sync with the bar.
@@ -4617,10 +4649,10 @@ function onBidEditBlur() {
   var valid = !isNaN(v) && v >= 1;
   var rwh = BID_EDIT.rwh;
   if (valid) {
-    PICKED_BIDS[rwh] = v;
+    _bidWrite(rwh, v);
   } else {
     // Invalid input (empty, zero, negative, NaN) — revert to original
-    PICKED_BIDS[rwh] = BID_EDIT.originalBid;
+    _bidWrite(rwh, BID_EDIT.originalBid);
   }
   cancelBidEdit();
   renderBidPanel();
@@ -4738,12 +4770,24 @@ function submitBids() {
   // courses go to upd_xkxsBygwc. The previous code hardcoded 'cart' for
   // everything, so bids on already-enrolled sections silently failed
   // (TIS rejected the request because the rwh wasn't in cart state).
+  //
+  // Locked-enrolled (ENROLLED_RWH minus PICKED) aren't in PICKED, so the
+  // PICKED_BIDS iteration below skips them — we explicitly add them from
+  // EXISTING_BIDS (the in-memory store the user can edit in the bid
+  // panel) so changes to a locked-enrolled bid actually go out.
   var picksByWhere = { cart: {}, enrolled: {} };
   for (var k in PICKED_BIDS) {
     if (PICKED_BIDS.hasOwnProperty(k) && PICKED[k]) {
       var w = ENROLLED_RWH.has(k) ? 'enrolled' : 'cart';
       picksByWhere[w][k] = PICKED_BIDS[k];
     }
+  }
+  if (!IGNORE_TIS_ENROLLED) {
+    ENROLLED_RWH.forEach(function(rwh) {
+      if (PICKED[rwh]) return;                    // already handled above
+      if (EXISTING_BIDS[rwh] == null) return;      // no bid known — skip
+      picksByWhere.enrolled[rwh] = EXISTING_BIDS[rwh];
+    });
   }
   var totalPicks = Object.keys(picksByWhere.cart).length +
                     Object.keys(picksByWhere.enrolled).length;
