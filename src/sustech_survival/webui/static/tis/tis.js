@@ -2955,6 +2955,10 @@ function loadEnrolled() {
     if (d.error) {
       console.warn('enrolled load failed:', d.error);
       setStatus('⚠️ Enrolled load failed: ' + escapeHtml(d.error), 'err');
+      // Still re-render surfaces so any stale locked UI gets cleared.
+      renderPicked();
+      renderGrid3();
+      renderBidPanel();
       return;
     }
     var list = d.enrolled || [];
@@ -2966,6 +2970,7 @@ function loadEnrolled() {
     }
     renderPicked();           // 🔒 badges on already-loaded picks
     renderGrid3();            // step-3 weekly grid re-renders with locks
+    renderBidPanel();         // locked-enrolled boxes appear in step 5
     if (ENROLLED_RWH.size === 0) {
       setStatus('No TIS-enrolled courses for this semester');
     } else {
@@ -4152,9 +4157,20 @@ function computePickedConflicts() {
 }
 
 function bidTotal() {
+  // Sum picks the user is actively bidding on. Locked-enrolled courses
+  // (ENROLLED_RWH - PICKED, when IGNORE_TIS_ENROLLED is off) are added
+  // here so the displayed budget reflects the user's total committed
+  // points — picks + already-enrolled. They still don't get submitted
+  // because submitBids() iterates PICKED_BIDS directly, not this total.
   var s = 0;
   for (var k in PICKED_BIDS) {
     if (PICKED_BIDS.hasOwnProperty(k)) s += Number(PICKED_BIDS[k]) || 0;
+  }
+  if (!IGNORE_TIS_ENROLLED) {
+    ENROLLED_RWH.forEach(function(rwh) {
+      if (PICKED[rwh]) return;          // already counted via PICKED_BIDS
+      s += Number(EXISTING_BIDS[rwh]) || 0;
+    });
   }
   return s;
 }
@@ -4244,10 +4260,13 @@ function renderBidPanel() {
   }
 
   // Bar
-  if (!keys.length) {
+  if (!keys.length && (!ENROLLED_RWH.size || IGNORE_TIS_ENROLLED)) {
     BID_BAR.innerHTML = '';
   } else {
-    // Use max(jffs, total) for the scale so over-budget is still visible
+    // Use max(jffs, total) for the scale so over-budget is still visible.
+    // Include locked-enrolled EXISTING_BIDS in total so the bar reflects
+    // committed budget; otherwise the user only sees their picks and the
+    // bar hides the enrolled portion.
     var scale = Math.max(jffs || 0, total, 1);
     var segs = '';
     for (var i = 0; i < keys.length; i++) {
@@ -4257,6 +4276,15 @@ function renderBidPanel() {
       var course = PICKED[rwh];
       segs += '<div class="bid-seg" data-ix="' + (i % 8) + '" data-rwh="' + escapeHtml(rwh) +
               '" style="width:' + pct.toFixed(2) + '%">' + bid + '</div>';
+    }
+    if (!IGNORE_TIS_ENROLLED) {
+      ENROLLED_RWH.forEach(function(rwh) {
+        if (PICKED[rwh]) return;
+        var ebid = Number(EXISTING_BIDS[rwh]) || 0;
+        var pct = (ebid / scale) * 100;
+        segs += '<div class="bid-seg bid-seg-locked" data-rwh="' + escapeHtml(rwh) +
+                '" style="width:' + pct.toFixed(2) + '%">🔒' + ebid + '</div>';
+      });
     }
     BID_BAR.innerHTML = segs;
   }
@@ -4275,6 +4303,27 @@ function renderBidPanel() {
       '<div class="bb-name" title="' + escapeHtml(displayName) + '">' + escapeHtml(displayName) + '</div>' +
       '<input class="bb-edit" type="number" min="1" step="1" value="' + bid2 + '"/>' +
       '</div>';
+  }
+  // Locked-enrolled (IGNORE_TIS_ENROLLED off) — read-only bid boxes for
+  // courses the user is enrolled in on TIS but hasn't picked here. Shows
+  // their EXISTING_BIDS so the user can see committed budget; no edit
+  // input because the app can't change a TIS-side enrollment bid. Submit
+  // skips them (it only iterates PICKED_BIDS).
+  if (!IGNORE_TIS_ENROLLED) {
+    ENROLLED_RWH.forEach(function(rwh) {
+      if (PICKED[rwh]) return;  // already rendered above as a regular pick
+      var ec = ENROLLED_DATA[rwh] || {};
+      var ebid = Number(EXISTING_BIDS[rwh]) || 0;
+      var edisplay = ec.name || ec.section || '';
+      boxes += '<div class="bid-box bid-box-locked" data-rwh="' + escapeHtml(rwh) + '" data-locked-enrolled="1" title="Already enrolled on TIS — locked, no bid change needed">' +
+        '<div class="bb-code">' + escapeHtml(ec.code || '') +
+          (ec.section ? ' · ' + escapeHtml(ec.section) : '') +
+          ' <span class="bb-lock">🔒</span></div>' +
+        '<div class="bb-bid">' + ebid + '</div>' +
+        '<div class="bb-name" title="' + escapeHtml(edisplay) + '">' + escapeHtml(edisplay) + '</div>' +
+        '<div class="bb-locked-note">Already enrolled</div>' +
+        '</div>';
+    });
   }
   BID_BOXES.innerHTML = boxes;
   attachBidBoxHandlers();
