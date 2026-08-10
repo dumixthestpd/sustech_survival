@@ -2156,6 +2156,18 @@ function _sectionsOverlapLite(a, b) {
 
 function sectionsToBlocks(sections) {
   var allBlocks = [];
+  var seenKeys = {};  // dedupe by (day, periodStart, periodEnd, weeks) so a
+                      // course with N raw schedule-block rows describing
+                      // the same slot (TIS returns duplicates for
+                      // lecture+lab+etc. that all share the same time)
+                      // renders as ONE block, not N thin slices.
+                      // Without this, enrolled courses with duplicate
+                      // raw slots get split into multiple columns by
+                      // buildPackedItems — the user sees a thin slice
+                      // instead of the full square. Picked sections
+                      // (catalog format) are already deduped upstream
+                      // but go through the same normalization so the
+                      // two code paths stay uniform.
   for (var pi = 0; pi < sections.length; pi++) {
     var c = sections[pi];
     var color = colorFor(c.code);
@@ -2190,6 +2202,11 @@ function sectionsToBlocks(sections) {
       if (typeof weeks === 'string') {
         weeks = weeks.split(',').map(function(x) { return parseInt(x, 10); });
       }
+      // Canonical dedupe key — sort weeks so [0,1] and [1,0] collide.
+      var dedupeKey = s.day + ':' + s.period_start + ':' + s.period_end + ':' +
+                      weeks.slice().sort(function(a, b) { return a - b; }).join(',');
+      if (seenKeys[dedupeKey]) continue;
+      seenKeys[dedupeKey] = true;
       // enrolled flag flows through from the section shape so renderGridBlocks
       // can color the legend swatch differently (and pass it down to
       // _tagEnrolled for the block-level lock styling).
@@ -2442,6 +2459,9 @@ function renderGrid() {
   // user can SEE which slots are off-limits.
   applyBlockedVisual(GRID_ODD);
   applyBlockedVisual(GRID_EVEN);
+  // Right-click on a course block → action menu (NCES page / remove).
+  attachBlockContextMenu(GRID_ODD);
+  attachBlockContextMenu(GRID_EVEN);
 }
 
 // Step 3 weekly grid — combines picked + TIS-enrolled into one view so
@@ -2528,6 +2548,11 @@ function renderGrid3() {
   _tagEnrolled(GRID_EVEN_3);
   applyBlockedVisual(GRID_ODD_3);
   applyBlockedVisual(GRID_EVEN_3);
+  // Right-click on a course block → action menu (NCES page / remove).
+  // Picks show both options; enrolled blocks show only the NCES link
+  // (you can't remove enrolled from the app — it's driven by TIS).
+  attachBlockContextMenu(GRID_ODD_3);
+  attachBlockContextMenu(GRID_EVEN_3);
 }
 
 // Week-detail mode for a blocked cell:
@@ -2659,6 +2684,115 @@ function showBlockPanel(key, day, period, clientX, clientY) {
 
 function hideBlockPanel() {
   var p = document.getElementById('block-panel');
+  if (p && p.parentNode) p.parentNode.removeChild(p);
+}
+
+// ── Course-block context menu (step-1 / step-3 grids) ────────────────────
+// Right-click on a .blk[data-rwh] shows a small action menu:
+//   - View NCES course page ↗  (always)
+//   - Remove course from schedule  (only for picks; enrolled blocks
+//     can't be removed from the app — they're driven by TIS)
+// The grid tbody is wired once with ctxWired=1 so re-renders don't
+// stack handlers. Mirrors the existing cell-blocker panel pattern
+// (show/hide, click-outside, Escape) for consistency.
+function attachBlockContextMenu(tbody) {
+  if (!tbody || tbody.dataset.blkCtxWired === '1') return;
+  tbody.dataset.blkCtxWired = '1';
+  tbody.addEventListener('contextmenu', function(e) {
+    var blk = e.target.closest('.blk[data-rwh]');
+    if (!blk) return;
+    var rwh = blk.dataset.rwh || '';
+    if (!rwh) return;
+    e.preventDefault();
+    showBlockActionMenu(rwh, e.clientX, e.clientY);
+  });
+}
+
+function showBlockActionMenu(rwh, clientX, clientY) {
+  hideBlockActionMenu();
+  // Resolve the course: PICKED wins (user-owned state), fall back to
+  // enrolled. Both provide {code, name, teachers[]} for the NCES link
+  // and the menu header.
+  var course = PICKED[rwh] || ENROLLED_DATA[rwh] || null;
+  var code = course && course.code ? course.code : '';
+  var name = course && course.name ? course.name : '';
+  var teachers = course && course.teachers ? course.teachers : [];
+  var teacherKey = teachers.join(',');
+
+  // NCES link: prefer cached nces_id from a prior card hover (briefFetch
+  // populated BRIEF_CACHE[code::teacher]); fall back to /search?q=code
+  // which always works and is what the card link starts as.
+  var cached = BRIEF_CACHE[code + '::' + teacherKey];
+  var ncesHref = (cached && cached.available && cached.nces_id)
+    ? 'https://ncesnext.com/course/' + cached.nces_id + '/'
+    : 'https://ncesnext.com/search?q=' + encodeURIComponent(code);
+
+  var isPick = !!PICKED[rwh];
+
+  var panel = document.createElement('div');
+  panel.id = 'block-action-panel';
+  panel.className = 'block-panel';  // reuse the same styling
+
+  var html = '<div class="bp-header">' + escapeHtml(code + (name ? ' · ' + name : '')) + '</div>';
+  html += '<a class="bp-opt" href="' + ncesHref + '" target="_blank" rel="noopener">' +
+    '<span class="bp-label"><b>View NCES course page ↗</b><br>' +
+    '<span style="font-size:.65rem;color:var(--mut)">opens in new tab</span></span>' +
+    '</a>';
+  if (isPick) {
+    html += '<button class="bp-opt" data-action="remove">' +
+      '<span class="bp-label"><b>Remove course from schedule</b><br>' +
+      '<span style="font-size:.65rem;color:var(--mut)">drop this section from your picks</span></span>' +
+      '</button>';
+  }
+
+  panel.innerHTML = html;
+  document.body.appendChild(panel);
+
+  // Position near cursor; clamp to viewport
+  var rect = panel.getBoundingClientRect();
+  var pad = 8;
+  var x = clientX + 4, y = clientY + 4;
+  if (x + rect.width  > window.innerWidth  - pad) x = window.innerWidth  - rect.width  - pad;
+  if (y + rect.height > window.innerHeight - pad) y = window.innerHeight - rect.height - pad;
+  if (x < pad) x = pad;
+  if (y < pad) y = pad;
+  panel.style.left = x + 'px';
+  panel.style.top  = y + 'px';
+
+  // Wire actions
+  var removeBtn = panel.querySelector('[data-action="remove"]');
+  if (removeBtn) {
+    removeBtn.addEventListener('click', function(ev) {
+      ev.stopPropagation();
+      hideBlockActionMenu();
+      removePicked(rwh);
+      flash('Removed ' + code + ' from schedule', 'ok');
+    });
+  }
+
+  // Close on outside click / Escape
+  setTimeout(function() {
+    function onOutside(ev) {
+      if (panel && !panel.contains(ev.target)) hideBlockActionMenu();
+      document.removeEventListener('click', onOutside, true);
+      document.removeEventListener('contextmenu', onOutside, true);
+    }
+    function onEsc(ev) {
+      if (ev.key === 'Escape') {
+        hideBlockActionMenu();
+        document.removeEventListener('keydown', onEsc);
+        document.removeEventListener('click', onOutside, true);
+        document.removeEventListener('contextmenu', onOutside, true);
+      }
+    }
+    document.addEventListener('click', onOutside, true);
+    document.addEventListener('contextmenu', onOutside, true);
+    document.addEventListener('keydown', onEsc);
+  }, 0);
+}
+
+function hideBlockActionMenu() {
+  var p = document.getElementById('block-action-panel');
   if (p && p.parentNode) p.parentNode.removeChild(p);
 }
 
@@ -2805,11 +2939,22 @@ function loadEnrolled() {
   // The lock banner that used to live in #enrolled-out is also gone —
   // the toggle's title text + 🔒 badges in the pick list + locked-mode
   // blue blocks in step 3 grid are the remaining indicators.
+  // A small #enrolled-status line under the toggle gives the user
+  // immediate feedback that the refresh actually ran (and surfaces
+  // TIS-side failures instead of failing silently in the console).
+  var statusEl = document.getElementById('enrolled-status');
+  function setStatus(html, cls) {
+    if (!statusEl) return;
+    statusEl.className = 'enrolled-status' + (cls ? ' ' + cls : '');
+    statusEl.innerHTML = html;
+  }
+  setStatus('⏳ Loading TIS enrolled…', 'loading');
   getJSON('/api/tis/enrolled' + sem()).then(function(d) {
     ENROLLED_RWH = new Set();
     ENROLLED_DATA = {};
     if (d.error) {
       console.warn('enrolled load failed:', d.error);
+      setStatus('⚠️ Enrolled load failed: ' + escapeHtml(d.error), 'err');
       return;
     }
     var list = d.enrolled || [];
@@ -2821,8 +2966,16 @@ function loadEnrolled() {
     }
     renderPicked();           // 🔒 badges on already-loaded picks
     renderGrid3();            // step-3 weekly grid re-renders with locks
+    if (ENROLLED_RWH.size === 0) {
+      setStatus('No TIS-enrolled courses for this semester');
+    } else {
+      setStatus(IGNORE_TIS_ENROLLED
+        ? ENROLLED_RWH.size + ' TIS-enrolled (ignored)'
+        : '🔒 ' + ENROLLED_RWH.size + ' TIS-enrolled (locked)', 'ok');
+    }
   })['catch'](function(e) {
     console.warn('enrolled load error:', e.message);
+    setStatus('⚠️ Enrolled load error: ' + escapeHtml(e.message), 'err');
   });
 }
 
@@ -5178,6 +5331,7 @@ function initPickedActions() {
       '<input type="checkbox" id="ignore-tis-enrolled" checked>' +
       '<span>Ignore TIS enrolled</span>' +
     '</label>' +
+    '<div id="enrolled-status" class="enrolled-status"></div>' +
     '<button class="drop-all-tis-btn" id="btn-drop-all" title="Drop every currently-enrolled section on TIS (destructive — will prompt for confirmation)">🗑 Drop all enrolled courses in TIS</button>';
 
   // Wire the toggle. Three things flip when the user changes this:
