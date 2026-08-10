@@ -125,6 +125,20 @@ select.filter{flex:1;min-width:60px}
 #loading-bar .lb-fill{height:100%;width:0;background:linear-gradient(90deg,var(--accent),#7fb0ff,var(--accent));background-size:200% 100%;animation:lb-shimmer 1.2s ease infinite;border-radius:0 2px 2px 0}
 @keyframes lb-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 
+/* sync progress overlay — for TIS-mutating ops (Sync to TIS, Drop all
+   enrolled). Sticks at top-center so the user can't miss it and knows
+   not to close the tab mid-operation. Filled state appears for ~3s with
+   the success/failure summary, then auto-hides. */
+#sync-progress{position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:10001;margin-top:0;padding:.55rem 1.2rem;border-radius:0 0 10px 10px;background:var(--panel);border:1px solid #2a3340;border-top:0;color:var(--fg);font-size:.85rem;box-shadow:0 6px 22px rgba(0,0,0,.45);display:flex;align-items:center;gap:.6rem;pointer-events:none;opacity:0;transition:opacity .2s,transform .2s;min-width:280px;max-width:520px}
+#sync-progress.active{opacity:1;transform:translateX(-50%) translateY(0)}
+#sync-progress.success{border-color:#3a8a4a;background:linear-gradient(180deg,#1a3a22 0%,var(--panel) 70%)}
+#sync-progress.error{border-color:#8a3a3a;background:linear-gradient(180deg,#3a1a1a 0%,var(--panel) 70%)}
+#sync-progress .sp-icon{font-size:1.1rem;line-height:1}
+#sync-progress .sp-icon.spin{animation:sp-spin 1s linear infinite}
+#sync-progress .sp-label{flex:1;line-height:1.3}
+#sync-progress .sp-label .sp-detail{display:block;font-size:.72rem;color:var(--mut);margin-top:.15rem}
+@keyframes sp-spin{0%{transform:rotate(0)}100%{transform:rotate(360deg)}}
+
 /* schedule grid */
 .grid-wrap{padding:.7rem 1rem}
 table.grid{border-collapse:collapse;width:100%;font-size:.74rem;table-layout:fixed}
@@ -693,6 +707,7 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
 </head>
 <body>
 <div id="loading-bar"><div class="lb-fill"></div></div>
+<div id="sync-progress" role="status" aria-live="polite"><span class="sp-icon spin">⟳</span><span class="sp-label"><span class="sp-text"></span><span class="sp-detail"></span></span></div>
 <div id="flash-zone" style="position:fixed;top:8px;right:8px;z-index:9999;display:flex;flex-direction:column;gap:4px;pointer-events:none"></div>
 <header>
   <a href="/">← Home</a>
