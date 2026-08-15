@@ -19,6 +19,162 @@ from sustech_survival.tis.classroom.schema import (
 )
 
 
+# ── Schedule-export dataclasses ────────────────────────────────────────────
+#
+# These types are the structured form of "where/when a class meets" —
+# the unit of time that the TUI schedule grid, the web UI course picker,
+# and any downstream consumer (CalDAV export, .ics generator, etc.)
+# should work with. They replace ad-hoc parsing of `schedule_str` and
+# the kcxx HTML.
+
+
+@dataclass(frozen=True)
+class SectionSpan:
+    """One weekly meeting of one section — structured.
+
+    A single Course can have multiple spans (e.g., Mon 3-4 + Wed 7-8).
+    The TUI grid places one cell per span; the web UI picker uses the
+    spans to fill the time slots deterministically.
+    """
+    day: int                # 1=Monday, 7=Sunday
+    day_name: str           # "周一"
+    period_start: int       # 1
+    period_end: int         # 4 (inclusive)
+    weeks: tuple[int, ...]  # weeks the meeting happens (1..16)
+    weeks_label: str        # "1-16 周" or "1-8,10-16 周" — human-readable
+    room: str               # "智华楼102"
+    teacher: str            # "张三"
+
+
+@dataclass(frozen=True)
+class SectionTable:
+    """All meeting spans of one section, with parent-course metadata."""
+    code: str
+    name: str
+    section_name: str
+    class_group: str
+    teachers: tuple[str, ...]
+    credits: float
+    total_hours: float
+    nature: str
+    campus: str
+    spans: tuple[SectionSpan, ...]
+
+    def to_markdown(self) -> str:
+        """Render as a markdown bullet list — TUI / chat-friendly."""
+        lines = [
+            f"## {self.code} — {self.name}",
+            f"**{self.section_name}** | 班号 {self.class_group} | "
+            f"{self.nature} | {self.campus} | "
+            f"{self.credits} 学分 / {self.total_hours} 学时",
+            f"教师: {', '.join(self.teachers) or '(unknown)'}",
+            "",
+            "**Meetings:**",
+        ]
+        if not self.spans:
+            lines.append("  (no scheduled meetings)")
+        else:
+            for s in self.spans:
+                p = (f"{s.period_start}-{s.period_end}节"
+                     if s.period_start != s.period_end
+                     else f"{s.period_start}节")
+                lines.append(
+                    f"  - {s.day_name} 第{p} ({s.weeks_label}) "
+                    f"@ {s.room or '(no room)'}"
+                    f"{' / ' + s.teacher if s.teacher else ''}"
+                )
+        return "\n".join(lines)
+
+    def to_json(self) -> str:
+        """JSON-serializable dict (for web UI / API consumers)."""
+        import json as _json
+        return _json.dumps({
+            "code": self.code, "name": self.name,
+            "section_name": self.section_name,
+            "class_group": self.class_group,
+            "teachers": list(self.teachers),
+            "credits": self.credits, "total_hours": self.total_hours,
+            "nature": self.nature, "campus": self.campus,
+            "spans": [
+                {"day": s.day, "day_name": s.day_name,
+                 "period_start": s.period_start, "period_end": s.period_end,
+                 "weeks": list(s.weeks), "weeks_label": s.weeks_label,
+                 "room": s.room, "teacher": s.teacher}
+                for s in self.spans
+            ],
+        }, ensure_ascii=False, indent=2)
+
+
+def _format_weeks_label(weeks: list[int]) -> str:
+    """Compact human label for a weeks list.
+
+    [1,2,3,4,5,6,7,8,10,11,12,13,14,15,16] → "1-8,10-16 周"
+    [1,3,5,7,9]                       → "1,3,5,7,9 周"
+    []                                 → ""
+    """
+    if not weeks:
+        return ""
+    sorted_w = sorted(set(int(w) for w in weeks))
+    ranges: list[str] = []
+    start = prev = sorted_w[0]
+    for w in sorted_w[1:]:
+        if w == prev + 1:
+            prev = w
+        else:
+            ranges.append(f"{start}-{prev}" if start != prev else str(start))
+            start = prev = w
+    ranges.append(f"{start}-{prev}" if start != prev else str(start))
+    return ",".join(ranges) + " 周"
+
+
+def export_schedule_table(
+    courses: list,
+    *,
+    format: str = "markdown",
+) -> str:
+    """Build a schedule table for many sections — TUI / web UI input.
+
+    Args:
+        courses: list of `Course` objects (any number, any course)
+        format: "markdown" (default), "json", or "csv"
+
+    Returns:
+        formatted string for the chosen format. Markdown is the
+        human-readable default; JSON is machine-readable (one object
+        per course); CSV is import-friendly (one row per section-span).
+
+    Example:
+        >>> from sustech_survival.selectcourse import selectcourse as sc
+        >>> from sustech_survival.selectcourse.course import export_schedule_table
+        >>> client = sc.SelectCourseClient(xn="2025-2026", xq="2")
+        >>> courses = client.search_campus(keyword="MSE306")
+        >>> print(export_schedule_table(courses))
+    """
+    tables = [c.export_sections_table() for c in courses]
+    if format == "json":
+        import json as _json
+        return _json.dumps(
+            [_json.loads(t.to_json()) for t in tables],
+            ensure_ascii=False, indent=2,
+        )
+    if format == "csv":
+        rows = ["code,name,section,class_group,day,day_name,"
+                "period_start,period_end,weeks_label,room,teacher"]
+        for t in tables:
+            if not t.spans:
+                rows.append(f"{t.code},{t.name},{t.section_name},"
+                            f"{t.class_group},,,,,,")
+            for s in t.spans:
+                rows.append(
+                    f"{t.code},{t.name},{t.section_name},{t.class_group},"
+                    f"{s.day},{s.day_name},{s.period_start},{s.period_end},"
+                    f'"{s.weeks_label}",{s.room},{s.teacher}'
+                )
+        return "\n".join(rows)
+    # markdown default
+    return "\n\n---\n\n".join(t.to_markdown() for t in tables)
+
+
 @dataclass
 class Course:
     """One course offering from the TIS campus schedule API."""
@@ -68,6 +224,56 @@ class Course:
             p_str = f"{ps}-{pe}" if ps != pe else f"{ps}"
             parts.append(f"{day} 第{p_str}节 ({s['room']})")
         return "; ".join(parts)
+
+    @property
+    def spans(self) -> tuple:
+        """One `SectionSpan` per weekly meeting for this section.
+
+        Structured form of `schedule_str`. The TUI grid places one cell
+        per span; the web UI picker uses spans to fill time slots
+        deterministically (no more re-parsing `kcxx` HTML).
+
+        Returns a tuple of `SectionSpan` (frozen dataclass — safe to
+        hash, safe to put in sets/dicts if needed).
+        """
+        out = []
+        for s in self.slots_raw:
+            weeks_raw = s.get("weeks") or s.get("week_list") or []
+            weeks = tuple(int(w) for w in weeks_raw)
+            day = int(s.get("day") or 0)
+            ps = int(s.get("period_start") or 0)
+            pe = int(s.get("period_end") or 0)
+            out.append(SectionSpan(
+                day=day,
+                day_name=DAY_NAMES_ZH[day] if 1 <= day <= 7 else f"day{day}",
+                period_start=ps,
+                period_end=pe,
+                weeks=weeks,
+                weeks_label=_format_weeks_label(list(weeks)),
+                room=str(s.get("room") or ""),
+                teacher=str(s.get("teacher") or ""),
+            ))
+        return tuple(out)
+
+    def export_sections_table(self) -> SectionTable:
+        """Wrap this section's spans in a `SectionTable` for export.
+
+        Use case: the course-grid web UI consumes this directly to fill
+        its grid; the TUI uses `to_markdown()` for chat-friendly output;
+        CalDAV/.ics generators consume `to_json()`.
+        """
+        return SectionTable(
+            code=self.code,
+            name=self.name,
+            section_name=self.section_name or self.name,
+            class_group=self.class_group,
+            teachers=tuple(self.teachers),
+            credits=float(self.credits or 0),
+            total_hours=float(self.total_hours or 0),
+            nature=self.nature,
+            campus=self.campus,
+            spans=self.spans,
+        )
 
     @classmethod
     def from_api(cls, raw: dict) -> "Course":

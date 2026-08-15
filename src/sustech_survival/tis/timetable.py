@@ -269,88 +269,75 @@ def describe_section(sec: dict) -> str:
     return " | ".join(parts)
 
 
-# ── CLI ──────────────────────────────────────────────────────────────────────
-def main():
-    parser = argparse.ArgumentParser(description="SUSTech timetable solver")
-    parser.add_argument("courses", nargs="*", help="Course codes (e.g. MSE306 SS143)")
-    parser.add_argument("--exclude", "-e", action="append", default=[],
-                        help="Exclude course code from search")
-    parser.add_argument("--codes-file",
-                        help="File with one course code per line")
-    parser.add_argument("--semester", default="2025-2026-2",
-                        help="Format: YYYY-YYYY-Q (default: 2025-2026-2)")
-    parser.add_argument("--max", type=int, default=100)
-    parser.add_argument("--json", action="store_true")
-    parser.add_argument("--block", "-b", action="append", default=[],
-                        help="Block a time slot: DAY:PERIODS (e.g. FRI:9-10, MON:5,6)")
-    args = parser.parse_args()
 
-    # Load codes
-    codes: list[str] = list(args.courses)
-    if args.codes_file:
-        with open(args.codes_file) as f:
-            codes += [l.strip() for l in f if l.strip()]
-    codes = [c for c in codes if c not in args.exclude]
-    if not codes:
-        print("❌ No courses specified", file=sys.stderr)
-        sys.exit(1)
-
-    # Parse blocked slots
-    blocked: list[tuple[int, set[int]]] = []
-    for b in args.block:
-        try:
-            blocked.append(parse_block(b))
-        except ValueError as e:
-            print(f"❌ {e}", file=sys.stderr)
-            sys.exit(1)
-
-    parts = args.semester.rsplit("-", 1)
-    xn, xq = parts[0], parts[1]
-
-    print(f"🔑 Checking session...", file=sys.stderr)
-    auth = TISAuth(skill_dir=str(SKILL_ROOT))
-    ok, reason = auth.ensure()
-    if not ok:
-        print("❌ Login failed", file=sys.stderr)
-        sys.exit(1)
-
-    print(f"📡 Fetching sections ({xn}-{xq})...", file=sys.stderr)
-    for code in codes:
-        print(f"  {code}: ", file=sys.stderr, end="", flush=True)
-
-    sections = fetch_sections(codes, auth, xn, xq)
-
-    for code in codes:
-        n = len(sections.get(code, []))
-        print(f"{n} sections", file=sys.stderr, flush=True)
-
-    all_empty = all(len(sections.get(c, [])) == 0 for c in codes)
-    if all_empty:
-        print(f"⚠️  No sections found: {', '.join(codes)}", file=sys.stderr)
-        print("❌ Nothing to schedule.", file=sys.stderr)
-        sys.exit(1)
-
-    blocked_desc = ", ".join(f"{DAY_LABELS[d]}:{','.join(str(p) for p in sorted(ps))}"
-                              for d, ps in blocked)
-    if blocked:
-        print(f"🚫 Blocked: {blocked_desc}", file=sys.stderr)
-    results = solve(sections, max_results=args.max, blocked=blocked)
-
-    if args.json:
-        out = [{"schedule": r, "total_credits": sum(3 for _ in r)} for r in results]
-        print(json.dumps(out, indent=2, ensure_ascii=False))
-        return
-
-    print(f"\n✅ Found {len(results)} conflict-free schedule(s)\n", file=sys.stderr)
-    for i, sched in enumerate(results):
-        print(f"═══ Schedule {i + 1} ═══")
-        print(render_grid(sched))
-        print()
-        for sec in sched:
-            print(f"  {sec['code']}/{sec['section']} | {sec['name']}")
-            print(f"    {describe_section(sec)}")
-        print()
+# NOTE: the standalone argparse CLI was removed 2026-08-10 during the
+# CLI unification. Use `sustech tis timetable`
+# (defined inline in sustech_survival/tis/cli.py) — it wraps the
+# same Python API exposed by this module.
 
 
-if __name__ == "__main__":
-    main()
+# ── Schedule table renderer (TUI grid + markdown export) ──────────────
+
+
+def render_table(schedule: list[dict]) -> str:
+    """Render one solved schedule as a fixed-grid table (markdown).
+
+    The grid is laid out as:
+      - rows = 7 days (Mon..Sun)
+      - columns = 12 periods (1..12)
+      - cells = "code/section" if a class meets, "." otherwise
+    Plus a legend below the grid showing each class with its room/teacher.
+
+    Use case: `sustech tis timetable MSE306 SS143` prints this for the
+    solver's output so users can read it in a chat / terminal without
+    rendering HTML.
+
+    Args:
+        schedule: list of section dicts (the same shape `solve()` returns)
+
+    Returns:
+        a multi-line markdown table string
+    """
+    DAY_LABELS_LOCAL = DAY_LABELS  # ["Mon", ...]
+    # 7 × 12 grid: grid[day_int][period_int] = "code/section" or "."
+    grid: dict[int, dict[int, str]] = {d: {p: "." for p in range(1, 13)} for d in range(1, 8)}
+    # Track each section's room/teacher for the legend below
+    legend: dict[tuple[str, str], tuple[str, str]] = {}  # (code, section) → (room, teacher)
+
+    for sec in schedule:
+        key = (sec.get("code", ""), sec.get("section", ""))
+        room = sec.get("room", "") or ""
+        teacher = sec.get("teacher", "") or ""
+        legend[key] = (room, teacher)
+        for s in sec.get("slots", []):
+            d = s.get("day")
+            periods = s.get("periods", [])
+            if not d or not periods:
+                continue
+            cell = f"{key[0]}/{key[1]}" if key[1] else key[0]
+            for p in periods:
+                if 1 <= d <= 7 and 1 <= p <= 12:
+                    grid[d][p] = cell
+
+    lines: list[str] = []
+    # Header row
+    header = "| Day     | " + " | ".join(f"p{p:>2}" for p in range(1, 13)) + " |"
+    sep = "|" + "-" * 8 + "|" + "|".join("-" * 4 for _ in range(12)) + "|"
+    lines.append(header)
+    lines.append(sep)
+    for d in range(1, 8):
+        row = f"| {DAY_LABELS_LOCAL[d-1]:<6} | " + " | ".join(f"{grid[d][p]:<3}" for p in range(1, 13)) + " |"
+        lines.append(row)
+    lines.append(sep)
+    lines.append("")
+    lines.append("**Legend:**")
+    if not legend:
+        lines.append("  (empty)")
+    for (code, sec), (room, teacher) in sorted(legend.items()):
+        label = f"{code}/{sec}" if sec else code
+        lines.append(f"  - {label}  —  {room or '(no room)'}  /  {teacher or '(no teacher)'}")
+
+    # Add periods label row below grid
+    lines.append("")
+    lines.append("**Periods:** 1-4 = morning, 5-8 = afternoon, 9-12 = evening (SUSTech convention)")
+    return "\n".join(lines)

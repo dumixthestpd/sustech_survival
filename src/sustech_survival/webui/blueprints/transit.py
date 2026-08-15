@@ -19,8 +19,6 @@ from __future__ import annotations
 
 import json
 import sys
-import threading
-import time
 from pathlib import Path
 from typing import Optional
 
@@ -31,7 +29,6 @@ bp = Blueprint("transit", __name__)
 
 _TRANSIT_WEB = (Path(__file__).resolve().parents[2]
                 / "transit" / "web")
-_live_thread_started = False
 
 
 def _data_dir() -> Optional[Path]:
@@ -40,34 +37,15 @@ def _data_dir() -> Optional[Path]:
 
 
 def _maybe_start_live_refresh():
-    """Start the 30s live-bus refresher once per process."""
-    global _live_thread_started
-    if _live_thread_started:
-        return
-    out_dir = _data_dir()
-    if not out_dir or not out_dir.exists():
-        return
-    try:
-        from sustech_survival.transit.transit import TransitClient
-    except Exception:
-        return
-    _live_thread_started = True
-    client = TransitClient()
-
-    def _loop():
-        while True:
-            try:
-                live = client.get_live_positions(include_shuttles=True)
-                fc = {"type": "FeatureCollection",
-                      "features": [b.to_geojson_feature() for b in live]}
-                (out_dir / "live_buses.geojson").write_text(
-                    json.dumps(fc, ensure_ascii=False))
-            except Exception as e:  # transient — don't crash the thread
-                print(f"[transit-live] {e}", file=sys.stderr)
-            time.sleep(30)
-
-    threading.Thread(target=_loop, daemon=True,
-                     name="transit-live-refresh").start()
+    """DEPRECATED 2026-08-10: removed — frontend polls /api/transit/live
+    directly now (already-implemented endpoint). The background thread
+    was hammering the upstream bus GPS API every 30s with no idle
+    detection (kept the Mac mini constantly busy even with zero open
+    browser tabs) and writing a JSON file to disk on every tick — bad
+    design. The /api/transit/live endpoint returns the same data with
+    no Python-side state.
+    """
+    return
 
 
 @bp.route("/transit")

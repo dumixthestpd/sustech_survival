@@ -22,8 +22,8 @@ from datetime import date
 import pytest
 
 from sustech_survival.calendar import (
-    AcademicCalendar, CalendarError, ClassTime, Compensatory, Day,
-    Holiday, Parity, Semester, Weekday,
+    DEFAULT_REPO, AcademicCalendar, CalendarError, ClassTime, Compensatory,
+    Day, Holiday, Parity, Semester, Weekday,
 )
 
 
@@ -484,6 +484,35 @@ class TestOnlineLoad:
         assert cal.spring.teaching_start == date(2026, 2, 25)
         assert cal.summer is None  # online JSON has minimal summer
         assert cal.fall.teaching_start == date(2026, 9, 7)
+
+    def test_load_future_year_fails_loud(self, network_ok):
+        """Regression: load(2027) must fail with CalendarError,
+        not silently return last year's data."""
+        if not network_ok:
+            pytest.skip("network unavailable")
+        with pytest.raises(CalendarError) as excinfo:
+            AcademicCalendar.load(2027, "undergraduate")
+        msg = str(excinfo.value)
+        assert "404" in msg
+        assert "2027" in msg
+
+    def test_load_custom_base_url_does_not_silently_substitute(self):
+        """Regression: a custom base_url pointing to a DIFFERENT year's
+        directory must not silently load that other year's data when the
+        caller asked for another year. The from_payloads year guard
+        catches this case."""
+        # Fetch 2026 data explicitly, then claim year=2027 — should fail.
+        cal = AcademicCalendar.load(2026, "undergraduate")
+        # Re-call with year=2027 but pass the 2026 base_url explicitly
+        with pytest.raises(CalendarError) as excinfo:
+            AcademicCalendar.load(
+                2027, "undergraduate",
+                base_url=DEFAULT_REPO,  # still the 2026 hardcoded one
+            )
+        # The load() substitution turns DEFAULT_REPO into ".../main/2027",
+        # which 404s. Either way, year=2027 must not silently return
+        # 2026 data.
+        assert "2026" not in str(excinfo.value) or "404" in str(excinfo.value)
 
 
 # ── Compensatory naming/types ───────────────────────────────────

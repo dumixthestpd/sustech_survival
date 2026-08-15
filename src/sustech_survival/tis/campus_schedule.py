@@ -115,44 +115,8 @@ def get_semester_courses(semester=None, full=False):
     data = get_campus_schedule(xn=xn, xq=xq, full=True, **extra)
     return data.get("rwList", {}).get("list", [])
 
+# NOTE: the standalone argparse CLI was removed 2026-08-10 during the
+# CLI unification. Use `sustech tis campus-schedule` (defined inline
+# in sustech_survival/tis/cli.py) — it wraps `get_campus_schedule`
+# / `get_semester_courses` from this module.
 
-# ── CLI ──────────────────────────────────────────────────────────────────────
-if __name__ == "__main__":
-    import json, argparse
-
-    parser = argparse.ArgumentParser(description="TIS Campus Schedule")
-    parser.add_argument("--semester", default="2025-2026-2",
-                        help="e.g. 2025-2026-2 (Spring 2026)")
-    parser.add_argument("--full", action="store_true",
-                        help="Use full campus list (p_chaxunpylx=3, ~1488 courses)")
-    parser.add_argument("--json", action="store_true", help="Output JSON to stdout")
-    parser.add_argument("--csv", action="store_true", help="Output CSV to stdout")
-    args = parser.parse_args()
-
-    parts = args.semester.split("-")
-    xn = parts[0] + "-" + parts[1]
-    xq = parts[2]
-
-    print(f"Fetching {args.semester} campus schedule (full={args.full})...")
-    extra = {"p_chaxunpylx": "3"} if args.full else {}
-    data = get_campus_schedule(xn=xn, xq=xq, full=True, **extra)
-    items = data.get("rwList", {}).get("list", [])
-    print(f"Total: {data.get('total')} | Collected: {len(items)}")
-
-    if args.json:
-        print(json.dumps(items, ensure_ascii=False, indent=2))
-    elif args.csv:
-        import csv, io
-        if items:
-            out = io.StringIO()
-            w = csv.DictWriter(out, fieldnames=["kcmc","kcdm","kkyxmc","dgjsmc","xf","kclbmc","kcxzmc","xiaoqumc","pylx"])
-            w.writeheader()
-            for it in items:
-                w.writerow({k: it.get(k, "") for k in ["kcmc","kcdm","kkyxmc","dgjsmc","xf","kclbmc","kcxzmc","xiaoqumc","pylx"]})
-            print(out.getvalue())
-    else:
-        for course in items[:5]:
-            print(f"\n  {course.get('kcmc')} ({course.get('kcdm')})")
-            print(f"  {course.get('kkyxmc')} | {course.get('dgjsmc', 'TBA')} | {course.get('xf')}学分")
-            print(f"  {course.get('kclbmc')} / {course.get('kcxzmc')} | pylx={'本科' if course.get('pylx')=='1' else '研究生'}")
-        print(f"\n  ... +{len(items)-5} more")

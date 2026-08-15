@@ -94,29 +94,8 @@ def week_list() -> list[int]:
                   data=current_semester())
     return [item['ZC'] for item in r.json()]
 
+# NOTE: the standalone argparse CLI was removed 2026-08-10 during the
+# CLI unification. Use `sustech tis schedule` (defined inline in
+# sustech_survival/tis/cli.py) — it wraps `week_schedule` /
+# `semester_schedule` / `current_week` from this module.
 
-def main():
-    import argparse, json
-
-    parser = argparse.ArgumentParser(description='Personal course schedule (TIS xszykb)')
-    parser.add_argument('--zc', type=int, default=None,
-                        help='Week number (default: current week)')
-    parser.add_argument('--xn', default=None, help='Academic year e.g. 2025-2026')
-    parser.add_argument('--xq', default=None, help='Semester 1 or 2')
-    parser.add_argument('--all', action='store_true',
-                        help='Fetch full semester instead of single week')
-    args = parser.parse_args()
-
-    if args.all:
-        data = semester_schedule(args.xn, args.xq)
-        print(json.dumps(data, ensure_ascii=False, indent=2))
-    else:
-        zc = args.zc if args.zc is not None else current_week()
-        data = week_schedule(zc, args.xn, args.xq)
-        print(f'=== Week {zc} ===')
-        for entry in data:
-            print(f"  [{entry['KEY']}] {entry['SKSJ']}")
-
-
-if __name__ == '__main__':
-    main()

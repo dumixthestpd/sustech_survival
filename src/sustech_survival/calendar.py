@@ -22,6 +22,7 @@ imported privately for the TIS-code translation API ("2025-20262" etc).
 from __future__ import annotations
 
 import json
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
@@ -69,6 +70,13 @@ INDEX_WEEKDAY: tuple[Weekday, ...] = (
 
 DEFAULT_REPO = (
     "https://raw.githubusercontent.com/dumixthestpd/sustech-calendar/main/2026"
+)
+# Base URL without the trailing year segment — used to construct the
+# year-specific URL inside ``AcademicCalendar.load`` so that
+# ``load(2027)`` doesn't silently fall back to ``2026``'s data via the
+# hardcoded DEFAULT_REPO. See load() for the substitution.
+DEFAULT_REPO_BASE = (
+    "https://raw.githubusercontent.com/dumixthestpd/sustech-calendar/main"
 )
 _LOCAL_REPO = "/Users/dumix/Documents/sustech-calendar"
 
@@ -473,6 +481,17 @@ class Semester:
         return self._compute_dates(class_time)
 
     def _compute_dates(self, class_time: ClassTime) -> list[date]:
+        """Compute the actual meeting dates for an enrolled class.
+
+        Uses ``Day`` predicates directly (no enum/string classification):
+
+        - Out-of-semester, weekend, and compensatory dates are skipped as
+          natural sources — they're never the "where would this meeting fall"
+          answer to the pattern.
+        - Flushed dates (holiday / extra_break / final) are looked up for a
+          compensatory replacement; if none exists, the occurrence is dropped.
+        - Otherwise (midterm or teaching day) the natural date is included.
+        """
         weekday = class_time.weekday
         weekday_name = INDEX_WEEKDAY[weekday]
         out: list[date] = []
@@ -481,33 +500,23 @@ class Semester:
                 d = self.date_of(week, weekday)
             except CalendarError:
                 continue
-            kind = self._classify(d)
-            if kind in ("teaching", "midterm"):
-                out.append(d)
-            elif kind in ("holiday", "extra_break", "final"):
+            if not self.is_in_semester(d):
+                continue
+            if d.weekday() >= 5:
+                continue  # weekend — not a teaching source
+            if self._compensatory_at(d) is not None:
+                continue  # compensatory is a transfer target, not a source
+            day = self._build_day(d)
+            if day.is_holiday() or day.is_final() or day.is_extra_break():
                 parity: Parity = "odd" if week % 2 == 1 else "even"
                 comp = self._comp_for_flushed(d, parity, weekday_name)
                 if comp is not None:
                     out.append(comp.date)
-            # compensatory / weekend / no_semester: not produced here
+            elif day.is_midterm() or day.is_teaching_day():
+                out.append(d)
+            # else: dropped (no predicate matched — defensive, shouldn't
+            # happen for a well-formed semester + JSON)
         return sorted(set(out))
-
-    def _classify(self, d: date) -> str:
-        """Internal day-type classification used by the fill algorithm."""
-        if not self.is_in_semester(d):
-            return "no_semester"
-        if d in self.extra_breaks:
-            return "extra_break"
-        if self._holiday_at(d) is not None:
-            return "holiday"
-        week = self.week_of(d)
-        if week in self.final_weeks:
-            return "final"
-        if week in self.midterm_weeks:
-            return "midterm"
-        if d.weekday() >= 5:
-            return "weekend"
-        return "teaching"
 
     # ── Compensatory lookups ──────────────────────────────────────
 
@@ -714,6 +723,10 @@ class AcademicCalendar:
             raise CalendarError(
                 f"level must be 'undergraduate' or 'graduate', got {level!r}"
             )
+        # Substitute year-specific URL when caller used DEFAULT_REPO —
+        # otherwise load(2027) silently fetches DEFAULT_REPO's 2026.
+        if base_url == DEFAULT_REPO:
+            base_url = f"{DEFAULT_REPO_BASE}/{year}"
         if online:
             ug = _fetch_json_cached(year, "undergraduate.json", base_url,
                                     cached=cached, refresh=refresh)
@@ -768,7 +781,30 @@ class AcademicCalendar:
         graduate: dict,
         general: dict,
     ) -> "AcademicCalendar":
-        """Construct from dicts in hand. Used by tests."""
+        """Construct from dicts in hand. Used by tests.
+
+        Validates that the loaded payload's dates fall within the requested
+        ``year`` — catches the bug where a custom ``base_url`` points to
+        a different year's directory but the caller requested another year.
+        """
+        # Year guard — defense in depth against wrong-year substitution
+        # (DEFAULT_REPO silent fallback, custom base_url drift, etc.).
+        for h in general.get("holidays", []):
+            for key in ("start", "end"):
+                if key in h:
+                    d_year = date.fromisoformat(h[key]).year
+                    if d_year != year:
+                        raise CalendarError(
+                            f"holiday {h.get('name', '?')!r} {key}={h[key]} "
+                            f"is in {d_year}, expected {year}"
+                        )
+        for comp_date in general.get("compensatory_workdays", []):
+            d_year = date.fromisoformat(comp_date).year
+            if d_year != year:
+                raise CalendarError(
+                    f"compensatory_workday {comp_date} is in {d_year}, "
+                    f"expected {year}"
+                )
         sem_payload = undergraduate if level == "undergraduate" else graduate
         spring = Semester.from_payload(sem_payload["spring_semester"], level)
         fall = Semester.from_payload(sem_payload["fall_semester"], level)
@@ -847,8 +883,16 @@ def _fetch_json_cached(
 
     try:
         body, new_etag, status = _cache.http_get_with_etag(url, cached_etag)
+    except urllib.error.HTTPError as e:
+        # 404 specifically means "the URL doesn't exist NOW". Don't fall
+        # back to the cache for that — the cache may be poisoned from a
+        # prior buggy call (e.g. the old hardcoded-2026 DEFAULT_REPO
+        # silently wrote 2026 data under tmp/calendar/{year}/).
+        if e.code == 404:
+            raise CalendarError(f"{url}: HTTP {e.code}") from e
+        raise CalendarError(f"{url}: HTTP {e.code} {e.reason}") from e
     except Exception as e:
-        # Network failure — fall back to cache if we have it.
+        # Other (non-HTTP) network failure — fall back to cache if we have it.
         cached_body = _cache.load_json(target)
         if cached_body is not None:
             return cached_body
@@ -907,6 +951,10 @@ def _fetch_json(url: str) -> dict:
     try:
         with urllib.request.urlopen(url, timeout=15) as resp:
             data = resp.read()
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            raise CalendarError(f"{url}: HTTP {e.code}") from e
+        raise CalendarError(f"{url}: HTTP {e.code} {e.reason}") from e
     except Exception as e:
         raise CalendarError(f"failed to fetch {url}: {e}") from e
     try:

@@ -57,17 +57,35 @@ def api(path, session=None):
 
 # ── Course Discovery ─────────────────────────────────────────────────────────
 
-def discover_courses(term_id="_57_1"):
+def discover_courses(term_id=None):
     """
-    Return list of (course_id_str, course_name) for given term.
+    Return list of (course_id_str, course_name) for the current user's enrollments.
 
-    course_id_str is the numeric part only, e.g. "8343".
-    Falls back to [] if REST fails.
+    Mirrors the "My Courses" tab in BB Learn
+    (https://bb.sustech.edu.cn/webapps/portal/execute/tabs/tabAction?tab_tab_group_id=_2_1)
+    by calling /users/me/courses — the same endpoint the page's XHR
+    fetches to render the course list. Only courses the user is enrolled
+    in are returned, in any term, regardless of termId.
+
+    Args:
+        term_id: DEPRECATED 2026-08-10 — accepted for backward compat but
+            ignored. The previous /courses?termId={term_id} endpoint returned
+            ALL courses in the term (term-wide catalog), not the user's
+            enrollments — which is why discover_courses() had a hardcoded
+            _ACTIVE_COURSE_IDS fallback in resolve_course(). My Courses
+            (tab_tab_group_id=_2_1) is enrollment-filtered, so termId is
+            irrelevant. Pass None (default) for new callers.
+
+    Returns:
+        list of (course_id_str, course_name). course_id_str is the numeric
+        part only, e.g. "8343". Empty if no session / REST fails.
     """
     try:
-        data = api(f"/learn/api/public/v1/courses?termId={term_id}")
-        return [(c["id"].lstrip("_").rstrip("_1"), c.get("name", ""))
-                 for c in data.get("results", []) if c.get("name")]
+        me = api("/learn/api/public/v1/users/me")
+        uid = me["id"]
+        data = api(f"/learn/api/public/v1/users/{uid}/courses")
+        return [(c["courseId"].lstrip("_").rstrip("_1"), c.get("name", ""))
+                 for c in data.get("results", []) if c.get("courseId")]
     except Exception:
         return []
 

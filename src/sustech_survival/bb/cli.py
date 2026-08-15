@@ -518,5 +518,40 @@ def submit_cmd(content_id, file_path, course_id, comment):
         sys.exit(1)
 
 
+@cli.command(name="download", help="Download BB content files (PDF, slides, attachments).")
+@click.option("--content", "content_id",
+              help="Content ID to download. If omitted, lists discoverable content first.")
+@click.option("--course", "course_id", default=None,
+              help="Course ID (default: 8343). Auto-resolved if --content is given.")
+@click.option("--output", "output_dir", default="./downloads", show_default=True,
+              help="Output directory (created if missing).")
+def download_cmd(content_id, course_id, output_dir) -> None:
+    """Download BB course-content files to a local directory.
+
+    Examples:
+        sustech bb download --content 610821
+        sustech bb download --content 610821 --output ~/Documents/BB
+    """
+    from pathlib import Path
+    from .download import download_content, resolve_course
+    load_session_or_exit()
+    if not content_id:
+        click.secho("(no --content given; pass a content_id to download) ", fg="cyan")
+        click.echo("  Tip: use `sustech bb courses` to discover content IDs.")
+        return
+    try:
+        course_id = resolve_course(content_id)
+    except Exception as e:
+        click.secho(f"⚠️  Could not resolve course for {content_id}: {e}", fg="yellow", err=True)
+        course_id = None
+    out = Path(output_dir)
+    try:
+        saved = download_content(content_id, out)
+    except Exception as e:
+        click.secho(f"❌ Download failed: {e}", fg="red", err=True)
+        raise SystemExit(1)
+    click.secho(f"✅ Done: {len(saved)} file(s) saved to {out}", fg="green")
+
+
 if __name__ == "__main__":
     cli()

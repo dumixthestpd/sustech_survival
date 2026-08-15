@@ -358,6 +358,114 @@ def query_cmd(path, params, method):
         click.echo(r.text[:500])
 
 
+@cli.command(name="timetable", help="Solve a non-conflicting timetable from a list of course codes.")
+@click.argument("courses", nargs=-1)
+@click.option("--exclude", "-e", multiple=True,
+              help="Exclude course code from search (repeatable).")
+@click.pass_context
+def timetable_cmd(ctx, courses, exclude) -> None:
+    """
+    Solve a non-conflicting timetable from course codes (e.g. MSE306 SS143).
+
+    NOTE: This command is a stub that surfaces the underlying `solve()`,
+    `render_grid()`, and `describe_section()` functions from the
+    timetable module. For the full solver with --exclude / --codes-file /
+    --block / --json / --semester options, use the Python API:
+
+        from sustech_survival.tis.timetable import (
+            fetch_sections, solve, render_grid, describe_section,
+            parse_block, DAY_LABELS,
+        )
+
+    Example:
+        sustech tis timetable MSE306 SS143
+    """
+    from ..sso import TISAuth
+    from .timetable import fetch_sections, solve, render_grid, describe_section, parse_block, DAY_LABELS, SKILL_ROOT
+    from .schedule import current_semester
+    import sys as _sys
+    import json as _json
+    if not courses:
+        click.secho("❌ No courses specified", fg="red", err=True)
+        raise SystemExit(1)
+    auth = TISAuth()
+    ok, reason = auth.ensure()
+    if not ok:
+        click.secho("❌ Login failed", fg="red", err=True)
+        raise SystemExit(1)
+    click.secho("🔑 Session OK", fg="cyan", err=True)
+    xn, xq = current_semester()
+    click.secho(f"📡 Fetching sections ({xn}-{xq})...", fg="cyan", err=True)
+    sections = fetch_sections(list(courses), auth, xn, xq)
+    for code in courses:
+        n = len(sections.get(code, []))
+        click.echo(f"  {code}: {n} sections", err=True)
+    if all(len(sections.get(c, [])) == 0 for c in courses):
+        click.secho(f"⚠️  No sections found: {', '.join(courses)}", fg="yellow", err=True)
+        raise SystemExit(1)
+    results = solve(sections, max_results=100)
+    click.secho(f"\n✅ Found {len(results)} conflict-free schedule(s)\n", fg="green", err=True)
+    for i, sched in enumerate(results):
+        click.echo(f"═══ Schedule {i + 1} ═══")
+        click.echo(render_grid(sched))
+        click.echo("")
+        for sec in sched:
+            click.echo(f"  {sec['code']}/{sec['section']} | {sec['name']}")
+            click.echo(f"    {describe_section(sec)}")
+        click.echo("")
+
+
+@cli.command(name="schedule", help="Show personal TIS course schedule.")
+@click.option("--zc", "zc", type=int, default=None,
+              help="Week number (default: current week).")
+@click.option("--xn", default=None, help="Academic year e.g. 2025-2026.")
+@click.option("--xq", default=None, help="Semester 1 or 2.")
+@click.option("--all", "fetch_all", is_flag=True,
+              help="Fetch full semester instead of single week.")
+def schedule_cmd(zc, xn, xq, fetch_all) -> None:
+    """Print your personal course schedule for one week (default) or full semester."""
+    import json as _json
+    from .schedule import week_schedule, semester_schedule, current_week
+    if fetch_all:
+        data = semester_schedule(xn, xq)
+        click.echo(_json.dumps(data, ensure_ascii=False, indent=2))
+        return
+    week = zc if zc is not None else current_week()
+    data = week_schedule(week, xn, xq)
+    click.echo(f"=== Week {week} ===")
+    for entry in data:
+        click.echo(f"  [{entry['KEY']}] {entry['SKSJ']}")
+
+
+@cli.command(name="campus-schedule", help="Full TIS campus schedule (all rooms, all courses).")
+@click.option("--semester", default="2025-2026-2", show_default=True,
+              help="Format: YYYY-YYYY-Q.")
+@click.option("--full", is_flag=True, help="Include every entry.")
+@click.option("--json", "as_json", is_flag=True, help="Output JSON.")
+@click.option("--csv", "as_csv", is_flag=True, help="Output CSV.")
+def campus_schedule_cmd(semester, full, as_json, as_csv) -> None:
+    """Dump the entire TIS campus schedule — every room, every course."""
+    import json as _json
+    import csv as _csv
+    import sys as _sys
+    from .campus_schedule import get_campus_schedule as campus_schedule
+    parts = semester.rsplit("-", 1)
+    xn, xq = parts[0], parts[1]
+    rows = campus_schedule(xn=xn, xq=xq, full=full)
+    if as_json:
+        click.echo(_json.dumps(rows, ensure_ascii=False, indent=2))
+    elif as_csv:
+        w = _csv.writer(_sys.stdout)
+        if rows:
+            w.writerow(rows[0].keys())
+            for row in rows:
+                w.writerow(row.values())
+    else:
+        # Plain text — default
+        for row in rows:
+            click.echo(str(row))
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
