@@ -10,10 +10,8 @@ directory (resolved via ``Path(__file__).parent``), so:
   ``site-packages`` (writable on user installs on macOS / ``--user`` on Linux).
 
 Every module that needs to cache anything on disk should use these helpers
-rather than constructing its own paths. The old scattered locations
-(``<skill_root>/classroom/cache/``, ``cache/`` at repo root with sha1
-prefixes, ``selectcourse/cache/``, ``bb/cache/``) are deprecated and have
-been migrated to call into this module.
+rather than constructing its own paths. The canonical location is the
+single path returned by :func:`tmp_root` — there are no legacy locations.
 """
 from __future__ import annotations
 

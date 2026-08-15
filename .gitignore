@@ -16,16 +16,12 @@ bb-courses.json
 content_discovery.json
 
 # Cache — personal per-user state
-# Uniform layout: <sustech_survival>/tmp/<module>/...
+# Canonical location: <sustech_survival>/tmp/<module>/...
 src/sustech_survival/tmp/
-# Legacy locations (no longer written, but ignore if old trees still exist)
-cache/
-classroom/cache/
-selectcourse/cache/
-bb/cache/
-src/classroom/cache/
 
-# Cookies — personal auth tokens
+# Cookies — personal auth tokens (never commit)
+cookies/
+src/cookies/
 *cookie*.txt
 *cookie*.txt.tmp
 bilibili_cookie.txt
