@@ -333,6 +333,9 @@ class TestTTLRefresh:
             SERVICE_URL = "https://dummy.example.com/cas"
             refreshed = False
 
+            def _read_creds(self):
+                return ("dummy_user", "dummy_pass")
+
             def _get_ticket_cookies(self, u, p):
                 DummyAuth.refreshed = True
                 return {"fresh": "cookies"}

@@ -44,7 +44,7 @@ def run(export: str = None):
     """Fetch and display the student's exam schedule.
 
     Args:
-        export: "csv" to export to ~/.openclaw/workspace/sustech/exams.csv
+        export: "csv" to export to a file path (e.g. ./exams.csv)
     """
     print("🔑 Checking session...")
     auth = TISAuth(skill_dir=str(SKILL_ROOT))

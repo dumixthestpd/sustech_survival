@@ -239,9 +239,9 @@ class TestUsageRecord:
             "dwType": 131073,
             "dwProperty": 0,
             "dwSettleType": 0,
-            "szLogonName": "12413021",
+            "szLogonName": "<sid>",
             "szCardNO": "EED73C02",
-            "szTrueName": "段斯宸",
+            "szTrueName": "<name>",
             "szMemo": "",
         })
         assert r.dw_sid == 3106522
@@ -250,7 +250,7 @@ class TestUsageRecord:
         assert r.dw_pages == 3
         assert r.paper == "A4"
         assert r.money_total == pytest.approx(0.30, rel=0.01)
-        assert r.sz_true_name == "段斯宸"
+        assert r.sz_true_name == "<name>"
         assert r.dw_mfp_sn == 0  # field not in this record
         assert r.datetime_str == "2026.06.11 17:40:39"
         assert r.settle_label == "自助收费"

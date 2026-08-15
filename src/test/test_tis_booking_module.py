@@ -209,13 +209,13 @@ class TestQueryVenueOccupancy:
 
 SAMPLE_FORM = BorrowApplication(
     id="",
-    applicant_name="段斯宸",
+    applicant_name="<name>",
     applicant_phone="13908478929",
-    applicant_employee_id="12413021",
+    applicant_employee_id="<sid>",
     applicant_dept="材料科学与工程系",
-    user_name="段斯宸",
+    user_name="<name>",
     user_phone="13908478929",
-    user_employee_id="12413021",
+    user_employee_id="<sid>",
     semester=Semester("2025-20262"),
     weeks="5-8",
     headcount=30,
@@ -234,13 +234,13 @@ class TestCreateBorrowApplication:
         c = make_client()
         result = c.create_borrow_application(SAMPLE_FORM, dry_run=True)
         c._sess.post.assert_not_called()
-        assert result.applicant_name == "段斯宸"
+        assert result.applicant_name == "<name>"
         assert result.headcount == 30
 
     def test_dry_run_returns_reconstructed_form(self):
         c = make_client()
         result = c.create_borrow_application(SAMPLE_FORM, dry_run=True)
-        assert result.applicant_name == "段斯宸"
+        assert result.applicant_name == "<name>"
         assert result.semester.xn == "2025-2026"
         assert result.details[0].room_code == "YJ-123"
 
@@ -253,7 +253,7 @@ class TestCreateBorrowApplication:
         result = c.create_borrow_application(SAMPLE_FORM, dry_run=False)
         call = c._sess.post.call_args
         assert call.kwargs["json"] is not None
-        assert call.kwargs["json"]["sqr"] == "段斯宸"
+        assert call.kwargs["json"]["sqr"] == "<name>"
         assert call.kwargs["json"]["xn"] == "2025-2026"
         assert call.args[0] == EP_CREATE
         assert result.id == "newapp"

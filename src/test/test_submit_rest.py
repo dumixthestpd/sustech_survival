@@ -129,7 +129,7 @@ def test_submit_assignment_rest_dry_run(tmp_path):
         mock_sess.return_value.get.return_value = mock_response
         result = submit_assignment_rest(
             "8328", "610821", str(pdf),
-            name_override="12413021-段斯宸-Experiment 5 (Aspirin).pdf",
+            name_override="<sid>-<name>-Experiment 5 (Aspirin).pdf",
             dry_run=True,
         )
     assert result.ok is True

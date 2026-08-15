@@ -1,8 +1,7 @@
 """Syntax + import check for sustech_survival.faculty.
 
 Run:
-    /Users/dumix/.hermes/hermes-agent/venv/bin/python -m pytest \
-        src/test/test_faculty_syntax.py -v
+    python -m pytest src/test/test_faculty_syntax.py -v
 """
 import sys
 import ast

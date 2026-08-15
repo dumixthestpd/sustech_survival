@@ -724,7 +724,7 @@ def build_booking(
         app = build_booking(
             tickets=tickets,
             semester=Semester("2025-2026", "3"),
-            applicant_name="段斯宸", applicant_phone="13800138000",
+            applicant_name="<name>", applicant_phone="<phone>",
             headcount=30, purpose="学术讲座",
         )
     """

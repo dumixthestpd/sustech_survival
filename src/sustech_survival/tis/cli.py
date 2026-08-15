@@ -326,7 +326,7 @@ def query_cmd(path, params, method):
     Raw API query against TIS.
 
     Example:
-      tis.py query /personnelEvaluation/listObtainPersonnelEvaluationTasks yhdm=12413021 sfyp=0
+      tis.py query /personnelEvaluation/listObtainPersonnelEvaluationTasks yhdm=<sid> sfyp=0
     """
     try:
         auth = auth_or_exit()

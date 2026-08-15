@@ -313,14 +313,14 @@ REAL_APPLICATION = {
     "id": "abc123",
     "jhdh": "JY20260628001",
     "shztmc": "保存待审核",
-    "sqr": "段斯宸",
+    "sqr": "<name>",
     "sqrdh": "13908478929",
-    "sqrzgh": "12413021",
+    "sqrzgh": "<sid>",
     "sqrdw": "材料科学与工程系",
     "sqrdwdh": "01",
-    "syr": "段斯宸",
+    "syr": "<name>",
     "syrdh": "13908478929",
-    "syrzgh": "12413021",
+    "syrzgh": "<sid>",
     "syrdwdm": "01",
     "xnxq": "2025-2026-2",
     "xn": "2025-2026",
@@ -358,9 +358,9 @@ class TestBorrowApplication:
         assert b.id == "abc123"
         assert b.jhdh == "JY20260628001"
         assert b.status == "保存待审核"
-        assert b.applicant_name == "段斯宸"
+        assert b.applicant_name == "<name>"
         assert b.applicant_phone == "13908478929"
-        assert b.applicant_employee_id == "12413021"
+        assert b.applicant_employee_id == "<sid>"
         assert b.applicant_dept == "材料科学与工程系"
         assert b.semester == Semester("2025-2026-2")
         assert b.semester.xn == "2025-2026"
@@ -400,7 +400,7 @@ class TestBorrowApplication:
     def test_to_api_roundtrip(self):
         original = BorrowApplication.from_api(REAL_APPLICATION)
         dumped = original.to_api()
-        assert dumped["sqr"] == "段斯宸"
+        assert dumped["sqr"] == "<name>"
         assert dumped["xn"] == "2025-2026"
         assert dumped["xq"] == "2"
         assert dumped["rs"] == 30
@@ -417,7 +417,7 @@ class TestBorrowApplication:
         """The wire shape (verified 2026-06-29) requires these keys."""
         b = BorrowApplication(
             id="", jhdh="",
-            applicant_name="段斯宸", applicant_phone="13800138000",
+            applicant_name="<name>", applicant_phone="<phone>",
             semester=Semester("2025-2026-2"), campus="1",
             headcount=30, purpose="测试",
             details=[BorrowDetail(
@@ -518,13 +518,13 @@ class TestBorrowApplication:
 class TestNestedIntegration:
     def test_construct_full_booking_from_scratch(self):
         app = BorrowApplication(
-            applicant_name="段斯宸",
+            applicant_name="<name>",
             applicant_phone="13908478929",
-            applicant_employee_id="12413021",
+            applicant_employee_id="<sid>",
             applicant_dept="材料科学与工程系",
-            user_name="段斯宸",
+            user_name="<name>",
             user_phone="13908478929",
-            user_employee_id="12413021",
+            user_employee_id="<sid>",
             semester=Semester("2025-2026-2"),
             weeks="5-8",
             campus="1",
@@ -551,7 +551,7 @@ class TestNestedIntegration:
         dumped = app.to_api()
         reconstructed = BorrowApplication.from_api(dumped)
 
-        assert reconstructed.applicant_name == "段斯宸"
+        assert reconstructed.applicant_name == "<name>"
         assert reconstructed.semester.xn == "2025-2026"
         assert reconstructed.weeks == "5-8"
         assert reconstructed.details[0].room_code == "YJ-123"
@@ -561,30 +561,32 @@ class TestNestedIntegration:
 class TestWirePayloadProbe2026_06_29:
     """Golden test against the LIVE wire payload captured by the probe.
 
-    Source: `~/.openclaw/code/sustech_survival/scripts/probe_cdjy_post.py`
-    ran in Playwright against https://tis.sustech.edu.cn/cdjy/query/1/sq,
-    hooked `$.ajax`, called `saveOrSubmit('bc')`, and captured the
-    exact JSON body. Probe write-up lives at ``scripts/probe_cdjy_post.py``.
+    Captured 2026-06-29 via a Playwright probe against
+    https://tis.sustech.edu.cn/cdjy/query/1/sq that hooked ``$.ajax``,
+    called ``saveOrSubmit('bc')``, and saved the exact JSON body.
+    Personal fields (name / phone / SID) have been replaced with
+    ``<name>``, ``<phone>``, ``<sid>`` placeholders — the test only
+    cares about key shape and round-trip values, not the literal data.
 
-    This test ensures `to_api()` continues to match the wire shape.
+    This test ensures ``to_api()`` continues to match the wire shape.
     Any drift between the schema and the wire (e.g. a server-side
     change to a field name) will fail this test loudly.
     """
     WIRE_PAYLOAD = {
         "id": "",
         "jhdh": "",
-        "sqr": "段斯宸",
-        "sqr_en": "Sicheng Duan",
-        "sqrdh": "13800138000",
+        "sqr": "<name>",
+        "sqr_en": "<name_en>",
+        "sqrdh": "<phone>",
         "xn": "2025-2026",
         "xq": "3",
         "zc": "",
         "rs": 30,
         "qsjsz": "",
-        "syr": "段斯宸",
+        "syr": "<name>",
         "syr_en": "",
         "jyrdh": "",
-        "syrdh": "13800138000",
+        "syrdh": "<phone>",
         "sqrdw": "测试单位",
         "sqrdw_en": "Test Dept",
         "sqrdwdh": "000",
@@ -629,8 +631,8 @@ class TestWirePayloadProbe2026_06_29:
         "jtsjlist": [{"xqj": "3", "ksjc": "3", "jsjc": "4"}],
         "sfsjysxtly": "",
         "syrdwdm": "",
-        "sqrzgh": "12413021",
-        "syrzgh": "12413021",
+        "sqrzgh": "<sid>",
+        "syrzgh": "<sid>",
         "cdjymlist": [],
         "zhxgr": "",
         "xhxgsj": "",

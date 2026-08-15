@@ -11,7 +11,7 @@
 # After login the session has cookies:
 #   TGC               — CAS ticket-granting cookie
 #   ASP.NET_SessionId — WS application session
-#   SUserCode         — user ID (e.g. 12413021)
+#   SUserCode         — user ID (e.g. <sid>)
 #   SUserRole         — role ID (e.g. 1007)
 #
 # Key API (cookies only, no auth header):

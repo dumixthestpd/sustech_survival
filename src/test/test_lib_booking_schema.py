@@ -293,7 +293,7 @@ class TestReservation:
                 "labName": "涵泳一层", "kindName": "讨论间",
             }],
             "resvMemberInfoList": [
-                {"accNo": 76727, "trueName": "段斯宸", "logonName": "12413021",
+                {"accNo": 76727, "trueName": "<name>", "logonName": "<sid>",
                  "ident": 257, "kind": 65}
             ],
         }
@@ -315,7 +315,7 @@ class TestReservation:
         assert r.kind_name == "讨论间"
         assert len(r.members) == 1
         assert r.members[0].acc_no == 76727
-        assert r.members[0].true_name == "段斯宸"
+        assert r.members[0].true_name == "<name>"
         assert r.display_name.startswith("#12345")
 
     def test_from_api_iso_t_separator(self):
@@ -345,9 +345,9 @@ class TestUserInfo:
         raw = {
             "uuid": "8c253ced-...",
             "accNo": 76727,
-            "pid": "12413021",
-            "logonName": "12413021",
-            "trueName": "段斯宸",
+            "pid": "<sid>",
+            "logonName": "<sid>",
+            "trueName": "<name>",
             "kind": 1,
             "ident": 257,
             "status": 1,
@@ -361,18 +361,18 @@ class TestUserInfo:
         }
         u = UserInfo.from_api(raw)
         assert u.acc_no == 76727
-        assert u.pid == "12413021"
-        assert u.true_name == "段斯宸"
+        assert u.pid == "<sid>"
+        assert u.true_name == "<name>"
         assert u.class_name == "2024级本科"
         assert u.dept_name == "南方科技大学"
         assert u.manager == 1
 
     def test_str_repr(self):
-        u = UserInfo.from_api({"accNo": 76727, "pid": "12413021", "trueName": "段斯宸"})
+        u = UserInfo.from_api({"accNo": 76727, "pid": "<sid>", "trueName": "<name>"})
         s = str(u)
-        assert "段斯宸" in s
+        assert "<name>" in s
         assert "76727" in s
-        assert "12413021" in s
+        assert "<sid>" in s
 
 
 # ── build_reservation_payload ──────────────────────────────────────────────

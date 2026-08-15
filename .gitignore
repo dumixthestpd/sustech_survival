@@ -27,6 +27,17 @@ src/cookies/
 bilibili_cookie.txt
 bilibili_cookies_netscape.txt
 
+# Personal info / device-specific data
+personal.md
+.hermes/
+.DS_Store
+
+# Legacy UI verification artifacts (dev-only)
+docs/ui-verification/
+
+# Standalone utility scripts not part of the published package
+scripts/
+
 # Temp / build artifacts
 __pycache__/
 *.pyc
