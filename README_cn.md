@@ -47,7 +47,6 @@ CLI（`click`）已包含在核心依赖中 —— `pip install sustech-survival
 可选扩展按需安装：
 
 - `webui` — Flask SPA：TIS 选课界面 + 公交地图 + NCES 悬浮卡片
-- `playwright` — 旧版 BB 文件下载爬虫
 - `nces` — Anubis PoW 求解器（NCES 列表抓取用）
 - `papers` — cloudscraper（绕过出版商网站的 requests 拦截）
 - `all` — 以上全部
@@ -163,8 +162,7 @@ sustech_survival/
 ```bash
 git clone https://github.com/dumixthestpd/sustech-survival
 cd sustech-survival
-pip install -e ".[all,playwright]"
-playwright install chromium
+pip install -e ".[all]"
 
 # 单元测试（mocked，快速）
 python -m pytest src/test/ -v

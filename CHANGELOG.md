@@ -25,14 +25,28 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   `webui/__main__.py` so the documented module entry point starts the server.
 
 ### Added
+- **`context.profile`** — `fetch_profile()` / `gen_usr_profile(path=...)` query
+  TIS/BB live and render a filled Markdown user profile (name, SID, department,
+  enrolled-course count, next exam/deadline). Wired as `sustech profile
+  [-o OUT]`; a blank template ships at `context/templates/profile.md` for the
+  skill trees to copy. Blueprint for the "agent learns who the user is" flow.
+- **Dynamic academic calendar** — `context.get_academic_info()` now loads the
+  live `AcademicCalendar` (sustech-calendar repo) instead of the hardcoded
+  2025/2026 snapshot, falling back to the snapshot only when offline.
 - **`Semester.current()`** (+ `Season.from_months`): a canonical resolver
   for the live academic term from the current date. Callers that used to
   hardcode `xn="2025-2026", xq="2"` now default to the term active today:
   `selectcourse`, `tis.campus_schedule`, `tis.classroom`, `context.slot_times`,
   `webui` TIS defaults, and the `sustech tis campus-schedule` CLI.
-- **Security hardening**: anonymized real account/card values in tests and
-  docstrings (`76727`→`100001`, `EED73C02`→`DEADBEEF`, `2024级本科`→`2025级本科`).
+- **Security hardening**: anonymized real account/card/class fixtures in tests
+  and docstrings to clearly-fake placeholders (`100001`, `DEADBEEF`, `2025级本科`).
 - Bumped dev version to `2026.8.16.dev0220` (CST).
+
+### Fixed
+- **Windows portability of tests**: `test_no_raw_creds`, `test_faculty_syntax`
+  and `test__cache` now pass on non-UTF-8 Windows locales (added
+  `encoding="utf-8"` to `read_text()` calls). `test_no_raw_creds` also
+  normalizes its path separators so the exemption list matches on Windows.
 
 ### Changed
 - **Version scheme**: switched from plain semver (`0.1.0`) to date-based
@@ -47,20 +61,22 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   - CLI: `python -m sustech_survival.tis.classroom <command>`
 
 ### Added
-- **BB REST submitter** (`bb.submit_rest`): file uploads without Playwright.
+- **BB REST submitter** (`bb.submit`): file uploads without Playwright.
   Verified end-to-end on 2026-06-08 — a single multipart POST with
   BB's hidden form fields (extracted from the upload form) plus the
   file as `newFile_LocalFile0` and BB's file-picker field set
   (`newFile_attachmentType='L'`, `newFile_fileId='new'`, and four
   `'undefined'` strings). Returns BB's `destinationUrl` JSON.
+  (Formerly `bb.submit_rest`; merged into `bb.submit` when the
+  Playwright submitter was removed.)
 - **SubmitResult dataclass** (`bb.result`): replaces the previous
   `(ok: bool | None, msg: str)` tuple. `ok=None` for the dup case is
   now an explicit `SubmitStatus.DUPLICATE` + `result.is_duplicate`.
   Backwards-compat shim: `result.to_tuple()` returns the legacy shape.
-- **Playwright isolation** (`bb._playwright`): the one Playwright-using
-  function in `bb/` (submitting via the JS form flow, scraping
-  submitted-file URLs) lives in a dedicated module. `bb/download.py`
-  re-exports it so existing callers don't break.
+- **Playwright removed from `bb/`**: the Playwright-based submitter and the
+  `bb._playwright` module were deleted; `bb.submit` is now REST-only
+  (submission + attempt checks). Submitted-attempt file URLs are no longer
+  scrapeable (gradebook REST exposes attempt metadata only).
 - **`fetch_next_exam` in `context`**: correlates TIS exam schedule
   with the existing `fetch_next_deadline` (BB) and `fetch_next_eval`
   (course evaluation). The `Context` class exposes `next_exam` and
@@ -71,6 +87,11 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   behavior without mocking the clock.
 
 ### Changed
+- **`bb.submit` is now REST-only.** The Playwright submitter and
+  `bb._playwright` were removed; `bb.submit_rest` was merged into
+  `bb.submit`. `bb` (including `sustech bb submit`) needs no `[playwright]`
+  extra. The `[playwright]` extra remains for the other modules that still
+  use a browser (lib search, SSO brokers, papers, TIS eval).
 - `HomeworkItem.submit()` and `submit_rest()` now return `SubmitResult`
   directly. The old `(ok, msg)` tuple is gone from the public API;
   `to_tuple()` is the migration path.

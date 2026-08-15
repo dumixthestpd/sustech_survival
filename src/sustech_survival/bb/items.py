@@ -162,7 +162,7 @@ _BB_BASE = "https://bb.sustech.edu.cn"
 def _bb_session_for_discovery():
     """Return a fresh requests.Session with current BB cookies.
 
-    Mirrors sustech_survival.bb.submit_rest._bb_session() — each call creates
+    Mirrors sustech_survival.bb.submit._bb_session() — each call creates
     a new session so cookies don't collide between separate BB REST calls
     (BB rotates JSESSIONID on every request and the cookiejar would otherwise
     keep BOTH the old and new values).
@@ -451,28 +451,25 @@ class HomeworkItem(Item):
                force_late: bool = False) -> tuple:
         """High-level submit: hand a file to BB for this assignment.
 
-        Uses the Playwright-driven path (see ``sustech_survival.bb.submit``).
-        For a no-browser REST path, use ``HomeworkItem.submit_rest()`` instead.
-
-        Thin wrapper around ``sustech_survival.bb.submit.submit_assignment``.
-        Pre-renames the file to ``target_name`` on disk (via the underlying
-        primitive's staging logic) so BB records the correct basename in
-        ``newFile_table`` — no JS-side rename, no duplicate rows.
+        REST-backed (no browser). Thin wrapper around
+        ``sustech_survival.bb.submit.submit_assignment`` (which delegates
+        to the pure-REST ``submit_assignment_rest``). The file is staged
+        under ``target_name`` on disk so BB records the correct basename.
 
         Args:
             file_path: absolute path to the local PDF
             target_name: on-disk basename BB should show.
                 Defaults to file_path's basename.
-            dry_run: stop after the file is in the table, do NOT click submit
+            dry_run: stop after staging the file, do NOT POST the form
             skip_dedup: bypass prior-attempt dedup check
-            headless: Playwright headless flag
+            headless: accepted for API compatibility (no browser — ignored)
             force_late: if True, suppress the late-submission warning even when
                 the deadline is in the past. Use when you've explicitly decided
                 a late attempt is acceptable.
 
         Returns:
-            ``(ok, message)`` — message contains the confirmation UUID on
-            success, or ``"DRY-RUN: rows=N, link_titles=[...]"`` if dry-run.
+            SubmitResult (see bb.result) — ``result.ok`` / ``result.message``
+            on success, or ``result.is_duplicate`` / ``result.is_dry_run``.
 
         Late-submission safety: if ``self.deadline`` is set and in the past,
         emits a ``UserWarning`` before the actual submit so the user knows
@@ -566,8 +563,8 @@ class HomeworkItem(Item):
         if not dry_run and self.deadline:
             _check_late_risk(self.deadline, force_late=force_late)
 
-        # Lazy import to avoid circular dependency (items.py → submit_rest.py)
-        from sustech_survival.bb.submit_rest import submit_assignment_rest
+        # Lazy import to avoid circular dependency (items.py → submit.py)
+        from sustech_survival.bb.submit import submit_assignment_rest
         return submit_assignment_rest(
             self.course_id,                 # positional
             self.content_id,                # positional

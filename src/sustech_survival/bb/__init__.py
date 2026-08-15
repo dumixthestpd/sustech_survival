@@ -6,12 +6,14 @@ Usage:
     ddl(days=7)  → deadlines within N days
 
 REST-based modules (no Playwright):
-    from sustech_survival.bb import query, download
+    from sustech_survival.bb import query, download, submit
     query.discover_courses()   → list of (course_id, name)
     query.discover_pages(cid) → list of (content_id, title, section)
     query.resolve_course(cid) → course_id string
     download.scrape_content_files(cid) → (title, [(name, url)])
     download.download_content(cid) → list of saved paths
+    submit.submit_file(content_id, file_path) → (ok, message)
+    submit.submit_assignment_rest(course_id, content_id, file_path) → SubmitResult
 """
 
 import sys
@@ -20,17 +22,20 @@ from pathlib import Path as _Path
 _SKILL_ROOT = _Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(_SKILL_ROOT / "src"))
 
-__all__ = ["ddl", "query", "download", "submit_file", "submit_assignment", "check_attempts", "find_assignment", "list_upcoming"]
+__all__ = [
+    "ddl", "query", "download",
+    "submit_file", "submit_assignment", "submit_assignment_rest", "check_attempts",
+]
 
 from sustech_survival.bb import query, download
 from sustech_survival.bb.ddl import run as _ddl_run
 
-# submit requires playwright (optional dependency). Lazy-import so the
-# package loads without playwright installed — submit funcs raise on call
-# if playwright is truly needed.
+# submit is pure REST now (no Playwright; the legacy Playwright submitter and
+# the bb._playwright module were removed). Lazy-import so the package loads
+# cheaply — the functions resolve on first attribute access.
 def __getattr__(name):
-    if name in ("submit_file", "submit_assignment", "check_attempts",
-                "find_assignment", "list_upcoming"):
+    if name in ("submit_file", "submit_assignment", "submit_assignment_rest",
+                "check_attempts"):
         from sustech_survival.bb import submit as _submit
         return getattr(_submit, name)
     raise AttributeError(name)

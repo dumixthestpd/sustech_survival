@@ -23,7 +23,7 @@ import click
 from sustech_survival.sso import BBAuth
 from sustech_survival.sso.authorizer import AuthorizerError
 from .courses import list_courses, find_course, get_course_numeric_id, discover_assignments_for_course, load_courses
-from .download import discover_attempt_ids, scrape_attempt_details, download_file
+from .download import discover_attempt_ids, scrape_attempt_details, download_file, slugify
 from .pages import preview_page
 from .query import (
     discover_all_items, type_stats_items, print_stats,
@@ -45,7 +45,7 @@ bb_auth = BBAuth()
 
 
 def load_session_or_exit():
-    """Ensure session is valid and return Playwright-format cookies list."""
+    """Ensure session is valid and return session cookies list."""
     try:
         ok, reason = bb_auth.ensure()
         if not ok:
@@ -150,10 +150,11 @@ def single_assignment(ctx, session_cookies, numeric_cid,
                 try:
                     det = scrape_attempt_details(ctx, numeric_cid, content_id, aid)
                 except Exception:
-                    det = {"files": [], "graded": False, "grade": None}
-                grade_str = f" {det['grade']}/100" if det["grade"] else (" (ungraded)" if not det["graded"] else "")
+                    det = {"files": [], "graded": False, "score": ""}
+                score = det.get("score", "")
+                grade_str = f" {score}/100" if score else (" (ungraded)" if not det.get("graded") else "")
                 click.echo(f"  {em(f'Attempt {anum}')}  {ts[:25]}{grade_str}")
-                click.echo(f"           {len(det['files'])} file(s)")
+                click.echo(f"           {len(det.get('files', []))} file(s)")
                 print()
         return
 
@@ -176,25 +177,22 @@ def single_assignment(ctx, session_cookies, numeric_cid,
         details = scrape_attempt_details(ctx, numeric_cid, content_id, aid)
     except Exception as e:
         click.secho(f"  ⚠ Error loading details: {e}", fg="yellow")
-        details = {"timestamp": "", "files": [], "graded": False,
-                   "grade": None, "comment": None, "comment_date": None}
+        details = {"created": "", "files": [], "graded": False,
+                   "score": "", "feedback": ""}
 
-    ts = details["timestamp"]
-    files = details["files"]
-    graded = details["graded"]
-    grade = details["grade"]
-    comment = details["comment"]
-    comment_date = details["comment_date"]
+    ts = details.get("created", "")
+    files = details.get("files", [])
+    graded = details.get("graded", False)
+    score = details.get("score", "")
+    feedback = details.get("feedback", "")
 
     click.secho(f"\n  Assignment {content_id} - Attempt {anum}\n", fg="cyan", bold=True)
     click.echo(f"  Timestamp:  {ts or 'unknown'}")
     click.echo(f"  Status:     {'graded' if graded else 'ungraded'}")
-    if grade:
-        click.echo(f"  Grade:      {grade}/100")
-    if comment_date:
-        click.echo(f"  Feedback:   {comment_date}")
-    if comment:
-        click.echo(f"  {comment[:100]}")
+    if score:
+        click.echo(f"  Grade:      {score}/100")
+    if feedback:
+        click.echo(f"  Feedback:   {feedback[:100]}")
     click.echo(f"  Files:      {len(files)}")
     for fname, href in files:
         click.echo(f"    • {fname[:60]}")
@@ -203,6 +201,7 @@ def single_assignment(ctx, session_cookies, numeric_cid,
         out_dir = Path(output_dir) / slugify(f"assignment_{content_id}")
         out_dir.mkdir(parents=True, exist_ok=True)
         click.echo(f"\n  Downloading to {out_dir}...")
+        cookie_dict = {c["name"]: c["value"] for c in session_cookies if c.get("value")}
         for fname, href in files:
             stem, ext = os.path.splitext(fname)
             out_path = out_dir / f"attempt{anum}_{stem}{ext}"
@@ -210,7 +209,7 @@ def single_assignment(ctx, session_cookies, numeric_cid,
                 click.echo(f"    (exists: {out_path.name})")
                 continue
             try:
-                download_file(out_path, href, session_cookies)
+                download_file(out_path, href, cookie_dict)
                 size = out_path.stat().st_size
                 click.secho(f"    ✓ {out_path.name} ({size:,})", fg="green")
             except Exception as e:
@@ -466,53 +465,54 @@ def course_cmd(course_id, sub, content_id, attempt_arg, download_flag, output_di
     numeric_cid = get_course_numeric_id(course_id_str)
     set_last_course(course_id_str)
 
-    all_assignments = discover_assignments_for_course(course_id_str) if needs_assignments else []
+    needs_assignments = (
+        sub in ("assignments", None)
+        or (sub == "assignment" and content_id == "status")
+    )
+    all_assignments = (
+        discover_assignments_for_course(course_id_str) if needs_assignments else []
+    )
 
-    from playwright.sync_api import sync_playwright
-    with sync_playwright() as p:
-        browser = p.chromium.launch()
-        ctx_b = browser.new_context()
-        ctx_b.add_cookies(cookies)
-        try:
-            if sub == "assignments" or sub is None:
-                list_assignments(ctx_b, numeric_cid, course_name, all_assignments)
-            elif sub == "assignment":
-                if content_id is None:
-                    click.secho("❌  assignment needs a content_id or 'status'", fg="red")
-                    sys.exit(1)
-                if content_id == "status":
-                    all_status(ctx_b, numeric_cid, course_name, all_assignments)
-                else:
-                    single_assignment(ctx_b, cookies, numeric_cid,
-                                       content_id, attempt_arg, download_flag, output_dir)
-            else:
-                click.secho(f"❌  Unknown: {sub}", fg="red")
-                sys.exit(1)
-        finally:
-            browser.close()
+    # Pure REST: the discovery/attempt helpers accept ctx only for API
+    # compatibility with the old Playwright-based callers — they ignore it.
+    ctx = None
+    if sub == "assignments" or sub is None:
+        list_assignments(ctx, numeric_cid, course_name, all_assignments)
+    elif sub == "assignment":
+        if content_id is None:
+            click.secho("❌  assignment needs a content_id or 'status'", fg="red")
+            sys.exit(1)
+        if content_id == "status":
+            all_status(ctx, numeric_cid, course_name, all_assignments)
+        else:
+            single_assignment(ctx, cookies, numeric_cid,
+                               content_id, attempt_arg, download_flag, output_dir)
+    else:
+        click.secho(f"❌  Unknown: {sub}", fg="red")
+        sys.exit(1)
 
 
 @cli.command(name="submit")
 @click.argument("content_id")
 @click.argument("file_path", type=click.Path(exists=True))
 @click.option("-c", "--course", "course_id", help="Course ID (numeric). Auto-resolved if omitted.")
-@click.option("--comment", "comment", default=None, help="Optional comment text")
+@click.option("--comment", "comment", default=None, help="Optional comment text (ignored — the REST submit path has no comment support).")
 def submit_cmd(content_id, file_path, course_id, comment):
     """
-    Submit a file to a BB assignment.
+    Submit a file to a BB assignment (pure REST, no browser).
 
     Example:
       bb.py submit 622821 /tmp/hw.pdf          # auto-detect course
       bb.py submit 622821 /tmp/hw.pdf -c 8221  # explicit course
     """
-    from download import submit_homework
+    from sustech_survival.bb.submit import submit_file
     load_session_or_exit()
     try:
-        ok = submit_homework(content_id, file_path, course_id=course_id, comment=comment)
+        ok, msg = submit_file(content_id, file_path, course_id=course_id)
         if ok:
-            click.secho("✓  Submission successful!", fg="green")
+            click.secho(f"✓  Submission successful! {msg}", fg="green")
         else:
-            click.secho("⚠  Submission returned without confirmation.", fg="yellow")
+            click.secho(f"⚠  {msg}", fg="yellow")
     except Exception as e:
         click.secho(f"❌  Submission failed: {e}", fg="red")
         sys.exit(1)

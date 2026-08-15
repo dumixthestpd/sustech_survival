@@ -52,13 +52,16 @@ dependencies = [
 [project.optional-dependencies]
 # CLI support (click) is in core deps — [project.scripts] ships a `sustech` entry point.
 # Each group below adds one capability on top of the core library.
-playwright = [
-    # Legacy Blackboard file-download scraper / submitter (bb._playwright).
-    "playwright>=1.40",
-]
 webui = [
     # Unified web UI at / — TIS course selector + transit map + future submodules.
     "flask>=2.3",
+]
+playwright = [
+    # Browser automation used by: Library Primo search (lib.search), SSO
+    # provider brokers (sso), paper DB fetchers (papers), TIS eval (tis.eval).
+    # NOTE: bb (Blackboard) submission/download is pure REST and does NOT
+    # need this extra.
+    "playwright>=1.40",
 ]
 nces = [
     # NCES community course eval — Anubis PoW solver for listing scrape.
@@ -114,6 +117,8 @@ include = [
     "src/sustech_survival/resources/**/*",
     "src/sustech_survival/references/**/*.md",
     "src/sustech_survival/docs/**/*.md",
+    # context profile template.
+    "src/sustech_survival/context/templates/**/*",
     # Web UI assets (templates + transit frontend).
     "src/sustech_survival/webui/templates/**/*.html",
     "src/sustech_survival/transit/web/**/*",

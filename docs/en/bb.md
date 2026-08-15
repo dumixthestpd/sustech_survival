@@ -81,26 +81,32 @@ ddl(course_id='_8053_1') # single course
 
 ## File Submission
 
-```python
-from sustech_survival.bb.submit import submit_assignment
-
-submit_assignment(
-    course_id='_8053_1',
-    content_id=490876,
-    file_paths=['/tmp/report.pdf'],
-)
-```
-
-Also available via REST (no browser):
+The submitter is pure REST (no browser). `bb.submit` (formerly the
+Playwright submitter) now hosts the REST path:
 
 ```python
-from sustech_survival.bb.submit_rest import submit_assignment_rest
+from sustech_survival.bb.submit import submit_assignment_rest
 
 submit_assignment_rest(
     course_id='_8053_1',
     content_id='490876',
     file_path='/tmp/report.pdf',
 )
+```
+
+The legacy-signature wrapper (accepts a list of paths; only the first file
+is submitted via REST) and the `submit_file(content_id, file_path)` helper
+remain available:
+
+```python
+from sustech_survival.bb.submit import submit_assignment, submit_file
+
+submit_assignment(
+    course_id='_8053_1',
+    content_id='490876',
+    file_paths=['/tmp/report.pdf'],
+)
+ok, msg = submit_file('490876', '/tmp/report.pdf')  # auto-resolves course
 ```
 
 **⚠️ Always verify submission by checking attempt count increased after "success".**
@@ -115,7 +121,10 @@ from sustech_survival.bb.download import download_content
 download_content(content_id='_12345_1', out_dir='./downloads')
 ```
 
-Downloads all files attached to a content item. Requires the `[playwright]` extra for some legacy download paths.
+Content file downloads are pure REST. Note: the gradebook REST API does not
+expose the URLs of files submitted to an assignment (the old Playwright
+scraper was removed), so `download_submission` reports attempts without
+downloading files.
 
 ---
 

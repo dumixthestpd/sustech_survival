@@ -1,17 +1,18 @@
 """
 bb download — Download BB course materials and submitted assignments.
 
-REST-first (no Playwright) for:
+Pure REST (no Playwright) for everything this module does:
   • Course/content discovery
   • Course ID resolution
   • Submitted attempt metadata (via gradebook API)
   • x-bb-document content file URLs (bbcswebdav) — see download_file()
 
-Playwright is delegated to `bb._playwright` for the one case REST cannot
-do: scraping the submitted-file URLs from the assignment view page. If
-you only need the metadata (id, created, score, feedback), this module
-is fully REST. If you need the actual file URLs, you must install
-playwright (see bb/_playwright.py).
+Note: the gradebook REST API does NOT expose the URLs of the files a
+student submitted to an assignment (only attempt metadata: id, created,
+score, feedback). The old Playwright scraper that recovered those URLs
+(`bb._playwright.scrape_attempt_files_via_browser`) was removed, so
+`scrape_attempt_details` returns `files=[]` and `download_submission`
+reports attempts without downloading files.
 
 API:
   from download import download_content, resolve_course
@@ -67,7 +68,7 @@ def resolve_course(content_id):
     Find which course owns a content_id (fast path: check active courses first).
     Returns course_id string e.g. "8343".
     """
-    sess = _session()
+    sess = session()
     cids = [f"_{content_id}_1"]
 
     for bid in _ACTIVE_COURSE_IDS:
@@ -125,14 +126,14 @@ def normalize_bb_id(raw):
     return f"_{raw}_1"
 
 
-def get_content_item(course_id, content_id, session=None):
+def get_content_item(course_id, content_id, sess=None):
     """Fetch a single content item. Returns dict or None."""
-    if session is None:
-        session = session()
+    if sess is None:
+        sess = session()
     bid = normalize_bb_id(course_id)
     cid = normalize_bb_id(content_id)
     try:
-        return api(f"/learn/api/public/v1/courses/{bid}/contents/{cid}", session)
+        return api(f"/learn/api/public/v1/courses/{bid}/contents/{cid}", sess)
     except Exception:
         return None
 
@@ -154,7 +155,7 @@ def scrape_content_files(content_id):
 
     file entries are (name, url_or_path):
       • For x-bb-document items: bbcswebdav URLs extracted from body HTML
-      • For x-bb-file items: (fileName, content_id) — URL must be fetched by browser
+      • For x-bb-file items: (fileName, content_id) — no direct REST download URL
 
     Raises ValueError if content_id not in any known course.
     """
@@ -228,7 +229,7 @@ def download_content(content_id, out_dir=None):
     out_dir = Path(out_dir) if out_dir else Path.home() / "Downloads" / "BB-content"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    sess = _session()
+    sess = session()
     session_cookies = {c.name: c.value for c in sess.cookies}
 
     saved = []
@@ -236,7 +237,7 @@ def download_content(content_id, out_dir=None):
         out_path = out_dir / slugify(name)
         try:
             if url_or_path.startswith("_bbfile:"):
-                print(f"  ⚠ {name}: direct download not available (use Playwright)")
+                print(f"  ⚠ {name}: direct download not available via REST")
                 continue
             download_file(out_path, url_or_path, session_cookies)
             size = out_path.stat().st_size
@@ -255,7 +256,7 @@ def get_assignment_attempts(course_id, column_id):
     Return list of (attempt_id, attempt_num, created_timestamp) for a grade column.
     Uses gradebook REST API — no Playwright.
     """
-    sess = _session()
+    sess = session()
     bid = course_id if course_id.startswith("_") else f"_{course_id}_1"
     col_id = column_id if column_id.startswith("_") else f"_{column_id}_1"
     try:
@@ -275,7 +276,7 @@ def get_assignment_attempts(course_id, column_id):
 def discover_attempt_ids(ctx, numeric_cid, content_id):
     """
     Return list of (attempt_id, (attempt_num, created_timestamp)) for a content item.
-    Uses gradebook REST API for speed — no Playwright needed for discovery.
+    Uses gradebook REST API — no Playwright needed for discovery.
     ctx is accepted for API compatibility but not used (REST handles it).
     """
     column_id = get_column_id_for_content(numeric_cid, content_id)
@@ -286,19 +287,21 @@ def discover_attempt_ids(ctx, numeric_cid, content_id):
 
 def scrape_attempt_details(ctx, numeric_cid, content_id, attempt_id):
     """
-    Return dict of attempt details for display.
-    ctx is Playwright context (used to fetch file URLs via browser).
+    Return dict of attempt details for display (REST metadata only).
+    ctx is accepted for API compatibility but not used (no browser).
     Returns: {
         id, attempt_num, created, graded, score, feedback,
         files: [(filename, url_or_path)]
     }
+    `files` is always [] — the gradebook REST API does not expose
+    submitted-file URLs (the old Playwright scraper was removed).
     """
     column_id = get_column_id_for_content(numeric_cid, content_id)
     if not column_id:
         return {}
 
     # REST: get attempt metadata
-    sess = _session()
+    sess = session()
     bid = f"_{numeric_cid}_1"
     col_id = f"_{column_id}_1"
     try:
@@ -337,48 +340,36 @@ def scrape_attempt_details(ctx, numeric_cid, content_id, attempt_id):
             result["score"] = str(score_obj)
             result["graded"] = True
 
-    # Playwright: get submitted file URLs (gradebook has no file URLs)
-    ts_str, files = scrape_attempt_files_via_browser(numeric_cid, content_id, attempt_id)
-    if ts_str and not result["created"]:
-        result["created"] = ts_str
-    result["files"] = files
+    # The gradebook REST API does not expose submitted-file URLs — the old
+    # Playwright scraper (bb._playwright) was removed, so `files` stays empty.
+    result["files"] = []
 
     return result
 
 
-def get_column_id_for_content(course_id, content_id, session=None):
+def get_column_id_for_content(course_id, content_id, sess=None):
     """Get gradebook column ID for an assignment content item."""
-    if session is None:
-        session = session()
-    item = get_content_item(course_id, content_id, session)
+    if sess is None:
+        sess = session()
+    item = get_content_item(course_id, content_id, sess)
     if not item:
         return None
     return item.get("contentHandler", {}).get("gradeColumnId", "").lstrip("_").rstrip("_1")
 
 
-# ── Submission Attempt Files (delegated to Playwright module) ───────────────
-#
-# The actual scraping function lives in bb._playwright (the ONLY Playwright
-# import in the bb/ package). This re-export keeps existing callers working
-# without an import surface change.
-
-def scrape_attempt_files_via_browser(course_id, content_id, attempt_id):
-    """Playwright shim — see bb._playwright for the real implementation.
-
-    Returns (timestamp_str, [(filename, url)]).
-    """
-    from sustech_survival.bb._playwright import scrape_attempt_files_via_browser as _impl
-    return _impl(course_id, content_id, attempt_id)
-
-
-# ── Submission Download (gradebook REST + Playwright for files) ───────────────
+# ── Submission Download (gradebook REST metadata only) ──────────────────────
 
 def download_submission(course_id, content_id, column_id=None, out_dir=None):
     """
-    Download submitted files for an assignment using gradebook API for metadata
-    and Playwright for actual file URLs.
+    List submitted attempts for an assignment (gradebook REST metadata only).
 
-    Returns list of saved file paths.
+    The gradebook REST API exposes attempt metadata (id, created, score,
+    feedback) but NOT the URLs of the submitted files. The old Playwright
+    scraper that recovered those URLs was removed, so this function reports
+    the attempts and returns [] — actual file download is not available
+    via REST.
+
+    Returns [] (no files downloadable without a browser).
     """
     out_dir = Path(out_dir) if out_dir else Path.home() / "Downloads" / "BB-submissions"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -395,30 +386,13 @@ def download_submission(course_id, content_id, column_id=None, out_dir=None):
         print(f"No submission attempts for content {content_id}")
         return []
 
-    sess = _session()
-    session_cookies = {c.name: c.value for c in sess.cookies}
-
-    saved = []
+    print("  ℹ️  Gradebook REST exposes attempt metadata only — submitted file")
+    print("     URLs are not available via REST (the Playwright scraper was")
+    print("     removed), so files cannot be downloaded. Attempts:")
     for aid, anum, ts in attempts:
-        ts_str, files = scrape_attempt_files_via_browser(course_id, content_id, aid)
-        print(f"  Attempt {anum} ({ts_str}): {len(files)} file(s)")
-        for fname, href in files:
-            if len(attempts) > 1:
-                stem, ext = os.path.splitext(fname)
-                out_path = out_dir / f"attempt{anum}_{stem}{ext}"
-            else:
-                out_path = out_dir / fname
-            if out_path.exists():
-                print(f"    (exists: {out_path.name})")
-                continue
-            try:
-                download_file(out_path, href, session_cookies)
-                print(f"    ✓ {out_path.name} ({out_path.stat().st_size:,})")
-                saved.append(str(out_path))
-            except Exception as e:
-                print(f"    ✗ {fname}: {e}")
+        print(f"  Attempt {anum} ({ts})")
 
-    return saved
+    return []
 
 # NOTE: the standalone argparse CLI was removed 2026-08-10 during the
 # CLI unification. Use `sustech bb download` (defined in
