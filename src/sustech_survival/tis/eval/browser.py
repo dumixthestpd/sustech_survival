@@ -59,7 +59,7 @@ class TISAuthEval(TISAuth):
         # Step 1: get 3 category tasks
         tasks_resp = sess.get(
             f"{BASE}/personnelEvaluation/listObtainPersonnelEvaluationTasks",
-            params={"yhdm": "12413021", "rwmc": "", "sfyp": "0",
+            params={"yhdm": "<sid>", "rwmc": "", "sfyp": "0",
                     "pageNum": "1", "pageSize": "20"},
             timeout=15,
         )
@@ -88,7 +88,7 @@ class TISAuthEval(TISAuth):
             courses_resp = sess.get(
                 f"{BASE}/personnelEvaluation/listEcaluationRalationshipEnriry",
                 params={
-                    "pjrdm": "12413021",
+                    "pjrdm": "<sid>",
                     "wjid": firstwjid,
                     "bpmc": "", "sfyp": "0", "xnxq": xnxq,
                     "pageNum": "1", "pageSize": "50",

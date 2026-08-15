@@ -257,7 +257,7 @@ class Reservation:
                 "classKind": 1,
             }],
             "resvMemberInfoList": [{          # co-applicants
-                "accNo": 76727, "trueName": "段斯宸", "logonName": "12413021"
+                "accNo": 76727, "trueName": "<name>", "logonName": "<sid>"
             }],
             "resvKind": 16,                   # 16 = research room, etc.
             "classKind": 1,

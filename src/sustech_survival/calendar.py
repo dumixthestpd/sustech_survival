@@ -22,6 +22,7 @@ imported privately for the TIS-code translation API ("2025-20262" etc).
 from __future__ import annotations
 
 import json
+import os
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -78,7 +79,7 @@ DEFAULT_REPO = (
 DEFAULT_REPO_BASE = (
     "https://raw.githubusercontent.com/dumixthestpd/sustech-calendar/main"
 )
-_LOCAL_REPO = "/Users/dumix/Documents/sustech-calendar"
+_LOCAL_REPO = os.environ.get("SUSTECH_CALENDAR_LOCAL_REPO")
 
 
 class CalendarError(Exception):
@@ -694,9 +695,11 @@ class AcademicCalendar:
 
         ``level``: "undergraduate" or "graduate".
         ``online``:  True (default) reads from GitHub raw.
-                     False reads from the local checkout at
-                     ``_LOCAL_REPO/{year}/`` — useful when iterating on the
-                     JSON. When ``online=False`` the cache is not consulted.
+                     False reads from a local checkout of the calendar
+                     repo — set ``$SUSTECH_CALENDAR_LOCAL_REPO`` to its
+                     root path; useful when iterating on the JSON.
+                     When ``online=False`` the cache is not consulted,
+                     and ``$SUSTECH_CALENDAR_LOCAL_REPO`` must be set.
         ``cached``:  (only when ``online=True``) consult and update the
                      on-disk cache under
                      ``<sustech_survival>/tmp/calendar/{year}/``.
@@ -735,6 +738,11 @@ class AcademicCalendar:
             ge = _fetch_json_cached(year, "general.json", base_url,
                                     cached=cached, refresh=refresh)
         else:
+            if not _LOCAL_REPO:
+                raise CalendarError(
+                    "online=False requires $SUSTECH_CALENDAR_LOCAL_REPO to be set "
+                    "to the root of a local sustech-calendar checkout"
+                )
             ug = _read_json(f"{_LOCAL_REPO}/{year}/undergraduate.json")
             gr = _read_json(f"{_LOCAL_REPO}/{year}/graduate.json")
             ge = _read_json(f"{_LOCAL_REPO}/{year}/general.json")

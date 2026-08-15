@@ -53,7 +53,7 @@ session = auth.requests_session  # REMOVED — use auth.session
 ```python
 from sustech_survival.sso import TISAuth
 auth = TISAuth()
-auth.username   # '12413021'
+auth.username   # your SUSTech student ID
 auth.password   # CAS password
 ```
 
@@ -64,7 +64,7 @@ Reads credentials via `auth.username` / `auth.password` properties, which call `
 Create a `credentials.txt` file with one line:
 
 ```
-12413021:your_password
+YOUR_SID:your_password
 ```
 
 Pick any of these locations (first match wins):
@@ -95,7 +95,7 @@ sustech bb session check
 # Python — ensure() returns (ok: bool, reason: str)
 from sustech_survival.sso import TISAuth
 ok, reason = TISAuth().ensure()
-print(ok, reason)  # True "Logged in as 段斯宸" or False "..."
+print(ok, reason)  # True "Logged in as <your name>" or False "..."
 ```
 
 ## `Authorizer` (ABC)

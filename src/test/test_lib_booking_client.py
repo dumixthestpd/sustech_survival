@@ -105,15 +105,15 @@ class TestConstruction:
 class TestWhoami:
     def test_returns_user_info(self):
         s, calls = _make_session([_ok({
-            "accNo": 76727, "pid": "12413021", "trueName": "段斯宸",
-            "logonName": "12413021", "className": "2024级本科",
+            "accNo": 76727, "pid": "<sid>", "trueName": "<name>",
+            "logonName": "<sid>", "className": "2024级本科",
             "deptName": "南方科技大学", "manager": 1, "ident": 257,
             "status": 1, "kind": 1,
         })])
         c = LibBookingClient(s)
         me = c.whoami()
         assert isinstance(me, UserInfo)
-        assert me.true_name == "段斯宸"
+        assert me.true_name == "<name>"
         assert me.acc_no == 76727
         # Endpoint + method
         assert calls[0]["method"] == "GET"
@@ -218,7 +218,7 @@ class TestReservationRead:
                  "resvStatus": 1027, "classKind": 1, "resvKind": 16,
                  "resvDate": 20260701, "dayOfWeek": 2,
                  "resvDevInfoList": [{"devId": 13, "devName": "C105", "roomName": "C105", "labName": "L1", "kindName": "k1"}],
-                 "resvMemberInfoList": [{"accNo": 76727, "trueName": "段斯宸", "logonName": "12413021"}],
+                 "resvMemberInfoList": [{"accNo": 76727, "trueName": "<name>", "logonName": "<sid>"}],
                  "memo": ""},
                 {"resvId": 2, "uuid": "def", "testName": "y",
                  "resvBeginTime": 1782972000000, "resvEndTime": 1782975600000,
@@ -244,7 +244,7 @@ class TestReservationRead:
         assert resvs[0].end_time == datetime(2026, 7, 1, 15, 0)
         assert len(resvs[0].members) == 1
         assert resvs[0].members[0].acc_no == 76727
-        assert resvs[0].members[0].true_name == "段斯宸"
+        assert resvs[0].members[0].true_name == "<name>"
         # The server uses `beginDate` (not `startDate`) — verified from SPA
         assert calls[0]["params"]["beginDate"] == "2026-07-01"
         assert calls[0]["params"]["endDate"] == "2026-07-30"

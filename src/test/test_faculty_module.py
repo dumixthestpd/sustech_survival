@@ -4,8 +4,7 @@ These run against fixtures only (no network), so they don't make the skill
 slower or fragile. Live API behavior is verified manually via the CLI.
 
 To run:
-    /Users/dumix/.hermes/hermes-agent/venv/bin/python -m pytest \
-        src/test/test_faculty_module.py -v
+    python -m pytest src/test/test_faculty_module.py -v
 """
 import sys
 from pathlib import Path

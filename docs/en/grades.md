@@ -15,7 +15,7 @@ from sustech_survival.tis.grades import run
 ```python
 run()                        # all semesters
 run(semester='2025秋季')
-run(export='csv')            # -> ~/.openclaw/workspace/sustech/grades.csv
+run(export='csv')            # -> ./grades.csv
 ```
 
 Fetches from `https://tis.sustech.edu.cn/cjgl/grcjcx/grcjcx` via CAS-authenticated session. Returns grades grouped by semester with per-semester and overall GPA.

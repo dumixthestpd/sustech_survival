@@ -142,7 +142,7 @@ class TestPMSAuthOffCampus:
 
         from sustech_survival.sso.authorizer import AuthorizerError
         with pytest.raises(AuthorizerError) as exc:
-            auth.login_password(username="12413021", password="fake-but-not-used")
+            auth.login_password(username="<sid>", password="fake-but-not-used")
         assert "NOT on the SUSTech campus network" in str(exc.value)
 
 

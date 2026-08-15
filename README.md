@@ -187,7 +187,7 @@ python -m pytest src/test/ -v --live
 
 ## About the dev
 
-This module is developed by **dumixthestpd**, a non-CS undergraduate student (ID 12413021) at SUSTech, who only controls the macroscopic design. 99% of this module is agent-written and we're aware of the problematic code quality. We welcome more students to join us and contribute — contact me via SUSTech edu mail, and further info on joining the dev will be provided. PRs are also welcome.
+This module is developed by **dumixthestpd**, a non-CS undergraduate student at SUSTech, who only controls the macroscopic design. 99% of this module is agent-written and we're aware of the problematic code quality. We welcome more students to join us and contribute — open an issue to start the conversation. PRs are also welcome.
 
 ---
 

@@ -31,7 +31,7 @@ Usage::
 
     # Create a borrowing application (dry-run by default)
     form = BorrowApplication(
-        applicant_name="段斯宸", ...,
+        applicant_name="<name>", ...,
         details=[BorrowDetail(room_code="YJ-123", ...)],
     )
     saved = c.create_borrow_application(form, dry_run=True)   # no network call
