@@ -53,7 +53,7 @@ from sustech_survival.tis.classroom.live import LiveOccupancyClient, TIS_BASE
 from sustech_survival.semester import Semester
 from sustech_survival.tis.classroom._booking_time import BookingTime, Schedule
 from sustech_survival.consequence import (
-    Severity, Consequence, CONSEQUENCE_RICH,
+    Severity, Consequence, consequence_rich,
 )
 from .booking_schema import (
     AuditStatus,
@@ -219,7 +219,7 @@ class VenueBorrowClient:
 
     # ── Create application (the one real action) ──────────────────────────
 
-    @CONSEQUENCE_RICH(Consequence(
+    @consequence_rich(Consequence(
         name="classroom.create_borrow_application",
         severity=Severity.HIGH,
         irreversible=True,

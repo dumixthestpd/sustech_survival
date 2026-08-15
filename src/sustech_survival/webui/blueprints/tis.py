@@ -741,6 +741,21 @@ def _write(action: str, rwh: str, *, dry_run: bool, **kw):
         fn = {"add": c.add_course, "drop": c.drop_course,
               "add_to_cart": c.add_to_cart, "remove_from_cart": c.remove_from_cart}[action]
         res = fn(rwh, dry_run=dry_run, **{k: v for k, v in kw.items() if v is not None})
+        # Surface consequence metadata so the UI can warn before a real commit.
+        from sustech_survival.consequence import consequence_by_name
+        _name = {"add": "selectcourse.add_course", "drop": "selectcourse.drop_course",
+                 "add_to_cart": "selectcourse.add_to_cart",
+                 "remove_from_cart": "selectcourse.remove_from_cart"}[action]
+        cons = consequence_by_name(_name)
+        if isinstance(res, dict) and cons is not None and not dry_run:
+            res = dict(res)
+            res["consequence"] = {
+                "severity": cons.severity.value,
+                "irreversible": cons.irreversible,
+                "what_changes": cons.what_changes,
+                "risk": cons.risk,
+                "verify_url": cons.verify_url,
+            }
         return jsonify(res)
     except EnrollmentError as e:
         return jsonify({"ok": False, "error": str(e), "jg": e.jg,
