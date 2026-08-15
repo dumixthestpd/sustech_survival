@@ -507,12 +507,39 @@ def webui_cmd() -> None:
 @click.option("--host", "-H", default="0.0.0.0", show_default=True)
 @click.option("--transit-data", "transit_data_dir", default=None,
               help="Directory of exported transit GeoJSON.")
+@click.option("--skin", "skin", default=None,
+              help="Name of an installed skin to serve. Omit to use the first "
+                   "installed skin (or the built-in default).")
 @click.option("--debug/--no-debug", default=False)
 def webui_serve(port: Optional[int], host: str,
-                transit_data_dir: Optional[str], debug: bool) -> None:
+                transit_data_dir: Optional[str], skin: Optional[str],
+                debug: bool) -> None:
+    """Start the web UI.
+
+    ``--skin`` changes the active head on the spot: name any installed skin
+    (see ``sustech webui skins``) and it becomes the served page immediately,
+    without re-installing. If ``--skin`` names something unknown, serve exits
+    with the list of installed skins and an install hint.
+    """
     from ..webui.app import run, DEFAULT_PORT
+    from ..webui import loader
+    if skin:
+        try:
+            _sel = loader.find_skin(skin)          # validate up front
+        except KeyError as e:
+            click.secho(f"cannot serve: {e}", fg="red")
+            click.echo("  install a skin first, e.g. `sustech webui install default`, "
+                       "or pass --skin <one-of-the-above>.")
+            raise SystemExit(1)
+    elif not loader.installed_skins():
+        # Zero skins installed: still serve the built-in default head, but say
+        # so and point at `install default` so the user owns a moddable copy.
+        click.secho("no skins installed — serving the built-in default head.",
+                    fg="yellow")
+        click.echo("  tip: `sustech webui install default` copies it into your "
+                   "config so you can skin/mod it.")
     run(host=host, port=port or DEFAULT_PORT,
-        transit_data_dir=transit_data_dir, debug=debug)
+        transit_data_dir=transit_data_dir, skin=skin, debug=debug)
 
 
 @webui_cmd.command(name="open", help="Open UI in default browser.")
