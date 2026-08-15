@@ -18,6 +18,7 @@ class TestCourseFromApi:
     FULL = {
         "kcdm": "BIO101",
         "kcmc": "生命科学概论",
+        "kcmc_en": "Life Science Introduction-001class-Chinese",
         "rwmc_en": "Life Science Introduction-001class-Chinese",
         "kxh": "001",
         "rwh": "2025-2026-2-BIO101-001",
@@ -31,6 +32,7 @@ class TestCourseFromApi:
         "bksrl": "100",
         "yjsrl": "20",
         "pylx": "1",
+        "pylx_label": "1",  # raw code; if present, takes precedence over the pylx→label lookup
         "kcxx": (
             '<p>教师: <a href="javascript:void(0);">张三</a> '
             '<a href="javascript:void(0);">李四</a></p>'
