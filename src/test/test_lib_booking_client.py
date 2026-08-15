@@ -105,8 +105,8 @@ class TestConstruction:
 class TestWhoami:
     def test_returns_user_info(self):
         s, calls = _make_session([_ok({
-            "accNo": 76727, "pid": "<sid>", "trueName": "<name>",
-            "logonName": "<sid>", "className": "2024级本科",
+            "accNo": 100001, "pid": "<sid>", "trueName": "<name>",
+            "logonName": "<sid>", "className": "2025级本科",
             "deptName": "南方科技大学", "manager": 1, "ident": 257,
             "status": 1, "kind": 1,
         })])
@@ -114,7 +114,7 @@ class TestWhoami:
         me = c.whoami()
         assert isinstance(me, UserInfo)
         assert me.true_name == "<name>"
-        assert me.acc_no == 76727
+        assert me.acc_no == 100001
         # Endpoint + method
         assert calls[0]["method"] == "GET"
         assert calls[0]["url"].endswith("/ic-web/auth/userInfo")
@@ -218,7 +218,7 @@ class TestReservationRead:
                  "resvStatus": 1027, "classKind": 1, "resvKind": 16,
                  "resvDate": 20260701, "dayOfWeek": 2,
                  "resvDevInfoList": [{"devId": 13, "devName": "C105", "roomName": "C105", "labName": "L1", "kindName": "k1"}],
-                 "resvMemberInfoList": [{"accNo": 76727, "trueName": "<name>", "logonName": "<sid>"}],
+                 "resvMemberInfoList": [{"accNo": 100001, "trueName": "<name>", "logonName": "<sid>"}],
                  "memo": ""},
                 {"resvId": 2, "uuid": "def", "testName": "y",
                  "resvBeginTime": 1782972000000, "resvEndTime": 1782975600000,
@@ -243,7 +243,7 @@ class TestReservationRead:
         assert resvs[0].begin_time == datetime(2026, 7, 1, 14, 0)  # unix ms
         assert resvs[0].end_time == datetime(2026, 7, 1, 15, 0)
         assert len(resvs[0].members) == 1
-        assert resvs[0].members[0].acc_no == 76727
+        assert resvs[0].members[0].acc_no == 100001
         assert resvs[0].members[0].true_name == "<name>"
         # The server uses `beginDate` (not `startDate`) — verified from SPA
         assert calls[0]["params"]["beginDate"] == "2026-07-01"
@@ -320,7 +320,7 @@ class TestAddReservation:
         # best-effort name search). Policy enforcement is tested
         # separately in test_lib_booking_policy.py.
         s, calls = _make_session([
-            _ok({"accNo": 76727, "pid": "1", "trueName": "x",
+            _ok({"accNo": 100001, "pid": "1", "trueName": "x",
                  "logonName": "1", "className": "x", "deptName": "x",
                  "manager": 0, "ident": 0, "status": 1, "kind": 1}),
         ])
@@ -343,7 +343,7 @@ class TestAddReservation:
     def test_commit_actually_posts(self):
         s, calls = _make_session([
             # whoami
-            _ok({"accNo": 76727, "pid": "1", "trueName": "x",
+            _ok({"accNo": 100001, "pid": "1", "trueName": "x",
                  "logonName": "1", "className": "x", "deptName": "x",
                  "manager": 0, "ident": 0, "status": 1, "kind": 1}),
             # POST /reserve
@@ -373,7 +373,7 @@ class TestAddReservation:
         # Mock the _dev_name lookup to return empty (room not found
         # in any lab) so the policy check fires only on the time.
         s, calls = _make_session([
-            _ok({"accNo": 76727, "pid": "1", "trueName": "x",
+            _ok({"accNo": 100001, "pid": "1", "trueName": "x",
                  "logonName": "1", "className": "x", "deptName": "x",
                  "manager": 0, "ident": 0, "status": 1, "kind": 1}),
             # _dev_name will call self.rooms() up to 10 times — queue

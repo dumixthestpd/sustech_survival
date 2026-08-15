@@ -76,16 +76,24 @@ class SelectCourseClient:
     BASE_URL = "https://tis.sustech.edu.cn"
 
     def __init__(self, *, semester: Optional[Semester] = None,
-                 xn: str = "2025-2026", xq: str = "2",
+                 xn: Optional[str] = None, xq: Optional[str] = None,
                  max_age: int = DEFAULT_TTL):
         if semester is not None:
             self._sem = semester
             self.xn = semester.xn
             self.xq = semester.xq
+        elif xn is None and xq is None:
+            # Resolve the live academic term when the caller didn't pin one.
+            self._sem = Semester.current()
+            self.xn = self._sem.xn
+            self.xq = self._sem.xq
         else:
-            self._sem = Semester(xn, xq)
-            self.xn = xn
-            self.xq = xq
+            # Partial or full explicit term — fall back to the current term
+            # for whichever component wasn't supplied.
+            current = Semester.current()
+            self._sem = Semester(xn or current.xn, xq or current.xq)
+            self.xn = self._sem.xn
+            self.xq = self._sem.xq
         self.max_age = max_age
         # Cache lives in the uniform package-scoped tmp/ tree.
         from sustech_survival import _cache
@@ -598,9 +606,9 @@ SelectCourseClient.submit_bids = submit_bids
 
 
 def selectcourse(*, semester: Optional[Semester] = None,
-                 xn: str = "2025-2026", xq: str = "2",
+                 xn: Optional[str] = None, xq: Optional[str] = None,
                  max_age: int = DEFAULT_TTL) -> SelectCourseClient:
-    """Module-level factory. Defaults to current Spring semester.
+    """Module-level factory. Defaults to the live academic term.
 
     Pass `semester=Semester(...)` for full type support,
     or `xq="3"` for summer (kept for backward compatibility).

@@ -254,14 +254,16 @@ def slot_times(zc: int) -> dict:
     """
     from sustech_survival.sso import TISAuth
     from sustech_survival.sso.authorizer import AuthorizerError
+    from sustech_survival.semester import Semester
     try:
         auth = TISAuth()
         if not auth.refresh():
             raise AuthorizerError("TIS auth refresh failed — check credentials.txt")
         session = auth.session
+        sem = Semester.current()
         resp = session.post(
             'https://tis.sustech.edu.cn/component/queryKbjg',
-            data={'xn': '2025-2026', 'xq': '2', 'zc': str(zc)},
+            data={'xn': sem.xn, 'xq': sem.xq, 'zc': str(zc)},
             timeout=10,
         )
         content = resp.json().get('content', [])

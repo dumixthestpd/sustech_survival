@@ -438,8 +438,8 @@ def schedule_cmd(zc, xn, xq, fetch_all) -> None:
 
 
 @cli.command(name="campus-schedule", help="Full TIS campus schedule (all rooms, all courses).")
-@click.option("--semester", default="2025-2026-2", show_default=True,
-              help="Format: YYYY-YYYY-Q.")
+@click.option("--semester", default=None,
+              help="Format: YYYY-YYYY-Q. Defaults to the live term.")
 @click.option("--full", is_flag=True, help="Include every entry.")
 @click.option("--json", "as_json", is_flag=True, help="Output JSON.")
 @click.option("--csv", "as_csv", is_flag=True, help="Output CSV.")
@@ -449,6 +449,10 @@ def campus_schedule_cmd(semester, full, as_json, as_csv) -> None:
     import csv as _csv
     import sys as _sys
     from .campus_schedule import get_campus_schedule as campus_schedule
+    if semester is None:
+        from sustech_survival.semester import Semester
+        current = Semester.current()
+        semester = f"{current.xn}-{current.xq}"
     parts = semester.rsplit("-", 1)
     xn, xq = parts[0], parts[1]
     rows = campus_schedule(xn=xn, xq=xq, full=full)

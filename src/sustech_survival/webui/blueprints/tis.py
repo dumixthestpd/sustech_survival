@@ -72,9 +72,11 @@ bp = Blueprint("tis", __name__)
 _clients: Dict[str, SelectCourseClient] = {}
 _clients_lock = threading.Lock()
 
-# Default semester for course selection.
-DEFAULT_XN = "2026-2027"  # Fall 2026 — the upcoming course-selecting season
-DEFAULT_XQ = "1"          # Fall semester
+# Default semester for course selection — resolved from the live term.
+def _default_sem() -> tuple[str, str]:
+    from sustech_survival.semester import Semester
+    s = Semester.current()
+    return s.xn, s.xq
 
 
 def _client(xn: str, xq: str) -> SelectCourseClient:
@@ -111,8 +113,8 @@ def _course_to_dict(c) -> dict:
 
 
 def _parse_sem(args) -> tuple[str, str]:
-    return (args.get("xn", DEFAULT_XN) or DEFAULT_XN,
-            args.get("xq", DEFAULT_XQ) or DEFAULT_XQ)
+    dxn, dxq = _default_sem()
+    return (args.get("xn") or dxn, args.get("xq") or dxq)
 
 
 def _int_or_none(v):
