@@ -524,6 +524,66 @@ def webui_open(port: int, path: str) -> None:
     webbrowser.open(f"http://localhost:{port}{path}")
 
 
+@webui_cmd.command(name="install", help="Install a web-UI skin (head).")
+@click.argument("source", required=False, default="default")
+@click.option("--path", "skin_path", default=None,
+              help="Path to a skin directory with a manifest.json.")
+def webui_install(source: str, skin_path: str) -> None:
+    """Install a skin into the user's webui cache.
+
+    ``source``:
+      - ``default``          → install the shipped default head (ours) so you
+                               can mod it without touching the installed package.
+      - any directory path   → ``--path <dir>`` points at a custom skin.
+    Then ``sustech webui serve`` / ``open`` uses the newest installed skin.
+    """
+    from ..webui import loader
+    if source == "default" or (skin_path is None and source == "default"):
+        dst = loader.install_skin("default", default=True)
+        click.secho(f"✅ Installed the default skin → {dst}", fg="green")
+        click.echo("   It's now a folder under ~/.config/sustech-survival/webui/skins/")
+        click.echo("   edit it, or run `sustech webui install --path <your-skin>` for your own.")
+        return
+    if skin_path:
+        from pathlib import Path
+        p = Path(skin_path)
+        if not p.is_dir():
+            click.secho(f"not a directory: {p}", fg="red")
+            raise SystemExit(1)
+        try:
+            dst = loader.install_skin(p)
+        except ValueError as e:
+            click.secho(f"not a valid skin: {e}", fg="red")
+            raise SystemExit(1)
+        click.secho(f"✅ Installed skin → {dst}", fg="green")
+        return
+    click.secho("pass a skin directory via --path, or use the default.",
+                fg="yellow")
+    raise SystemExit(1)
+
+
+@webui_cmd.command(name="skins", help="List installed web-UI skins.")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def webui_skins(as_json: bool) -> None:
+    """Show which skins are available to serve and which is active."""
+    from ..webui import loader
+    skins = loader.installed_skins()
+    if as_json:
+        click.echo(_json.dumps([
+            {"name": s.name, "version": s.version, "entry": s.entry,
+             "path": str(s.root)} for s in skins
+        ], ensure_ascii=False, indent=2))
+        return
+    if not skins:
+        click.echo("(no skins installed — `sustech webui install default` to set one up)")
+        return
+    active = skins[0]
+    click.secho(f"{len(skins)} skin(s); active = {active.name}@{active.version}", bold=True)
+    for s in skins:
+        marker = "→" if s.name == active.name else " "
+        click.echo(f"  {marker} {s.name}  v{s.version}  → {s.root}")
+
+
 # ========================================================================
 # context — daily-use snapshot (inline, no module cli.py)
 # ========================================================================
