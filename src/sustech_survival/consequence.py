@@ -17,7 +17,9 @@ an evaluation, a bid submission. The user directive (2026-08) is:
 This module is the single registry. It defines:
 
   - ``Consequence`` — descriptor of one risky operation.
-  - ``CONSEQUENCE_RICH`` — decorator that tags a write method.
+  - ``consequence_rich`` — decorator that tags a write method
+    (lowercase, like ``@dataclass``). ``CONSEQUENCE_RICH`` is a
+    backwards-compatible alias.
   - ``consequence_of(method)`` — read back the descriptor.
   - ``require_confirmation`` — the CLI confirmation gate.
 
@@ -101,7 +103,7 @@ def consequence_by_name(name: str) -> Optional[Consequence]:
     return _NAME_REGISTRY.get(name)
 
 
-def CONSEQUENCE_RICH(consequence: Consequence):
+def consequence_rich(consequence: Consequence):
     """Decorate a write method to tag it as consequence-rich.
 
     Also indexes the descriptor by ``consequence.name`` so a lookup by string
@@ -110,7 +112,7 @@ def CONSEQUENCE_RICH(consequence: Consequence):
 
     Usage::
 
-        @CONSEQUENCE_RICH(Consequence(
+        @consequence_rich(Consequence(
             name="selectcourse.drop_course",
             severity=Severity.HIGH,
             irreversible=True,
@@ -128,6 +130,10 @@ def CONSEQUENCE_RICH(consequence: Consequence):
         return func
 
     return deco
+
+
+# Backwards-compatible alias (early adopters used the ALL-CAPS spelling).
+CONSEQUENCE_RICH = consequence_rich
 
 
 # ── CLI confirmation gate ──────────────────────────────────────────────────
@@ -169,7 +175,8 @@ def require_confirmation(
 __all__ = [
     "Severity",
     "Consequence",
-    "CONSEQUENCE_RICH",
+    "consequence_rich",
+    "CONSEQUENCE_RICH",  # backwards-compat alias
     "consequence_of",
     "is_consequence_rich",
     "consequence_by_name",

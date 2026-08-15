@@ -61,7 +61,7 @@ import requests
 
 from sustech_survival.sso import BBAuth
 from sustech_survival.consequence import (
-    Severity, Consequence, CONSEQUENCE_RICH,
+    Severity, Consequence, consequence_rich,
 )
 
 from .result import success, failure, dry_run as _dry_run_result
@@ -220,7 +220,7 @@ _FILE_PICKER_LOCAL_FIELDS = {
 # submit_assignment_rest — end-to-end REST submission (the primitive)
 # ─────────────────────────────────────────────────────────────────────────
 
-@CONSEQUENCE_RICH(Consequence(
+@consequence_rich(Consequence(
     name="bb.submit_assignment_rest",
     severity=Severity.MEDIUM,
     irreversible=True,

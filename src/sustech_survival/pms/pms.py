@@ -56,7 +56,7 @@ from sustech_survival.sso._offcampus import (
     off_campus_hint,
 )
 from sustech_survival.consequence import (
-    Severity, Consequence, CONSEQUENCE_RICH,
+    Severity, Consequence, consequence_rich,
 )
 
 OFF_CAMPUS_HINT = off_campus_hint("PMS")
@@ -119,13 +119,14 @@ class PMSClient:
         data = self._unwrap(r) or []
         return [PrintJob.from_api(j) for j in data]
 
-    @CONSEQUENCE_RICH(Consequence(
+    @consequence_rich(Consequence(
         name="pms.delete_print_job",
-        severity=Severity.LOW,
+        severity=Severity.HIGH,
         irreversible=True,
         what_changes="Deletes an uploaded (not-yet-printed) print job.",
-        risk="Deletion is final; you must re-upload to print the file again.",
-        verify_url="https://pms.sustech.edu.cn",
+        risk=("Irreversible: the uploaded file is gone from your print queue. "
+              "If you don't still have the source file locally, it is DATA LOSS."),
+        verify_url="https://pms.sustech.edu.cn/client/PrintJob/Get",
     ))
     def delete_print_job(self, job_id: int) -> bool:
         """POST /client/PrintJob/Del — delete an uploaded print job.
@@ -155,13 +156,14 @@ class PMSClient:
         data = self._unwrap(r) or []
         return [ScanJob.from_api(j) for j in data]
 
-    @CONSEQUENCE_RICH(Consequence(
+    @consequence_rich(Consequence(
         name="pms.delete_scan_job",
-        severity=Severity.LOW,
+        severity=Severity.HIGH,
         irreversible=True,
         what_changes="Deletes an uploaded scan document.",
-        risk="Deletion is final; the scanned file is gone unless you have it locally.",
-        verify_url="https://pms.sustech.edu.cn",
+        risk=("Irreversible: the scanned document is gone unless you still have "
+              "it locally. This is the highest-risk PMS operation."),
+        verify_url="https://pms.sustech.edu.cn/client/Scan/Get",
     ))
     def delete_scan_job(self, job_id: int) -> bool:
         """POST /client/Scan/Del — delete a scan. Server expects `{dwJobId}`."""
@@ -227,14 +229,15 @@ class PMSClient:
 
     # ── Cloud print upload (云打印) ─────────────────────────────────────────
 
-    @CONSEQUENCE_RICH(Consequence(
+    @consequence_rich(Consequence(
         name="pms.upload_print",
-        severity=Severity.MEDIUM,
-        irreversible=True,
-        what_changes="Uploads a file to your campus print queue.",
-        risk=("Uploading itself is free, but confirming the wrong file/options "
-              "can cost the user money when it prints at a station."),
-        verify_url="https://pms.sustech.edu.cn",
+        severity=Severity.LOW,
+        irreversible=False,
+        what_changes="Uploads a file to your campus print queue (does not print).",
+        risk=("Upload itself is free and reversible (delete the job). Money is "
+              "only spent when it is actually printed at a station — check the "
+              "file and options before printing, not before upload."),
+        verify_url="https://pms.sustech.edu.cn/client/PrintJob/Get",
     ))
     def upload_print(
         self,

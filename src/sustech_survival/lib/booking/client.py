@@ -43,7 +43,7 @@ from .schema import (
     build_reservation_payload,
 )
 from sustech_survival.consequence import (
-    Severity, Consequence, CONSEQUENCE_RICH,
+    Severity, Consequence, consequence_rich,
 )
 
 
@@ -315,7 +315,7 @@ class LibBookingClient:
 
     # ── Write: create reservation (destructive — dry-run by default) ────────
 
-    @CONSEQUENCE_RICH(Consequence(
+    @consequence_rich(Consequence(
         name="libbooking.add_reservation",
         severity=Severity.MEDIUM,
         irreversible=False,
@@ -441,7 +441,7 @@ class LibBookingClient:
 
     # ── Write: cancel reservation (destructive — dry-run by default) ────────
 
-    @CONSEQUENCE_RICH(Consequence(
+    @consequence_rich(Consequence(
         name="libbooking.cancel_reservation",
         severity=Severity.LOW,
         irreversible=True,

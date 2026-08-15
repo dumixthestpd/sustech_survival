@@ -28,7 +28,7 @@ from .endpoints import (
 from .errors import EnrollmentError
 from .queryform import build_queryform
 from sustech_survival.consequence import (
-    Severity, Consequence, CONSEQUENCE_RICH,
+    Severity, Consequence, consequence_rich,
 )
 
 
@@ -83,7 +83,7 @@ def _build(self, **kw) -> dict:
 
 # ── Single-pick writes ──────────────────────────────────────────────────
 
-@CONSEQUENCE_RICH(Consequence(
+@consequence_rich(Consequence(
     name="selectcourse.add_course",
     severity=Severity.MEDIUM,
     irreversible=False,
@@ -140,7 +140,7 @@ def add_course(self, rwh: str, *,
                        dry_run=dry_run, rwh=rwh)
 
 
-@CONSEQUENCE_RICH(Consequence(
+@consequence_rich(Consequence(
     name="selectcourse.drop_course",
     severity=Severity.HIGH,
     irreversible=True,
@@ -165,7 +165,7 @@ def drop_course(self, rwh: str, *, dry_run: bool = True,
                        dry_run=dry_run, rwh=rwh)
 
 
-@CONSEQUENCE_RICH(Consequence(
+@consequence_rich(Consequence(
     name="selectcourse.add_to_cart",
     severity=Severity.LOW,
     irreversible=False,
@@ -192,7 +192,7 @@ def add_to_cart(self, rwh: str, *, bid: int = 1,
                        dry_run=dry_run, rwh=rwh)
 
 
-@CONSEQUENCE_RICH(Consequence(
+@consequence_rich(Consequence(
     name="selectcourse.remove_from_cart",
     severity=Severity.LOW,
     irreversible=False,
@@ -250,7 +250,7 @@ def update_bid(self, rwh: str, bid: int, *,
     return _post_xsxk(self, url, payload, dry_run=dry_run, rwh=rwh)
 
 
-@CONSEQUENCE_RICH(Consequence(
+@consequence_rich(Consequence(
     name="selectcourse.submit_bids",
     severity=Severity.HIGH,
     irreversible=True,
