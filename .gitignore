@@ -121,3 +121,8 @@ docs/ui-verification/*/live-data.json
 # Test-run artifacts
 .pytest_cache/
 pytest-cache-files-*/
+
+# Release log lives on GitHub Releases, not in the repo. See git history until
+# the first published release (2026-08).
+CHANGELOG.md
+

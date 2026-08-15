@@ -46,7 +46,9 @@ Start at `docs/en/index.md` (or `docs/zh/index.md`). It maps each module to a pe
 - One logical change per PR.
 - Link the issue or discussion in the description.
 - Tests added or updated for any user-visible change.
-- `[Unreleased]` CHANGELOG entry for user-visible changes (cut into a release section at version-bump time).
+- User-visible changes get a clear commit-message body. Release notes are
+  written to GitHub Releases at tag time (no in-repo `CHANGELOG.md`;
+  see `.gitignore`).
 - Live tests (`@pytest.mark.live`) are optional — only add them if you can verify against your own SUSTech account.
 
 ## Commit messages

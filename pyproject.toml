@@ -91,7 +91,7 @@ all = [
 Homepage = "https://github.com/dumixthestpd/sustech-survival"
 Documentation = "https://github.com/dumixthestpd/sustech-survival#readme"
 Issues = "https://github.com/dumixthestpd/sustech-survival/issues"
-Changelog = "https://github.com/dumixthestpd/sustech-survival/blob/main/CHANGELOG.md"
+Changelog = "https://github.com/dumixthestpd/sustech-survival/releases"
 
 [project.scripts]
 # Unified subcommand dispatcher — `sustech bb`, `sustech tis`, etc.
@@ -140,7 +140,6 @@ include = [
     "src/sustech_survival",
     "README.md",
     "LICENSE",
-    "CHANGELOG.md",
     "pyproject.toml",
     "docs",
 ]
