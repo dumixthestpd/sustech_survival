@@ -22,6 +22,8 @@ DEFAULT_PORT = 61019
 HERE = Path(__file__).resolve().parent
 TEMPLATES = HERE / "templates"
 TIS_STATIC = HERE / "static" / "tis"
+# Brand assets live in the package's resources/ dir (shipped in the wheel).
+RESOURCES = Path(__file__).resolve().parent.parent / "resources"
 
 
 def create_app(*, transit_data_dir: Optional[str] = None) -> Flask:
@@ -37,6 +39,15 @@ def create_app(*, transit_data_dir: Optional[str] = None) -> Flask:
         static_folder=None,   # we inline webui assets; no /static mount
     )
     app.config["TRANSIT_DATA_DIR"] = transit_data_dir
+
+    # ── Brand assets (logo / favicon) ───────────────────────────────────
+    @app.route("/logo.svg")
+    def _logo():
+        return send_from_directory(str(RESOURCES), "logo.svg")
+
+    @app.route("/favicon.svg")
+    def _favicon():
+        return send_from_directory(str(RESOURCES), "logo.svg")
 
     # ── TIS static assets (extracted from the template) ────────────────
     # Transit's own blueprint mounts /static at root for its own files;

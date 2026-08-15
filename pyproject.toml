@@ -133,6 +133,9 @@ exclude = [
     "src/sustech_survival/credentials.txt",
     "src/sustech_survival/credentials.example.txt",
     "src/sustech_survival/**/session.json",
+    # Leave the oversized design master out of the wheel (only the display
+    # mark `logo.svg` / `logo-full.svg` are served).
+    "src/sustech_survival/resources/logo-full-source.svg",
 ]
 
 [tool.hatch.build.targets.sdist]
