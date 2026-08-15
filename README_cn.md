@@ -2,6 +2,11 @@
 
 # sustech-survival
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/dumixthestpd/sustech-survival/main/src/sustech_survival/resources/logo-full.svg"
+       alt="sustech-survival" width="360">
+</p>
+
 `sustech_survival` 是一个允许在 API 层面调用南科大各服务系统的 Python 模块。它满足 SUSTech 学生在 BB、TIS、图书馆、PMS 等系统的日常需求。
 
 通过在代码层面打通这些服务，我们简化了校园系统的使用，提供了一条通往个性化校园体验的捷径，更重要的是 —— 接入并欢迎 AI 助手进入你的校园生活。
