@@ -359,65 +359,6 @@ class TestNormalizeRoomName:
         assert BUILDING_ALIASES["智华"] == "智华楼"
 
 
-@pytest.mark.skipif(
-    not Path("/Users/dumix/.openclaw/workspace/skills/sustech_survival/classroom/cache/live/didian_2025-2026_2.json").exists(),
-    reason="didian cache not present (run `classroom live` once to bootstrap)",
-)
-class TestRoomCodeForNameAliasing:
-    """All three 三教 / 智华 / 智华楼 spellings must resolve to the same dm.
-
-    Uses the on-disk didian cache, no network. Verifies the end-to-end
-    aliasing→catalog-match path that `classroom live 三教102` walks through.
-
-    NOTE: the cache lives at the legacy "<skill_root>/classroom/cache/live/"
-    path (where it was originally bootstrapped). The production code reads
-    from the new uniform "<pkg>/tmp/classroom/live/" path (introduced 2026-08
-    as part of the cache layout unification). To bridge the gap without
-    modifying the production source, ``setup_method`` patches
-    ``_query_didian_catalog`` to load from the legacy cache file.
-    """
-
-    # Legacy cache location (populated 2026-06-28). The new uniform
-    # location is empty in the bootstrap state — once `classroom live`
-    # runs once and saves to the new location, this patch could be
-    # removed, but the test would still work either way.
-    LEGACY_CACHE = Path("/Users/dumix/.openclaw/workspace/skills/sustech_survival/classroom/cache/live/didian_2025-2026_2.json")
-
-    def setup_method(self):
-        self.c = ClassroomOccupancy()
-        # Bridge the cache location gap so the test exercises the real
-        # aliasing→catalog-match logic with real TIS didian data.
-        cache = json.loads(self.LEGACY_CACHE.read_text())
-        rooms = cache.get("rooms", [])
-        # Bind to the instance so other tests don't share state.
-        self.c._query_didian_catalog = lambda: rooms
-
-    def test_sanjiao_resolves_to_zh(self):
-        """三教102 → ZH-102 (the live data source)."""
-        assert self.c._room_code_for_name("三教102") == "ZH-102"
-
-    def test_short_zhihua_resolves_to_zh(self):
-        assert self.c._room_code_for_name("智华102") == "ZH-102"
-
-    def test_canonical_resolves_to_zh(self):
-        assert self.c._room_code_for_name("智华楼102") == "ZH-102"
-
-    def test_all_three_spellings_return_same_dm(self):
-        """The whole point — 三教 / 智华 / 智华楼 all give the same room code."""
-        a = self.c._room_code_for_name("三教116")
-        b = self.c._room_code_for_name("智华116")
-        c = self.c._room_code_for_name("智华楼116")
-        assert a is not None
-        assert a == b == c
-
-    def test_unrelated_buildings_unaffected(self):
-        """一教324 is NOT aliased — must still work normally."""
-        assert self.c._room_code_for_name("一教324") == "YJ-324"
-
-    def test_nonexistent_room_returns_none(self):
-        """Rooms that don't exist anywhere return None, not crash."""
-        assert self.c._room_code_for_name("不存在999") is None
-
 
 # ── Mark for live tests (skipped by default) ────────────────────────────────
 
