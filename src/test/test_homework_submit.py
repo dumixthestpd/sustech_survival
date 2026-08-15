@@ -516,7 +516,7 @@ class TestHomeworkItemSubmitRest:
         real_pdf = tmp_path / "real.pdf"
         real_pdf.write_bytes(b"%PDF-1.4\n")
 
-        from sustech_survival.bb import submit_rest as submit_rest_mod
+        from sustech_survival.bb import submit as submit_rest_mod
         captured = {}
 
         def fake_submit_assignment_rest(course_id, content_id, file_path,
@@ -556,7 +556,7 @@ class TestHomeworkItemSubmitRest:
         real_pdf = tmp_path / "my_basename.pdf"
         real_pdf.write_bytes(b"%PDF-1.4\n")
 
-        from sustech_survival.bb import submit_rest as submit_rest_mod
+        from sustech_survival.bb import submit as submit_rest_mod
         captured = {}
 
         def fake_submit_assignment_rest(course_id, content_id, file_path,
@@ -587,7 +587,7 @@ class TestHomeworkItemSubmitRest:
         pdf = tmp_path / "x.pdf"
         pdf.write_bytes(b"%PDF-1.4\n")
 
-        from sustech_survival.bb import submit_rest as submit_rest_mod
+        from sustech_survival.bb import submit as submit_rest_mod
         def fake_submit(*a, **kw): return True, "ok"
         monkeypatch.setattr(submit_rest_mod, "submit_assignment_rest", fake_submit)
 
@@ -609,7 +609,7 @@ class TestHomeworkItemSubmitRest:
         pdf = tmp_path / "x.pdf"
         pdf.write_bytes(b"%PDF-1.4\n")
 
-        from sustech_survival.bb import submit_rest as submit_rest_mod
+        from sustech_survival.bb import submit as submit_rest_mod
         def fake_submit(*a, **kw): return True, "DRY-RUN: ok"
         monkeypatch.setattr(submit_rest_mod, "submit_assignment_rest", fake_submit)
 
@@ -630,7 +630,7 @@ class TestHomeworkItemSubmitRest:
         pdf = tmp_path / "x.pdf"
         pdf.write_bytes(b"%PDF-1.4\n")
 
-        from sustech_survival.bb import submit_rest as submit_rest_mod
+        from sustech_survival.bb import submit as submit_rest_mod
         def fake_submit(*a, **kw): return True, "ok"
         monkeypatch.setattr(submit_rest_mod, "submit_assignment_rest", fake_submit)
 

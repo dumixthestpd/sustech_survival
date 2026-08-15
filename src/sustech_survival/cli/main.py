@@ -542,6 +542,24 @@ def context_cmd(level: str, as_json: bool) -> None:
         click.echo(ctx.to_str(level=level))
 
 
+@click.command(name="profile", help="Fill and write the user's SUSTech profile.")
+@click.option("-o", "--output", "output", default=None,
+              help="Where to write the profile Markdown (default: ./sustech_profile.md).")
+@click.option("--json", "as_json", is_flag=True, help="Print the profile as JSON instead.")
+def profile_cmd(output: Optional[str], as_json: bool) -> None:
+    """Build the user profile from live SUSTech data and render it.
+
+    Requires SUSTech SSO credentials (credentials.txt) — see ``sustech --help``
+    / the ``sso`` subcommand. Prints the generated path on success.
+    """
+    from ..context import fetch_profile, gen_usr_profile
+    if as_json:
+        click.echo(_json.dumps(fetch_profile(), ensure_ascii=False, indent=2))
+        return
+    path = gen_usr_profile(output)
+    click.secho(f"✅ Profile written to {path}", fg="green")
+
+
 # ========================================================================
 # wifi — SUSTech campus Wi-Fi (SUSTC-Wifi / SUSTC-Wifi-5G)
 # ========================================================================
@@ -912,6 +930,7 @@ def build_cli() -> click.Group:
     cli.add_command(ws_cmd)
     cli.add_command(transit_cmd)
     cli.add_command(context_cmd)
+    cli.add_command(profile_cmd)
     cli.add_command(webui_cmd)
     cli.add_command(nces_cmd)
     cli.add_command(faculty_cmd)

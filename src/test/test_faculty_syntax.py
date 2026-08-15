@@ -14,7 +14,7 @@ sys.path.insert(0, str(SRC))
 def test_faculty_files_parse():
     pkg = SRC / "sustech_survival" / "faculty"
     for py in sorted(pkg.glob("*.py")):
-        src = py.read_text()
+        src = py.read_text(encoding="utf-8")
         try:
             ast.parse(src)
         except SyntaxError as e:

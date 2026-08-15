@@ -500,9 +500,42 @@ def fetch_next_eval() -> Optional[dict]:
 # ── Academic-info helpers ─────────────────────────────────────────────────
 
 def get_academic_info(dt: datetime) -> tuple:
-    """Returns (week_str, phase_str, label)."""
-    today = dt.date()
+    """Returns (week_str, phase_str, label).
 
+    Uses the live ``AcademicCalendar`` (from the sustech-calendar repo) so the
+    semester dates are never stale. Falls back to the bundled
+    ``ACADEMIC_CALENDARS`` snapshot only when the calendar can't be loaded
+    (e.g. fully offline).
+    """
+    today = dt.date()
+    try:
+        from sustech_survival.calendar import AcademicCalendar
+        cal = AcademicCalendar.load(today.year)
+        day = cal.day(today)
+        sem = day.semester
+    except Exception:
+        day = None
+        sem = None
+
+    if day is not None and day.week > 0:
+        # In an active semester — classify the day via its phase predicates.
+        if day.is_holiday():
+            name = day.holiday.name if day.holiday else "Holiday"
+            return str(day.week), name, f"Week {day.week} — {name} (holiday)"
+        if day.is_final():
+            return str(day.week), "Final exams", f"Week {day.week} — Final exams"
+        if day.is_midterm():
+            return str(day.week), "Midterm", f"Week {day.week} — Midterm"
+        if day.week == 0:
+            return "—", "Unknown", "[Unknown semester]"
+        phase = sem.human if sem is not None else "semester"
+        return str(day.week), phase, f"Week {day.week} of {phase}"
+    if day is not None:
+        # Between or outside semesters.
+        label = "Summer Vacation" if today.month in (7, 8) else "Winter Vacation"
+        return "—", label, f"[{label}]"
+
+    # Fallback: bundled snapshot (offline).
     for name, cal in ACADEMIC_CALENDARS.items():
         start = datetime.strptime(cal["semester_start"], "%Y-%m-%d").date()
         end = datetime.strptime(cal["semester_end"], "%Y-%m-%d").date()
@@ -873,7 +906,11 @@ __all__ = [
     "slot_times", "entry_time_range", "entry_name", "get_schedule_reminder",
     "get_academic_info", "is_holiday",
     "aqi_level", "aqi_icon",
+    "fetch_profile", "gen_usr_profile",
 ]
+
+# ── User-profile helpers (context/profile.py) ─────────────────────────────
+from .profile import fetch_profile, gen_usr_profile  # noqa: E402
 
 
 # ── Quick demo ───────────────────────────────────────────────────────────

@@ -47,7 +47,6 @@ The CLI (`click`) is in core deps — `pip install git+https://github.com/dumixt
 Extras add heavier optional capabilities:
 
 - `webui` — Flask SPA: TIS course selector + transit map + NCES hover cards
-- `playwright` — Legacy BB file-download scraper
 - `nces` — Anubis PoW solver for NCES listing scrape
 - `papers` — cloudscraper for publisher sites that block plain requests
 - `all` — Everything above
@@ -164,8 +163,7 @@ The fastest way to iterate on the codebase is to install in dev mode against a w
 ```bash
 git clone https://github.com/dumixthestpd/sustech-survival
 cd sustech-survival
-pip install -e ".[all,playwright]"
-playwright install chromium
+pip install -e ".[all]"
 
 # Unit tests (mocked, fast)
 python -m pytest src/test/ -v

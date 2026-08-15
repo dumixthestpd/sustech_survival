@@ -105,7 +105,7 @@ class TestSaveLoadJson:
         # Cached JSONs should be human-diffable.
         target = tmp_path / "x.json"
         _cache.save_json(target, {"b": 1, "a": 2})
-        content = target.read_text()
+        content = target.read_text(encoding="utf-8")
         # sort_keys=True: 'a' before 'b' on the first line.
         assert content.index('"a"') < content.index('"b"')
         # indent=2: newlines between fields.

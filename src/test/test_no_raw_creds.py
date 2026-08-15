@@ -51,7 +51,9 @@ VIOLATIONS: list[tuple[str, str]] = [
 
 def _is_exempt(rel_path: str) -> bool:
     """Check if a file is in the exemption list."""
-    return rel_path in EXEMPTIONS
+    # Normalize OS-specific separators (Windows uses '\') to '/' so the
+    # forward-slash keys in EXEMPTIONS match on every platform.
+    return rel_path.replace("\\", "/") in EXEMPTIONS
 
 
 def _scan_file(path: Path) -> list[tuple[str, int, str, str]]:
@@ -61,7 +63,7 @@ def _scan_file(path: Path) -> list[tuple[str, int, str, str]]:
         return []
 
     hits: list[tuple[str, int, str, str]] = []
-    for line_num, line in enumerate(path.read_text().splitlines(), 1):
+    for line_num, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         # Skip comment-only lines (heuristic — # or // at start after whitespace)
         stripped = line.lstrip()
         if stripped.startswith("#") or stripped.startswith("//"):

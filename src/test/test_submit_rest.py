@@ -1,4 +1,4 @@
-"""Tests for sustech_survival.bb.submit_rest (REST-based BB submission)."""
+"""Tests for sustech_survival.bb.submit (REST-based BB submission)."""
 from __future__ import annotations
 
 import json
@@ -53,8 +53,8 @@ MOCK_FORM_RESPONSE_JSON = json.dumps({
 
 def test_get_upload_form_extracts_all_hidden_fields():
     """All hidden inputs in the form should be extracted into form_data."""
-    from sustech_survival.bb.submit_rest import _get_upload_form
-    with patch("sustech_survival.bb.submit_rest._bb_session") as mock_sess:
+    from sustech_survival.bb.submit import _get_upload_form
+    with patch("sustech_survival.bb.submit._bb_session") as mock_sess:
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.text = MOCK_UPLOAD_PAGE_HTML
@@ -73,8 +73,8 @@ def test_get_upload_form_extracts_all_hidden_fields():
 
 def test_get_upload_form_extracts_file_input_id():
     """The unnamed file input's id should be captured for reference."""
-    from sustech_survival.bb.submit_rest import _get_upload_form
-    with patch("sustech_survival.bb.submit_rest._bb_session") as mock_sess:
+    from sustech_survival.bb.submit import _get_upload_form
+    with patch("sustech_survival.bb.submit._bb_session") as mock_sess:
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.text = MOCK_UPLOAD_PAGE_HTML
@@ -86,8 +86,8 @@ def test_get_upload_form_extracts_file_input_id():
 
 def test_get_upload_form_extracts_form_action():
     """The form's action URL should be captured."""
-    from sustech_survival.bb.submit_rest import _get_upload_form
-    with patch("sustech_survival.bb.submit_rest._bb_session") as mock_sess:
+    from sustech_survival.bb.submit import _get_upload_form
+    with patch("sustech_survival.bb.submit._bb_session") as mock_sess:
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.text = MOCK_UPLOAD_PAGE_HTML
@@ -99,8 +99,8 @@ def test_get_upload_form_extracts_form_action():
 
 def test_get_upload_form_uses_correct_url():
     """GET should hit /uploadAssignment with content_id, course_id, group_id."""
-    from sustech_survival.bb.submit_rest import _get_upload_form
-    with patch("sustech_survival.bb.submit_rest._bb_session") as mock_sess:
+    from sustech_survival.bb.submit import _get_upload_form
+    with patch("sustech_survival.bb.submit._bb_session") as mock_sess:
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.text = MOCK_UPLOAD_PAGE_HTML
@@ -118,11 +118,11 @@ def test_get_upload_form_uses_correct_url():
 
 def test_submit_assignment_rest_dry_run(tmp_path):
     """Dry-run: GET form, do NOT POST, return descriptive message."""
-    from sustech_survival.bb.submit_rest import submit_assignment_rest
+    from sustech_survival.bb.submit import submit_assignment_rest
     from sustech_survival.bb.result import SubmitStatus
     pdf = tmp_path / "test.pdf"
     pdf.write_bytes(b"%PDF-1.4\n")
-    with patch("sustech_survival.bb.submit_rest._bb_session") as mock_sess:
+    with patch("sustech_survival.bb.submit._bb_session") as mock_sess:
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.text = MOCK_UPLOAD_PAGE_HTML
@@ -142,7 +142,7 @@ def test_submit_assignment_rest_dry_run(tmp_path):
 
 def test_submit_assignment_rest_file_not_found():
     """Missing file should return FAILURE SubmitResult with clear error."""
-    from sustech_survival.bb.submit_rest import submit_assignment_rest
+    from sustech_survival.bb.submit import submit_assignment_rest
     from sustech_survival.bb.result import SubmitStatus
     result = submit_assignment_rest(
         "8328", "610821", "/nonexistent/file.pdf", dry_run=True,
@@ -155,7 +155,7 @@ def test_submit_assignment_rest_file_not_found():
 
 def test_submit_assignment_rest_empty_file(tmp_path):
     """Empty file should be rejected."""
-    from sustech_survival.bb.submit_rest import submit_assignment_rest
+    from sustech_survival.bb.submit import submit_assignment_rest
     from sustech_survival.bb.result import SubmitStatus
     pdf = tmp_path / "empty.pdf"
     pdf.write_bytes(b"")
@@ -168,11 +168,11 @@ def test_submit_assignment_rest_empty_file(tmp_path):
 
 def test_submit_assignment_rest_submits_form(tmp_path):
     """Live flow: GET form, POST form, parse destinationUrl."""
-    from sustech_survival.bb.submit_rest import submit_assignment_rest
+    from sustech_survival.bb.submit import submit_assignment_rest
     from sustech_survival.bb.result import SubmitStatus
     pdf = tmp_path / "test.pdf"
     pdf.write_bytes(b"%PDF-1.4\n")
-    with patch("sustech_survival.bb.submit_rest._bb_session") as mock_sess:
+    with patch("sustech_survival.bb.submit._bb_session") as mock_sess:
         get_resp = MagicMock()
         get_resp.status_code = 200
         get_resp.text = MOCK_UPLOAD_PAGE_HTML
@@ -196,10 +196,10 @@ def test_submit_assignment_rest_submits_form(tmp_path):
 
 def test_submit_assignment_rest_sends_file_in_multipart(tmp_path):
     """The file must be in the multipart envelope as newFile_LocalFile0."""
-    from sustech_survival.bb.submit_rest import submit_assignment_rest
+    from sustech_survival.bb.submit import submit_assignment_rest
     pdf = tmp_path / "test.pdf"
     pdf.write_bytes(b"%PDF-1.4\n")
-    with patch("sustech_survival.bb.submit_rest._bb_session") as mock_sess:
+    with patch("sustech_survival.bb.submit._bb_session") as mock_sess:
         get_resp = MagicMock()
         get_resp.status_code = 200
         get_resp.text = MOCK_UPLOAD_PAGE_HTML
@@ -221,10 +221,10 @@ def test_submit_assignment_rest_sends_file_in_multipart(tmp_path):
 
 def test_submit_assignment_rest_includes_picker_fields(tmp_path):
     """The POST data must include the file-picker fields BB's JS adds."""
-    from sustech_survival.bb.submit_rest import submit_assignment_rest
+    from sustech_survival.bb.submit import submit_assignment_rest
     pdf = tmp_path / "test.pdf"
     pdf.write_bytes(b"%PDF-1.4\n")
-    with patch("sustech_survival.bb.submit_rest._bb_session") as mock_sess:
+    with patch("sustech_survival.bb.submit._bb_session") as mock_sess:
         get_resp = MagicMock()
         get_resp.status_code = 200
         get_resp.text = MOCK_UPLOAD_PAGE_HTML
@@ -252,10 +252,10 @@ def test_submit_assignment_rest_includes_picker_fields(tmp_path):
 
 def test_submit_assignment_rest_uses_target_name(tmp_path):
     """The staged file should have the target_name as basename."""
-    from sustech_survival.bb.submit_rest import submit_assignment_rest
+    from sustech_survival.bb.submit import submit_assignment_rest
     pdf = tmp_path / "test.pdf"
     pdf.write_bytes(b"%PDF-1.4\n")
-    with patch("sustech_survival.bb.submit_rest._bb_session") as mock_sess:
+    with patch("sustech_survival.bb.submit._bb_session") as mock_sess:
         get_resp = MagicMock()
         get_resp.status_code = 200
         get_resp.text = MOCK_UPLOAD_PAGE_HTML
@@ -277,11 +277,11 @@ def test_submit_assignment_rest_uses_target_name(tmp_path):
 
 def test_submit_assignment_rest_handles_non_json_response(tmp_path):
     """A 200 with HTML body should surface a clear error."""
-    from sustech_survival.bb.submit_rest import submit_assignment_rest
+    from sustech_survival.bb.submit import submit_assignment_rest
     from sustech_survival.bb.result import SubmitStatus
     pdf = tmp_path / "test.pdf"
     pdf.write_bytes(b"%PDF-1.4\n")
-    with patch("sustech_survival.bb.submit_rest._bb_session") as mock_sess:
+    with patch("sustech_survival.bb.submit._bb_session") as mock_sess:
         get_resp = MagicMock()
         get_resp.status_code = 200
         get_resp.text = MOCK_UPLOAD_PAGE_HTML
@@ -302,11 +302,11 @@ def test_submit_assignment_rest_handles_non_json_response(tmp_path):
 
 def test_submit_assignment_rest_handles_500(tmp_path):
     """A 500 error should be reported."""
-    from sustech_survival.bb.submit_rest import submit_assignment_rest
+    from sustech_survival.bb.submit import submit_assignment_rest
     from sustech_survival.bb.result import SubmitStatus
     pdf = tmp_path / "test.pdf"
     pdf.write_bytes(b"%PDF-1.4\n")
-    with patch("sustech_survival.bb.submit_rest._bb_session") as mock_sess:
+    with patch("sustech_survival.bb.submit._bb_session") as mock_sess:
         get_resp = MagicMock()
         get_resp.status_code = 200
         get_resp.text = MOCK_UPLOAD_PAGE_HTML
@@ -365,8 +365,8 @@ def test_submit_result_is_duplicate_property():
 def test_module_docstring_says_working():
     """The module docstring should declare the path is now working (so
     future maintainers don't think it's still partial)."""
-    from sustech_survival.bb import submit_rest
-    doc = submit_rest.__doc__
+    from sustech_survival.bb import submit
+    doc = submit.__doc__
     assert doc is not None
     assert "WORKING" in doc or "working" in doc.lower()
     # Should mention the file-picker fields by name

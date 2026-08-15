@@ -40,13 +40,19 @@ class TestBbSubmitModuleImportable:
         assert callable(submit_file)
 
     def test_module_exposes_other_expected_helpers(self):
-        """All the AI-facing wrappers should still be reachable from the module."""
+        """All the REST-backed wrappers should still be reachable from the module."""
         import sustech_survival.bb.submit as m
         assert hasattr(m, "submit_file"), "submit_file wrapper"
-        assert hasattr(m, "submit_assignment"), "submit_assignment primitive"
+        assert hasattr(m, "submit_assignment"), "submit_assignment compat wrapper"
+        assert hasattr(m, "submit_assignment_rest"), "submit_assignment_rest primitive"
         assert hasattr(m, "check_attempts"), "check_attempts"
-        assert hasattr(m, "find_assignment"), "find_assignment"
-        assert hasattr(m, "list_upcoming"), "list_upcoming"
+
+    def test_playwright_scrapers_removed(self):
+        """find_assignment / list_upcoming were Playwright scrapers — gone now."""
+        import sustech_survival.bb.submit as m
+        assert not hasattr(m, "find_assignment"), "find_assignment was a Playwright scraper"
+        assert not hasattr(m, "list_upcoming"), "list_upcoming was a Playwright scraper"
+        assert not hasattr(m, "load_cookies"), "load_cookies was Playwright-only"
 
 
 if __name__ == "__main__":
