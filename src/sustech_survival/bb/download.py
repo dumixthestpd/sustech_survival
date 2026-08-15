@@ -420,37 +420,8 @@ def download_submission(course_id, content_id, column_id=None, out_dir=None):
 
     return saved
 
+# NOTE: the standalone argparse CLI was removed 2026-08-10 during the
+# CLI unification. Use `sustech bb download` (defined in
+# sustech_survival/bb/cli.py) — it wraps `download_content` /
+# `discover_attempt_ids` / `scrape_attempt_details` from this module.
 
-# ── CLI ──────────────────────────────────────────────────────────────────────
-
-DEFAULT_ASSIGNMENTS = [
-    ("612409", "Experiment 0-Safety Notification"),
-    ("612342", "Experiment 1-Report (Combustion)"),
-    ("612344", "Experiment 2-Report (Rotation)"),
-    ("612346", "Experiment 3-Report (Binary)"),
-    ("612349", "Experiment 4-Report (Vapor pressure) A"),
-    ("612354", "Experiment 4-Report (Vapor pressure) B"),
-    ("612459", "Experiment 5-Report (Tension)"),
-    ("612356", "Experiment 6-Report (Viscosity)"),
-    ("612358", "Experiment 7-Report (EMF)"),
-]
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Download BB content files")
-    parser.add_argument("--content", help="Content ID to download")
-    parser.add_argument("--course", default="8343", help="Course ID (default: 8343)")
-    parser.add_argument("--output", default="./downloads", help="Output dir")
-    args = parser.parse_args()
-
-    if args.content:
-        out_dir = Path(args.output)
-        saved = download_content(args.content, out_dir)
-        print(f"\nDone: {len(saved)} files saved to {out_dir}")
-    else:
-        print("Use --content <id> to specify what to download")
-        print(f"Known assignments in course 8343: {len(DEFAULT_ASSIGNMENTS)} items")
-
-
-if __name__ == "__main__":
-    main()

@@ -121,9 +121,8 @@ def nces_cmd() -> None:
 
 _mount("bb", bb_cmd)
 _mount("tis", tis_cmd)
-_mount("ws", ws_cmd)
-_mount_into(tis_cmd, "classroom", "tis.classroom")
 _mount("nces", nces_cmd)
+_mount_into(tis_cmd, "classroom", "tis.classroom")
 
 
 # ========================================================================
@@ -396,6 +395,81 @@ def selectcourse_enrolled(as_json: bool) -> None:
     _pp(enrolled, as_json=as_json)
 
 
+@selectcourse_cmd.command(name="export-table",
+                           help="Export picked sections as a structured schedule table.")
+@click.argument("codes", nargs=-1)
+@click.option("--keyword", default=None,
+              help="Search the catalog by keyword instead of passing codes.")
+@click.option("--xn", default=None, help="Academic year (e.g. 2025-2026). Default: current semester.")
+@click.option("--xq", default=None, help="Term (1=fall, 2=spring, 3=summer). Default: current.")
+@click.option("--format", "fmt", default="markdown",
+              type=click.Choice(["markdown", "json", "csv"]),
+              show_default=True)
+@click.option("--output", "output", default=None,
+              help="Output file path. Default: stdout.")
+@click.option("--headcount/--no-headcount", default=True,
+              help="Include headcount column (uses /component/queryHeadCount for non-zero values).")
+def selectcourse_export_table(
+    codes: tuple, keyword: str | None, xn: str | None, xq: str | None,
+    fmt: str, output: str | None, headcount: bool,
+) -> None:
+    """Build a structured schedule table from picked course codes or a catalog search.
+
+    Output formats:
+      - markdown (default): human-readable, TUI-friendly
+      - json: machine-readable (one object per section-span)
+      - csv: import-friendly (one row per section-span)
+
+    Examples:
+
+        sustech selectcourse export-table MSE306 SS143
+        sustech selectcourse export-table --keyword "electrochromic" --format csv
+        sustech selectcourse export-table MSE306 --format json --output ~/Desktop/term.json
+    """
+    from ..selectcourse import SelectCourseClient
+    from ..selectcourse.course import export_schedule_table
+    # SelectCourseClient rejects None for xn/xq — let it use its own
+    # defaults (currently "2025-2026" / "2") when user didn't pass --xn/--xq.
+    if xn and xq:
+        from ..semester import Semester
+        sem = Semester(xn, xq)
+        sc = SelectCourseClient(semester=sem)
+    else:
+        sc = SelectCourseClient()
+    if keyword:
+        courses = sc.search_campus(keyword=keyword)
+        if not courses:
+            click.echo(f"(no courses matched keyword={keyword!r})", err=True)
+            raise SystemExit(1)
+        # Filter to user-supplied codes if both given
+        if codes:
+            codes_set = set(c.upper() for c in codes)
+            courses = [c for c in courses if c.code.upper() in codes_set]
+            if not courses:
+                click.echo(f"(keyword {keyword!r} matched but none of {codes!r} present)",
+                           err=True)
+                raise SystemExit(1)
+    elif codes:
+        courses = []
+        for code in codes:
+            found = sc.search_campus(keyword=code)
+            if not found:
+                click.echo(f"⚠️  no match for {code!r} — skipping", err=True)
+                continue
+            courses.extend(found)
+    else:
+        click.echo("pass course codes (e.g. MSE306 SS143) or --keyword", err=True)
+        raise SystemExit(1)
+
+    out = export_schedule_table(courses, format=fmt)
+    if output:
+        from pathlib import Path
+        Path(output).write_text(out, encoding="utf-8")
+        click.secho(f"✅ {len(courses)} section(s) → {output}", fg="green")
+    else:
+        click.echo(out)
+
+
 # ========================================================================
 # papers — academic paper search
 # ========================================================================
@@ -560,6 +634,260 @@ def wifi_events(minutes: int, limit: int, as_json: bool) -> None:
 
 
 # ========================================================================
+# ws — Student Exchange / Abroad Program search
+# ========================================================================
+
+
+def _ws_print_program(p: dict) -> None:
+    """One program as text rows."""
+    click.echo(f"  [{p.get('ID', '?')}] {p.get('Name', '?')}  ({p.get('YearCode', '?')})")
+    if p.get("RegionName"):
+        click.echo(f"     地区: {p['RegionName']}")
+    if p.get("ProjectTypeText"):
+        click.echo(f"     类型: {p['ProjectTypeText']}")
+    if p.get("StudentExchangeProjectGradeIDText"):
+        click.echo(f"     级别: {p['StudentExchangeProjectGradeIDText']}")
+    if p.get("ApplyBeginDate") and p.get("ApplyEndDate"):
+        click.echo(f"     申请: {p['ApplyBeginDate']} ~ {p['ApplyEndDate']}")
+    if p.get("ApplyStudentCount") or p.get("LuQuStudentCount"):
+        click.echo(f"     报名/录取: {p.get('ApplyStudentCount', '-')} / "
+                   f"{p.get('LuQuStudentCount', '-')}")
+    status = p.get("IsValidText") or ("有效" if p.get("IsValid") else "无效")
+    click.echo(f"     状态: {status}")
+
+
+def _ws_print_detail(d: dict) -> None:
+    """Project detail (sections + tables) as text."""
+    sections = d.get("sections", {})
+    for sec, pairs in sections.items():
+        click.secho(f"\n  [{sec}]", fg="cyan", bold=True)
+        for k, v in pairs.items():
+            click.echo(f"    {k}: {v}")
+    tables = d.get("tables", [])
+    for tbl in tables:
+        for row in tbl:
+            click.echo("    " + " | ".join(str(c) for c in row))
+
+
+@ws_cmd.command(name="list", help="List exchange programs.")
+@click.option("-p", "--page", default=1, show_default=True)
+@click.option("-n", "--page-size", default=10, show_default=True)
+@click.option("--year", default=None, help="Year code, e.g. 2026")
+@click.option("--type", "project_type", default=None, type=int,
+              help="Project type ID (1=短期, 2=长期)")
+@click.option("--grade", "grade_id", default=None, type=int)
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def ws_list_cmd(page, page_size, year_code, project_type, grade_id, as_json) -> None:
+    """List exchange programs with optional filters."""
+    from ..ws.programs import list_programs
+    result = list_programs(page=page, page_size=page_size,
+                          year_code=year_code, project_type=project_type,
+                          grade_id=grade_id)
+    if as_json:
+        click.echo(_json.dumps(result, ensure_ascii=False, indent=2))
+        return
+    click.echo(f"\n📋 第 {result['page']} 页 / 共 {result['record_count']} 个项目")
+    for p in result["programs"]:
+        click.echo("")
+        _ws_print_program(p)
+
+
+@ws_cmd.command(name="search", help="Search programs by keyword.")
+@click.argument("query")
+@click.option("-p", "--page", default=1, show_default=True)
+@click.option("-n", "--page-size", default=10, show_default=True)
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def ws_search_cmd(query, page, page_size, as_json) -> None:
+    """Search programs by keyword."""
+    from ..ws.programs import search_programs
+    result = search_programs(query, page=page, page_size=page_size)
+    if as_json:
+        click.echo(_json.dumps(result, ensure_ascii=False, indent=2))
+        return
+    click.echo(f"\n🔍 '{query}' → {result['record_count']} 个结果")
+    for p in result["programs"]:
+        click.echo("")
+        _ws_print_program(p)
+
+
+@ws_cmd.command(name="show", help="Show full detail for a program ID.")
+@click.argument("program_id", type=int)
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def ws_show_cmd(program_id, as_json) -> None:
+    """Show full detail for a program ID."""
+    from ..ws.programs import get_program_detail
+    d = get_program_detail(program_id)
+    if d is None:
+        click.echo(f"❌ project {program_id} not found", err=True)
+        raise SystemExit(1)
+    if as_json:
+        click.echo(_json.dumps(d, ensure_ascii=False, indent=2))
+        return
+    _ws_print_detail(d)
+
+
+@ws_cmd.command(name="count", help="Total program count (with optional filters).")
+@click.option("--year", default=None)
+@click.option("--type", "project_type", default=None, type=int)
+@click.option("--keywords", default=None)
+def ws_count_cmd(year_code, project_type, keywords) -> None:
+    """Total program count (with optional filters)."""
+    from ..ws.programs import get_count
+    click.echo(f"{get_count(year_code=year_code, project_type=project_type, keywords=keywords)} 个项目")
+
+
+# ========================================================================
+# lib — search + detail for the SUSTech Library (Primo)
+# ========================================================================
+
+
+@click.group(name="lib", help="SUSTech Library Primo (book/article search).")
+def lib_cmd() -> None:
+    """SUSTech Library Primo catalog search + detail."""
+
+
+@lib_cmd.command(name="search", help="Search Primo for books / articles.")
+@click.argument("query")
+@click.option("--scope", default="catalog",
+              type=click.Choice(["catalog", "eresource", "default"]),
+              show_default=True,
+              help="catalog=全部资源 / eresource=电子资源 / default=纸本书目")
+@click.option("--material-type", "-t", multiple=True,
+              help="Filter to these resource types (Book, Article, Journal, ...). Repeatable.")
+@click.option("--library", "-L", multiple=True,
+              help="Filter to these physical libraries (琳恩图书馆, 一丹图书馆, ...). Repeatable.")
+@click.option("--lang-filter", "-F", multiple=True,
+              help="Filter to these publication languages (eng, chi, jpn, ...). Repeatable.")
+@click.option("--peer-reviewed/--no-peer-reviewed", default=False,
+              help="Only peer-reviewed items.")
+@click.option("--full-text-online/--no-full-text-online", default=False,
+              help="Only items with online full text available.")
+@click.option("--date-from", help="Publication date range start, e.g. 2018 or 2018-01.")
+@click.option("--date-to", help="Publication date range end, e.g. 2025 or 2025-12.")
+@click.option("--limit", type=int, default=10, show_default=True,
+              help="Max results to return.")
+@click.option("--offset", type=int, default=0, show_default=True,
+              help="Pagination start position (0-based).")
+@click.option("--sort-by", default="relevance", show_default=True,
+              type=click.Choice(["relevance", "date", "title", "author"]),
+              help="Result ordering.")
+@click.option("--lang", default="zh_CN", show_default=True,
+              help="Interface language (zh_CN or en).")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def lib_search_cmd(query: str, scope: str, material_type: tuple, library: tuple,
+                    lang_filter: tuple, peer_reviewed: bool, full_text_online: bool,
+                    date_from: str, date_to: str, limit: int, offset: int,
+                    sort_by: str, lang: str, as_json: bool) -> None:
+    """
+    Search the SUSTech Library Primo catalog for QUERY (Chinese or English).
+
+    Supports the full Primo search surface: multi-field queries, material
+    type / library / language / date filters, peer-reviewed + full-text
+    online toggles, pagination, and sort ordering.
+
+    Uses Playwright because Primo's SSL config (sustc.primo.exlibrisgroup.com.cn)
+    refuses modern OpenSSL's handshake — Python urllib/requests can't reach it.
+    If Playwright isn't installed (`pip install sustech-survival[playwright]`),
+    returns no results.
+
+    Each result includes rank, title, format (图书/文章/期刊/...), detail URL,
+    full-text availability flag, and peer-review flag. Run `sustech lib detail
+    <docid>` to fetch full metadata for one record.
+
+    Examples:
+
+        sustech lib search aspirin
+        sustech lib search "electrochromic polymer" --limit 25
+        sustech lib search 哈利波特 --scope default
+        sustech lib search --material-type Book --lang-filter eng polymer
+        sustech lib search --peer-reviewed --sort-by date "machine learning"
+        sustech lib search --offset 10 --limit 10 aspirin      # page 2
+    """
+    from ..lib.search import search
+    results = search(
+        query=query, scope=scope,
+        material_types=list(material_type) if material_type else None,
+        libraries=list(library) if library else None,
+        languages=list(lang_filter) if lang_filter else None,
+        peer_reviewed=peer_reviewed,
+        full_text_online=full_text_online,
+        date_from=date_from, date_to=date_to,
+        limit=limit, offset=offset, sort_by=sort_by, lang=lang,
+    )
+    if as_json:
+        click.echo(_json.dumps([
+            {"rank": r.rank, "title": r.title, "format": r.format,
+             "detail_url": r.detail_url, "docid": r.docid,
+             "full_text": r.full_text, "peer_reviewed": r.peer_reviewed,
+             "snippet": r.snippet}
+            for r in results
+        ], ensure_ascii=False, indent=2))
+        return
+    if not results:
+        click.echo(
+            "no results (auth required? Playwright installed? "
+            "→ pip install sustech-survival[playwright])", err=True)
+        raise SystemExit(1)
+    for r in results:
+        flags = []
+        if r.full_text: flags.append("full-text")
+        if r.peer_reviewed: flags.append("peer-reviewed")
+        flag_str = ("  [" + ", ".join(flags) + "]") if flags else ""
+        click.echo(f"{r.rank:>3}. {r.title}{flag_str}")
+        click.echo(f"     {r.format}  {r.detail_url}")
+
+
+@lib_cmd.command(name="detail", help="Fetch full metadata for one Primo record.")
+@click.argument("docid")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def lib_detail_cmd(docid: str, as_json: bool) -> None:
+    """
+    Fetch full Primo record metadata by DOCID.
+
+    DOCID is the unique identifier from a `sustech lib search` result
+    (visible in the detail URL's `?docid=...` parameter).
+
+    Returns title, format, authors, publisher, year, language, subjects,
+    abstract, ISBN, full-text availability, and online URL.
+    """
+    from ..lib.search import detail
+    d = detail(docid)
+    if d is None:
+        click.echo("detail fetch failed (auth? Playwright installed?)", err=True)
+        raise SystemExit(1)
+    if as_json:
+        click.echo(_json.dumps({
+            "title": d.title, "format": d.format,
+            "authors": d.authors, "publisher": d.publisher,
+            "year": d.year, "language": d.language,
+            "subjects": d.subjects, "abstract": d.abstract,
+            "isbn": d.isbn, "full_text_availability": d.full_text_availability,
+            "online_url": d.online_url, "detail_url": d.detail_url,
+        }, ensure_ascii=False, indent=2))
+        return
+    click.echo(f"题名: {d.title}")
+    click.echo(f"格式: {d.format}")
+    if d.authors:
+        click.echo("作者: " + "; ".join(d.authors))
+    if d.publisher:
+        click.echo(f"出版: {d.publisher}")
+    if d.year:
+        click.echo(f"年份: {d.year}")
+    if d.isbn:
+        click.echo(f"ISBN: {d.isbn}")
+    if d.language:
+        click.echo(f"语种: {d.language}")
+    if d.subjects:
+        click.echo("主题: " + ", ".join(d.subjects))
+    if d.abstract:
+        click.echo(f"摘要: {d.abstract[:400]}{'...' if len(d.abstract) > 400 else ''}")
+    if d.full_text_availability:
+        click.echo(f"全文可用性: {d.full_text_availability}")
+    if d.online_url:
+        click.echo(f"在线查看: {d.online_url}")
+
+
+# ========================================================================
 # Top-level group — register everything under `sustech`
 # ========================================================================
 
@@ -593,4 +921,5 @@ def build_cli() -> click.Group:
     cli.add_command(selectcourse_cmd)
     cli.add_command(papers_cmd)
     cli.add_command(wifi_cmd)
+    cli.add_command(lib_cmd)
     return cli
