@@ -31,10 +31,15 @@ TIS_STATIC = HERE / "static" / "tis"
 RESOURCES = Path(__file__).resolve().parent.parent / "resources"
 
 
-def create_app(*, transit_data_dir: Optional[str] = None) -> Flask:
+def create_app(*, transit_data_dir: Optional[str] = None,
+               skin: Optional[str] = None) -> Flask:
     """Build the skin-loader Flask app.
 
     ``transit_data_dir``: optional exported transit GeoJSON dir.
+    ``skin``: name of the skin to activate (see ``loader.find_skin``). When
+      None, the first installed skin is used; if none are installed the shipped
+      default is used. An unknown name raises ``KeyError`` with the available
+      list (callers should surface it with an actionable message).
     """
     app = Flask(
         __name__,
@@ -52,9 +57,22 @@ def create_app(*, transit_data_dir: Optional[str] = None) -> Flask:
     def _favicon():
         return send_from_directory(str(RESOURCES), "logo.svg")
 
-    # ── Skin static assets ──────────────────────────────────────────────
-    _skins = loader.installed_skins()
-    _skin_root = _skins[0].root if _skins else loader.default_skin()
+    # ── Active skin ─────────────────────────────────────────────────────
+    # Prefer the explicitly requested skin; else the first installed; else
+    # the shipped default. create_app still works with ZERO installed skins
+    # (the user just gets the in-package default head).
+    if skin is not None:
+        _skin = loader.find_skin(skin)          # raises KeyError if unknown
+    else:
+        _skins = loader.installed_skins()
+        if _skins:
+            _skin = _skins[0]
+        else:
+            from .loader import Skin
+            _skin = Skin(name="default", version="0", root=loader.default_skin())
+    _skin_root = _skin.root
+    app.config["SKIN"] = _skin.name
+    app.config["SKIN_VERSION"] = _skin.version
 
     @app.route("/static/<path:filename>")
     def _skin_static(filename):
@@ -95,12 +113,14 @@ def create_app(*, transit_data_dir: Optional[str] = None) -> Flask:
 
 def run(*, port: int = DEFAULT_PORT, host: str = "0.0.0.0",
         transit_data_dir: Optional[str] = None,
+        skin: Optional[str] = None,
         debug: bool = False) -> int:
     """Create the app and serve it forever. Returns 0 on clean exit."""
-    app = create_app(transit_data_dir=transit_data_dir)
+    app = create_app(transit_data_dir=transit_data_dir, skin=skin)
     app.config["PORT"] = port
+    skin_name = app.config.get("SKIN") or skin or "default"
     print(f"✅ SUSTech web UI serving at http://localhost:{port}")
-    print(f"   Skin: {loader.installed_skins()[0].name if loader.installed_skins() else 'default'}")
+    print(f"   Skin: {skin_name}")
     print("   Ctrl-C to stop")
     try:
         app.run(host=host, port=port, debug=debug, use_reloader=False)

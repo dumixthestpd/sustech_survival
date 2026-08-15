@@ -88,6 +88,19 @@ def installed_skins() -> "list[Skin]":
     return out
 
 
+def find_skin(name: str) -> Skin:
+    """Resolve a skin by name (user cache first, then shipped default).
+
+    Raises ``KeyError`` with the available skin names when no match is found.
+    """
+    try:
+        return next(s for s in installed_skins() if s.name == name)
+    except StopIteration:
+        available = ", ".join(sorted(s.name for s in installed_skins())) or "(none)"
+        raise KeyError(
+            f"skin {name!r} is not installed. available skins: {available}") from None
+
+
 def install_skin(src: Path | str, *, default: bool = False) -> Path:
     """Install a skin (a dir with a manifest.json) into the user cache.
 
@@ -109,5 +122,5 @@ def install_skin(src: Path | str, *, default: bool = False) -> Path:
     return dst
 
 
-__all__ = ["Skin", "default_skin", "installed_skins", "install_skin",
-           "_PKG_SKINS", "_USER_SKINS"]
+__all__ = ["Skin", "default_skin", "find_skin", "installed_skins",
+           "install_skin", "_PKG_SKINS", "_USER_SKINS"]
