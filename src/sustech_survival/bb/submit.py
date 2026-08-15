@@ -60,6 +60,9 @@ from typing import Optional
 import requests
 
 from sustech_survival.sso import BBAuth
+from sustech_survival.consequence import (
+    Severity, Consequence, CONSEQUENCE_RICH,
+)
 
 from .result import success, failure, dry_run as _dry_run_result
 
@@ -217,6 +220,15 @@ _FILE_PICKER_LOCAL_FIELDS = {
 # submit_assignment_rest — end-to-end REST submission (the primitive)
 # ─────────────────────────────────────────────────────────────────────────
 
+@CONSEQUENCE_RICH(Consequence(
+    name="bb.submit_assignment_rest",
+    severity=Severity.MEDIUM,
+    irreversible=True,
+    what_changes="Submits a file to a BB assignment (creates/replaces an attempt).",
+    risk=("Submitting the wrong file to a graded assignment counts as your "
+          "attempt. Confirm the file, course, and assignment before committing."),
+    verify_url="https://bb.sustech.edu.cn/webapps/assignment/uploadAssignment?content_id=_{content_id}_1&course_id=_{course_id}_1&mode=view",
+))
 def submit_assignment_rest(
     course_id: str,
     content_id: str,

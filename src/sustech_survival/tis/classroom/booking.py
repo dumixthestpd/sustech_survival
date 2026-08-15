@@ -52,6 +52,9 @@ import requests
 from sustech_survival.tis.classroom.live import LiveOccupancyClient, TIS_BASE
 from sustech_survival.semester import Semester
 from sustech_survival.tis.classroom._booking_time import BookingTime, Schedule
+from sustech_survival.consequence import (
+    Severity, Consequence, CONSEQUENCE_RICH,
+)
 from .booking_schema import (
     AuditStatus,
     BorrowApplication,
@@ -216,6 +219,15 @@ class VenueBorrowClient:
 
     # ── Create application (the one real action) ──────────────────────────
 
+    @CONSEQUENCE_RICH(Consequence(
+        name="classroom.create_borrow_application",
+        severity=Severity.HIGH,
+        irreversible=True,
+        what_changes="Submits a venue-borrowing (场地借用) application to TIS.",
+        risk=("A wrong room/time/headcount booking is hard to undo and may "
+              "carry a booking penalty. Confirm room, date, and time slots."),
+        verify_url="https://tis.sustech.edu.cn/#/cdjy",
+    ))
     def create_borrow_application(
         self,
         form: BorrowApplication,
