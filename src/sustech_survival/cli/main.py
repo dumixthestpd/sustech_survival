@@ -390,7 +390,7 @@ def selectcourse_list(keyword: str, xn: str | None, xq: str | None,
 @click.option("--json", "as_json", is_flag=True)
 def selectcourse_enrolled(as_json: bool) -> None:
     from .selectcourse import SelectCourseClient
-    sc = SelectCourseClient(xn="2025-2026", xq="2")
+    sc = SelectCourseClient()  # defaults to the live academic term
     enrolled = sc.my_courses()
     _pp(enrolled, as_json=as_json)
 
@@ -505,12 +505,12 @@ def webui_cmd() -> None:
 @webui_cmd.command(name="serve", help="Start the web UI.")
 @click.option("--port", "-p", type=int, default=None, help="Port (default 61019).")
 @click.option("--host", "-H", default="0.0.0.0", show_default=True)
-@click.option("--transit-data", default=None,
+@click.option("--transit-data", "transit_data_dir", default=None,
               help="Directory of exported transit GeoJSON.")
 @click.option("--debug/--no-debug", default=False)
 def webui_serve(port: Optional[int], host: str,
                 transit_data_dir: Optional[str], debug: bool) -> None:
-    from .webui.app import run, DEFAULT_PORT
+    from ..webui.app import run, DEFAULT_PORT
     run(host=host, port=port or DEFAULT_PORT,
         transit_data_dir=transit_data_dir, debug=debug)
 
@@ -672,7 +672,7 @@ def _ws_print_detail(d: dict) -> None:
 @ws_cmd.command(name="list", help="List exchange programs.")
 @click.option("-p", "--page", default=1, show_default=True)
 @click.option("-n", "--page-size", default=10, show_default=True)
-@click.option("--year", default=None, help="Year code, e.g. 2026")
+@click.option("--year", "year_code", default=None, help="Year code, e.g. 2026")
 @click.option("--type", "project_type", default=None, type=int,
               help="Project type ID (1=短期, 2=长期)")
 @click.option("--grade", "grade_id", default=None, type=int)
@@ -727,7 +727,7 @@ def ws_show_cmd(program_id, as_json) -> None:
 
 
 @ws_cmd.command(name="count", help="Total program count (with optional filters).")
-@click.option("--year", default=None)
+@click.option("--year", "year_code", default=None)
 @click.option("--type", "project_type", default=None, type=int)
 @click.option("--keywords", default=None)
 def ws_count_cmd(year_code, project_type, keywords) -> None:

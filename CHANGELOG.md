@@ -6,6 +6,34 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- **`sustech ws list` / `sustech ws count` TypeErrors**: the Click options
+  (`--year`, `--transit-data`) no longer collide with the callback parameters
+  (`year_code`, `transit_data_dir`). The three broken unified-CLI commands
+  (`sustech ws list`, `sustech ws count`, `sustech webui serve`) now run.
+- **`sustech_survival.ws.programs` module-shadowing bug**: local variable
+  `user_token` shadowed the module function `user_token()`, raising
+  `UnboundLocalError` in `list_programs()`, `get_count()` and
+  `get_program_detail()`. Renamed the local to `tok` so all three work.
+- **`sustech webui serve` broken import**: `from .webui.app import run`
+  resolved to the wrong package under the `cli/` subtree; now `from ..webui.app`.
+- **Broken `sustech-ws` entry point**: `pyproject.toml` pointed
+  `sustech-ws = "sustech_survival.ws.cli:cli"` at a non-existent module.
+  Added `ws/cli.py` (the 4 `sustech ws` commands) and `ws/__main__.py` so
+  `sustech-ws` and `python -m sustech_survival.ws` both work.
+- **`python -m sustech_survival.webui serve` now works**: added
+  `webui/__main__.py` so the documented module entry point starts the server.
+
+### Added
+- **`Semester.current()`** (+ `Season.from_months`): a canonical resolver
+  for the live academic term from the current date. Callers that used to
+  hardcode `xn="2025-2026", xq="2"` now default to the term active today:
+  `selectcourse`, `tis.campus_schedule`, `tis.classroom`, `context.slot_times`,
+  `webui` TIS defaults, and the `sustech tis campus-schedule` CLI.
+- **Security hardening**: anonymized real account/card values in tests and
+  docstrings (`76727`→`100001`, `EED73C02`→`DEADBEEF`, `2024级本科`→`2025级本科`).
+- Bumped dev version to `2026.8.16.dev0220` (CST).
+
 ### Changed
 - **Version scheme**: switched from plain semver (`0.1.0`) to date-based
   dev versions (`YYYY.M.D.devHHMM` in CST) for development builds.

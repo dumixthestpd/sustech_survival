@@ -240,7 +240,7 @@ class TestUsageRecord:
             "dwProperty": 0,
             "dwSettleType": 0,
             "szLogonName": "<sid>",
-            "szCardNO": "EED73C02",
+            "szCardNO": "DEADBEEF",
             "szTrueName": "<name>",
             "szMemo": "",
         })

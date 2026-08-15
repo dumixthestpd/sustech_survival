@@ -257,7 +257,7 @@ class Reservation:
                 "classKind": 1,
             }],
             "resvMemberInfoList": [{          # co-applicants
-                "accNo": 76727, "trueName": "<name>", "logonName": "<sid>"
+                "accNo": 100001, "trueName": "<name>", "logonName": "<sid>"
             }],
             "resvKind": 16,                   # 16 = research room, etc.
             "classKind": 1,
@@ -386,7 +386,7 @@ class UserInfo:
     pid: str = ""                            # personal ID (student/faculty)
     logon_name: str = ""
     true_name: str = ""
-    class_name: str = ""                     # e.g. "2024级本科"
+    class_name: str = ""                     # e.g. "2025级本科"
     dept_name: str = ""                      # e.g. "南方科技大学"
     manager: int = 0                         # permission bitmask
     ident: int = 0                           # identity bitmask

@@ -127,14 +127,17 @@ class ClassroomOccupancy:
 
     BASE_URL = TIS_BASE
 
-    def __init__(self, *, xn: str = "2025-2026", xq: str = "2",
+    def __init__(self, *, xn: Optional[str] = None, xq: Optional[str] = None,
                  semester: Optional[Semester] = None,
                  max_age: int = DEFAULT_TTL,
                  live_client: Optional[LiveOccupancyClient] = None):
         if semester is not None:
             self._sem = semester
+        elif xn is None and xq is None:
+            self._sem = Semester.current()
         else:
-            self._sem = Semester(xn, xq)
+            current = Semester.current()
+            self._sem = Semester(xn or current.xn, xq or current.xq)
         self.max_age = max_age
         # Cache lives in the uniform package-scoped tmp/ tree.
         from sustech_survival import _cache
@@ -554,13 +557,13 @@ class ClassroomOccupancy:
 # ── Singleton ────────────────────────────────────────────────────────────────
 
 
-def classroom(*, xn: str = "2025-2026", xq: str = "2",
+def classroom(*, xn: Optional[str] = None, xq: Optional[str] = None,
               semester: Optional[Semester] = None,
               max_age: int = DEFAULT_TTL,
               live_client: Optional[LiveOccupancyClient] = None) -> ClassroomOccupancy:
     """Module-level factory. Returns a ClassroomOccupancy for the given semester.
 
-    Default semester is 2025-2026 Spring (xq=2). Override with kwargs.
+    Defaults to the live academic term. Override with kwargs.
     Pass `semester=Semester(...)` to use the canonical Semester type.
     Pass `live_client` to inject a custom live client (mainly for tests).
     """

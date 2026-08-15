@@ -293,7 +293,7 @@ class TestReservation:
                 "labName": "涵泳一层", "kindName": "讨论间",
             }],
             "resvMemberInfoList": [
-                {"accNo": 76727, "trueName": "<name>", "logonName": "<sid>",
+                {"accNo": 100001, "trueName": "<name>", "logonName": "<sid>",
                  "ident": 257, "kind": 65}
             ],
         }
@@ -314,7 +314,7 @@ class TestReservation:
         assert r.room_name == "C105"
         assert r.kind_name == "讨论间"
         assert len(r.members) == 1
-        assert r.members[0].acc_no == 76727
+        assert r.members[0].acc_no == 100001
         assert r.members[0].true_name == "<name>"
         assert r.display_name.startswith("#12345")
 
@@ -344,7 +344,7 @@ class TestUserInfo:
         # Real 2026-06-29 probe response (redacted)
         raw = {
             "uuid": "8c253ced-...",
-            "accNo": 76727,
+            "accNo": 100001,
             "pid": "<sid>",
             "logonName": "<sid>",
             "trueName": "<name>",
@@ -353,25 +353,25 @@ class TestUserInfo:
             "status": 1,
             "localstatus": 1,
             "classId": 369,
-            "className": "2024级本科",
+            "className": "2025级本科",
             "deptId": 2,
             "deptName": "南方科技大学",
             "manager": 1,
             "token": "29ee...",
         }
         u = UserInfo.from_api(raw)
-        assert u.acc_no == 76727
+        assert u.acc_no == 100001
         assert u.pid == "<sid>"
         assert u.true_name == "<name>"
-        assert u.class_name == "2024级本科"
+        assert u.class_name == "2025级本科"
         assert u.dept_name == "南方科技大学"
         assert u.manager == 1
 
     def test_str_repr(self):
-        u = UserInfo.from_api({"accNo": 76727, "pid": "<sid>", "trueName": "<name>"})
+        u = UserInfo.from_api({"accNo": 100001, "pid": "<sid>", "trueName": "<name>"})
         s = str(u)
         assert "<name>" in s
-        assert "76727" in s
+        assert "100001" in s
         assert "<sid>" in s
 
 
@@ -381,16 +381,16 @@ class TestUserInfo:
 class TestBuildReservationPayload:
     def test_basic_self_reservation(self):
         payload = build_reservation_payload(
-            acc_no=76727,
+            acc_no=100001,
             dev_id=13,
             begin=datetime(2026, 7, 1, 14, 0),
             end=datetime(2026, 7, 1, 15, 0),
             title="my meeting",
         )
         assert payload["sysKind"] == 1
-        assert payload["appAccNo"] == 76727
+        assert payload["appAccNo"] == 100001
         assert payload["memberKind"] == 1
-        assert payload["resvMember"] == [76727]
+        assert payload["resvMember"] == [100001]
         assert payload["resvBeginTime"] == "2026-07-01 14:00:00"
         assert payload["resvEndTime"]   == "2026-07-01 15:00:00"
         assert payload["testName"] == "my meeting"
@@ -400,23 +400,23 @@ class TestBuildReservationPayload:
 
     def test_group_reservation(self):
         payload = build_reservation_payload(
-            acc_no=76727,
+            acc_no=100001,
             dev_id=13,
             begin=datetime(2026, 7, 1, 14, 0),
             end=datetime(2026, 7, 1, 15, 0),
             title="team sync",
             member_kind=2,
-            resv_member=[76727, 76728, 76729],
+            resv_member=[100001, 100002, 100003],
             memo="weekly",
         )
         assert payload["memberKind"] == 2
-        assert payload["resvMember"] == [76727, 76728, 76729]
+        assert payload["resvMember"] == [100001, 100002, 100003]
         assert payload["memo"] == "weekly"
 
     def test_different_class_kind(self):
         # e.g. classKind=8 for seats
         payload = build_reservation_payload(
-            acc_no=76727,
+            acc_no=100001,
             dev_id=1,
             begin=datetime(2026, 7, 1, 14, 0),
             end=datetime(2026, 7, 1, 15, 0),

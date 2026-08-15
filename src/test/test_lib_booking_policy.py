@@ -190,7 +190,7 @@ class TestValidateAgainstPolicy:
         warnings = validate_against_policy(
             dev_id=15, begin=self.NOW + timedelta(hours=1),
             end=self.NOW + timedelta(hours=2),
-            member_kind=2, resv_member=[76727, 76728, 76729],
+            member_kind=2, resv_member=[100001, 100002, 100003],
             dev_name="C201（3-6人）", now=self.NOW,
         )
         # No group errors
@@ -201,7 +201,7 @@ class TestValidateAgainstPolicy:
         warnings = validate_against_policy(
             dev_id=15, begin=self.NOW + timedelta(hours=1),
             end=self.NOW + timedelta(hours=2),
-            member_kind=2, resv_member=[76727, 76728],
+            member_kind=2, resv_member=[100001, 100002],
             dev_name="C201（3-6人）", now=self.NOW,
         )
         errors = [w for w in warnings if w.severity == "error"]
@@ -212,7 +212,7 @@ class TestValidateAgainstPolicy:
         warnings = validate_against_policy(
             dev_id=15, begin=self.NOW + timedelta(hours=1),
             end=self.NOW + timedelta(hours=2),
-            member_kind=1, resv_member=[76727],
+            member_kind=1, resv_member=[100001],
             dev_name="C201（3-6人）", now=self.NOW,
         )
         errors = [w for w in warnings if w.severity == "error"]
@@ -222,7 +222,7 @@ class TestValidateAgainstPolicy:
         warnings = validate_against_policy(
             dev_id=13, begin=self.NOW + timedelta(hours=1),
             end=self.NOW + timedelta(hours=2),
-            member_kind=1, resv_member=[76727],
+            member_kind=1, resv_member=[100001],
             dev_name="C105（1-3人）", now=self.NOW,
         )
         # No group errors
@@ -233,7 +233,7 @@ class TestValidateAgainstPolicy:
         warnings = validate_against_policy(
             dev_id=13, begin=self.NOW + timedelta(hours=1),
             end=self.NOW + timedelta(hours=2),
-            member_kind=2, resv_member=[76727, 76728, 76729],
+            member_kind=2, resv_member=[100001, 100002, 100003],
             dev_name="C105（1-3人）", now=self.NOW,
         )
         # The warning is "group booking not required" (advisory)

@@ -140,14 +140,14 @@ def list_programs(
     Returns
         record_count, page, page_size, programs (list of cleaned dicts)
     """
-    user_token, ts = user_token()
+    tok, ts = user_token()
     s = session()
 
     params: dict[str, Any] = {
         "pageSize": page_size,
         "currentPageIndex": page,
         "ts": ts,
-        "userToken": user_token,
+        "userToken": tok,
     }
     if year_code:
         params["YearCode"] = year_code
@@ -208,9 +208,9 @@ def get_count(
     keywords: str | None = None,
 ) -> int:
     """Return total count matching filters."""
-    user_token, ts = user_token()
+    tok, ts = user_token()
     s = session()
-    params: dict[str, Any] = {"ts": ts, "userToken": user_token}
+    params: dict[str, Any] = {"ts": ts, "userToken": tok}
     if year_code:
         params["YearCode"] = year_code
     if region_code:
@@ -254,7 +254,7 @@ def get_program_detail(
     """
     # Resolve code+token via list lookup if not supplied
     if not code or not token:
-        user_token, ts = user_token()
+        tok, ts = user_token()
         s = session()
         list_url = f"{WS_BASE}/StudentExchange_2247/GetShortProjectListForStudent.do"
         found_code: str | None = None
@@ -264,7 +264,7 @@ def get_program_detail(
                 "pageSize": 20,
                 "currentPageIndex": pg,
                 "ts": ts,
-                "userToken": user_token,
+                "userToken": tok,
             }
             raw = json.loads(s.get(list_url, params=params, timeout=10).text)
             for item in raw.get("DataList", []):
@@ -277,9 +277,9 @@ def get_program_detail(
         code = found_code or code
         token = found_token or token
 
-    user_token, ts = user_token()
+    tok, ts = user_token()
     s = session()
-    params: dict[str, Any] = {"ID": id, "ts": ts, "userToken": user_token}
+    params: dict[str, Any] = {"ID": id, "ts": ts, "userToken": tok}
     if code:
         params["Code"] = code
     if token:

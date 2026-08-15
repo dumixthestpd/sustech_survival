@@ -30,12 +30,12 @@ SKILL_ROOT = _Path(__file__).resolve().parent.parent.parent.parent
 from sustech_survival.sso import TISAuth
 
 
-def get_campus_schedule(xn="2025-2026", xq="2", page_size=500, page_num=1, full=False, **kwargs):
+def get_campus_schedule(xn=None, xq=None, page_size=500, page_num=1, full=False, **kwargs):
     """Fetch campus course schedule (one page).
 
     Args:
-        xn: Academic year, e.g. "2025-2026"
-        xq: Semester — "1" (Fall) or "2" (Spring)
+        xn: Academic year, e.g. "2025-2026" (default: live term)
+        xq: Semester — "1" (Fall) or "2" (Spring) (default: live term)
         page_size: Results per page (max 500)
         page_num: Page number (default 1)
         full: If True, ignore page_num and return ALL courses paginated
@@ -46,6 +46,12 @@ def get_campus_schedule(xn="2025-2026", xq="2", page_size=500, page_num=1, full=
     Returns:
         dict with keys: total, pageSize, rwList (list of course dicts)
     """
+    if xn is None or xq is None:
+        from sustech_survival.semester import Semester
+        current = Semester.current()
+        xn = xn or current.xn
+        xq = xq or current.xq
+
     auth = TISAuth(skill_dir=str(SKILL_ROOT))
     ok, reason = auth.ensure()
     if not ok:
@@ -98,14 +104,16 @@ def get_semester_courses(semester=None, full=False):
 
     Args:
         semester: "2025-2026-1" (Fall 2025) or "2025-2026-2" (Spring 2026)
-                  Defaults to Spring 2026.
-        full: If True, uses p_chaxunpylx='3' (full campus list, 1488 for Spr2026)
-              If False, uses default filtered view (~188 courses)
+                  Defaults to the live term.
+        full: If True, uses p_chaxunpylx='3' (full campus list)
+              If False, uses default filtered view
     Returns:
         List of course dicts with full details.
     """
     if semester is None:
-        xn, xq = "2025-2026", "2"
+        from sustech_survival.semester import Semester
+        current = Semester.current()
+        xn, xq = current.xn, current.xq
     else:
         parts = semester.split("-")
         xn = parts[0] + "-" + parts[1]

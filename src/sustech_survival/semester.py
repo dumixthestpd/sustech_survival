@@ -17,6 +17,21 @@ class Season(Enum):
         """Season(1) → FALL, Season(2) → SPRING, Season(3) → SUMMER."""
         return {1: cls.FALL, 2: cls.SPRING, 3: cls.SUMMER}[n]
 
+    @classmethod
+    def from_months(cls, month: int) -> "Season":
+        """Map a calendar month to the academic season that spans it.
+
+        SUSTech terms: Fall = Sep..Jan, Spring = Feb..Jul (starts mid-Feb),
+        Summer = Jul..Aug. January/February straddle the boundary; we treat
+        Jan+Feb as Spring (the Spring term that owns most of them), late
+        Jul+Aug as Summer, and Sep..Dec as Fall.
+        """
+        if month in (9, 10, 11, 12):
+            return cls.FALL
+        if month in (1, 2, 3, 4, 5, 6):
+            return cls.SPRING
+        return cls.SUMMER  # 7, 8
+
     @property
     def chinese(self) -> str:
         return {"fall": "秋季", "spring": "春季", "summer": "夏季"}[self.value]
@@ -90,6 +105,37 @@ class Semester:
             self.cohort_year = int(value)
             self.season      = season
             self.end_year    = self.cohort_year + 1 if season is Season.FALL else self.cohort_year
+
+    @classmethod
+    def current(cls, _today=None) -> "Semester":
+        """Build the academic semester active on a given date (default: today).
+
+        Lets callers stop hardcoding a semester — ``Semester.current()`` returns
+        the term that is live right now (SUSTech calendar), so commands query the
+        correct term no matter when they run. ``_today`` is injectable for tests.
+
+        Returns a ``Semester`` whose TIS code matches the live term:
+            Fall   (starts Sep of year Y)  → code "Y-(Y+1)1"   e.g. "2026-20271"
+            Spring (starts Feb of year Y)  → code "(Y-1)-Y2"   e.g. "2025-20262"
+            Summer (starts Jul of year Y)  → code "(Y-1)-Y3"
+        """
+        from datetime import date as _date
+
+        today = _today if _today is not None else _date.today()
+        season = Season.from_months(today.month)
+        if season is Season.FALL:
+            # Fall of calendar year Y: end year = Y, cohort/label year = Y+1
+            end = today.year
+            cohort = today.year + 1
+        else:  # SPRING / SUMMER belong to the academic year that began last autumn
+            end = today.year - 1
+            cohort = today.year
+        return cls(Semester._code(end, cohort, season))
+
+    @staticmethod
+    def _code(end: int, cohort: int, season: "Season") -> str:
+        """Build a 9-char TIS code from end/cohort/season."""
+        return f"{end}-{cohort}{season.term_num}"
 
     @property
     def xn(self) -> str:

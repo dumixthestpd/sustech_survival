@@ -117,3 +117,7 @@ docs/ui-verification/*/live-data.json
 /bb/cli.py
 /bb/query.py
 /docs/dir-analyzer.py
+
+# Test-run artifacts
+.pytest_cache/
+pytest-cache-files-*/
