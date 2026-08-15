@@ -561,6 +561,87 @@ def profile_cmd(output: Optional[str], as_json: bool) -> None:
 
 
 # ========================================================================
+# consequence — the safety contract surface (read-only introspection)
+# ========================================================================
+
+@click.group(name="consequence",
+             help="List the consequence-rich operations and their risks.")
+def consequence_cmd() -> None:
+    """Safety registry: every operation that mutates real SUSTech state.
+
+    These require confirmation before firing. Read the risk + verification
+    info here, or at runtime via each operation's ``--help``.
+    """
+
+
+@consequence_cmd.command(name="list", help="List all consequence-rich operations.")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def consequence_list(as_json: bool) -> None:
+    """Print every registered consequence-rich operation and its severity."""
+    import sustech_survival  # noqa: F401  (ensure registry populated)
+    import sustech_survival.selectcourse.writes  # noqa: F401
+    import sustech_survival.lib.booking.client    # noqa: F401
+    import sustech_survival.tis.classroom.booking # noqa: F401
+    import sustech_survival.bb.submit             # noqa: F401
+    import sustech_survival.pms.pms               # noqa: F401
+    from sustech_survival.consequence import consequence_by_name
+    # Read the registry directly via the module's internal name->desc map.
+    import sustech_survival.consequence as _cs
+    items = sorted(_cs._NAME_REGISTRY.values(), key=lambda c: (c.severity.value, c.name))
+    if as_json:
+        click.echo(_json.dumps([
+            {"name": c.name, "severity": c.severity.value, "irreversible": c.irreversible,
+             "what_changes": c.what_changes, "risk": c.risk, "verify_url": c.verify_url}
+            for c in items
+        ], ensure_ascii=False, indent=2))
+        return
+    if not items:
+        click.echo("(no consequence-rich operations registered)")
+        return
+    click.secho(f"{len(items)} consequence-rich operation(s):", bold=True)
+    for c in items:
+        flag = "IRREV" if c.irreversible else "care "
+        click.echo(f"  [{flag} / {c.severity.value:8}] {c.name}")
+        if c.what_changes:
+            click.echo(f"        {c.what_changes}")
+        if c.risk:
+            click.echo(f"        Risk: {c.risk}")
+
+
+@consequence_cmd.command(name="show", help="Show one operation's risk + verification info.")
+@click.argument("name")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def consequence_show(name: str, as_json: bool) -> None:
+    """Show the risk/verification details for one consequence-rich operation."""
+    import sustech_survival.selectcourse.writes  # noqa: F401
+    import sustech_survival.lib.booking.client    # noqa: F401
+    import sustech_survival.tis.classroom.booking # noqa: F401
+    import sustech_survival.bb.submit             # noqa: F401
+    import sustech_survival.pms.pms               # noqa: F401
+    import sustech_survival.consequence as _cs
+    c = _cs.consequence_by_name(name)
+    if c is None:
+        click.secho(f"unknown operation: {name!r} (run `sustech consequence list`)", fg="red")
+        raise SystemExit(1)
+    if as_json:
+        click.echo(_json.dumps({
+            "name": c.name, "severity": c.severity.value, "irreversible": c.irreversible,
+            "what_changes": c.what_changes, "risk": c.risk,
+            "verify_url": c.verify_url, "read_back": c.read_back, "docs": c.docs,
+        }, ensure_ascii=False, indent=2))
+        return
+    click.secho(f"{c.name}  [{c.severity.value} / {'IRREVERSIBLE' if c.irreversible else 'reversible'}]", bold=True)
+    if c.what_changes:
+        click.echo(f"  Changes: {c.what_changes}")
+    if c.risk:
+        click.echo(f"  Risk:    {c.risk}")
+    if c.verify_url:
+        click.echo(f"  Verify:  {c.verify_url}")
+    if c.docs:
+        click.echo(f"  Docs:    {c.docs}")
+
+
+# ========================================================================
 # wifi — SUSTech campus Wi-Fi (SUSTC-Wifi / SUSTC-Wifi-5G)
 # ========================================================================
 
@@ -931,6 +1012,7 @@ def build_cli() -> click.Group:
     cli.add_command(transit_cmd)
     cli.add_command(context_cmd)
     cli.add_command(profile_cmd)
+    cli.add_command(consequence_cmd)
     cli.add_command(webui_cmd)
     cli.add_command(nces_cmd)
     cli.add_command(faculty_cmd)

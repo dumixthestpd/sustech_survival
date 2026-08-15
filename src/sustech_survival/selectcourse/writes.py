@@ -27,6 +27,9 @@ from .endpoints import (
 )
 from .errors import EnrollmentError
 from .queryform import build_queryform
+from sustech_survival.consequence import (
+    Severity, Consequence, CONSEQUENCE_RICH,
+)
 
 
 # ── POST helper ────────────────────────────────────────────────────────
@@ -80,6 +83,14 @@ def _build(self, **kw) -> dict:
 
 # ── Single-pick writes ──────────────────────────────────────────────────
 
+@CONSEQUENCE_RICH(Consequence(
+    name="selectcourse.add_course",
+    severity=Severity.MEDIUM,
+    irreversible=False,
+    what_changes="Enrolls this course section on TIS.",
+    risk="Consumes selection/bid slots; verify the section is the one you want.",
+    verify_url="https://tis.sustech.edu.cn/#/xsxk?rwh={rwh}",
+))
 def add_course(self, rwh: str, *,
                bid: int = 1,
                dry_run: bool = True,
@@ -129,6 +140,15 @@ def add_course(self, rwh: str, *,
                        dry_run=dry_run, rwh=rwh)
 
 
+@CONSEQUENCE_RICH(Consequence(
+    name="selectcourse.drop_course",
+    severity=Severity.HIGH,
+    irreversible=True,
+    what_changes="Drops this course section from your TIS enrollment.",
+    risk=("If the course is popular, your slot can be taken by a "
+          "vacancy-watcher and you may not get it back."),
+    verify_url="https://tis.sustech.edu.cn/#/xsxk?rwh={rwh}",
+))
 def drop_course(self, rwh: str, *, dry_run: bool = True,
                 pylx: Optional[str] = None,
                 id_field: Optional[str] = None,
@@ -145,6 +165,13 @@ def drop_course(self, rwh: str, *, dry_run: bool = True,
                        dry_run=dry_run, rwh=rwh)
 
 
+@CONSEQUENCE_RICH(Consequence(
+    name="selectcourse.add_to_cart",
+    severity=Severity.LOW,
+    irreversible=False,
+    what_changes="Adds this course to your TIS shopping cart (not enrolled).",
+    verify_url="https://tis.sustech.edu.cn/#/xsxk?rwh={rwh}",
+))
 def add_to_cart(self, rwh: str, *, bid: int = 1,
                 dry_run: bool = True,
                 pylx: Optional[str] = None,
@@ -165,6 +192,13 @@ def add_to_cart(self, rwh: str, *, bid: int = 1,
                        dry_run=dry_run, rwh=rwh)
 
 
+@CONSEQUENCE_RICH(Consequence(
+    name="selectcourse.remove_from_cart",
+    severity=Severity.LOW,
+    irreversible=False,
+    what_changes="Removes this course from your TIS shopping cart.",
+    verify_url="https://tis.sustech.edu.cn/#/xsxk?rwh={rwh}",
+))
 def remove_from_cart(self, rwh: str, *, dry_run: bool = True,
                      pylx: Optional[str] = None,
                      id_field: Optional[str] = None,
@@ -216,6 +250,15 @@ def update_bid(self, rwh: str, bid: int, *,
     return _post_xsxk(self, url, payload, dry_run=dry_run, rwh=rwh)
 
 
+@CONSEQUENCE_RICH(Consequence(
+    name="selectcourse.submit_bids",
+    severity=Severity.HIGH,
+    irreversible=True,
+    what_changes="Commits your bid values for multiple courses (积分选课).",
+    risk=("Bid window may not reopen; a wrong bid is hard to undo. "
+          "Review the per-course preview before committing."),
+    verify_url="https://tis.sustech.edu.cn/#/xsxk",
+))
 def submit_bids(self, picks: dict, *,
                 round_code: str = "",
                 where: str = "cart",

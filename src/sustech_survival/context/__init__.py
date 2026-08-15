@@ -1,6 +1,11 @@
 """
 sustech_survival.context — single source of truth for "what's happening right now".
 
+.. note:: CONSEQUENCE-FREE. This module is strictly read-only — it queries
+   TIS/BB/weather/AQI and never mutates any student state. It is the safe
+   surface for an agent to gather context without risk (see
+   ``sustech_survival.consequence`` for the write ops that DO carry risk).
+
 Replaces the old quickcontext.QuickContext / DetailedContext pair with one
 `Context` class and tiered exporters:
 

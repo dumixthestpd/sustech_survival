@@ -25,6 +25,13 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   `webui/__main__.py` so the documented module entry point starts the server.
 
 ### Added
+- **Consequence safety contract** (`sustech_survival.consequence`): a registry
+  that tags every mutating operation with a structured risk descriptor
+  (severity, irreversibility, what changes, risk, verification URL). New
+  `sustech consequence list|show` surfaces the whole risk surface. The
+  full human rationale lives in the skill; `context` is documented as
+  consequence-free (read-only). Tagged ops: course drop/add/bids, library
+  reserve/cancel, classroom borrow, BB submit, PMS upload/job deletes.
 - **`context.profile`** — `fetch_profile()` / `gen_usr_profile(path=...)` query
   TIS/BB live and render a filled Markdown user profile (name, SID, department,
   enrolled-course count, next exam/deadline). Wired as `sustech profile

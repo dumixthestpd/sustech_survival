@@ -42,6 +42,9 @@ from .schema import (
     UserInfo,
     build_reservation_payload,
 )
+from sustech_survival.consequence import (
+    Severity, Consequence, CONSEQUENCE_RICH,
+)
 
 
 BOOKING_BASE = "https://booking.lib.sustech.edu.cn"
@@ -312,6 +315,15 @@ class LibBookingClient:
 
     # ── Write: create reservation (destructive — dry-run by default) ────────
 
+    @CONSEQUENCE_RICH(Consequence(
+        name="libbooking.add_reservation",
+        severity=Severity.MEDIUM,
+        irreversible=False,
+        what_changes="Books a library room for the given time slot.",
+        risk=("A wrongly-booked time/room persists; the system records "
+              "misuse/penalties. Confirm the exact slot and co-applicants."),
+        verify_url="{booking_base}/#/ic/booking",
+    ))
     def add_reservation(
         self,
         *,
@@ -429,6 +441,15 @@ class LibBookingClient:
 
     # ── Write: cancel reservation (destructive — dry-run by default) ────────
 
+    @CONSEQUENCE_RICH(Consequence(
+        name="libbooking.cancel_reservation",
+        severity=Severity.LOW,
+        irreversible=True,
+        what_changes="Cancels a library room reservation.",
+        risk=("Cancellation is immediate and not reversible; if a no-show "
+              "penalty rule applies, cancelling late may still incur it."),
+        verify_url="{booking_base}/#/ic/userinfo",
+    ))
     def cancel_reservation(
         self,
         resv_id: int = 0,

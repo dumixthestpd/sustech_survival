@@ -55,6 +55,9 @@ from sustech_survival.sso._offcampus import (
     looks_off_campus as _looks_off_campus,
     off_campus_hint,
 )
+from sustech_survival.consequence import (
+    Severity, Consequence, CONSEQUENCE_RICH,
+)
 
 OFF_CAMPUS_HINT = off_campus_hint("PMS")
 
@@ -116,6 +119,14 @@ class PMSClient:
         data = self._unwrap(r) or []
         return [PrintJob.from_api(j) for j in data]
 
+    @CONSEQUENCE_RICH(Consequence(
+        name="pms.delete_print_job",
+        severity=Severity.LOW,
+        irreversible=True,
+        what_changes="Deletes an uploaded (not-yet-printed) print job.",
+        risk="Deletion is final; you must re-upload to print the file again.",
+        verify_url="https://pms.sustech.edu.cn",
+    ))
     def delete_print_job(self, job_id: int) -> bool:
         """POST /client/PrintJob/Del — delete an uploaded print job.
 
@@ -144,6 +155,14 @@ class PMSClient:
         data = self._unwrap(r) or []
         return [ScanJob.from_api(j) for j in data]
 
+    @CONSEQUENCE_RICH(Consequence(
+        name="pms.delete_scan_job",
+        severity=Severity.LOW,
+        irreversible=True,
+        what_changes="Deletes an uploaded scan document.",
+        risk="Deletion is final; the scanned file is gone unless you have it locally.",
+        verify_url="https://pms.sustech.edu.cn",
+    ))
     def delete_scan_job(self, job_id: int) -> bool:
         """POST /client/Scan/Del — delete a scan. Server expects `{dwJobId}`."""
         r = self.session.post(
@@ -208,6 +227,15 @@ class PMSClient:
 
     # ── Cloud print upload (云打印) ─────────────────────────────────────────
 
+    @CONSEQUENCE_RICH(Consequence(
+        name="pms.upload_print",
+        severity=Severity.MEDIUM,
+        irreversible=True,
+        what_changes="Uploads a file to your campus print queue.",
+        risk=("Uploading itself is free, but confirming the wrong file/options "
+              "can cost the user money when it prints at a station."),
+        verify_url="https://pms.sustech.edu.cn",
+    ))
     def upload_print(
         self,
         file_path: Union[str, Path],
