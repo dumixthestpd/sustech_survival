@@ -41,7 +41,7 @@ What actually happened. Paste the **full** traceback (not a screenshot of one).
 
 **DO NOT share real SUSTech credentials in the issue.** If the bug only
 reproduces under a specific account state (major, year, enrolled courses),
-describe the state 鈥?not the values.
+describe the state — not the values.
 
 ## Network / session log
 

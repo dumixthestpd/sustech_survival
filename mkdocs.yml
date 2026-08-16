@@ -1,5 +1,5 @@
 site_name: sustech_survival
-site_description: A unified Python toolkit for SUSTech academic systems 鈥?BB, TIS, library, papers, transit, and more.
+site_description: A unified Python toolkit for SUSTech academic systems — BB, TIS, library, papers, transit, and more.
 site_url: https://dumixthestpd.github.io/sustech_survival/
 repo_url: https://github.com/dumixthestpd/sustech_survival
 edit_uri: edit/main/docs/
@@ -44,28 +44,35 @@ plugins:
           name: English
           default: true
         - locale: zh
-          name: 绠€浣撲腑鏂?          build: true
+          name: 简体中文
+          build: true
           nav_translations:
-            Home: 棣栭〉
-            Core Systems: 鏍稿績绯荤粺
-            External Databases: 澶栭儴鏁版嵁搴?            Reference: 鍙傝€?            BB (Blackboard): BB锛圔lackboard锛?            TIS: 鏁欏淇℃伅鏈嶅姟
-            TIS Courses: 璇剧▼
-            TIS Grades: 鎴愮哗
-            SSO: 鍗曠偣鐧诲綍
-            PMS: 鑱斿垱鎵撳嵃
-            Faculty: 鏁欏笀淇℃伅
-            Transit: 鏍″洯宸村＋
-            Selectcourse: 閫夎
-            Context: 涓婁笅鏂?            Papers: 璁烘枃
-            NCES: 璇剧▼璇勪环
-            WS: 澶栦簨
-            "E-Hall Booking": 鍦哄湴棰勭害
-            Library Booking: 鍥句功棣嗛绾?            "Library (Primo)": 鍥句功棣嗭紙Primo锛?            Calendar: 鏍″巻
-            Web UI: Web 鐣岄潰
+            Home: 首页
+            Core Systems: 核心系统
+            External Databases: 外部数据库
+            Reference: 参考
+            BB (Blackboard): BB（Blackboard）
+            TIS: 教学信息服务
+            TIS Courses: 课程
+            TIS Grades: 成绩
+            SSO: 单点登录
+            PMS: 联创打印
+            Faculty: 教师信息
+            Transit: 校园巴士
+            Selectcourse: 选课
+            Context: 上下文
+            Papers: 论文
+            NCES: 课程评价
+            WS: 外事
+            "E-Hall Booking": 场地预约
+            Library Booking: 图书馆预约
+            "Library (Primo)": 图书馆（Primo）
+            Calendar: 校历
+            Web UI: Web 界面
             CNKI: CNKI
             RSC: RSC
             WoS: WoS
-            Resources: 璧勬簮
+            Resources: 资源
       fallback_to_default: true
 
 markdown_extensions:

@@ -1,4 +1,4 @@
-[English](README.md) | [绠€浣撲腑鏂嘳(README_cn.md)
+[English](README.md) | [简体中文](README_cn.md)
 
 # sustech_survival
 
@@ -7,161 +7,205 @@
        alt="sustech_survival" width="360">
 </p>
 
-`sustech_survival` 鏄竴涓厑璁稿湪 API 灞傞潰璋冪敤鍗楃澶у悇鏈嶅姟绯荤粺鐨?Python 妯″潡銆傚畠婊¤冻 SUSTech 瀛︾敓鍦?BB銆乀IS銆佸浘涔﹂銆丳MS 绛夌郴缁熺殑鏃ュ父闇€姹傘€?
-閫氳繃鍦ㄤ唬鐮佸眰闈㈡墦閫氳繖浜涙湇鍔★紝鎴戜滑绠€鍖栦簡鏍″洯绯荤粺鐨勪娇鐢紝鎻愪緵浜嗕竴鏉￠€氬線涓€у寲鏍″洯浣撻獙鐨勬嵎寰勶紝鏇撮噸瑕佺殑鏄?鈥斺€?鎺ュ叆骞舵杩?AI 鍔+墜杩涘叆浣犵殑鏍″洯鐢熸椿銆?
+`sustech_survival` 是一个允许在 API 层面调用南科大各服务系统的 Python 模块。它满足 SUSTech 学生在 BB、TIS、图书馆、PMS 等系统的日常需求。
+
+通过在代码层面打通这些服务，我们简化了校园系统的使用，提供了一条通往个性化校园体验的捷径，更重要的是 —— 接入并欢迎 AI 助手进入你的校园生活。
+
 [![GitHub](https://img.shields.io/badge/github-repo-blue.svg)](https://github.com/dumixthestpd/sustech_survival)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm--Noncommercial--1.0.0-orange.svg)](./LICENSE)
 
 ---
 
-## 鍔熻兘
+## 功能
 
-### 鏍″洯绯荤粺
+### 校园系统
 
-- **姣曞崥骞冲彴 Blackboard Learn** (`bb`)
-- **鏁欏淇℃伅鏈嶅姟 TIS** (`tis`)
-- **鍥句功棣?SUSTech Library** (`lib`)
-- **缁熶竴韬唤璁よ瘉 SSO** (`sso`) 鈥?鍏变韩璁よ瘉搴曞骇
-- **鑱斿垱鎵撳嵃 PMS** (`pms`)
-- **澶栦簨 SUSTech Global** (`ws`)
-- **缃戜笂鍔炰簨澶у巺 E-Hall** (`booking`)
-- **鐗涘搰璇剧▼璇勪环 NCES** (`nces`)
+- **毕博平台 Blackboard Learn** (`bb`)
+- **教学信息服务 TIS** (`tis`)
+- **图书馆 SUSTech Library** (`lib`)
+- **统一身份认证 SSO** (`sso`) — 共享认证底座
+- **联创打印 PMS** (`pms`)
+- **外事 SUSTech Global** (`ws`)
+- **网上办事大厅 E-Hall** (`booking`)
+- **牛哇课程评价 NCES** (`nces`)
 
-### 鑷缓妯″潡
+### 自建模块
 
-- **selectcourse** 鈥?TIS 閫夎锛氭祻瑙堣绋嬨€佸姞閫€閫夈€佺鐞嗚喘鐗+溅銆?- **faculty** 鈥?鏁欏笀淇℃伅鐩綍锛氭寜瀛﹂櫌鍒楄〃銆佸叏鏂囨悳绱€佷釜浜轰富椤垫煡璇€?- **transit** 鈥?鏍″洯宸村＋涓庢琛屽鑸細鏃跺埢琛ㄣ€佸疄鏃?GPS銆佽矾绾胯鍒掋€?- **calendar** 鈥?鍗楃澶ф牎鍘嗕笌鏃ユ湡鏅鸿兘锛氫粠 GitHub 涓婄殑 `sustech-calendar` 浠撳簱鍔犺浇 JSON锛岃В鏋?(鍛ㄦ, 鏄熸湡) 鈫?鏃ユ湡锛屽鐞嗚ˉ璇炬棩璋冩崲銆傚湪绾挎暟鎹负鏉冨▉婧愶紱鏈湴瑕嗙洊鐢ㄤ簬缂栬緫涓殑鏁版嵁銆?- **ical** 鈥?宸查€夎绋嬬殑 `.ics` 瀵煎嚭銆備綅浜?`selectcourse.ical`锛岄€氳繃 webui 鐨?`GET /api/tis/ical` 鎺ュ叆銆?- **webui** 鈥?Flask 鍗曢〉搴旂敤锛屾暣鍚?TIS 閫夎鐣岄潰銆佸叕浜ゅ湴鍥俱€丯CES 鎮诞鍗＄墖銆乮Cal 瀵煎嚭銆傚惎鍔細`python -m sustech_survival.webui serve`銆?- **context** 鈥?涓?AI 鍔+墜璁捐鐨勬瘡鏃ュ揩鐓э細鏃ユ湡銆佸懆娆°€佹渶杩戜綔涓?鑰冭瘯/涓婅鏃堕棿銆佸ぉ姘斻€丄QI銆?- **papers** 鈥?瀛︽湳璁烘枃鎼滅储涓庝笅杞斤紝瑕嗙洊 CrossRef銆丆NKI銆乄oS銆丷SC銆?
+- **selectcourse** — TIS 选课：浏览课程、加退选、管理购物车。
+- **faculty** — 教师信息目录：按学院列表、全文搜索、个人主页查询。
+- **transit** — 校园巴士与步行导航：时刻表、实时 GPS、路线规划。
+- **calendar** — 南科大校历与日期智能：从 GitHub 上的 `sustech-calendar` 仓库加载 JSON，解析 (周次, 星期) → 日期，处理补课日调换。在线数据为权威源；本地覆盖用于编辑中的数据。
+- **ical** — 已选课程的 `.ics` 导出。位于 `selectcourse.ical`，通过 webui 的 `GET /api/tis/ical` 接入。
+- **webui** — Flask 单页应用，整合 TIS 选课界面、公交地图、NCES 悬浮卡片、iCal 导出。启动：`python -m sustech_survival.webui serve`。
+- **context** — 为 AI 助手设计的每日快照：日期、周次、最近作业/考试/上课时间、天气、AQI。
+- **papers** — 学术论文搜索与下载，覆盖 CrossRef、CNKI、WoS、RSC。
+
 ---
 
-## 蹇€熷紑濮?
-### 1. 瀹夎
+## 快速开始
 
-CLI锛坄click`锛夊凡鍖呭惈鍦ㄦ牳蹇冧緷璧栦腑 鈥斺€?`pip install sustech_survival` 鍚屾椂瀹夎 Python API 鍜?`sustech` 鍛戒护銆?
-鍙€夋墿灞曟寜闇€瀹夎锛?
-- `webui` 鈥?Flask SPA锛歍IS 閫夎鐣岄潰 + 鍏氦鍦板浘 + NCES 鎮诞鍗＄墖
-- `nces` 鈥?Anubis PoW 姹傝В鍣紙NCES 鍒楄〃鎶撳彇鐢級
-- `papers` 鈥?cloudscraper锛堢粫杩囧嚭鐗堝晢缃戠珯鐨?requests 鎷︽埅锛?- `all` 鈥?浠ヤ笂鍏ㄩ儴
+### 1. 安装
+
+CLI（`click`）已包含在核心依赖中 —— `pip install sustech_survival` 同时安装 Python API 和 `sustech` 命令。
+
+可选扩展按需安装：
+
+- `webui` — Flask SPA：TIS 选课界面 + 公交地图 + NCES 悬浮卡片
+- `nces` — Anubis PoW 求解器（NCES 列表抓取用）
+- `papers` — cloudscraper（绕过出版商网站的 requests 拦截）
+- `all` — 以上全部
 
 ```bash
-# 浠婚€夊叾涓€锛?pip install "sustech_survival"               # API + CLI
-pip install "sustech_survival[webui]"        # + Web 鐣岄潰
-pip install "sustech_survival[all]"          # 鍏ㄩ儴
+# 任选其一：
+pip install "sustech_survival"               # API + CLI
+pip install "sustech_survival[webui]"        # + Web 界面
+pip install "sustech_survival[all]"          # 全部
 ```
 
-### 2. 韬唤璁よ瘉
+### 2. 身份认证
 
-缁熶竴 CAS 璁よ瘉搴曞骇浣嶄簬 `sustech_survival/sso/authorizer.py`銆?姣忎釜绯荤粺锛圔B銆乀IS銆佸浘涔﹂銆佸浜嬨€丳MS銆丯CES銆佸満鍦伴绾︾瓑锛夌殑鐧诲綍閮藉彧鏄竴涓?`Authorizer` 瀛愮被 鈥斺€?閫変竴涓苟璋冪敤 `ensure()`锛?
+统一 CAS 认证底座位于 `sustech_survival/sso/authorizer.py`。
+每个系统（BB、TIS、图书馆、外事、PMS、NCES、场地预约等）的登录都只是一个 `Authorizer` 子类 —— 选一个并调用 `ensure()`：
+
 ```python
 from sustech_survival.sso import TISAuth
 
-auth = TISAuth()                       # 姣忕被鍗曚緥
-ok, reason = auth.ensure()             # 妫€鏌ヤ細璇濓紝杩囨湡鍒欒嚜鍔ㄥ埛鏂?auth.session.get("/xszykb/querydangqianxnxq")   # 浣跨敤宸茶璇佺殑浼氳瘽
+auth = TISAuth()                       # 每类单例
+ok, reason = auth.ensure()             # 检查会话，过期则自动刷新
+auth.session.get("/xszykb/querydangqianxnxq")   # 使用已认证的会话
 
-# 鎴栦娇鐢ㄨ楗板櫒锛?from sustech_survival.sso import require_auth
+# 或使用装饰器：
+from sustech_survival.sso import require_auth
 
 @require_auth(TISAuth)
 def my_function(auth=None):
     r = auth.session.get(...)
 ```
 
-鍑嵁鏂囦欢鏌ユ壘椤哄簭锛堝厛鎵惧埌鐨勪紭鍏堬級锛?
-1. `SUSTECH_CREDENTIALS` 鐜鍙橀噺 鈥斺€?鍑嵁鏂囦欢鐨勫畬鏁磋矾寰?2. `~/.config/sustech_survival/credentials.txt` 鈥斺€?XDG 椋庢牸鐨勭敤鎴烽厤缃?3. `./credentials.txt` 鈥斺€?褰撳墠宸ヤ綔鐩綍
-4. 浠庡寘婧愮爜鍚戜笂鎼滅储 鈥斺€?寮€鍙?鍙紪杈戝畨瑁?
-鏍煎紡锛歚瀛﹀彿:瀵嗙爜`銆備細璇濅粎淇濆瓨鍦?*鍐呭瓨涓?* 鈥斺€?涓嶅啓 `session.json` 鍒扮鐩樸€?
-鍚勬ā鍧楃殑 CLI 鎻愪緵 `session login | check | refresh`锛?
+凭据文件查找顺序（先找到的优先）：
+
+1. `SUSTECH_CREDENTIALS` 环境变量 —— 凭据文件的完整路径
+2. `~/.config/sustech_survival/credentials.txt` —— XDG 风格的用户配置
+3. `./credentials.txt` —— 当前工作目录
+4. 从包源码向上搜索 —— 开发/可编辑安装
+
+格式：`学号:密码`。会话仅保存在**内存中** —— 不写 `session.json` 到磁盘。
+
+各模块的 CLI 提供 `session login | check | refresh`：
+
 ```bash
 sustech bb session login
 sustech tis session refresh
-python -m sustech_survival.lib.login   # 鍥句功棣?Primo
+python -m sustech_survival.lib.login   # 图书馆 Primo
 ```
 
-### 3. 绀轰緥鐢ㄦ硶
+### 3. 示例用法
 
-璁剧疆瀹屾垚鍚庣殑涓や釜甯哥敤宸ヤ綔娴侊細
+设置完成后的两个常用工作流：
 
-**姣忔棩蹇収锛堜负 AI 鍔+墜璁捐锛夛細**
+**每日快照（为 AI 助手设计）：**
 
 ```python
 from sustech_survival.context import Context
 
 ctx = Context(level="normal")   # terse / normal / verbose
 print(ctx.to_str())
-# 鈫?Today is [2026-07-04], [Saturday]
-# 鈫?Next BB deadline: [Experiment 5] 鈥?Due in 3 days
-# 鈫?Next TIS exam: [...final...]
+# → Today is [2026-07-04], [Saturday]
+# → Next BB deadline: [Experiment 5] — Due in 3 days
+# → Next TIS exam: [...final...]
 ```
 
-**Web 鐣岄潰锛堟渶甯哥敤锛夛細**
+**Web 界面（最常用）：**
 
 ```bash
 python -m sustech_survival.webui
 ```
 
-娴忚鍣ㄦ墦寮€ `http://localhost:61019` 鈥斺€?TIS 閫夎鐣岄潰锛堝惈鍐茬獊姹傝В锛夈€?鏍″洯宸村＋鍦板浘锛堝疄鏃?GPS锛夈€佹瘡涓绋嬬殑 NCES 鎮诞鍗＄墖銆?
+浏览器打开 `http://localhost:61019` —— TIS 选课界面（含冲突求解）、
+校园巴士地图（实时 GPS）、每个课程的 NCES 悬浮卡片。
+
 ---
 
-## 鐩稿叧椤圭洰
+## 相关项目
 
-- **[sustech-calendar](https://github.com/dumixthestpd/sustech-calendar)** 鈥?鍗楃澶ф牎鍘嗭紙瀛︽湡銆佸伐浣滄棩銆佽妭鍋囨棩锛夈€俙calendar` 妯″潡鍦ㄨ繍琛屾椂鍔犺浇鍏?JSON锛涘湪绾挎暟鎹负鏉冨▉婧愩€?
+- **[sustech-calendar](https://github.com/dumixthestpd/sustech-calendar)** — 南科大校历（学期、工作日、节假日）。`calendar` 模块在运行时加载其 JSON；在线数据为权威源。
+
 ---
 
-## 鏋舵瀯
+## 架构
 
 ```
 sustech_survival/
-鈹溾攢鈹€ bb/                鈫?Blackboard Learn / 姣曞崥
-鈹溾攢鈹€ tis/               鈫?TIS / 鏁欏淇℃伅鏈嶅姟
-鈹?  鈹斺攢鈹€ classroom/     鈫?TIS 鏁欏鏌ヨ + 鍦哄湴鍊熺敤 (cdjy)
-鈹溾攢鈹€ lib/               鈫?鍥句功棣?(Primo)
-鈹?  鈹斺攢鈹€ booking/       鈫?IC 鍥句功棣嗛绾?鈹溾攢鈹€ sso/               鈫?鍏变韩璁よ瘉搴曞骇锛圕AS + Shibboleth锛?鈹溾攢鈹€ pms/               鈫?鑱斿垱鎵撳嵃
-鈹溾攢鈹€ transit/           鈫?鏍″洯宸村＋鍦板浘锛堣嚜寤猴級
-鈹溾攢鈹€ faculty/           鈫?鏁欏笀鐩綍锛堣嚜寤猴級
-鈹溾攢鈹€ selectcourse/      鈫?TIS 閫夎杈呭姪锛堣嚜寤猴級
-鈹?  鈹斺攢鈹€ ical.py        鈫?.ics 瀵煎嚭锛堣嚜寤猴級
-鈹溾攢鈹€ booking/           鈫?E-Hall / 缃戜笂鍔炰簨澶у巺
-鈹溾攢鈹€ ws/                鈫?SUSTech Global / 澶栦簨
-鈹溾攢鈹€ context/           鈫?姣忔棩蹇収锛堣嚜寤猴級
-鈹溾攢鈹€ nces/              鈫?鐗涘搰璇剧▼璇勪环
-鈹溾攢鈹€ papers/            鈫?CrossRef / CNKI / WoS / RSC锛堣嚜寤猴級
-鈹溾攢鈹€ calendar.py        鈫?鏍″巻涓庢棩鏈熸櫤鑳斤紙鑷缓锛?鈹溾攢鈹€ exceptions.py
-鈹斺攢鈹€ webui/             鈫?Flask 鍗曢〉搴旂敤锛堣嚜寤猴級锛歍IS + transit + NCES + iCal
+├── bb/                ← Blackboard Learn / 毕博
+├── tis/               ← TIS / 教学信息服务
+│   └── classroom/     ← TIS 教室查询 + 场地借用 (cdjy)
+├── lib/               ← 图书馆 (Primo)
+│   └── booking/       ← IC 图书馆预约
+├── sso/               ← 共享认证底座（CAS + Shibboleth）
+├── pms/               ← 联创打印
+├── transit/           ← 校园巴士地图（自建）
+├── faculty/           ← 教师目录（自建）
+├── selectcourse/      ← TIS 选课辅助（自建）
+│   └── ical.py        ← .ics 导出（自建）
+├── booking/           ← E-Hall / 网上办事大厅
+├── ws/                ← SUSTech Global / 外事
+├── context/           ← 每日快照（自建）
+├── nces/              ← 牛哇课程评价
+├── papers/            ← CrossRef / CNKI / WoS / RSC（自建）
+├── calendar.py        ← 校历与日期智能（自建）
+├── exceptions.py
+└── webui/             ← Flask 单页应用（自建）：TIS + transit + NCES + iCal
 ```
 
 ---
 
-## 璋冭瘯
+## 调试
 
-鏈€蹇殑杩唬鏂瑰紡鏄紑鍙戞ā寮忓畨瑁呭埌宸ヤ綔鐩綍锛岀劧鍚庤窇 pytest锛堥渶瑕佺湡瀹炲嚟鎹級銆?
+最快的迭代方式是开发模式安装到工作目录，然后跑 pytest（需要真实凭据）。
+
 ```bash
 git clone https://github.com/dumixthestpd/sustech_survival
 cd sustech_survival
 pip install -e ".[all]"
 
-# 鍗曞厓娴嬭瘯锛坢ocked锛屽揩閫燂級
+# 单元测试（mocked，快速）
 python -m pytest src/test/ -v
 
-# 鐜板満娴嬭瘯锛堥渶瑕佺湡瀹炵殑 BB/TIS 鍑嵁锛岃瑙?tests/锛?python -m pytest src/test/ -v --live
+# 现场测试（需要真实的 BB/TIS 凭据，详见 tests/）
+python -m pytest src/test/ -v --live
 ```
 
 ---
 
-## 寰呭姙
+## 待办
 
-- [x] 缁熶竴鐨?`sustech.sso.Authorizer().ensure()` 鈥斺€?鎶婂悇绯荤粺鐨勮璇佸悎骞朵负涓€娆?CAS 璋冪敤銆傗渽 宸插畬鎴?- [ ] 鏇村ソ鐨勬湰鍦板寲锛堟竻鏅板尯鍒嗕腑鑻辨枃锛?- [ ] 鏍″洯椋熷爞姣忔棩鑿滃崟閫氱煡
-- [ ] NCES 璇勮鎽樿锛堥厤缃?API key 鏃跺彲鐢紱涔熷彲閫氳繃 skill 鏂囨。瀹炵幇锛?
+- [x] 统一的 `sustech.sso.Authorizer().ensure()` —— 把各系统的认证合并为一次 CAS 调用。✅ 已完成
+- [ ] 更好的本地化（清晰区分中英文）
+- [ ] 校园食堂每日菜单通知
+- [ ] NCES 评论摘要（配置 API key 时可用；也可通过 skill 文档实现）
+
 ---
 
-## 鍏充簬寮€鍙戣€?
-鏈ā鍧楃敱 **dumixthestpd**锛堝崡绉戝ぇ闈炶绠楁満涓撲笟鏈鐢燂級寮€鍙戯紝浠栦粎璐熻矗瀹忚璁捐銆傛湰妯″潡 99% 鐨勪唬鐮佺敱 AI 鍔+墜缂栧啓锛屾垜浠竻妤氬湴鎰忚瘑鍒扮敱姝ゅ甫鏉ョ殑浠ｇ爜璐ㄩ噺闂銆傛垜浠杩庢洿澶氬悓瀛﹀姞鍏ュ紑鍙?鈥斺€?鍦?GitHub Issues 鍙戣捣璁ㄨ鍗冲彲銆備篃娆㈣繋鐩存帴鎻?PR銆?
+## 关于开发者
+
+本模块由 **dumixthestpd**（南科大非计算机专业本科生）开发，他仅负责宏观设计。本模块 99% 的代码由 AI 助手编写，我们清楚地意识到由此带来的代码质量问题。我们欢迎更多同学加入开发 —— 在 GitHub Issues 发起讨论即可。也欢迎直接提 PR。
+
 ---
 
-## 鑷磋阿
+## 致谢
 
-绔欏湪宸ㄤ汉鐨勮偐鑶€涓婏細
+站在巨人的肩膀上：
 
-- **[xCipHanD/SUSTech_AutoScheduler](https://github.com/xCipHanD/SUSTech_AutoScheduler)** 鈥?TIS 璇剧▼鏁版嵁妯″瀷涓庢椂闂寸紪鐮佽В鏋愮殑涓昏鍙傝€冿紱浠栦滑鐨?bug 鍒楄〃甯姪鎴戜滑鍦ㄨ嚜宸辩殑閫夎鍣ㄤ腑瑙勯伩闂銆?- **[lethal233/sustech-tis-converter](https://github.com/lethal233/sustech-tis-converter)** 鈥?TIS REST 鎺ュ彛鐨勬棭鏈熸帰绱€?- **[Fros1er/SUSTechTISHelper](https://github.com/Fros1er/SUSTechTISHelper)** 鈥?TIS 杈呭姪宸ュ叿銆?- **[SUSTech-CRA/awesome-sustech-service-tools](https://github.com/SUSTech-CRA/awesome-sustech-service-tools)** 鈥?鍗楃澶ф湇鍔″伐鍏蜂笌 API 鍙傝€冪殑绮鹃€夊垪琛ㄣ€?
-瀹屾暣鍒楄〃涓庡凡鐭?bug 瑙?[CREDITS.md](./CREDITS.md)銆?
+- **[xCipHanD/SUSTech_AutoScheduler](https://github.com/xCipHanD/SUSTech_AutoScheduler)** — TIS 课程数据模型与时间编码解析的主要参考；他们的 bug 列表帮助我们在自己的选课器中规避问题。
+- **[lethal233/sustech-tis-converter](https://github.com/lethal233/sustech-tis-converter)** — TIS REST 接口的早期探索。
+- **[Fros1er/SUSTechTISHelper](https://github.com/Fros1er/SUSTechTISHelper)** — TIS 辅助工具。
+- **[SUSTech-CRA/awesome-sustech-service-tools](https://github.com/SUSTech-CRA/awesome-sustech-service-tools)** — 南科大服务工具与 API 参考的精选列表。
+
+完整列表与已知 bug 见 [CREDITS.md](./CREDITS.md)。
+
 ---
 
-## 璁稿彲璇?
-[PolyForm Noncommercial License 1.0.0](./LICENSE) 鈥?浠呴檺闈炲晢涓氫娇鐢紝鐩稿悓鏂瑰紡鍏变韩锛屼繚鐣欑讲鍚嶃€
+## 许可证
+
+[PolyForm Noncommercial License 1.0.0](./LICENSE) — 仅限非商业使用，相同方式共享，保留署名。

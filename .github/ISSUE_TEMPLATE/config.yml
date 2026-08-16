@@ -1,6 +1,6 @@
 blank_issues_enabled: false
 contact_links:
-  - name: sustech_survival docs (per-subsystem reference)
+  - name: SUSTech-Survival docs (per-subsystem reference)
     url: https://github.com/dumixthestpd/sustech_survival/tree/main/docs
     about: docs/index.md has the full module map; each subsystem has its own .md file
   - name: PyPI package page (when published)

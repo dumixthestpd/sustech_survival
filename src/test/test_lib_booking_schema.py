@@ -35,7 +35,7 @@ from sustech_survival.lib.booking.schema import (
 )
 
 
-# -- Time helpers -------------------------------------------------------------
+# ── Time helpers ─────────────────────────────────────────────────────────────
 
 
 class TestParseDt:
@@ -88,7 +88,7 @@ class TestFormatIcDt:
         assert parsed == original
 
 
-# -- Lab ----------------------------------------------------------------------
+# ── Lab ──────────────────────────────────────────────────────────────────────
 
 
 class TestLab:
@@ -105,7 +105,7 @@ class TestLab:
         assert lab.lab_name == ""
 
 
-# -- OpenTime + Room ----------------------------------------------------------
+# ── OpenTime + Room ──────────────────────────────────────────────────────────
 
 
 class TestOpenTime:
@@ -175,7 +175,7 @@ class TestRoom:
         assert r.open_times == []
 
 
-# -- LabWithRooms + CampusGroup -----------------------------------------------
+# ── LabWithRooms + CampusGroup ───────────────────────────────────────────────
 
 
 class TestLabWithRooms:
@@ -236,7 +236,7 @@ class TestCampusGroup:
         assert g.labs == []
 
 
-# -- RoomIdleCategory --------------------------------------------------------
+# ── RoomIdleCategory ────────────────────────────────────────────────────────
 
 
 class TestRoomIdleCategory:
@@ -269,7 +269,7 @@ class TestRoomIdleCategory:
         assert "3-7" in c.name
 
 
-# -- Reservation -------------------------------------------------------------
+# ── Reservation ─────────────────────────────────────────────────────────────
 
 
 class TestReservation:
@@ -336,7 +336,7 @@ class TestReservation:
         assert r.title == ""
 
 
-# -- UserInfo ----------------------------------------------------------------
+# ── UserInfo ────────────────────────────────────────────────────────────────
 
 
 class TestUserInfo:
@@ -375,7 +375,7 @@ class TestUserInfo:
         assert "<sid>" in s
 
 
-# -- build_reservation_payload ----------------------------------------------
+# ── build_reservation_payload ──────────────────────────────────────────────
 
 
 class TestBuildReservationPayload:
