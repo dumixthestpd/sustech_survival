@@ -15,7 +15,7 @@ from sustech_survival.sso._offcampus import (
 )
 
 
-# ── Constants ────────────────────────────────────────────────────────────────
+# -- Constants ----------------------------------------------------------------
 
 
 def test_off_campus_body_matches_server_string():
@@ -27,7 +27,7 @@ def test_off_campus_body_matches_server_string():
     assert OFF_CAMPUS_BODY == "Access forbidden, please contact administrator."
 
 
-# ── looks_off_campus ─────────────────────────────────────────────────────────
+# -- looks_off_campus ---------------------------------------------------------
 
 
 def _resp(status: int, body: str = "") -> Response:
@@ -69,7 +69,7 @@ def test_handles_empty_text_attribute():
     assert looks_off_campus(r) is False
 
 
-# ── off_campus_hint ──────────────────────────────────────────────────────────
+# -- off_campus_hint ----------------------------------------------------------
 
 
 def test_hint_mentions_module_name():

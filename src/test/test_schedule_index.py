@@ -29,7 +29,7 @@ from sustech_survival.tis.schedule_index import (
 )
 
 
-# ─── Sample TIS semester data ──────────────────────────────────────────────
+# --- Sample TIS semester data ----------------------------------------------
 # Real shape from the TIS API: each entry has KCWZSM, SKSJ, KEY, ZC, etc.
 # Bitmap ZC is a 36-char string of 0/1 indicating which weeks the course runs.
 
@@ -63,7 +63,7 @@ def _patch_semester(monkeypatch, data=SAMPLE_SEMESTER):
     )
 
 
-# ─── CourseEntry basics ───────────────────────────────────────────────────
+# --- CourseEntry basics ---------------------------------------------------
 
 def test_course_entry_parses_name():
     e = CourseEntry.from_tis(SAMPLE_SEMESTER[0], semester_start=date(2026, 2, 24))
@@ -107,7 +107,7 @@ def test_course_entry_week_to_date_thursday():
     assert d14 == date(2026, 5, 28)
 
 
-# ─── CourseSchedule lazy index ────────────────────────────────────────────
+# --- CourseSchedule lazy index --------------------------------------------
 
 def test_course_schedule_lazy_loads(monkeypatch):
     _patch_semester(monkeypatch)
@@ -170,7 +170,7 @@ def test_course_schedule_find_no_match_returns_empty(monkeypatch):
     assert sched.find("不存在的课程") == []
 
 
-# ─── Shortcut functions ───────────────────────────────────────────────────
+# --- Shortcut functions ---------------------------------------------------
 
 def test_last_occurrence_returns_most_recent(monkeypatch):
     _patch_semester(monkeypatch)
@@ -218,7 +218,7 @@ def test_dates_in_semester_returns_all(monkeypatch):
     assert result[-1] == date(2026, 6, 1)
 
 
-# ─── experiment_dates() helper ────────────────────────────────────────────
+# --- experiment_dates() helper --------------------------------------------
 
 def test_experiment_dates_for_specific_week(monkeypatch):
     _patch_semester(monkeypatch)
@@ -281,7 +281,7 @@ def test_experiment_dates_phychem_weekday(monkeypatch):
     assert result["weekday_zh"] == "星期四"  # phychem is Thursday
 
 
-# ─── Module-level cache invalidation ──────────────────────────────────────
+# --- Module-level cache invalidation --------------------------------------
 
 def test_clear_cache_resets(monkeypatch):
     _patch_semester(monkeypatch)
@@ -292,7 +292,7 @@ def test_clear_cache_resets(monkeypatch):
     # (We can't easily verify without spy, just check no exception)
 
 
-# ─── Edge cases ───────────────────────────────────────────────────────────
+# --- Edge cases -----------------------------------------------------------
 
 def test_unknown_course_returns_none_for_shortcuts(monkeypatch):
     _patch_semester(monkeypatch)
@@ -315,7 +315,7 @@ def test_experiment_dates_for_unknown_course(monkeypatch):
            result.get("course") is None
 
 
-# ─── class_schedule — "When is my class?" (day + period + weeks) ──────────
+# --- class_schedule — "When is my class?" (day + period + weeks) ----------
 
 def test_class_schedule_gorganic(monkeypatch):
     """class_schedule(有机) should return Monday 5-8节, odd weeks 3,5,...,15."""
@@ -387,7 +387,7 @@ def test_class_schedule_includes_teachers_and_location(monkeypatch):
     assert len(m["teachers"]) > 0
 
 
-# ─── experiment_date new behavior (vs old experiment_dates) ──────────────
+# --- experiment_date new behavior (vs old experiment_dates) --------------
 
 def test_experiment_date_for_w12_gorganic_returns_nearest(monkeypatch):
     """experiment_date with a week that has no class returns nearest_past

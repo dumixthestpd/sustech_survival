@@ -46,7 +46,7 @@ class PubMedAuth(Authorizer):
             "Accept": "application/json",
         })
 
-    # ── Public API ────────────────────────────────────────────────────────────
+    # -- Public API ------------------------------------------------------------
 
     def search(
         self,
@@ -130,7 +130,7 @@ class PubMedAuth(Authorizer):
         """Get PMIDs that cite the given PMID."""
         return self.search(f"{pmid}[pmid]", max_results=max_results)["pmids"]
 
-    # ── Internals ────────────────────────────────────────────────────────────
+    # -- Internals ------------------------------------------------------------
 
     def parse_abstracts_xml(self, xml_text: str) -> list[dict]:
         results = []
@@ -176,7 +176,7 @@ class PubMedAuth(Authorizer):
 
         return results
 
-    # ── Authenticator interface ────────────────────────────────────────────────
+    # -- Authenticator interface ------------------------------------------------
 
     def check(self) -> tuple[bool, str]:
         """Always OK — PubMed Entrez is free."""

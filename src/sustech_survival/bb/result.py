@@ -76,7 +76,7 @@ class SubmitResult:
     row_count: int = 0
     diagnostics: dict[str, Any] = field(default_factory=dict)
 
-    # ── Convenience properties ────────────────────────────────────────────
+    # -- Convenience properties --------------------------------------------
 
     @property
     def ok(self) -> bool:
@@ -91,14 +91,14 @@ class SubmitResult:
     def is_dry_run(self) -> bool:
         return self.status == SubmitStatus.DRY_RUN
 
-    # ── Pythonic protocol hooks ────────────────────────────────────────────
+    # -- Pythonic protocol hooks --------------------------------------------
 
     def __bool__(self) -> bool:
         """`if result:` is True for SUCCESS/DRY_RUN. Use `is_duplicate` for the
         dedup case, `match result.status` for exhaustive handling."""
         return self.ok
 
-    # ── Backwards compat ──────────────────────────────────────────────────
+    # -- Backwards compat --------------------------------------------------
 
     def to_tuple(self) -> tuple:
         """Migrate old `(ok, msg)` callers: `ok=bool`, `msg=str(message)`.
@@ -122,7 +122,7 @@ class SubmitResult:
         d["status"] = self.status.value
         return d
 
-    # ── Derive new result (frozen → use these instead of mutation) ────────
+    # -- Derive new result (frozen → use these instead of mutation) --------
 
     def with_message(self, msg: str) -> "SubmitResult":
         return SubmitResult(
@@ -145,7 +145,7 @@ class SubmitResult:
         )
 
 
-# ── Factory helpers ────────────────────────────────────────────────────────
+# -- Factory helpers --------------------------------------------------------
 
 def success(
     message: str = "",

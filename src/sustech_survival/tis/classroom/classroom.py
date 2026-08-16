@@ -35,12 +35,12 @@ from .live import LiveOccupancyClient, RoomScheduleEntry, live as _live_default
 from .schema import Room, ScheduleSlot
 
 
-# ── TIS endpoints (mirrors tis/campus_schedule.py) ───────────────────────────
+# -- TIS endpoints (mirrors tis/campus_schedule.py) ---------------------------
 
 TIS_BASE = "https://tis.sustech.edu.cn"
 
 
-# ── Building name aliases ────────────────────────────────────────────────────
+# -- Building name aliases ----------------------------------------------------
 #
 # SUSTech renames teaching buildings occasionally. The TIS catalog keeps
 # BOTH the old and new entries for a while (verified 2026-06-28: 智华楼
@@ -86,7 +86,7 @@ TIS_CAMPUS_SCHEDULE_URL = f"{TIS_BASE}/Xsxktz/queryRwxxcxList"
 DEFAULT_TTL = 3600  # 1 hour
 
 
-# ── Manual TIS CAS login (avoids LegacyAdapter urllib3 bug) ─────────────────
+# -- Manual TIS CAS login (avoids LegacyAdapter urllib3 bug) -----------------
 
 
 def _tis_login(username: str, password: str) -> Tuple[requests.Session, dict]:
@@ -105,7 +105,7 @@ def _tis_login(username: str, password: str) -> Tuple[requests.Session, dict]:
     return sess, cookies
 
 
-# ── Client ───────────────────────────────────────────────────────────────────
+# -- Client -------------------------------------------------------------------
 
 
 def _tis_session() -> "requests.Session":
@@ -148,7 +148,7 @@ class ClassroomOccupancy:
         self._rooms: Optional[Dict[str, Room]] = None
         self._live_client: LiveOccupancyClient = live_client or _live_default()
 
-    # ── Cache management ─────────────────────────────────────────────────────
+    # -- Cache management -----------------------------------------------------
 
     def _cache_file(self) -> Path:
         return self.cache_dir / f"schedule_{self._sem.xn}_{self._sem.xq}.json"
@@ -193,7 +193,7 @@ class ClassroomOccupancy:
             ],
         }, ensure_ascii=False))
 
-    # ── Fetch ────────────────────────────────────────────────────────────────
+    # -- Fetch ----------------------------------------------------------------
 
     def _fetch_all_courses(self) -> List[dict]:
         """Fetch the full campus schedule via Xsxktz/queryRwxxcxList.
@@ -249,7 +249,7 @@ class ClassroomOccupancy:
         self._rooms = None  # invalidate derived index
         return len(slots)
 
-    # ── Derived indexes ──────────────────────────────────────────────────────
+    # -- Derived indexes ------------------------------------------------------
 
     def _build_rooms_index(self) -> Dict[str, Room]:
         """Build the room → Room map (with capacity + slot_count)."""
@@ -283,7 +283,7 @@ class ClassroomOccupancy:
         self._rooms = index
         return index
 
-    # ── Queries ──────────────────────────────────────────────────────────────
+    # -- Queries --------------------------------------------------------------
 
     def rooms(self, *, keyword: str = "") -> List[Room]:
         """All unique rooms (with slot counts and best-effort capacity).
@@ -352,14 +352,14 @@ class ClassroomOccupancy:
         all_rooms = {s.room for s in slots}
         return sorted(all_rooms - busy)
 
-    # ── Live occupancy (cdkb/querycdkbList) ─────────────────────────────────
+    # -- Live occupancy (cdkb/querycdkbList) ---------------------------------
 
     def _init_live(self, *, live_client: Optional[LiveOccupancyClient] = None) -> None:
         """Wire up the live client (no-op after __init__ — kept for tests)."""
         if live_client is not None:
             self._live_client = live_client
 
-    # ── Live bridge: room name → TIS code (cddm) ───────────────────────────
+    # -- Live bridge: room name → TIS code (cddm) ---------------------------
 
     def _query_didian_catalog(self) -> List[dict]:
         """Fetch all rooms from TIS 场地 (queryDiDian) — for name → code mapping.
@@ -457,7 +457,7 @@ class ClassroomOccupancy:
             return max(substring_matches, key=lambda r: int(r.get("zws") or 0)).get("dm")
         return None
 
-    # ── Live queries ───────────────────────────────────────────────────────
+    # -- Live queries -------------------------------------------------------
 
     def live_entries_for_name(self, room_name: str) -> List[RoomScheduleEntry]:
         """All live schedule entries (courses + borrowings) for a room name.
@@ -554,7 +554,7 @@ class ClassroomOccupancy:
         return sorted(out)
 
 
-# ── Singleton ────────────────────────────────────────────────────────────────
+# -- Singleton ----------------------------------------------------------------
 
 
 def classroom(*, xn: Optional[str] = None, xq: Optional[str] = None,

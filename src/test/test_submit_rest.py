@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
-# ─── Mock data ──────────────────────────────────────────────────────────────
+# --- Mock data --------------------------------------------------------------
 
 MOCK_UPLOAD_PAGE_HTML = """<!DOCTYPE html>
 <html>
@@ -49,7 +49,7 @@ MOCK_FORM_RESPONSE_JSON = json.dumps({
 })
 
 
-# ─── _get_upload_form parsing tests ─────────────────────────────────────────
+# --- _get_upload_form parsing tests -----------------------------------------
 
 def test_get_upload_form_extracts_all_hidden_fields():
     """All hidden inputs in the form should be extracted into form_data."""
@@ -114,7 +114,7 @@ def test_get_upload_form_uses_correct_url():
     assert "action=newAttempt" in called_url
 
 
-# ─── submit_assignment_rest end-to-end ──────────────────────────────────────
+# --- submit_assignment_rest end-to-end --------------------------------------
 
 def test_submit_assignment_rest_dry_run(tmp_path):
     """Dry-run: GET form, do NOT POST, return descriptive message."""
@@ -325,7 +325,7 @@ def test_submit_assignment_rest_handles_500(tmp_path):
     assert result.diagnostics.get("http_status") == 500
 
 
-# ─── Backwards compat: .to_tuple() shim ─────────────────────────────────
+# --- Backwards compat: .to_tuple() shim ---------------------------------
 
 def test_submit_result_to_tuple_for_legacy_callers():
     """Legacy `(ok, msg)` callers can use `result.to_tuple()` to get the
@@ -360,7 +360,7 @@ def test_submit_result_is_duplicate_property():
     assert not duplicate("x")
 
 
-# ─── Module-level invariants ────────────────────────────────────────────────
+# --- Module-level invariants ------------------------------------------------
 
 def test_module_docstring_says_working():
     """The module docstring should declare the path is now working (so

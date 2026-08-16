@@ -1,4 +1,4 @@
-﻿---
+---
 name: Bug report
 about: Report a crash or unexpected behavior in sustech_survival
 title: "[BUG] "

@@ -1,15 +1,15 @@
 """
 sustech_survival.sso — Unified SSO across SUSTech ecosystem.
 
-──────────────────────────────────────────────────────────────────────
+----------------------------------------------------------------------
  Authorizer subclass patterns — READ BEFORE BUILDING A NEW SERVICE
-──────────────────────────────────────────────────────────────────────
+----------------------------------------------------------------------
 
 All CAS services authenticate via one of three patterns. Choose the
 right one before writing a single line of auth code.
 
 PATTERN 1 — Static SERVICE_URL (most services)
-───────────────────────────────────────────────
+-----------------------------------------------
   class MyAuth(CASAuthorizer):
       BASE_URL = "https://service.sustech.edu.cn"
       SERVICE_URL = "https://service.sustech.edu.cn/callback"
@@ -17,7 +17,7 @@ PATTERN 1 — Static SERVICE_URL (most services)
   # Done.
 
 PATTERN 2 — CAS + secondary token handshake
-─────────────────────────────────────────────
+---------------------------------------------
   class MyAuth(CASAuthorizer):
       BASE_URL = ...
       def _refresh(self):
@@ -26,7 +26,7 @@ PATTERN 2 — CAS + secondary token handshake
           self._set_session(cookies)
 
 PATTERN 3 — Dynamic SERVICE_URL (authcenter-mediated SSO)
-──────────────────────────────────────────────────────────
+----------------------------------------------------------
   class MyAuth(CASAuthorizer):
       BASE_URL = ...
       def _refresh(self):
@@ -44,7 +44,7 @@ and the ``CASAuthorizer``/``ShibbolethAuthorizer`` subclasses for worked
 examples of each pattern.
 """
 
-# ── Public API ────────────────────────────────────────────────────────────────
+# -- Public API ----------------------------------------------------------------
 
 from .authorizer import Authorizer, AuthorizerError, CAS_BASE, UA, require_auth
 from .providers.cas import CASAuthorizer
@@ -69,7 +69,7 @@ __all__ = [
 ]
 
 
-# ── Find skill root ──────────────────────────────────────────────────────────
+# -- Find skill root ----------------------------------------------------------
 from pathlib import Path as _Path
 import requests as _requests
 
@@ -231,7 +231,7 @@ class WSAuth(WSProvider):
 ensured = Authorizer.ensured
 
 
-# ── Auto-register external authlib services ────────────────────────────────────
+# -- Auto-register external authlib services ------------------------------------
 # PMSAuth needs pycryptodome (optional dep). Lazy-import so the SSO
 # package doesn't hard-fail without it.
 from . import authlib  # noqa: F401

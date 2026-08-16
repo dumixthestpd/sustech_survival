@@ -52,7 +52,7 @@ class PMSAuth(Authorizer):
     BASE_URL = PMS_BASE
     SERVICE_URL = PMS_SERVICE
 
-    # ── Session management ────────────────────────────────────────────────────
+    # -- Session management ----------------------------------------------------
 
     def check(self) -> Tuple[bool, str]:
         """Is the current session still authenticated? Calls /Auth/Check.
@@ -86,7 +86,7 @@ class PMSAuth(Authorizer):
         self._refresh()
         return self.check()
 
-    # ── Direct login (RSA + token) ────────────────────────────────────────────
+    # -- Direct login (RSA + token) --------------------------------------------
 
     def login_password(
         self, username: Optional[str] = None, password: Optional[str] = None
@@ -154,7 +154,7 @@ class PMSAuth(Authorizer):
         result = out.get("result") or {}
         return result.get("szTrueName", username)
 
-    # ── CAS SSO login ────────────────────────────────────────────────────────
+    # -- CAS SSO login --------------------------------------------------------
 
     def login_via_cas(self, headless: bool = False) -> str:
         """Full CAS SSO flow via Playwright. Use when print account doesn't exist
@@ -204,13 +204,13 @@ class PMSAuth(Authorizer):
             browser.close()
             pw.stop()
 
-    # ── Refresh ────────────────────────────────────────────────────────────────
+    # -- Refresh ----------------------------------------------------------------
 
     def refresh(self) -> bool:
         """Refresh session via ticket cookies (no disk)."""
         return self._refresh()
 
-    # ── Internal helpers ──────────────────────────────────────────────────────
+    # -- Internal helpers ------------------------------------------------------
 
     def _api_session(self) -> requests.Session:
         """A requests.Session pre-loaded with the in-memory cookies + JSON headers."""
@@ -222,7 +222,7 @@ class PMSAuth(Authorizer):
         return sess
 
 
-# ── Crypto helper ────────────────────────────────────────────────────────────
+# -- Crypto helper ------------------------------------------------------------
 
 def _rsa_encrypt(public_key_pem: str, plaintext: str) -> str:
     """Encrypt `plaintext` with RSA public key, return base64-encoded ciphertext.
@@ -255,6 +255,6 @@ def _to_pem(key: str) -> str:
     return f"-----BEGIN PUBLIC KEY-----\n{body}\n-----END PUBLIC KEY-----"
 
 
-# ── Module-level singleton ───────────────────────────────────────────────────
+# -- Module-level singleton ---------------------------------------------------
 
 _auth = PMSAuth()  # resolves skill_root by walking up looking for credentials.txt

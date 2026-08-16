@@ -177,7 +177,7 @@ class NCESScraper:
         self._consecutive_429 = getattr(self, "_consecutive_429", 0) + 1
         self._backoff_until = time.time() + min(30, 2 ** self._consecutive_429)
 
-    # ── Browse / search (NCES API supports these directly) ────────────────
+    # -- Browse / search (NCES API supports these directly) ----------------
     def browse(self, *, page: int = 1, per_page: int = 30, sort: str = "rating") -> dict:
         """Paginated course list, sorted client-side (NCES API ignores sort).
 
@@ -294,7 +294,7 @@ class NCESScraper:
         r.raise_for_status()
         return r.json()
 
-    # ── Low-level API call ─────────────────────────────────────────────────
+    # -- Low-level API call -------------------------------------------------
     def _api_search(self, code: str) -> dict:
         """GET /api/v1/search?q=<code> → {courses, reviews} JSON."""
         self._throttle()
@@ -306,7 +306,7 @@ class NCESScraper:
         r.raise_for_status()
         return r.json()
 
-    # ── Course selection ───────────────────────────────────────────────────
+    # -- Course selection ---------------------------------------------------
     def _pick_course(
         self,
         courses: list[dict],
@@ -388,7 +388,7 @@ class NCESScraper:
             direct_url=f"{self.BASE}/course/{c.get('id', '')}/",
         )
 
-    # ── Public API ─────────────────────────────────────────────────────────
+    # -- Public API ---------------------------------------------------------
     def search_course(
         self, code: str, teacher: str = "",
         xn: str = "", xq: str = "",
@@ -603,7 +603,7 @@ class NCESScraper:
             "date": r.get("publish_time", ""),
         }
 
-    # ── Domain response shape (UI-agnostic payload) ────────────────────────
+    # -- Domain response shape (UI-agnostic payload) ------------------------
     def _collect_teacher_other(self, tis_teachers: list[str], exclude_code: str = "") -> list[dict]:
         """Aggregate the teacher's other courses for the teacher-other
         fallback panel. Returns one row per TIS teacher — the single
@@ -726,7 +726,7 @@ class NCESScraper:
             "search_url": f"{self.BASE}/search?q={code}",
         }
 
-    # ── CLI compat ─────────────────────────────────────────────────────────
+    # -- CLI compat ---------------------------------------------------------
     def status(self) -> dict:
         return {"cached": False, "mode": "live"}
 

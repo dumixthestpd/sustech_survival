@@ -43,7 +43,7 @@ class PermissionDenied(APIError):
     pass
 
 
-# ── Backwards-compatibility aliases (deprecated) ───────────────────────────────
+# -- Backwards-compatibility aliases (deprecated) -------------------------------
 
 # BBError was the old blanket name for BB auth/session failures
 BBError = SessionExpired

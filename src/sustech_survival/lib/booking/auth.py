@@ -33,7 +33,7 @@ import requests
 from ...sso import AuthorizerError, UA
 from ...sso.providers.cas import CASAuthorizer
 
-# ── Constants ────────────────────────────────────────────────────────────────
+# -- Constants ----------------------------------------------------------------
 
 BOOKING_BASE = "https://booking.lib.sustech.edu.cn"
 BOOKING_API = f"{BOOKING_BASE}/ic-web"
@@ -55,7 +55,7 @@ def _looks_off_campus(r: requests.Response) -> bool:
     return r.status_code == 403 and OFF_CAMPUS_BODY in (r.text or "")
 
 
-# ── LibBookingAuth ───────────────────────────────────────────────────────────
+# -- LibBookingAuth -----------------------------------------------------------
 
 
 class LibBookingAuth(CASAuthorizer):
@@ -79,7 +79,7 @@ class LibBookingAuth(CASAuthorizer):
     BASE_URL = BOOKING_BASE
     SUBMIT_VALUE = ""  # TIS-style (CAS expects empty submit value)
 
-    # ── Paths ────────────────────────────────────────────────────────────────
+    # -- Paths ----------------------------------------------------------------
 
     @property
     def submodule_dir(self) -> Path:
@@ -95,7 +95,7 @@ class LibBookingAuth(CASAuthorizer):
         sess.headers["User-Agent"] = UA
         return sess
 
-    # ── Authcenter pre-CAS step (the only new code needed) ─────────────────
+    # -- Authcenter pre-CAS step (the only new code needed) -----------------
 
     def _resolve_cas_service_url(self) -> str:
         """Steps 1–2: GET /auth/address → follow authcenter → get CAS URL with UUID.
@@ -142,7 +142,7 @@ class LibBookingAuth(CASAuthorizer):
             )
         return cas_url
 
-    # ── refresh() — the single override point ─────────────────────────────
+    # -- refresh() — the single override point -----------------------------
 
     def refresh(self) -> bool:
         """Resolve dynamic SERVICE_URL, then delegate to parent CAS flow.
@@ -190,7 +190,7 @@ class LibBookingAuth(CASAuthorizer):
             print(f"❌ LibBookingAuth refresh failed: {e}")
             return False
 
-    # ── Session management ──────────────────────────────────────────────────
+    # -- Session management --------------------------------------------------
 
     def check(self) -> Tuple[bool, str]:
         """Lightweight local check: do we have ic-cookie + cached user info?
@@ -233,7 +233,7 @@ class LibBookingAuth(CASAuthorizer):
         ui = self._cached_user_info()
         return ui.get("trueName", "") if ui else (username or "")
 
-    # ── User info cache (post-auth enrichment) ──────────────────────────────
+    # -- User info cache (post-auth enrichment) ------------------------------
 
     def _fetch_user_info(self) -> Optional[dict]:
         """GET /auth/userInfo with the just-set ic-cookie."""
@@ -253,7 +253,7 @@ class LibBookingAuth(CASAuthorizer):
     def _cached_user_info(self) -> Optional[dict]:
         return getattr(self, "_user_info", None)
 
-    # ── Persistence ─────────────────────────────────────────────────────────
+    # -- Persistence ---------------------------------------------------------
 
     def _save_session(self, user_info: Optional[dict] = None) -> None:
         """No-op — in-memory only (iron law #12). Kept for backward compat."""
@@ -264,7 +264,7 @@ class LibBookingAuth(CASAuthorizer):
         return False
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# -- Helpers ------------------------------------------------------------------
 
 _SENSITIVE_USER_FIELDS = frozenset(
     {"idCard", "cardNo", "cardId", "handPhone", "email", "token", "uuid"}
@@ -280,7 +280,7 @@ def _redact_user_info(user: dict) -> dict:
     return redacted
 
 
-# ── Registry ─────────────────────────────────────────────────────────────────
+# -- Registry -----------------------------------------------------------------
 
 
 def register() -> None:

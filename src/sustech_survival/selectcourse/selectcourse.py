@@ -112,7 +112,7 @@ class SelectCourseClient:
         from sustech_survival.sso import TISAuth
         self._auth = TISAuth()
 
-    # ── Cache management ─────────────────────────────────────────────────────
+    # -- Cache management -----------------------------------------------------
 
     def _cache_file(self) -> Path:
         return self.cache_dir / f"catalog_{self.xn}_{self.xq}.json"
@@ -170,7 +170,7 @@ class SelectCourseClient:
             ],
         }, ensure_ascii=False))
 
-    # ── Catalog fetch ────────────────────────────────────────────────────────
+    # -- Catalog fetch --------------------------------------------------------
 
     def _fetch_catalog(self) -> List[Course]:
         """Pull the full campus schedule for this xn/xq and parse as Courses."""
@@ -221,7 +221,7 @@ class SelectCourseClient:
         self._save_cache(courses)
         return len(courses)
 
-    # ── Queries ──────────────────────────────────────────────────────────────
+    # -- Queries --------------------------------------------------------------
 
     def list_courses(self, *, keyword: str = "",
                      cultivation: Optional[str] = None,
@@ -511,7 +511,7 @@ class SelectCourseClient:
             return c
         return None
 
-    # ── Personal enrollment ──────────────────────────────────────────────────
+    # -- Personal enrollment --------------------------------------------------
 
     def _lookup_id(self, rwh: str) -> str:
         """Look up the 32-char hex `id` (TIS write-key) for an rwh.
@@ -591,7 +591,7 @@ class SelectCourseClient:
         return rwhs
 
 
-# ── Mix in write methods ────────────────────────────────────────────────
+# -- Mix in write methods ------------------------------------------------
 # Defined in writes.py (split 2026-08-08). Bound here so callers can use
 # `client.add_course(...)` exactly as before the split.
 SelectCourseClient.add_course = add_course
@@ -602,7 +602,7 @@ SelectCourseClient.update_bid = update_bid
 SelectCourseClient.submit_bids = submit_bids
 
 
-# ── Singleton factory ────────────────────────────────────────────────────
+# -- Singleton factory ----------------------------------------------------
 
 
 def selectcourse(*, semester: Optional[Semester] = None,

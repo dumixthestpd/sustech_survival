@@ -84,7 +84,7 @@ class NCESAuth(CASAuthorizer):
         "Chrome/120.0.0.0 Safari/537.36"
     )
 
-    # ── Override session handling for multi-domain cookies ────────────────
+    # -- Override session handling for multi-domain cookies ----------------
     #
     # The base Authorizer._apply_cookies() scopes all cookies to BASE_URL's
     # domain. NCES auth spans THREE domains (ncesnext.com, sso.cra.ac.cn,

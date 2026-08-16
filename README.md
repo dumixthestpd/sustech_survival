@@ -1,4 +1,4 @@
-﻿[English](README.md) | [绠€浣撲腑鏂嘳(README_cn.md)
+[English](README.md) | [绠€浣撲腑鏂嘳(README_cn.md)
 
 # sustech_survival
 

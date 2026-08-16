@@ -73,13 +73,13 @@ class CNKIAuth(ShibbolethAuthorizer):
         page = self.page
 
         try:
-            # ── Step 1: Navigate to CNKI Shibboleth → redirect to SUSTech CAS ─
+            # -- Step 1: Navigate to CNKI Shibboleth → redirect to SUSTech CAS -
             print(f"[CNKI] Navigating to CNKI FSSO (SUSTech) ...")
             page.goto(shib_url, wait_until="commit", timeout=30000)
             page.wait_for_timeout(3000)
             print(f"  → URL: {page.url}")
 
-            # ── Step 2: At SUSTech CAS — login ───────────────────────────────
+            # -- Step 2: At SUSTech CAS — login -------------------------------
             if "cas.sustech.edu.cn" in page.url:
                 print(f"  → At SUSTech CAS, logging in as {username} ...")
                 page.fill('input[name="username"]', username)
@@ -87,7 +87,7 @@ class CNKIAuth(ShibbolethAuthorizer):
                 page.get_by_role("button", name="登录", exact=True).click()
                 page.wait_for_timeout(3000)
 
-            # ── Step 3: At SUSTech IdP consent — accept ───────────────────────
+            # -- Step 3: At SUSTech IdP consent — accept -----------------------
             if "idp.sustech.edu.cn" in page.url:
                 print(f"  → At SUSTech IdP consent page ...")
                 page.wait_for_timeout(2000)
@@ -112,7 +112,7 @@ class CNKIAuth(ShibbolethAuthorizer):
             except Exception:
                 pass  # May already be at CNKI
 
-            # ── Done ────────────────────────────────────────────────────────
+            # -- Done --------------------------------------------------------
             final_url = page.url
             cookies = {c['name']: c['value'] for c in self.ctx.cookies()}
             cnki_cookies = [k for k in cookies if 'cnki' in k.lower() or 'cki' in k.lower()]

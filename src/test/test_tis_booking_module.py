@@ -39,7 +39,7 @@ from sustech_survival.tis.classroom.booking_schema import (
 )
 
 
-# ── Helpers ────────────────────────────────────────────────────────────────
+# -- Helpers ----------------------------------------------------------------
 
 
 def make_response(
@@ -74,7 +74,7 @@ def make_client(session=None) -> VenueBorrowClient:
     return VenueBorrowClient(session=s)
 
 
-# ── _strip_envelope ────────────────────────────────────────────────────────
+# -- _strip_envelope --------------------------------------------------------
 
 
 class TestStripEnvelope:
@@ -100,7 +100,7 @@ class TestStripEnvelope:
         assert _strip_envelope(None) is None
 
 
-# ── Permission check ──────────────────────────────────────────────────────
+# -- Permission check ------------------------------------------------------
 
 
 class TestCheckPermission:
@@ -131,7 +131,7 @@ class TestCheckPermission:
         assert call.kwargs["data"] == {"xn": "2025-2026", "xq": "2"}
 
 
-# ── Audit statuses ─────────────────────────────────────────────────────────
+# -- Audit statuses ---------------------------------------------------------
 
 
 class TestListAuditStatuses:
@@ -158,7 +158,7 @@ class TestListAuditStatuses:
         assert call.kwargs["data"]["ywdm"] == WORKFLOW_CDJY
 
 
-# ── Venue occupancy ─────────────────────────────────────────────────────────
+# -- Venue occupancy ---------------------------------------------------------
 
 
 class TestQueryVenueOccupancy:
@@ -204,7 +204,7 @@ class TestQueryVenueOccupancy:
         assert c._sess.post.call_args.args[0] == EP_OCCUPANCY
 
 
-# ── Create borrow application (the one real action) ────────────────────────
+# -- Create borrow application (the one real action) ------------------------
 
 
 SAMPLE_FORM = BorrowApplication(
@@ -266,7 +266,7 @@ class TestCreateBorrowApplication:
             c.create_borrow_application(SAMPLE_FORM, dry_run=False)
 
 
-# ── Singleton ──────────────────────────────────────────────────────────────
+# -- Singleton --------------------------------------------------------------
 
 
 class TestVenueBorrowSingleton:

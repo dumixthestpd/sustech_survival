@@ -1,4 +1,4 @@
-﻿# 鏂囨。棣栭〉 / Documentation Index
+# 鏂囨。棣栭〉 / Documentation Index
 
 **璇█ / Languages:** [English 鈫抅(../en/index.md) 路 [涓枃 (褰撳墠)](#)
 

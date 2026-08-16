@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, date
 from typing import List, Optional
 
-# ── Constants ────────────────────────────────────────────────────────────────
+# -- Constants ----------------------------------------------------------------
 
 # Day types in /bus_config.json
 DAY_WORKDAY = "workday"
@@ -59,7 +59,7 @@ def haversine_m(lng1: float, lat1: float, lng2: float, lat2: float) -> float:
     return 2 * r * math.asin(math.sqrt(a))
 
 
-# ── Facility (building / gate / bus stop) ──────────────────────────────────
+# -- Facility (building / gate / bus stop) ----------------------------------
 
 @dataclass
 class Facility:
@@ -252,7 +252,7 @@ def _slug_from_name(name_zh: str, name_en: str) -> str:
     return name_zh or name_en or "unknown"
 
 
-# ── Bus route / line ────────────────────────────────────────────────────────
+# -- Bus route / line --------------------------------------------------------
 
 @dataclass
 class BusLine:
@@ -299,7 +299,7 @@ class BusSubRoute:
         )
 
 
-# ── Bus schedule ────────────────────────────────────────────────────────────
+# -- Bus schedule ------------------------------------------------------------
 
 @dataclass
 class BusSchedule:
@@ -347,7 +347,7 @@ class BusSchedule:
         )
 
 
-# ── Live bus ─────────────────────────────────────────────────────────────────
+# -- Live bus -----------------------------------------------------------------
 
 @dataclass
 class LiveBus:
@@ -394,7 +394,7 @@ class LiveBus:
         }
 
 
-# ── Routing ────────────────────────────────────────────────────────────────
+# -- Routing ----------------------------------------------------------------
 
 @dataclass
 class PathStep:
@@ -450,7 +450,7 @@ class Route:
 Path = Route
 
 
-# ── Errors ──────────────────────────────────────────────────────────────────
+# -- Errors ------------------------------------------------------------------
 
 class TransitError(Exception):
     """Raised when transit APIs return an error."""

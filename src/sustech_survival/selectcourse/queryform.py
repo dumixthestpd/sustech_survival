@@ -71,10 +71,10 @@ def build_queryform(*, sem,            # Semester
     # p_xnxq = "2026-20271" (学年 + 学期) — combine xn + xq directly.
     xnxq = sem.xn + sem.xq
     return {
-        # ── Top-level (no p_ prefix in HAR) ─────────────────────────
+        # -- Top-level (no p_ prefix in HAR) -------------------------
         "cxsfmt": dq.get("cxsfmt", "0"),
         "mxpylx": pylx if pylx is not None else "1",  # 培养类型 (mirror of p_pylx)
-        # ── queryform fields (HAR-derived, 2026-08-08) ──────────────
+        # -- queryform fields (HAR-derived, 2026-08-08) --------------
         "p_pylx": pylx if pylx is not None else "1",  # 1=本科, 2=研究生
         "p_sfgldjr": "0",                            # 是否管理端进入
         "p_sfredis": "0",                            # 是否Redis缓存 (HAR: 0)

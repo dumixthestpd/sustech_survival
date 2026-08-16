@@ -23,7 +23,7 @@ from urllib.parse import unquote
 
 import requests
 
-# ── Session ──────────────────────────────────────────────────────────────────
+# -- Session ------------------------------------------------------------------
 
 BB_BASE = "https://bb.sustech.edu.cn"
 
@@ -57,7 +57,7 @@ def api(path, session=None):
     return r.json()
 
 
-# ── Course/Content Resolution ─────────────────────────────────────────────────
+# -- Course/Content Resolution -------------------------------------------------
 
 
 def resolve_course(content_id):
@@ -98,7 +98,7 @@ def resolve_course(content_id):
     raise ValueError(f"content_id {content_id} not found in any course")
 
 
-# ── Content Item Fetcher ─────────────────────────────────────────────────────
+# -- Content Item Fetcher -----------------------------------------------------
 
 def normalize_bb_id(raw):
     """Ensure BB-format with single underscore wrapper: _xxx_1.
@@ -123,7 +123,7 @@ def get_content_item(course_id, content_id, sess=None):
         return None
 
 
-# ── bbcswebdav URL extractor ────────────────────────────────────────────────
+# -- bbcswebdav URL extractor ------------------------------------------------
 
 def extract_bbcswebdav_urls(html_body):
     """Extract bbcswebdav download URLs from HTML body content."""
@@ -132,7 +132,7 @@ def extract_bbcswebdav_urls(html_body):
     return re.findall(r'bbcswebdav/[^\s"\'<>&\)]+', html_body)
 
 
-# ── Content File Scraper (REST) ──────────────────────────────────────────────
+# -- Content File Scraper (REST) ----------------------------------------------
 
 def scrape_content_files(content_id):
     """
@@ -179,7 +179,7 @@ def scrape_content_files(content_id):
     return title, files
 
 
-# ── File Downloader ───────────────────────────────────────────────────────────
+# -- File Downloader -----------------------------------------------------------
 
 def download_file(out_path, url_or_path, session_cookies):
     """Download a file from a URL or special path."""
@@ -234,7 +234,7 @@ def download_content(content_id, out_dir=None):
     return saved
 
 
-# ── Gradebook Attempt Discovery (REST) ───────────────────────────────────────
+# -- Gradebook Attempt Discovery (REST) ---------------------------------------
 
 def get_assignment_attempts(course_id, column_id):
     """
@@ -342,7 +342,7 @@ def get_column_id_for_content(course_id, content_id, sess=None):
     return item.get("contentHandler", {}).get("gradeColumnId", "").lstrip("_").rstrip("_1")
 
 
-# ── Submission Download (gradebook REST metadata only) ──────────────────────
+# -- Submission Download (gradebook REST metadata only) ----------------------
 
 def download_submission(course_id, content_id, column_id=None, out_dir=None):
     """

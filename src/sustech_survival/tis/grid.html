@@ -159,7 +159,7 @@
 </div>
 
 <script>
-// ── Palette ──────────────────────────────────────────────────────────────────
+// -- Palette ------------------------------------------------------------------
 const PALETTE = [
   "#4A90D9","#50C878","#E0746B","#9B59B6","#F5A623",
   "#1ABC9C","#E74C3C","#3498DB","#2ECC71","#F39C12",
@@ -174,12 +174,12 @@ const TIMES = [
   ["12","21:50-22:40"],
 ];
 
-// ── State ───────────────────────────────────────────────────────────────────
+// -- State -------------------------------------------------------------------
 let schedules = [];
 let currentIdx = 0;
 let currentWeek = 0; // 0=odd, 1=even, 2=all
 
-// ── Init ─────────────────────────────────────────────────────────────────────
+// -- Init ---------------------------------------------------------------------
 async function init() {
   const resp = await fetch('schedules.json');
   schedules = await resp.json();
@@ -188,7 +188,7 @@ async function init() {
   render();
 }
 
-// ── Week tabs ────────────────────────────────────────────────────────────────
+// -- Week tabs ----------------------------------------------------------------
 function setWeek(w) {
   currentWeek = w;
   document.querySelectorAll('.tab').forEach(t => {
@@ -197,7 +197,7 @@ function setWeek(w) {
   render();
 }
 
-// ── Nav ──────────────────────────────────────────────────────────────────────
+// -- Nav ----------------------------------------------------------------------
 function renderNav() {
   const el = document.getElementById('navList');
   el.innerHTML = schedules.map((s, i) => `
@@ -216,7 +216,7 @@ function go(i) {
   render();
 }
 
-// ── Grid ─────────────────────────────────────────────────────────────────────
+// -- Grid ---------------------------------------------------------------------
 function render() {
   const sch = schedules[currentIdx];
   if (!sch) return;
@@ -306,7 +306,7 @@ function buildCard(c, slot, weekFilter) {
   </div>`;
 }
 
-// ── Tooltip ──────────────────────────────────────────────────────────────────
+// -- Tooltip ------------------------------------------------------------------
 const tooltipData = [];
 function showTip(event, ci) {
   const tip = document.getElementById('tooltip');
@@ -329,7 +329,7 @@ function hideTip() {
   document.getElementById('tooltip').style.display = 'none';
 }
 
-// ── Keyboard nav ─────────────────────────────────────────────────────────────
+// -- Keyboard nav -------------------------------------------------------------
 document.addEventListener('keydown', e => {
   if (e.key === 'ArrowRight') { go(Math.min(currentIdx+1, schedules.length-1)); }
   if (e.key === 'ArrowLeft')  { go(Math.max(currentIdx-1, 0)); }
@@ -338,7 +338,7 @@ document.addEventListener('keydown', e => {
   if (e.key === '3') setWeek(2);
 });
 
-// ── JSON export from Python solver ──────────────────────────────────────────
+// -- JSON export from Python solver ------------------------------------------
 // Python writes: schedules = [{semester, courses: [{code, name, teacher, slots: [{day, periods, weeks, weekType, room}]}]}]
 init().catch(console.error);
 </script>

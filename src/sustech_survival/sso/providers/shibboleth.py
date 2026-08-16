@@ -96,7 +96,7 @@ class ShibbolethAuthorizer(Authorizer):
             print(f"[1/4] Navigating to {self.SP_INIT_URL} ...")
             page.goto(self.SP_INIT_URL, wait_until="domcontentloaded", timeout=30000)
 
-            # ── Step 2: detect institution login link ────────────────────────
+            # -- Step 2: detect institution login link ------------------------
             link_info = self.find_institution_link(page)
             if link_info:
                 print(f"[2/4] Clicking institution login: {link_info['text']}")
@@ -105,13 +105,13 @@ class ShibbolethAuthorizer(Authorizer):
                 print(f"[2/4] No explicit institution link found — trying direct SP init URL")
                 page.goto(self.SP_INIT_URL, wait_until="domcontentloaded", timeout=15000)
 
-            # ── Step 3: WAYF discovery — search for institution ─────────────
+            # -- Step 3: WAYF discovery — search for institution -------------
             page.wait_for_timeout(2000)
             wayf_ok = self.handle_wayf(page)
             if not wayf_ok:
                 print("[3/4] No WAYF page detected — may use embedded IdP picker")
 
-            # ── Step 4: wait for IdP login redirect ──────────────────────────
+            # -- Step 4: wait for IdP login redirect --------------------------
             print(f"[4/4] Waiting for SUSTech CAS login at {self.IDP_LOGIN_URL} ...")
             try:
                 page.wait_for_url(f"**{self.IDP_LOGIN_URL}**", timeout=self.LOGIN_TIMEOUT)

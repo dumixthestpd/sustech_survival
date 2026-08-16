@@ -1,5 +1,5 @@
 # authlib — External service authorizers
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # External services: wos, rsc, cnki, ieee, jstor, pubmed, acs, wiley,
 # springer, scopus.  Each is lazy-loaded on first attribute access.
 #

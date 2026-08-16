@@ -29,7 +29,7 @@ Auth: both sub-modules use `sustech_survival.sso.TISAuth`.
 """
 from __future__ import annotations
 
-# ── Inquiry (查空教室) ────────────────────────────────────────────────────
+# -- Inquiry (查空教室) ----------------------------------------------------
 from .classroom import ClassroomOccupancy, classroom, normalize_room_name, BUILDING_ALIASES  # noqa: F401
 from .live import (  # noqa: F401
     LiveOccupancyClient,
@@ -44,7 +44,7 @@ from .live import (  # noqa: F401
 )
 from .schema import Room, ScheduleSlot, parse_kcxx_slot, expand_weeks  # noqa: F401
 
-# ── Booking (借用 cdjy) ────────────────────────────────────────────────────
+# -- Booking (借用 cdjy) ----------------------------------------------------
 from . import booking as booking  # noqa: F401
 
 __all__ = [

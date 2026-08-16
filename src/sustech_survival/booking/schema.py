@@ -25,7 +25,7 @@ from datetime import datetime
 from typing import List, Optional
 
 
-# ── Time-only string helper ──────────────────────────────────────────────────
+# -- Time-only string helper --------------------------------------------------
 
 _TIME_RE = re.compile(r"T(\d{2}:\d{2}:\d{2})")
 
@@ -51,7 +51,7 @@ def _parse_dt(s: Optional[str]) -> Optional[datetime]:
     return None
 
 
-# ── Room (场地 / 会议室) ──────────────────────────────────────────────────────
+# -- Room (场地 / 会议室) ------------------------------------------------------
 
 
 @dataclass
@@ -116,7 +116,7 @@ class Room:
         return "n/a"
 
 
-# ── Meeting (预约记录) ────────────────────────────────────────────────────────
+# -- Meeting (预约记录) --------------------------------------------------------
 
 
 @dataclass

@@ -255,7 +255,7 @@ button:disabled { background: #999; cursor: not-allowed; }
 }
 #route-result .how-we-estimate a:hover { text-decoration: underline; }
 
-/* ── Live bus HTML markers (single rotating SVG, body + chevron) ─────── */
+/* -- Live bus HTML markers (single rotating SVG, body + chevron) ------- */
 .live-bus-marker {
   width: 24px;
   height: 24px;
@@ -275,7 +275,7 @@ button:disabled { background: #999; cursor: not-allowed; }
   filter: drop-shadow(0 0 6px rgba(0,0,0,0.35));
 }
 
-/* ── Live bus popup (richer than building/stop popups) ───────────────── */
+/* -- Live bus popup (richer than building/stop popups) ----------------- */
 .bus-popup .maplibregl-popup-content {
   padding: 10px 12px;
   border-radius: 6px;
@@ -312,7 +312,7 @@ button:disabled { background: #999; cursor: not-allowed; }
   font-weight: 500;
 }
 
-/* ── Sidebar live bus list (with line badge) ──────────────────────────── */
+/* -- Sidebar live bus list (with line badge) ---------------------------- */
 .live-bus {
   display: flex;
   align-items: center;
@@ -335,7 +335,7 @@ button:disabled { background: #999; cursor: not-allowed; }
 .live-bus .next-station { flex: 1; }
 .live-bus .live-speed { color: var(--text-dim); font-size: 11px; }
 
-/* ── Legend (bottom-right) ──────────────────────────────────────────── */
+/* -- Legend (bottom-right) -------------------------------------------- */
 .map-legend {
   background: rgba(255, 255, 255, 0.96);
   padding: 8px 10px;

@@ -1,4 +1,4 @@
-﻿[English](README.md) | [绠€浣撲腑鏂嘳(README_cn.md)
+[English](README.md) | [绠€浣撲腑鏂嘳(README_cn.md)
 
 # sustech_survival
 
@@ -8,7 +8,7 @@
 </p>
 
 `sustech_survival` 鏄竴涓厑璁稿湪 API 灞傞潰璋冪敤鍗楃澶у悇鏈嶅姟绯荤粺鐨?Python 妯″潡銆傚畠婊¤冻 SUSTech 瀛︾敓鍦?BB銆乀IS銆佸浘涔﹂銆丳MS 绛夌郴缁熺殑鏃ュ父闇€姹傘€?
-閫氳繃鍦ㄤ唬鐮佸眰闈㈡墦閫氳繖浜涙湇鍔★紝鎴戜滑绠€鍖栦簡鏍″洯绯荤粺鐨勪娇鐢紝鎻愪緵浜嗕竴鏉￠€氬線涓€у寲鏍″洯浣撻獙鐨勬嵎寰勶紝鏇撮噸瑕佺殑鏄?鈥斺€?鎺ュ叆骞舵杩?AI 鍔╂墜杩涘叆浣犵殑鏍″洯鐢熸椿銆?
+閫氳繃鍦ㄤ唬鐮佸眰闈㈡墦閫氳繖浜涙湇鍔★紝鎴戜滑绠€鍖栦簡鏍″洯绯荤粺鐨勪娇鐢紝鎻愪緵浜嗕竴鏉￠€氬線涓€у寲鏍″洯浣撻獙鐨勬嵎寰勶紝鏇撮噸瑕佺殑鏄?鈥斺€?鎺ュ叆骞舵杩?AI 鍔+墜杩涘叆浣犵殑鏍″洯鐢熸椿銆?
 [![GitHub](https://img.shields.io/badge/github-repo-blue.svg)](https://github.com/dumixthestpd/sustech_survival)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm--Noncommercial--1.0.0-orange.svg)](./LICENSE)
@@ -30,7 +30,7 @@
 
 ### 鑷缓妯″潡
 
-- **selectcourse** 鈥?TIS 閫夎锛氭祻瑙堣绋嬨€佸姞閫€閫夈€佺鐞嗚喘鐗╄溅銆?- **faculty** 鈥?鏁欏笀淇℃伅鐩綍锛氭寜瀛﹂櫌鍒楄〃銆佸叏鏂囨悳绱€佷釜浜轰富椤垫煡璇€?- **transit** 鈥?鏍″洯宸村＋涓庢琛屽鑸細鏃跺埢琛ㄣ€佸疄鏃?GPS銆佽矾绾胯鍒掋€?- **calendar** 鈥?鍗楃澶ф牎鍘嗕笌鏃ユ湡鏅鸿兘锛氫粠 GitHub 涓婄殑 `sustech-calendar` 浠撳簱鍔犺浇 JSON锛岃В鏋?(鍛ㄦ, 鏄熸湡) 鈫?鏃ユ湡锛屽鐞嗚ˉ璇炬棩璋冩崲銆傚湪绾挎暟鎹负鏉冨▉婧愶紱鏈湴瑕嗙洊鐢ㄤ簬缂栬緫涓殑鏁版嵁銆?- **ical** 鈥?宸查€夎绋嬬殑 `.ics` 瀵煎嚭銆備綅浜?`selectcourse.ical`锛岄€氳繃 webui 鐨?`GET /api/tis/ical` 鎺ュ叆銆?- **webui** 鈥?Flask 鍗曢〉搴旂敤锛屾暣鍚?TIS 閫夎鐣岄潰銆佸叕浜ゅ湴鍥俱€丯CES 鎮诞鍗＄墖銆乮Cal 瀵煎嚭銆傚惎鍔細`python -m sustech_survival.webui serve`銆?- **context** 鈥?涓?AI 鍔╂墜璁捐鐨勬瘡鏃ュ揩鐓э細鏃ユ湡銆佸懆娆°€佹渶杩戜綔涓?鑰冭瘯/涓婅鏃堕棿銆佸ぉ姘斻€丄QI銆?- **papers** 鈥?瀛︽湳璁烘枃鎼滅储涓庝笅杞斤紝瑕嗙洊 CrossRef銆丆NKI銆乄oS銆丷SC銆?
+- **selectcourse** 鈥?TIS 閫夎锛氭祻瑙堣绋嬨€佸姞閫€閫夈€佺鐞嗚喘鐗+溅銆?- **faculty** 鈥?鏁欏笀淇℃伅鐩綍锛氭寜瀛﹂櫌鍒楄〃銆佸叏鏂囨悳绱€佷釜浜轰富椤垫煡璇€?- **transit** 鈥?鏍″洯宸村＋涓庢琛屽鑸細鏃跺埢琛ㄣ€佸疄鏃?GPS銆佽矾绾胯鍒掋€?- **calendar** 鈥?鍗楃澶ф牎鍘嗕笌鏃ユ湡鏅鸿兘锛氫粠 GitHub 涓婄殑 `sustech-calendar` 浠撳簱鍔犺浇 JSON锛岃В鏋?(鍛ㄦ, 鏄熸湡) 鈫?鏃ユ湡锛屽鐞嗚ˉ璇炬棩璋冩崲銆傚湪绾挎暟鎹负鏉冨▉婧愶紱鏈湴瑕嗙洊鐢ㄤ簬缂栬緫涓殑鏁版嵁銆?- **ical** 鈥?宸查€夎绋嬬殑 `.ics` 瀵煎嚭銆備綅浜?`selectcourse.ical`锛岄€氳繃 webui 鐨?`GET /api/tis/ical` 鎺ュ叆銆?- **webui** 鈥?Flask 鍗曢〉搴旂敤锛屾暣鍚?TIS 閫夎鐣岄潰銆佸叕浜ゅ湴鍥俱€丯CES 鎮诞鍗＄墖銆乮Cal 瀵煎嚭銆傚惎鍔細`python -m sustech_survival.webui serve`銆?- **context** 鈥?涓?AI 鍔+墜璁捐鐨勬瘡鏃ュ揩鐓э細鏃ユ湡銆佸懆娆°€佹渶杩戜綔涓?鑰冭瘯/涓婅鏃堕棿銆佸ぉ姘斻€丄QI銆?- **papers** 鈥?瀛︽湳璁烘枃鎼滅储涓庝笅杞斤紝瑕嗙洊 CrossRef銆丆NKI銆乄oS銆丷SC銆?
 ---
 
 ## 蹇€熷紑濮?
@@ -79,7 +79,7 @@ python -m sustech_survival.lib.login   # 鍥句功棣?Primo
 
 璁剧疆瀹屾垚鍚庣殑涓や釜甯哥敤宸ヤ綔娴侊細
 
-**姣忔棩蹇収锛堜负 AI 鍔╂墜璁捐锛夛細**
+**姣忔棩蹇収锛堜负 AI 鍔+墜璁捐锛夛細**
 
 ```python
 from sustech_survival.context import Context
@@ -152,7 +152,7 @@ python -m pytest src/test/ -v
 ---
 
 ## 鍏充簬寮€鍙戣€?
-鏈ā鍧楃敱 **dumixthestpd**锛堝崡绉戝ぇ闈炶绠楁満涓撲笟鏈鐢燂級寮€鍙戯紝浠栦粎璐熻矗瀹忚璁捐銆傛湰妯″潡 99% 鐨勪唬鐮佺敱 AI 鍔╂墜缂栧啓锛屾垜浠竻妤氬湴鎰忚瘑鍒扮敱姝ゅ甫鏉ョ殑浠ｇ爜璐ㄩ噺闂銆傛垜浠杩庢洿澶氬悓瀛﹀姞鍏ュ紑鍙?鈥斺€?鍦?GitHub Issues 鍙戣捣璁ㄨ鍗冲彲銆備篃娆㈣繋鐩存帴鎻?PR銆?
+鏈ā鍧楃敱 **dumixthestpd**锛堝崡绉戝ぇ闈炶绠楁満涓撲笟鏈鐢燂級寮€鍙戯紝浠栦粎璐熻矗瀹忚璁捐銆傛湰妯″潡 99% 鐨勪唬鐮佺敱 AI 鍔+墜缂栧啓锛屾垜浠竻妤氬湴鎰忚瘑鍒扮敱姝ゅ甫鏉ョ殑浠ｇ爜璐ㄩ噺闂銆傛垜浠杩庢洿澶氬悓瀛﹀姞鍏ュ紑鍙?鈥斺€?鍦?GitHub Issues 鍙戣捣璁ㄨ鍗冲彲銆備篃娆㈣繋鐩存帴鎻?PR銆?
 ---
 
 ## 鑷磋阿

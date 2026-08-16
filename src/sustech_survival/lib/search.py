@@ -44,7 +44,7 @@ from typing import List, Optional, Tuple
 # Lazy imports inside functions to keep this module import-clean
 # (Playwright is a heavy optional dep — only loaded when search() is called).
 
-# ── Data classes ──────────────────────────────────────────────────────────
+# -- Data classes ----------------------------------------------------------
 
 
 @dataclass
@@ -87,7 +87,7 @@ class BookDetail:
     detail_url: str = ""
 
 
-# ── Internal helpers ──────────────────────────────────────────────────────
+# -- Internal helpers ------------------------------------------------------
 
 
 def _ensure_auth():
@@ -248,7 +248,7 @@ def _playwright_page():
     return pw, ctx
 
 
-# ── Public API ────────────────────────────────────────────────────────────
+# -- Public API ------------------------------------------------------------
 
 
 def search(query: Optional[str] = None, *,
@@ -502,7 +502,7 @@ def _parse_detail_text(text: str) -> BookDetail:
     return out
 
 
-# ── CLI ───────────────────────────────────────────────────────────────────
+# -- CLI -------------------------------------------------------------------
 # NOTE: the standalone argparse `main()` was removed 2026-08-10 during the
 # CLI unification. The unified `sustech lib search ...` / `sustech lib
 # detail ...` commands are defined inline in `sustech_survival/cli/main.py`

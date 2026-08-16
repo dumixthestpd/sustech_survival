@@ -48,7 +48,7 @@ __all__ = [
 ]
 
 
-# ── Type aliases ────────────────────────────────────────────────
+# -- Type aliases ------------------------------------------------
 
 Weekday = Literal[
     "Monday", "Tuesday", "Wednesday", "Thursday",
@@ -67,7 +67,7 @@ INDEX_WEEKDAY: tuple[Weekday, ...] = (
 )
 
 
-# ── Constants ───────────────────────────────────────────────────
+# -- Constants ---------------------------------------------------
 
 DEFAULT_REPO = (
     "https://raw.githubusercontent.com/dumixthestpd/sustech-calendar/main/2026"
@@ -86,7 +86,7 @@ class CalendarError(Exception):
     """Raised on any failure to load or parse the academic calendar."""
 
 
-# ── Records ──────────────────────────────────────────────────────
+# -- Records ------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -152,7 +152,7 @@ class ClassTime:
         return week in self.weeks
 
 
-# ── Day ──────────────────────────────────────────────────────────
+# -- Day ----------------------------------------------------------
 
 
 class Day:
@@ -184,7 +184,7 @@ class Day:
         self.in_final_week = in_final_week
         self.in_midterm_week = in_midterm_week
 
-    # ── Day-type predicates ──────────────────────────────────────
+    # -- Day-type predicates --------------------------------------
 
     def is_holiday(self) -> bool:
         return self.holiday is not None
@@ -226,7 +226,7 @@ class Day:
         compensatory day (transferred classes run)."""
         return self.is_teaching_day() or self.is_compensatory()
 
-    # ── Schedule for this day ────────────────────────────────────
+    # -- Schedule for this day ------------------------------------
 
     @property
     def schedule(self) -> list[ClassTime]:
@@ -254,7 +254,7 @@ class Day:
             if c.matches_date(self.date, self.semester)
         ]
 
-    # ── Human-readable ──────────────────────────────────────────
+    # -- Human-readable ------------------------------------------
 
     def __str__(self) -> str:
         parts = [self.date.isoformat(), self.weekday]
@@ -281,7 +281,7 @@ class Day:
         return f"Day({self!s})"
 
 
-# ── Semester ────────────────────────────────────────────────────
+# -- Semester ----------------------------------------------------
 
 
 class Semester:
@@ -339,7 +339,7 @@ class Semester:
         object.__setattr__(self, "classes", [])
         object.__setattr__(self, "_calendar", None)
 
-    # ── Identity ─────────────────────────────────────────────────
+    # -- Identity -------------------------------------------------
 
     @property
     def season(self) -> Season:
@@ -373,7 +373,7 @@ class Semester:
     def calendar(self, value: "AcademicCalendar") -> None:
         object.__setattr__(self, "_calendar", value)
 
-    # ── Date math ─────────────────────────────────────────────────
+    # -- Date math -------------------------------------------------
 
     def date_of(self, week: int, weekday: int) -> date:
         """The calendar date for (week, weekday). weekday: 0=Mon..6=Sun.
@@ -416,7 +416,7 @@ class Semester:
     def __contains__(self, d: date) -> bool:
         return self.is_in_semester(d)
 
-    # ── Day lookup ────────────────────────────────────────────────
+    # -- Day lookup ------------------------------------------------
 
     def day(self, d: Optional[date] = None) -> Day:
         """Return Day for date (defaults to today, local date)."""
@@ -451,7 +451,7 @@ class Semester:
                 return c
         return None
 
-    # ── Class management ─────────────────────────────────────────
+    # -- Class management -----------------------------------------
 
     def fill(self, class_time: ClassTime) -> bool:
         """Register an enrolled class. Returns True on success.
@@ -519,7 +519,7 @@ class Semester:
             # happen for a well-formed semester + JSON)
         return sorted(set(out))
 
-    # ── Compensatory lookups ──────────────────────────────────────
+    # -- Compensatory lookups --------------------------------------
 
     def _holiday_for(self, comp: Compensatory) -> Optional[date]:
         """For a compensatory day, find the holiday date that flushed the
@@ -566,7 +566,7 @@ class Semester:
         )
         return forward[0] if forward else max(candidates, key=lambda c: c.date)
 
-    # ── Construction ─────────────────────────────────────────────
+    # -- Construction ---------------------------------------------
 
     @classmethod
     def from_payload(cls, payload: dict, level: str) -> "Semester":
@@ -626,7 +626,7 @@ def _last_teaching_day(payload: dict, teaching_start: date, final_end: date) -> 
     return min(last_day, final_end - timedelta(days=1))
 
 
-# ── AcademicCalendar ─────────────────────────────────────────────
+# -- AcademicCalendar ---------------------------------------------
 
 
 class AcademicCalendar:
@@ -831,7 +831,7 @@ class AcademicCalendar:
         return f"AcademicCalendar(year={self.year}, level={self.level!r})"
 
 
-# ── Internal helpers ──────────────────────────────────────────────
+# -- Internal helpers ----------------------------------------------
 
 
 # Cache schema for the per-year ``.meta.json`` sidecar.

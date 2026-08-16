@@ -23,7 +23,7 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f0f2f5; color: #1a1a2e; }
 
-/* ── Top bar ── */
+/* -- Top bar -- */
 .topbar {
   background: #fff; border-bottom: var(--border); padding: 10px 20px;
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
@@ -45,10 +45,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 .status.ok { color: #27ae60; }
 .status.warn { color: #e74c3c; }
 
-/* ── Layout ── */
+/* -- Layout -- */
 .layout { display: flex; height: calc(100vh - 57px); overflow: hidden; }
 
-/* ── Left panel ── */
+/* -- Left panel -- */
 .left { width: 320px; flex-shrink: 0; border-right: var(--border); background: #fff; display: flex; flex-direction: column; overflow: hidden; }
 .panel-head { padding: 12px 14px 8px; border-bottom: var(--border); }
 .panel-head h2 { font-size: 13px; color: #888; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 8px; }
@@ -71,7 +71,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 .course-card .c-teacher { font-size: 11px; color: #666; }
 .empty-list { text-align: center; padding: 40px 20px; color: #aaa; font-size: 13px; }
 
-/* ── Middle panel (selected) ── */
+/* -- Middle panel (selected) -- */
 .middle { width: 260px; flex-shrink: 0; border-right: var(--border); background: #fff; display: flex; flex-direction: column; overflow: hidden; }
 .middle-list { flex: 1; overflow-y: auto; padding: 8px; }
 .selected-item {
@@ -87,7 +87,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 .selected-item .remove:hover { color: #e74c3c; }
 .solve-btn-wrap { padding: 10px; border-top: var(--border); }
 
-/* ── Right panel (grid) ── */
+/* -- Right panel (grid) -- */
 .right { flex: 1; overflow: auto; padding: 16px; background: #f0f2f5; }
 .grid-header { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
 .grid-header h2 { font-size: 15px; font-weight: 700; }

@@ -34,7 +34,7 @@ from sustech_survival.tis.classroom.booking_schema import (
 )
 
 
-# ── Helper tests ────────────────────────────────────────────────────────────
+# -- Helper tests ------------------------------------------------------------
 
 
 class TestParseDt:
@@ -100,7 +100,7 @@ class TestToInt:
         assert _to_int("not a number") == 0
 
 
-# ── PermissionResult ───────────────────────────────────────────────────────
+# -- PermissionResult -------------------------------------------------------
 
 
 class TestPermissionResult:
@@ -128,7 +128,7 @@ class TestPermissionResult:
         assert p.allowed is False
 
 
-# ── AuditStatus ─────────────────────────────────────────────────────────────
+# -- AuditStatus -------------------------------------------------------------
 
 
 class TestAuditStatus:
@@ -164,7 +164,7 @@ class TestAuditStatus:
         assert s.occurred_at.day == 26
 
 
-# ── BorrowTimeSlot ─────────────────────────────────────────────────────────
+# -- BorrowTimeSlot ---------------------------------------------------------
 
 
 class TestBorrowTimeSlot:
@@ -200,7 +200,7 @@ class TestBorrowTimeSlot:
         assert s.period_end == 8
 
 
-# ── BorrowDetail ────────────────────────────────────────────────────────────
+# -- BorrowDetail ------------------------------------------------------------
 
 
 class TestBorrowDetail:
@@ -237,7 +237,7 @@ class TestBorrowDetail:
         assert d.room_code == ""
 
 
-# ── AuditNode ───────────────────────────────────────────────────────────────
+# -- AuditNode ---------------------------------------------------------------
 
 
 class TestAuditNode:
@@ -274,7 +274,7 @@ class TestAuditNode:
         assert n.status == "pending"
 
 
-# ── VenueOccupancySlot ──────────────────────────────────────────────────────
+# -- VenueOccupancySlot ------------------------------------------------------
 
 
 class TestVenueOccupancySlot:
@@ -306,7 +306,7 @@ class TestVenueOccupancySlot:
         assert s.weekday == 0
 
 
-# ── BorrowApplication ───────────────────────────────────────────────────────
+# -- BorrowApplication -------------------------------------------------------
 
 
 REAL_APPLICATION = {
@@ -512,7 +512,7 @@ class TestBorrowApplication:
         assert b.status == ""
 
 
-# ── Integration: detail + slot + booking ────────────────────────────────────
+# -- Integration: detail + slot + booking ------------------------------------
 
 
 class TestNestedIntegration:

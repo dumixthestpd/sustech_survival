@@ -21,7 +21,7 @@ from sustech_survival.sso import TISAuth
 
 SKILL_ROOT = _Path(__file__).resolve().parent.parent.parent.parent
 
-# ── Slot parser (uses pkjgmx_en — English HTML, much cleaner) ─────────────────
+# -- Slot parser (uses pkjgmx_en — English HTML, much cleaner) -----------------
 _EN_DAY_MAP = {"Mon": 0, "Tue": 1, "Wed": 2, "Thu": 3, "Fri": 4, "Sat": 5, "Sun": 6}
 
 
@@ -121,7 +121,7 @@ def parse_slots(html: str) -> list[dict]:
     return slots
 
 
-# ── Conflict detection ─────────────────────────────────────────────────────────
+# -- Conflict detection ---------------------------------------------------------
 def slots_conflict(a: dict, b: dict) -> bool:
     """True if two slots overlap (same day + shared week + shared period)."""
     if a["day"] != b["day"]:
@@ -140,7 +140,7 @@ def section_conflict(s1: dict, s2: dict) -> bool:
     return False
 
 
-# ── Fetch sections from TIS ───────────────────────────────────────────────────
+# -- Fetch sections from TIS ---------------------------------------------------
 def fetch_sections(codes: list[str], auth, xn: str, xq: str) -> dict[str, list[dict]]:
     result = {}
     for code in codes:
@@ -200,7 +200,7 @@ def section_blocks_blocked(sec: dict, blocked: list[tuple[int, set[int]]]) -> bo
     return False
 
 
-# ── Solver ─────────────────────────────────────────────────────────────────────
+# -- Solver ---------------------------------------------------------------------
 def solve(sections: dict[str, list[dict]], max_results: int = 100,
           blocked: list[tuple[int, set[int]]] = None) -> list[list[dict]]:
     codes = list(sections.keys())
@@ -230,7 +230,7 @@ def solve(sections: dict[str, list[dict]], max_results: int = 100,
     return results
 
 
-# ── Rendering ─────────────────────────────────────────────────────────────────
+# -- Rendering -----------------------------------------------------------------
 DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 PERIODS = list(range(1, 13))
 
@@ -248,7 +248,7 @@ def render_grid(schedule: list[dict]) -> str:
 
     pw = 13
     lines = [" " * 9 + "".join(f"{p:^{pw}}" for p in PERIODS)]
-    lines.append("─" * len(lines[0]))
+    lines.append("-" * len(lines[0]))
     for i, day in enumerate(DAY_LABELS):
         row = f"{day:>8} "
         for p in PERIODS:
@@ -276,7 +276,7 @@ def describe_section(sec: dict) -> str:
 # same Python API exposed by this module.
 
 
-# ── Schedule table renderer (TUI grid + markdown export) ──────────────
+# -- Schedule table renderer (TUI grid + markdown export) --------------
 
 
 def render_table(schedule: list[dict]) -> str:

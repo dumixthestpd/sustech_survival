@@ -12,7 +12,7 @@ from datetime import datetime, date
 from typing import List, Optional
 
 
-# ── Constants ────────────────────────────────────────────────────────────────
+# -- Constants ----------------------------------------------------------------
 
 # Paper size codes used across the API (dwPaperId)
 PAPER_UNSPECIFIED = -1
@@ -55,7 +55,7 @@ def paper_id(name: str) -> int:
                 name.strip(), PAPER_UNSPECIFIED)
 
 
-# ── Station (打印点) ─────────────────────────────────────────────────────────
+# -- Station (打印点) ---------------------------------------------------------
 
 @dataclass
 class Station:
@@ -185,7 +185,7 @@ class ServerGroup:
         )
 
 
-# ── Print job (打印文档) ─────────────────────────────────────────────────────
+# -- Print job (打印文档) -----------------------------------------------------
 
 @dataclass
 class PrintJob:
@@ -295,7 +295,7 @@ class PrintJob:
         )
 
 
-# ── Scan job (扫描文档) ──────────────────────────────────────────────────────
+# -- Scan job (扫描文档) ------------------------------------------------------
 
 @dataclass
 class ScanJob:
@@ -355,7 +355,7 @@ class ScanJob:
         )
 
 
-# ── Usage record (使用记录) ──────────────────────────────────────────────────
+# -- Usage record (使用记录) --------------------------------------------------
 
 @dataclass
 class UsageRecord:

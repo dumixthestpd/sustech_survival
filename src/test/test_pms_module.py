@@ -26,7 +26,7 @@ from sustech_survival.pms.pms import (
 )
 
 
-# ── Module surface ──────────────────────────────────────────────────────────
+# -- Module surface ----------------------------------------------------------
 
 class TestModuleExports:
     def test_all_classes_importable(self):
@@ -48,7 +48,7 @@ class TestModuleExports:
         assert REPORT_TYPE_COPY == 3
 
 
-# ── Coercion helpers ────────────────────────────────────────────────────────
+# -- Coercion helpers --------------------------------------------------------
 
 class TestCoerceColor:
     def test_int_passthrough(self):
@@ -113,7 +113,7 @@ class TestCoerceDuplex:
             _coerce_duplex(99)
 
 
-# ── PrintUploadResult ───────────────────────────────────────────────────────
+# -- PrintUploadResult -------------------------------------------------------
 
 class TestPrintUploadResult:
     def test_dry_run_markdown(self):
@@ -158,7 +158,7 @@ class TestPrintUploadResult:
         assert "File too large" in md
 
 
-# ── PMSClient construction ──────────────────────────────────────────────────
+# -- PMSClient construction --------------------------------------------------
 
 class TestPMSClient:
     def test_construct_with_session(self):
@@ -170,7 +170,7 @@ class TestPMSClient:
         assert c.API_BASE == "https://pms.sustech.edu.cn/api"
 
 
-# ── Date formatting helper ──────────────────────────────────────────────────
+# -- Date formatting helper --------------------------------------------------
 
 class TestFmtDate:
     def test_date_object(self):
@@ -201,7 +201,7 @@ class TestFmtDate:
             _PMSClient._fmt_date(12345)
 
 
-# ── Off-campus (HTTP 403) detection ─────────────────────────────────────────
+# -- Off-campus (HTTP 403) detection -----------------------------------------
 
 class TestOffCampus:
     """PMS sits behind SUSTech's campus firewall. Off-campus requests get a
@@ -267,7 +267,7 @@ class TestOffCampus:
         assert "Not authenticated" in str(exc.value)
 
 
-# ── Off-campus wiring on history / delete_* ─────────────────────────────────
+# -- Off-campus wiring on history / delete_* ---------------------------------
 # These methods call r.json() directly (not via _unwrap) — confirm the
 # off-campus check is wired into each path independently.
 

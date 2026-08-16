@@ -14,7 +14,7 @@ from typing import List, Optional, Union
 from sustech_survival.tis.classroom.live import PERIOD_TIMES
 
 
-# ── Simple descriptors ────────────────────────────────────────────────────────
+# -- Simple descriptors --------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -53,7 +53,7 @@ def _clock_to_period(tm: ClockTime) -> int:
     )
 
 
-# ── Booking time (user-facing) ───────────────────────────────────────────────
+# -- Booking time (user-facing) -----------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -158,7 +158,7 @@ class BookingTime:
         return f"{day_zh} {p}{w}"
 
 
-# ── Schedule (the argument to book()) ────────────────────────────────────────
+# -- Schedule (the argument to book()) ----------------------------------------
 
 
 Schedule = Union[BookingTime, List[BookingTime]]

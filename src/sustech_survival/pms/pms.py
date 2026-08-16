@@ -73,12 +73,12 @@ class PMSClient:
     BASE_URL = PMS_BASE
     API_BASE = PMS_API
 
-    # ── Construction ────────────────────────────────────────────────────────
+    # -- Construction --------------------------------------------------------
 
     def __init__(self, session: requests.Session):
         self.session = session
 
-    # ── Station queries (打印点) ─────────────────────────────────────────────
+    # -- Station queries (打印点) ---------------------------------------------
 
     def list_server_groups(self) -> List[ServerGroup]:
         """GET /client/Station/GetSrvList — the dropdown options on the page.
@@ -107,7 +107,7 @@ class PMSClient:
             stations = [s for s in stations if s.server_group == group_sn]
         return stations
 
-    # ── Print jobs (打印文档) ────────────────────────────────────────────────
+    # -- Print jobs (打印文档) ------------------------------------------------
 
     def list_print_jobs(self) -> List[PrintJob]:
         """GET /client/PrintJob/Get — documents uploaded but not yet printed."""
@@ -144,7 +144,7 @@ class PMSClient:
         out = r.json()
         return out.get("code") == 0
 
-    # ── Scan jobs (扫描文档) ────────────────────────────────────────────────
+    # -- Scan jobs (扫描文档) ------------------------------------------------
 
     def list_scan_jobs(self) -> List[ScanJob]:
         """GET /client/Scan/Get — scanned documents."""
@@ -178,7 +178,7 @@ class PMSClient:
         out = r.json()
         return out.get("code") == 0
 
-    # ── Usage records (使用记录) ────────────────────────────────────────────
+    # -- Usage records (使用记录) --------------------------------------------
 
     def history(
         self,
@@ -227,7 +227,7 @@ class PMSClient:
         total_pages = int(out.get("dwTotalPage") or 1)
         return records, total_pages
 
-    # ── Cloud print upload (云打印) ─────────────────────────────────────────
+    # -- Cloud print upload (云打印) -----------------------------------------
 
     @consequence_rich(Consequence(
         name="pms.upload_print",
@@ -348,7 +348,7 @@ class PMSClient:
         result.message = out.get("message", "")
         return result
 
-    # ── Helpers ─────────────────────────────────────────────────────────────
+    # -- Helpers -------------------------------------------------------------
 
     @staticmethod
     def _unwrap(r: requests.Response):
@@ -389,7 +389,7 @@ class PMSClient:
         raise TypeError(f"Unsupported date type: {type(d)}")
 
 
-# ── Result dataclass for upload_print ────────────────────────────────────────
+# -- Result dataclass for upload_print ----------------------------------------
 
 @dataclass
 class PrintUploadResult:
@@ -429,7 +429,7 @@ class PMSError(Exception):
     """Raised when PMS returns an error."""
 
 
-# ── Coercion helpers ─────────────────────────────────────────────────────────
+# -- Coercion helpers ---------------------------------------------------------
 
 def _coerce_color(v) -> int:
     if isinstance(v, int):
@@ -474,7 +474,7 @@ def _coerce_duplex(v) -> int:
     raise ValueError(f"Unknown duplex: {v!r}")
 
 
-# ── Module-level singleton (uses PMSAuth) ────────────────────────────────────
+# -- Module-level singleton (uses PMSAuth) ------------------------------------
 
 # The default singleton is built from the PMSAuth singleton. Users wanting
 # a custom session should construct `PMSClient(session)` directly.

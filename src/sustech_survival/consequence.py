@@ -76,7 +76,7 @@ class Consequence:
         return line
 
 
-# ── Registry ───────────────────────────────────────────────────────────────
+# -- Registry ---------------------------------------------------------------
 # method -> Consequence. Populated by the CONSEQUENCE_RICH decorator.
 
 _REGISTRY: dict[Callable, Consequence] = {}
@@ -136,7 +136,7 @@ def consequence_rich(consequence: Consequence):
 CONSEQUENCE_RICH = consequence_rich
 
 
-# ── CLI confirmation gate ──────────────────────────────────────────────────
+# -- CLI confirmation gate --------------------------------------------------
 
 class ConfirmationRequired(Exception):
     """Raised by the CLI gate when a consequence-rich op runs without --yes/--commit.

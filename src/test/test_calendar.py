@@ -27,7 +27,7 @@ from sustech_survival.calendar import (
 )
 
 
-# ── Fixtures ────────────────────────────────────────────────────
+# -- Fixtures ----------------------------------------------------
 
 
 def _fake_general_json():
@@ -111,7 +111,7 @@ def fall(fake_cal):
     return fake_cal.fall
 
 
-# ── Identity ────────────────────────────────────────────────────
+# -- Identity ----------------------------------------------------
 
 
 class TestIdentity:
@@ -173,7 +173,7 @@ class TestSummerSemester:
         assert cal.summer.teaching_start == date(2026, 7, 1)
 
 
-# ── Date math ───────────────────────────────────────────────────
+# -- Date math ---------------------------------------------------
 
 
 class TestDateMath:
@@ -217,7 +217,7 @@ class TestDateMath:
         assert date(2026, 1, 15) not in spring
 
 
-# ── Day predicates ──────────────────────────────────────────────
+# -- Day predicates ----------------------------------------------
 
 
 class TestDayPredicates:
@@ -292,7 +292,7 @@ class TestDayPredicates:
         assert "Labor Day" in s
 
 
-# ── Day.schedule ─────────────────────────────────────────────────
+# -- Day.schedule -------------------------------------------------
 
 
 class TestDaySchedule:
@@ -336,7 +336,7 @@ class TestDaySchedule:
         assert ct in d.schedule
 
 
-# ── Semester.fill + dates ───────────────────────────────────────
+# -- Semester.fill + dates ---------------------------------------
 
 
 class TestFillAndDates:
@@ -399,7 +399,7 @@ class TestFillAndDates:
         assert result == [date(2026, 3, 14)]
 
 
-# ── AcademicCalendar.day dispatch ──────────────────────────────
+# -- AcademicCalendar.day dispatch ------------------------------
 
 
 class TestCalendarDayDispatch:
@@ -420,7 +420,7 @@ class TestCalendarDayDispatch:
         assert d.week == 0
 
 
-# ── ICS export integration ─────────────────────────────────────
+# -- ICS export integration -------------------------------------
 
 
 class TestIcalExport:
@@ -458,7 +458,7 @@ class TestIcalExport:
         assert "BEGIN:VEVENT" not in text
 
 
-# ── Online load (network-required) ──────────────────────────────
+# -- Online load (network-required) ------------------------------
 
 
 class TestOnlineLoad:
@@ -515,7 +515,7 @@ class TestOnlineLoad:
         assert "2026" not in str(excinfo.value) or "404" in str(excinfo.value)
 
 
-# ── Compensatory naming/types ───────────────────────────────────
+# -- Compensatory naming/types -----------------------------------
 
 
 class TestCompensatoryTypes:
@@ -535,7 +535,7 @@ class TestCompensatoryTypes:
         assert c.workday == "Monday"
 
 
-# ── Cache layer (offline tests via local HTTP server) ───────────
+# -- Cache layer (offline tests via local HTTP server) -----------
 
 
 import socket
@@ -543,7 +543,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 
-# ── Fake GitHub-raw HTTP server for cache tests ──────────────────
+# -- Fake GitHub-raw HTTP server for cache tests ------------------
 
 
 class _FakeCalendarHandler(BaseHTTPRequestHandler):

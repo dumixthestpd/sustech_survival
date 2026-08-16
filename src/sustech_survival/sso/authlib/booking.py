@@ -59,7 +59,7 @@ class BookingAuth(Authorizer):
     BASE_URL = BOOKING_BASE
     SERVICE_URL = BOOKING_SERVICE
 
-    # ── Session management ────────────────────────────────────────────────────
+    # -- Session management ----------------------------------------------------
 
     def check(self) -> Tuple[bool, str]:
         """Is the current session still authenticated?
@@ -85,7 +85,7 @@ class BookingAuth(Authorizer):
             return self.check()
         return False, reason
 
-    # ── Login (public convenience) ────────────────────────────────────────────
+    # -- Login (public convenience) --------------------------------------------
 
     def login_password(
         self, username: Optional[str] = None, password: Optional[str] = None
@@ -104,7 +104,7 @@ class BookingAuth(Authorizer):
             return getattr(self, "_user_info", {}).get("name", username)
         raise AuthorizerError("BookingAuth login failed.")
 
-    # ── Refresh (overrides base) ─────────────────────────────────────────────
+    # -- Refresh (overrides base) ---------------------------------------------
 
     def _refresh(self) -> bool:
         """Read credentials from file and perform full CAS + token handshake."""
@@ -221,7 +221,7 @@ class BookingAuth(Authorizer):
         self._cache_token(token)
         self._user_info = hs_data["Data"]  # cache for whoami()
 
-    # ── Token storage (in-memory only) ───────────────────────────────────────
+    # -- Token storage (in-memory only) ---------------------------------------
     #
     # The auth token is NOT in the cookie jar — it's a JSON field returned by
     # GetUserProfile. We store it in memory only (no disk I/O).
@@ -232,7 +232,7 @@ class BookingAuth(Authorizer):
     def _cached_token(self) -> str:
         return getattr(self, "_token", "") or ""
 
-    # ── requests.Session factory ─────────────────────────────────────────────
+    # -- requests.Session factory ---------------------------------------------
 
     def _api_session(self) -> requests.Session:
         """Session pre-loaded with cookies + JSON headers + Authorization token."""
@@ -248,6 +248,6 @@ class BookingAuth(Authorizer):
         return sess
 
 
-# ── Module-level singleton ──────────────────────────────────────────────────
+# -- Module-level singleton --------------------------------------------------
 
 _auth = BookingAuth()  # resolves skill_root by walking up looking for credentials.txt

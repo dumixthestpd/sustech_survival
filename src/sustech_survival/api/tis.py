@@ -74,7 +74,7 @@ def _int_or_none(v: Any) -> "Optional[int]":
         return None
 
 
-# ── Info ──────────────────────────────────────────────────────────────────
+# -- Info ------------------------------------------------------------------
 
 def info(xn: Optional[str] = None, xq: Optional[str] = None) -> dict:
     """Semester info + filter options for the course-search UI.
@@ -109,7 +109,7 @@ def info(xn: Optional[str] = None, xq: Optional[str] = None) -> dict:
     }
 
 
-# ── Courses ───────────────────────────────────────────────────────────────
+# -- Courses ---------------------------------------------------------------
 
 def courses(
     xn: Optional[str] = None,
@@ -197,7 +197,7 @@ def course_detail(rwh: str, xn: Optional[str] = None, xq: Optional[str] = None) 
     return {"error": "not found"}
 
 
-# ── Write proxies (dry-run by default) ────────────────────────────────────
+# -- Write proxies (dry-run by default) ------------------------------------
 
 def write(action: str, rwh: str, *, dry_run: bool, xn: Optional[str] = None,
           xq: Optional[str] = None, **kw) -> dict:

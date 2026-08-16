@@ -731,7 +731,7 @@ class TISAuthEval(TISAuth):
 # -----------------------------------------------------------------------
 
 
-# ── standalone wrappers ───────────────────────────────────────────────────────────-
+# -- standalone wrappers ------------------------------------------------------------
 def auto_fill(
     xnxq: Optional[str] = None,
     courses: Optional[list[str]] = None,

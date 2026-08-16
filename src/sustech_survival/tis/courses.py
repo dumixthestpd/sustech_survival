@@ -92,9 +92,9 @@ def run(semester: str = None, format: str = "table"):
     # Default: human-readable table
     for sem, sem_courses in sorted(by_sem.items()):
         total_credits = sum(c.get("xf", 0) for c in sem_courses)
-        print(f"\n{'─' * 55}")
+        print(f"\n{'-' * 55}")
         print(f"  {sem}  ({len(sem_courses)} 门课, {total_credits:.0f} 学分)")
-        print(f"  {'─' * 55}")
+        print(f"  {'-' * 55}")
         for c in sem_courses:
             code = c.get("kcdm", "")
             name = c.get("kcmc", "") or c.get("kcmc_en", "")

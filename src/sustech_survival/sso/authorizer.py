@@ -48,19 +48,19 @@ __all__ = [
 ]
 
 
-# ── Constants ────────────────────────────────────────────────────────────────
+# -- Constants ----------------------------------------------------------------
 
 CAS_BASE = "https://cas.sustech.edu.cn/cas/login"
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 
-# ── Exceptions ────────────────────────────────────────────────────────────────
+# -- Exceptions ----------------------------------------------------------------
 
 class AuthorizerError(Exception):
     """Raised when auth fails."""
 
 
-# ── Authorizer ───────────────────────────────────────────────────────────────
+# -- Authorizer ---------------------------------------------------------------
 
 class Authorizer(ABC):
     """
@@ -125,7 +125,7 @@ class Authorizer(ABC):
         self._last_refresh_error: Optional[Exception] = None
         self._initialized = True
 
-    # ── Public API — no HTTP leak ─────────────────────────────────────────
+    # -- Public API — no HTTP leak -----------------------------------------
 
     def get(self, path: str, **kwargs) -> requests.Response:
         """GET path relative to BASE_URL. Cookies, headers, UA already set.
@@ -234,7 +234,7 @@ class Authorizer(ABC):
 
         return False, self._refresh_error_message()
 
-    # ── Session (the requests.Session with cookies + headers) ────────────
+    # -- Session (the requests.Session with cookies + headers) ------------
 
     def _is_session_fresh(self) -> bool:
         import time
@@ -277,7 +277,7 @@ class Authorizer(ABC):
         path = path.lstrip("/")
         return f"{base}/{path}"
 
-    # ── Auth lifecycle ───────────────────────────────────────────────────
+    # -- Auth lifecycle ---------------------------------------------------
 
     def refresh(self) -> bool:
         """Force a fresh CAS login using stored credentials.
@@ -344,7 +344,7 @@ class Authorizer(ABC):
             "Use login() for browser-based auth."
         )
 
-    # ── Headers ──────────────────────────────────────────────────────────────
+    # -- Headers --------------------------------------------------------------
 
     @property
     def _headers(self) -> dict:
@@ -353,7 +353,7 @@ class Authorizer(ABC):
             h["X-Requested-With"] = "XMLHttpRequest"
         return h
 
-    # ── Credentials ─────────────────────────────────────────────────────────
+    # -- Credentials ---------------------------------------------------------
 
     def _read_creds(self) -> tuple[str, str]:
         try:
@@ -424,14 +424,14 @@ class Authorizer(ABC):
     def password(self) -> str:
         return self._read_creds()[1]
 
-    # ── CAS URL ──────────────────────────────────────────────────────────────
+    # -- CAS URL --------------------------------------------------------------
 
     @property
     def _cas_url(self) -> str:
         encoded = quote(self.SERVICE_URL, safe="")
         return f"{getattr(self, '_idp_cas_base', CAS_BASE)}?service={encoded}"
 
-    # ── Login (Playwright headful) ─────────────────────────────────────────
+    # -- Login (Playwright headful) -----------------------------------------
 
     def login(self, *, headless: bool = False):
         """Playwright headful login — stores cookies in memory only."""
@@ -462,7 +462,7 @@ class Authorizer(ABC):
             print(f"✅ {cls} login complete ({len(cookies)} cookies)")
             return True
 
-    # ── @ensured decorator ───────────────────────────────────────────────────
+    # -- @ensured decorator ---------------------------------------------------
 
     def ensured(self, func: Callable) -> Callable:
         """

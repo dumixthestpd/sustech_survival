@@ -49,7 +49,7 @@ def get_grades(session, semester: str = None):
     return courses
 
 
-# ── GPA helpers ────────────────────────────────────────────────────────────────
+# -- GPA helpers ----------------------------------------------------------------
 
 # SUSTech official 4.0 GPA conversion table (本科)
 # Source: https://sustech.online/study/ → GPA换算表（本科）
@@ -165,7 +165,7 @@ def run(semester: str = None, export: str = None):
 
     for sem, sem_courses in sorted(by_semester.items()):
         sem_gpa, sem_creds = calc_gpa(sem_courses)
-        print(f"  {'─' * 50}")
+        print(f"  {'-' * 50}")
         print(f"  {sem}  ({len(sem_courses)} 门课, {sem_creds:.0f} 学分, GPA {sem_gpa:.3f})")
         for c in sem_courses:
             row = format_grade_row(c)

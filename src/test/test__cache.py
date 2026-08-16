@@ -26,7 +26,7 @@ import pytest
 from sustech_survival import _cache
 
 
-# ── cache_path ───────────────────────────────────────────────────
+# -- cache_path ---------------------------------------------------
 
 
 class TestCachePath:
@@ -60,7 +60,7 @@ class TestCachePath:
             _cache.cache_path(bad)
 
 
-# ── save_json / load_json ────────────────────────────────────────
+# -- save_json / load_json ----------------------------------------
 
 
 class TestSaveLoadJson:
@@ -112,7 +112,7 @@ class TestSaveLoadJson:
         assert "\n" in content
 
 
-# ── sha1 ─────────────────────────────────────────────────────────
+# -- sha1 ---------------------------------------------------------
 
 
 class TestSha1:
@@ -132,7 +132,7 @@ class TestSha1:
         assert _cache.sha1_file(tmp_path / "absent") is None
 
 
-# ── http_get_with_etag ───────────────────────────────────────────
+# -- http_get_with_etag -------------------------------------------
 
 
 class _RecordingHandler(BaseHTTPRequestHandler):
@@ -212,7 +212,7 @@ class TestHttpGetWithEtag:
         assert etag == '"my-etag"'
 
 
-# ── ensure_cachedir ──────────────────────────────────────────────
+# -- ensure_cachedir ----------------------------------------------
 
 
 class TestEnsureCachedir:
@@ -229,7 +229,7 @@ class TestEnsureCachedir:
         assert _cache.ensure_cachedir(target) == target
 
 
-# ── clear_cache (module scale) ──────────────────────────────────
+# -- clear_cache (module scale) ----------------------------------
 
 
 class TestClearCache:

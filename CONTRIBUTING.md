@@ -1,4 +1,4 @@
-﻿# Contributing to sustech_survival
+# Contributing to sustech_survival
 
 Mostly maintained by one person. Outside PRs are welcome, reviewed when I have time.
 

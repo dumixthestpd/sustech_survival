@@ -58,7 +58,7 @@ from .schema import DAY_NAMES_ZH
 from sustech_survival.semester import Semester
 
 
-# ── Endpoints ────────────────────────────────────────────────────────────────
+# -- Endpoints ----------------------------------------------------------------
 
 TIS_BASE = "https://tis.sustech.edu.cn"
 TIS_QUERY_ROOM_SCHEDULE_URL = f"{TIS_BASE}/cdkb/querycdkbList"
@@ -67,7 +67,7 @@ TIS_DQ_XNXQ_URL = f"{TIS_BASE}/component/dq_xnxq"
 DEFAULT_TTL = 3600  # 1 hour
 
 
-# ── Manual TIS CAS login (mirrors classroom.py) ─────────────────────────────
+# -- Manual TIS CAS login (mirrors classroom.py) -----------------------------
 
 
 def _tis_login(username: str, password: str) -> Tuple[requests.Session, dict]:
@@ -86,7 +86,7 @@ def _tis_login(username: str, password: str) -> Tuple[requests.Session, dict]:
     return sess, cookies
 
 
-# ── Parsing ──────────────────────────────────────────────────────────────────
+# -- Parsing ------------------------------------------------------------------
 
 
 # Extract [N周] or [N1-N2周] from SKSJ text.
@@ -218,7 +218,7 @@ def _expand_week_pattern(s: str) -> List[int]:
     return sorted(set(out))
 
 
-# ── Dataclasses ──────────────────────────────────────────────────────────────
+# -- Dataclasses --------------------------------------------------------------
 
 
 @dataclass
@@ -304,7 +304,7 @@ class RoomScheduleEntry:
         return f"📚 **{self.when_str}** {ccode} {cname}{purpose_str}"
 
 
-# ── Current time → TIS format ────────────────────────────────────────────────
+# -- Current time → TIS format ------------------------------------------------
 
 
 # SUSTech period schedule (verified from /tmp/didian_bundle.js / period field).
@@ -370,7 +370,7 @@ def current_weekday_and_period(now: Optional[dt.datetime] = None) -> Tuple[int, 
     return weekday, period
 
 
-# ── Semester week inference ─────────────────────────────────────────────────
+# -- Semester week inference -------------------------------------------------
 #
 # TIS does NOT expose a "what week is today" endpoint to student sessions
 # (verified 2026-06-28: `component/queryRlZcSj` returns empty `{}`,
@@ -498,7 +498,7 @@ def current_week(
     return days // 7 + 1
 
 
-# ── Client ───────────────────────────────────────────────────────────────────
+# -- Client -------------------------------------------------------------------
 
 
 class LiveOccupancyClient:
@@ -519,7 +519,7 @@ class LiveOccupancyClient:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._sess: Optional[requests.Session] = None
 
-    # ── Session management ──────────────────────────────────────────────────
+    # -- Session management --------------------------------------------------
 
     def _ensure_session(self) -> requests.Session:
         if self._sess is not None:
@@ -535,7 +535,7 @@ class LiveOccupancyClient:
         self._sess = sess
         return sess
 
-    # ── Cache ──────────────────────────────────────────────────────────────
+    # -- Cache --------------------------------------------------------------
 
     def _cache_file(self, cddm: str, xn: str, xq: str) -> Path:
         return self.cache_dir / f"{xn}_{xq}_{cddm}.json"
@@ -560,7 +560,7 @@ class LiveOccupancyClient:
             "entries": [e.__dict__ for e in entries],
         }, ensure_ascii=False))
 
-    # ── Fetch ──────────────────────────────────────────────────────────────
+    # -- Fetch --------------------------------------------------------------
 
     def query_room(self, cddm: str, *, xn: str, xq: str,
                    use_cache: bool = True) -> List[RoomScheduleEntry]:
@@ -596,7 +596,7 @@ class LiveOccupancyClient:
         """Force-refresh the cache for one room."""
         return self.query_room(cddm, xn=xn, xq=xq, use_cache=False)
 
-    # ── Live queries ───────────────────────────────────────────────────────
+    # -- Live queries -------------------------------------------------------
 
     def live_at(self, cddm: str, *, week: int, weekday: int,
                 xn: str, xq: str) -> List[RoomScheduleEntry]:
@@ -630,7 +630,7 @@ class LiveOccupancyClient:
                                        period=period, xn=xn, xq=xq)
 
 
-# ── Singleton ────────────────────────────────────────────────────────────────
+# -- Singleton ----------------------------------------------------------------
 
 
 _client: Optional[LiveOccupancyClient] = None

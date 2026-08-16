@@ -51,7 +51,7 @@ def err_s(s):
     return click.style(s, fg="red")
 
 
-# ── CLI group ────────────────────────────────────────────────────────────────
+# -- CLI group ----------------------------------------------------------------
 
 @click.group()
 def cli():
@@ -59,7 +59,7 @@ def cli():
     pass
 
 
-# ── Session commands ──────────────────────────────────────────────────────────
+# -- Session commands ----------------------------------------------------------
 
 @cli.command(name="session")
 @click.argument("cmd", default="check", type=click.Choice(["check", "refresh", "login"]))
@@ -99,7 +99,7 @@ def session_cmd(cmd):
             sys.exit(1)
 
 
-# ── Courses ───────────────────────────────────────────────────────────────────
+# -- Courses -------------------------------------------------------------------
 
 @cli.command(name="courses")
 @click.option("--semester", "-s", default=None,
@@ -136,9 +136,9 @@ def courses_cmd(semester):
 
     for sem, sem_courses in sorted(by_sem.items()):
         total = sum(c.get("xf", 0) for c in sem_courses)
-        click.secho(f"\n{'─' * 55}")
+        click.secho(f"\n{'-' * 55}")
         click.secho(f"  {sem}  ({len(sem_courses)} 门课, {total:.0f} 学分)")
-        click.secho(f"  {'─' * 55}")
+        click.secho(f"  {'-' * 55}")
         for c in sem_courses:
             code = c.get("kcdm", "")
             name = c.get("kcmc", "") or c.get("kcmc_en", "")
@@ -150,7 +150,7 @@ def courses_cmd(semester):
                 click.echo(f"      👤 {teacher}")
 
 
-# ── Grades ────────────────────────────────────────────────────────────────────
+# -- Grades --------------------------------------------------------------------
 
 @cli.command(name="grades")
 @click.option("--semester", "-s", default=None,
@@ -199,9 +199,9 @@ def grades_cmd(semester, export_path):
         return
 
     gpa, total_creds = calc_gpa(grades)
-    click.secho(f"\n{'─' * 60}", fg="cyan")
+    click.secho(f"\n{'-' * 60}", fg="cyan")
     click.secho(f"  {len(grades)} 门课  |  GPA: {gpa}  |  总学分: {total_creds:.0f}")
-    click.secho(f"{'─' * 60}\n")
+    click.secho(f"{'-' * 60}\n")
     for g in grades:
         row = format_grade_row(g)
         code = row.get("课程代码", "")
@@ -213,7 +213,7 @@ def grades_cmd(semester, export_path):
     click.echo("")
 
 
-# ── Evals ─────────────────────────────────────────────────────────────────────
+# -- Evals ---------------------------------------------------------------------
 
 STATUS_MAP = {"0": "待评价", "1": "已放弃", "2": "已评价",
               "3": "已保存", "4": "未结课", "5": "已评价"}
@@ -316,7 +316,7 @@ def evals_cmd(pending):
     click.echo(f"\n  {pending_count}/{total} unsubmitted")
 
 
-# ── Raw query ─────────────────────────────────────────────────────────────────
+# -- Raw query -----------------------------------------------------------------
 
 @cli.command(name="query")
 @click.argument("path")
@@ -407,7 +407,7 @@ def timetable_cmd(ctx, courses, exclude) -> None:
     results = solve(sections, max_results=100)
     click.secho(f"\n✅ Found {len(results)} conflict-free schedule(s)\n", fg="green", err=True)
     for i, sched in enumerate(results):
-        click.echo(f"═══ Schedule {i + 1} ═══")
+        click.echo(f"--- Schedule {i + 1} ---")
         click.echo(render_grid(sched))
         click.echo("")
         for sec in sched:
@@ -471,7 +471,7 @@ def campus_schedule_cmd(semester, full, as_json, as_csv) -> None:
             click.echo(str(row))
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# -- Main ----------------------------------------------------------------------
 
 if __name__ == "__main__":
     cli()

@@ -481,7 +481,7 @@ class TestHomeworkItemFromSubmissionPage:
             f"Expected LATE warning from page-extracted past deadline, got: {[str(x.message) for x in w]}"
 
 
-# ─── HomeworkItem.submit_rest — REST path tests ────────────────────────────
+# --- HomeworkItem.submit_rest — REST path tests ----------------------------
 
 class TestHomeworkItemSubmitRest:
     """The submit_rest() method exists and delegates to submit_rest module."""

@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
-# ── auth singleton ─────────────────────────────────────────────────────────────
+# -- auth singleton -------------------------------------------------------------
 # No hardcoded path — BBAuth().skill_root auto-discovers skill root via
 # credentials.txt search, so this works from any install location.
 bb_auth = BBAuth()
@@ -47,7 +47,7 @@ def api(path: str, session=None):
     return r.json()
 
 
-# ── user ID (cached) ──────────────────────────────────────────────────────────
+# -- user ID (cached) ----------------------------------------------------------
 
 _uid_cache = None
 
@@ -64,7 +64,7 @@ def get_uid(session):
     return _uid_cache
 
 
-# ── course list ──────────────────────────────────────────────────────────────
+# -- course list --------------------------------------------------------------
 
 def get_courses(session=None, term_id="_57_1"):
     """Return list of (course_id, course_name) for the current user's enrollments.
@@ -109,7 +109,7 @@ def get_courses(session=None, term_id="_57_1"):
     return courses
 
 
-# ── gradebook ────────────────────────────────────────────────────────────────
+# -- gradebook ----------------------------------------------------------------
 
 def get_gradebook_columns(course_id, session=None):
     """Return list of grade-column dicts for a course.
@@ -154,7 +154,7 @@ def get_user_attempts(course_id, column_id, session=None):
         return []
 
 
-# ── date helpers ─────────────────────────────────────────────────────────────
+# -- date helpers -------------------------------------------------------------
 
 def parse_iso(iso: str):
     """Parse BB ISO timestamp → naive local datetime (CST/UTC+8).
@@ -181,7 +181,7 @@ def format_due(iso: str):
     return dt.strftime("%m-%d %H:%M")
 
 
-# ── main ────────────────────────────────────────────────────────────────────
+# -- main --------------------------------------------------------------------
 
 def upcoming_deadlines(days: int = 30) -> list[dict]:
     """Return upcoming BB assignment deadlines within ``days`` as list of dicts.

@@ -21,13 +21,13 @@ SESSION_FILE = BB_DIR / "session.json"  # legacy — not used for auth
 COURSES_FILE = BB_DIR / "courses.json"
 STRUCTURE_FILE = BB_DIR / "structure.json"
 
-# ── Import BBAuth from authlib ────────────────────────────────────────────────
+# -- Import BBAuth from authlib ------------------------------------------------
 from sustech_survival.sso import BBAuth
 
 # Module-level singleton
 auth_singleton = BBAuth(skill_dir=str(SKILL_ROOT))
 
-# ── Backward-compat stubs ─────────────────────────────────────────────────────
+# -- Backward-compat stubs -----------------------------------------------------
 # These delegate to auth_singleton. New code should call BBAuth() directly.
 
 

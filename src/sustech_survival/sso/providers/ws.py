@@ -77,7 +77,7 @@ class WSProvider(Authorizer):
         encoded = quote(self.SERVICE_URL, safe="")
         return f"{CAS_BASE}?service={encoded}"
 
-    # ── Auth ─────────────────────────────────────────────────────────────────
+    # -- Auth -----------------------------------------------------------------
 
     def _get_ticket_cookies(self, username: str, password: str) -> dict:
         """
@@ -160,7 +160,7 @@ class WSProvider(Authorizer):
         self._set_session(cookies)
         return True
 
-    # ── Session ───────────────────────────────────────────────────────────────
+    # -- Session ---------------------------------------------------------------
 
     def _build_session(self) -> requests.Session:
         """

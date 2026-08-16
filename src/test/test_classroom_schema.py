@@ -20,7 +20,7 @@ from sustech_survival.tis.classroom.schema import (
 )
 
 
-# ── expand_weeks ────────────────────────────────────────────────────────────
+# -- expand_weeks ------------------------------------------------------------
 
 class TestExpandWeeks:
     def test_simple_range(self):
@@ -49,7 +49,7 @@ class TestExpandWeeks:
         assert result == [3, 4, 5]
 
 
-# ── day_char_to_int ────────────────────────────────────────────────────────
+# -- day_char_to_int --------------------------------------------------------
 
 class TestDayCharToInt:
     def test_monday(self):
@@ -62,7 +62,7 @@ class TestDayCharToInt:
         assert day_char_to_int("?") == 0
 
 
-# ── parse_kcxx_slot ─────────────────────────────────────────────────────────
+# -- parse_kcxx_slot ---------------------------------------------------------
 
 class TestParseKcxxSlot:
     def test_basic(self):
@@ -102,7 +102,7 @@ class TestParseKcxxSlot:
         assert parse_kcxx_slot("教师: 张三") is None
 
 
-# ── parse_kcxx (multi-paragraph HTML) ──────────────────────────────────────
+# -- parse_kcxx (multi-paragraph HTML) --------------------------------------
 
 class TestParseKcxx:
     HTML = """
@@ -143,7 +143,7 @@ class TestParseKcxx:
         assert parse_kcxx(None) == []
 
 
-# ── ScheduleSlot ────────────────────────────────────────────────────────────
+# -- ScheduleSlot ------------------------------------------------------------
 
 class TestScheduleSlot:
     def _make(self, **kw):
@@ -198,7 +198,7 @@ class TestScheduleSlot:
         assert s.when_str == "3,7,9,13周 周日 第1-4节"
 
 
-# ── Room ────────────────────────────────────────────────────────────────────
+# -- Room --------------------------------------------------------------------
 
 class TestRoom:
     def test_short_name_basic(self):
@@ -211,7 +211,7 @@ class TestRoom:
         assert Room(name="游泳馆").short_name == "游泳馆"
 
 
-# ── ScheduleSlot.from_course_and_kcxx ──────────────────────────────────────
+# -- ScheduleSlot.from_course_and_kcxx --------------------------------------
 
 class TestScheduleSlotFromCourse:
     COURSE = {

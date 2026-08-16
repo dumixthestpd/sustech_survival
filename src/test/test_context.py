@@ -37,7 +37,7 @@ from sustech_survival.context import (
 )
 
 
-# ─── Construction & level handling ─────────────────────────────────────────
+# --- Construction & level handling -----------------------------------------
 
 def test_context_default_level_is_normal():
     ctx = Context()
@@ -59,7 +59,7 @@ def test_context_rejects_unknown_level():
         Context(level="invalid")
 
 
-# ─── Sync fields with fixed time ───────────────────────────────────────────
+# --- Sync fields with fixed time -------------------------------------------
 
 def test_sync_fields_with_fixed_dt():
     """A pinned dt should produce deterministic sync output."""
@@ -93,7 +93,7 @@ def test_holiday_field_returns_empty_for_normal_day():
     assert ctx.holiday == ""
 
 
-# ─── Level-filtered dict ───────────────────────────────────────────────────
+# --- Level-filtered dict ---------------------------------------------------
 
 def test_to_dict_terse_excludes_io_fields():
     ctx = Context(level="terse", dt=datetime(2026, 5, 29, 14, 30, tzinfo=CHINA_TZ))
@@ -140,7 +140,7 @@ def test_to_dict_verbose_includes_everything():
         assert k in d, f"verbose dict missing {k}"
 
 
-# ─── Level-filtered to_str ─────────────────────────────────────────────────
+# --- Level-filtered to_str -------------------------------------------------
 
 def _pre_cache_schedule_reminder(ctx):
     """Pre-set the schedule reminder cache so to_str doesn't hit TIS auth."""
@@ -207,7 +207,7 @@ def test_to_str_verbose_triggers_all_io():
     assert "2026-05-29" in s
 
 
-# ─── __str__ default behavior ──────────────────────────────────────────────
+# --- __str__ default behavior ----------------------------------------------
 
 def test_dunder_str_uses_instance_level():
     """__str__ should render at the instance's level, not always terse."""
@@ -241,7 +241,7 @@ def test_to_str_with_explicit_level_overrides_instance():
         mock_e.assert_not_called()
 
 
-# ─── Lazy I/O properties ───────────────────────────────────────────────────
+# --- Lazy I/O properties ---------------------------------------------------
 
 def test_lazy_io_properties_return_none_on_failure():
     """I/O properties should return None (or 'unavailable') when fetch fails."""
@@ -270,7 +270,7 @@ def test_lazy_io_cached_after_first_access():
         assert mock_w.call_count == 1
 
 
-# ─── Module exports ────────────────────────────────────────────────────────
+# --- Module exports --------------------------------------------------------
 
 def test_china_tz_is_utc_plus_8():
     from datetime import timedelta
@@ -287,7 +287,7 @@ def test_holiday_data_has_known_years():
     assert 2026 in HOLIDAY_DATA
 
 
-# ─── Helper functions ──────────────────────────────────────────────────────
+# --- Helper functions ------------------------------------------------------
 
 def test_get_academic_info_for_known_semester():
     fixed = datetime(2026, 5, 29, 14, 30, tzinfo=CHINA_TZ)
@@ -314,7 +314,7 @@ def test_is_holiday_normal_weekday():
     assert is_holiday(fixed) == ""
 
 
-# ─── OVERRIDE_TIME ─────────────────────────────────────────────────────────
+# --- OVERRIDE_TIME ---------------------------------------------------------
 
 def test_override_time_changes_now():
     """When OVERRIDE_TIME is set, now_() returns that time."""
@@ -330,7 +330,7 @@ def test_override_time_changes_now():
         ctx_mod.OVERRIDE_TIME = None
 
 
-# ─── Deprecation shim ──────────────────────────────────────────────────────
+# --- Deprecation shim ------------------------------------------------------
 
 def test_quickcontext_shim_emits_warning_and_reexports():
     """The old quickcontext module should re-export Context with a DeprecationWarning."""
@@ -354,7 +354,7 @@ def test_quickcontext_shim_reexports_constants():
     assert qc.HOLIDAY_DATA is HOLIDAY_DATA
 
 
-# ─── fetch_next_exam (Q8: bb ddl + tis exams correlated in context) ─────
+# --- fetch_next_exam (Q8: bb ddl + tis exams correlated in context) -----
 
 def test_fetch_next_exam_returns_nearest_exam():
     """fetch_next_exam should return the first (nearest-by-date) exam."""
