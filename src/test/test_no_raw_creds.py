@@ -34,6 +34,7 @@ EXEMPTIONS: dict[str, str] = {
     "bb/download.py": "Uses ~/Downloads for file output — not credentials/auth",
     # Test files can reference these patterns in assertions
     "tests/test_no_raw_creds.py": "This test itself",
+    "webui/loader.py": "User skin cache under ~/.config/... — per-user skin dir, NOT credentials/auth",
 }
 
 # Patterns that violate iron law #12 when found OUTSIDE exempted files.
