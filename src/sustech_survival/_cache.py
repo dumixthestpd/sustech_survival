@@ -49,7 +49,8 @@ def tmp_root() -> Path:
 
 
 def cache_path(module: str, *parts: str) -> Path:
-    """Return ``<sustech_survival>/tmp/<module>/<parts...>``.
+    """Return ``<root>/<module>/<parts...>`` where ``<root>`` is the active
+    cache root (:func:`tmp_root`, which honours the ``cache.dir`` setting).
 
     The directory is NOT created — call :func:`ensure_cachedir` before
     writing. This split lets read-only probes (e.g. "does this cache file
@@ -57,9 +58,10 @@ def cache_path(module: str, *parts: str) -> Path:
     """
     if not module or "/" in module or "\\" in module or module in (".", ".."):
         raise ValueError(f"invalid cache module name: {module!r}")
+    root = tmp_root()
     if parts:
-        return TMP_ROOT / module / Path(*parts)
-    return TMP_ROOT / module
+        return root / module / Path(*parts)
+    return root / module
 
 
 def ensure_cachedir(path: Path) -> Path:
@@ -69,7 +71,8 @@ def ensure_cachedir(path: Path) -> Path:
 
 
 def clear_cache(module: str) -> int:
-    """Delete every cached file under ``<root>/tmp/<module>/``.
+    """Delete every cached file under ``<root>/<module>/`` where ``<root>`` is
+    the active cache root (:func:`tmp_root`).
 
     Returns the number of files removed. No-op (returns 0) if the module
     has no cache yet. Granular cleanup (e.g. "only year 2026 of the
@@ -79,7 +82,7 @@ def clear_cache(module: str) -> int:
     import shutil
     if not module or "/" in module or "\\" in module or module in (".", ".."):
         raise ValueError(f"invalid cache module name: {module!r}")
-    target = TMP_ROOT / module
+    target = tmp_root() / module
     if not target.exists():
         return 0
     count = sum(1 for _ in target.rglob("*") if _.is_file())

@@ -24,6 +24,7 @@ from pathlib import Path
 import pytest
 
 from sustech_survival import _cache
+from sustech_survival import _settings as cache_settings
 
 
 # -- cache_path ---------------------------------------------------
@@ -234,7 +235,7 @@ class TestEnsureCachedir:
 
 class TestClearCache:
     def test_wipes_everything_for_module(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(_cache, "TMP_ROOT", tmp_path, raising=False)
+        monkeypatch.setattr(cache_settings, "cache_dir", str(tmp_path))
         # Populate two modules.
         _cache.save_json(_cache.cache_path("mod_a", "x.json"), {"n": 1})
         _cache.save_json(_cache.cache_path("mod_a", "sub", "y.json"), {"n": 2})
@@ -247,7 +248,7 @@ class TestClearCache:
         assert _cache.cache_path("mod_b", "z.json").exists()
 
     def test_no_op_when_module_unknown(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(_cache, "TMP_ROOT", tmp_path, raising=False)
+        monkeypatch.setattr(cache_settings, "cache_dir", str(tmp_path))
         assert _cache.clear_cache("never_existed") == 0
 
     def test_invalid_module_name_rejected(self):
