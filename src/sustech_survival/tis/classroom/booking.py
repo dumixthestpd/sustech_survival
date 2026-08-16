@@ -236,7 +236,7 @@ class VenueBorrowClient:
     ) -> BorrowApplication:
         """Create a new venue-borrowing application.
 
-        Defaults to dry_run per iron law. With dry_run=True, returns the
+        Defaults to dry_run (safe by default). With dry_run=True, returns the
         serialized form without firing a network request. Pass dry_run=False
         to commit — the returned object has server-populated id and jhdh.
 

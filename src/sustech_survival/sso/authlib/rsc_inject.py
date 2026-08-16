@@ -8,7 +8,7 @@ from pathlib import Path
 def load_rsc_session(cookie_path: str = None) -> list:
     """Load RSC session cookies.
 
-    Prefers the RSCAuth authorizer's in-memory session (iron law #12).
+    Prefers the RSCAuth authorizer's in-memory session.
     Falls back to a JSON file if the authorizer has no cached session.
     Returns list of cookie dicts suitable for Playwright context injection.
     """

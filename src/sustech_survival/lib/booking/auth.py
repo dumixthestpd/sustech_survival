@@ -256,11 +256,11 @@ class LibBookingAuth(CASAuthorizer):
     # -- Persistence ---------------------------------------------------------
 
     def _save_session(self, user_info: Optional[dict] = None) -> None:
-        """No-op — in-memory only (iron law #12). Kept for backward compat."""
+        """No-op — in-memory only. Kept for backward compat."""
         pass
 
     def refresh_from_disk(self) -> bool:
-        """No-op — in-memory only (iron law #12). Kept for backward compat."""
+        """No-op — in-memory only. Kept for backward compat."""
         return False
 
 
