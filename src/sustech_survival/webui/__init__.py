@@ -1,7 +1,7 @@
 """
 sustech_survival.webui — unified web UI for the SUSTech toolkit.
 
-One Flask app, one port (:61019 by default). A landing page at ``/``
+One Flask app, one port (:20129 by default). A landing page at ``/``
 navigates to submodule pages (TIS course selector, transit map), each
 backed by a JSON REST API under ``/api/<submodule>/...``.
 
@@ -17,7 +17,7 @@ leave the process.
 
 Quick start::
 
-    python -m sustech_survival.webui serve            # http://localhost:61019
+    python -m sustech_survival.webui serve            # http://localhost:20129
     python -m sustech_survival.webui serve --port 7000
 """
 from __future__ import annotations

@@ -46,8 +46,8 @@
   // absolute against window.location.origin, regardless of what port
   // the server happens to be running on. The style file ships with
   // pmtiles:///pmtiles-proxy/... (relative) so it doesn't bake in a
-  // port number — a hardcoded localhost:61019 was the cause of the
-  // "basemap gone" bug when we moved the server to 61020.
+  // port number — a hardcoded localhost port was the cause of the
+  // "basemap gone" bug when the server port changed.
   const origin = window.location.origin;
   if (style.sources.protomaps && style.sources.protomaps.url) {
     const u = style.sources.protomaps.url;

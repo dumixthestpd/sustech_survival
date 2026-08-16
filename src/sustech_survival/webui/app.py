@@ -23,7 +23,7 @@ from flask import Flask, render_template, send_from_directory
 
 from sustech_survival.webui import loader
 
-DEFAULT_PORT = 61019
+DEFAULT_PORT = 20129  # SUSTech founding: September 2012 (2012-09)
 HERE = Path(__file__).resolve().parent
 TEMPLATES = HERE / "templates"
 TIS_STATIC = HERE / "static" / "tis"

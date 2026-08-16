@@ -9,7 +9,7 @@ Unified Flask SPA — TIS course selector, campus transit map, NCES eval cards, 
 ## CLI
 
 ```bash
-sustech webui serve                    # start on default port 61019
+sustech webui serve                    # start on default port 20129
 sustech webui serve -p 8080 -H 0.0.0.0 # custom port/host
 sustech webui open                     # open in default browser
 ```
@@ -22,7 +22,7 @@ sustech webui open                     # open in default browser
 from sustech_survival.webui.app import create_app, run
 
 app = create_app()           # Flask app for WSGI servers
-run(port=61019, host="0.0.0.0", debug=False)
+run(port=20129, host="0.0.0.0", debug=False)
 ```
 
 ### Routes

@@ -503,7 +503,7 @@ def webui_cmd() -> None:
 
 
 @webui_cmd.command(name="serve", help="Start the web UI.")
-@click.option("--port", "-p", type=int, default=None, help="Port (default 61019).")
+@click.option("--port", "-p", type=int, default=None, help="Port (default 20129).")
 @click.option("--host", "-H", default="0.0.0.0", show_default=True)
 @click.option("--transit-data", "transit_data_dir", default=None,
               help="Directory of exported transit GeoJSON.")
@@ -543,7 +543,7 @@ def webui_serve(port: Optional[int], host: str,
 
 
 @webui_cmd.command(name="open", help="Open UI in default browser.")
-@click.option("--port", "-p", type=int, default=61019, show_default=True)
+@click.option("--port", "-p", type=int, default=20129, show_default=True)
 @click.option("--path", "-P", default="/", show_default=True)
 def webui_open(port: int, path: str) -> None:
     if not path.startswith("/"):
