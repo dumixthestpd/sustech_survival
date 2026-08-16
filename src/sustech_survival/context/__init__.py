@@ -6,8 +6,7 @@ sustech_survival.context — single source of truth for "what's happening right 
    surface for an agent to gather context without risk (see
    ``sustech_survival.consequence`` for the write ops that DO carry risk).
 
-Replaces the old quickcontext.QuickContext / DetailedContext pair with one
-`Context` class and tiered exporters:
+The `Context` class with tiered exporters:
 
     terse   - date, time, week, weekday, class_now  (sync, ≤1ms)
     normal  - terse + next_deadline, next_eval      (≤2s)
