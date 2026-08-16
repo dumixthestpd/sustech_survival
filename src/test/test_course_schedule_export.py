@@ -15,7 +15,7 @@ import json
 import pytest
 
 
-# ── Test fixtures ──────────────────────────────────────────────
+# -- Test fixtures ----------------------------------------------
 
 
 def _slot(day, ps, pe, weeks, room="", teacher=""):
@@ -65,7 +65,7 @@ def _course(slots_raw, **overrides):
     return Course(**fields)  # type: ignore[arg-type]
 
 
-# ── SectionSpan + spans property ────────────────────────────────
+# -- SectionSpan + spans property --------------------------------
 
 
 def test_spans_simple():
@@ -111,7 +111,7 @@ def test_spans_with_room_and_teacher():
     assert s.teacher == "李四"
 
 
-# ── _format_weeks_label ────────────────────────────────────────────
+# -- _format_weeks_label --------------------------------------------
 
 
 def test_weeks_label():
@@ -123,7 +123,7 @@ def test_weeks_label():
     assert _format_weeks_label([5]) == "5 周"
 
 
-# ── SectionTable + export_sections_table ─────────────────────────
+# -- SectionTable + export_sections_table -------------------------
 
 
 def test_export_sections_table_markdown():
@@ -154,7 +154,7 @@ def test_export_sections_table_json():
     assert sp["teacher"] == "王五"
 
 
-# ── export_schedule_table (module-level) ─────────────────────────
+# -- export_schedule_table (module-level) -------------------------
 
 
 def test_export_schedule_table_markdown():
@@ -188,7 +188,7 @@ def test_export_schedule_table_csv():
     assert "周一" in lines[1]
 
 
-# ── timetable.render_table ───────────────────────────────────────
+# -- timetable.render_table ---------------------------------------
 
 
 def test_render_table_empty():

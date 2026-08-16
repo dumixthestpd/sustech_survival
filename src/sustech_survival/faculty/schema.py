@@ -14,7 +14,7 @@ from lxml import html as lxml_html
 from lxml.html import HtmlElement
 
 
-# ── Constants ────────────────────────────────────────────────────────────────
+# -- Constants ----------------------------------------------------------------
 
 PROFILE_URL_TPL = "https://faculty.sustech.edu.cn/?tagid={slug}&lang=zh&go=2"
 
@@ -40,7 +40,7 @@ _CONTACT_PAIR_RE = re.compile(
 _BGIMG_RE = re.compile(r"url\(([^)]+)\)")
 
 
-# ── HTML helpers (private, used by classmethods) ────────────────────────────
+# -- HTML helpers (private, used by classmethods) ----------------------------
 
 def _parse_html(html: str) -> HtmlElement:
     if not html or not html.strip():
@@ -73,7 +73,7 @@ def _strip_html(s: str) -> str:
     return s.strip()
 
 
-# ── IndexCard ────────────────────────────────────────────────────────────────
+# -- IndexCard ----------------------------------------------------------------
 
 @dataclass
 class IndexCard:
@@ -154,7 +154,7 @@ class IndexCard:
         return asdict(self)
 
 
-# ── Faculty ──────────────────────────────────────────────────────────────────
+# -- Faculty ------------------------------------------------------------------
 
 @dataclass
 class Faculty:

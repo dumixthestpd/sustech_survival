@@ -160,7 +160,7 @@ exclude = [
     "**/session.json",
 ]
 
-# ── Pytest (used by `pip install -e .[all]` + dev workflow) ──────────────
+# -- Pytest (used by `pip install -e .[all]` + dev workflow) --------------
 
 [tool.pytest.ini_options]
 minversion = "7.0"
@@ -175,7 +175,7 @@ addopts = [
 markers = [
     "live: marks tests as live (require network + valid session)"]
 
-# ── Black + isort (code style) ─────────────────────────────────────────────
+# -- Black + isort (code style) ---------------------------------------------
 
 [tool.black]
 line-length = 100

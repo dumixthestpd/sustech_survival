@@ -38,7 +38,7 @@ from sustech_survival.lib.booking.schema import (
 )
 
 
-# ── Mock session ────────────────────────────────────────────────────────────
+# -- Mock session ------------------------------------------------------------
 
 
 class _MockResponse:
@@ -88,7 +88,7 @@ def _err(message: str, code: int = 1) -> _MockResponse:
     return _MockResponse(status_code=200, json_data={"code": code, "message": message, "data": None})
 
 
-# ── Construction & basic shape ──────────────────────────────────────────────
+# -- Construction & basic shape ----------------------------------------------
 
 
 class TestConstruction:
@@ -99,7 +99,7 @@ class TestConstruction:
         assert c._auth is None
 
 
-# ── whoami ──────────────────────────────────────────────────────────────────
+# -- whoami ------------------------------------------------------------------
 
 
 class TestWhoami:
@@ -126,7 +126,7 @@ class TestWhoami:
             c.whoami()
 
 
-# ── home_summary ────────────────────────────────────────────────────────────
+# -- home_summary ------------------------------------------------------------
 
 
 class TestHomeSummary:
@@ -150,7 +150,7 @@ class TestHomeSummary:
         assert cats == []
 
 
-# ── labs ────────────────────────────────────────────────────────────────────
+# -- labs --------------------------------------------------------------------
 
 
 class TestLabs:
@@ -173,7 +173,7 @@ class TestLabs:
         assert calls[0]["params"]["classKind"] == 8
 
 
-# ── rooms ───────────────────────────────────────────────────────────────────
+# -- rooms -------------------------------------------------------------------
 
 
 class TestRooms:
@@ -197,7 +197,7 @@ class TestRooms:
         assert calls[0]["params"] == {"classKind": 1, "kindId": 1, "labId": 4}
 
 
-# ── reservation_count + my_reservations + resv_info ────────────────────────
+# -- reservation_count + my_reservations + resv_info ------------------------
 
 
 class TestReservationRead:
@@ -309,7 +309,7 @@ class TestReservationRead:
         assert r is None
 
 
-# ── Write: add_reservation ──────────────────────────────────────────────────
+# -- Write: add_reservation --------------------------------------------------
 
 
 class TestAddReservation:
@@ -394,7 +394,7 @@ class TestAddReservation:
         assert not any(c["method"] == "POST" for c in calls)
 
 
-# ── Write: cancel_reservation ──────────────────────────────────────────────
+# -- Write: cancel_reservation ----------------------------------------------
 
 
 class TestCancelReservation:
@@ -491,7 +491,7 @@ class TestCancelReservation:
         assert len(calls2) == 1  # resv_info lookup happened
 
 
-# ── Auto-relogin on auth error ─────────────────────────────────────────────
+# -- Auto-relogin on auth error ---------------------------------------------
 
 
 class TestAutoRelogin:
@@ -536,7 +536,7 @@ class TestAutoRelogin:
             c.whoami()
 
 
-# ── HTTP error + off-campus ─────────────────────────────────────────────────
+# -- HTTP error + off-campus -------------------------------------------------
 
 
 class TestHttpErrors:
@@ -565,7 +565,7 @@ class TestHttpErrors:
             c.whoami()
 
 
-# ── Non-auth API error message propagated ──────────────────────────────────
+# -- Non-auth API error message propagated ----------------------------------
 
 
 class TestApiErrorMessages:

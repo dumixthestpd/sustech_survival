@@ -48,7 +48,7 @@ def create_app(*, transit_data_dir: Optional[str] = None,
     )
     app.config["TRANSIT_DATA_DIR"] = transit_data_dir
 
-    # ── Brand assets (logo / favicon) ───────────────────────────────────
+    # -- Brand assets (logo / favicon) -----------------------------------
     # Icon (favicon + page logo mark) = the square torch-only lockup.
     # Document-front / home-page hero = the full (torch + wordmark) lockup.
     @app.route("/logo.svg")
@@ -63,7 +63,7 @@ def create_app(*, transit_data_dir: Optional[str] = None,
     def _favicon():
         return send_from_directory(str(RESOURCES), "logo.svg")
 
-    # ── Active skin ─────────────────────────────────────────────────────
+    # -- Active skin -----------------------------------------------------
     # Prefer the explicitly requested skin; else the first installed; else
     # the shipped default. create_app still works with ZERO installed skins
     # (the user just gets the in-package default head).
@@ -92,7 +92,7 @@ def create_app(*, transit_data_dir: Optional[str] = None,
         from flask import abort
         abort(404)
 
-    # ── Landing page: prefer the active skin's entry; fall back to legacy.
+    # -- Landing page: prefer the active skin's entry; fall back to legacy.
     @app.route("/")
     def index():
         entry = _skin_root / "index.html"
@@ -100,7 +100,7 @@ def create_app(*, transit_data_dir: Optional[str] = None,
             return send_from_directory(_skin_root, "index.html")
         return render_template("landing.html", port=app.config.get("PORT", DEFAULT_PORT))
 
-    # ── Submodule blueprints: serve the full /api/* + pages ────────────
+    # -- Submodule blueprints: serve the full /api/* + pages ------------
     # These wrap the same data as ``sustech_survival.api`` but also carry the
     # complex routes (enrolled/solve/bids/ical) via HTTP. They are the default
     # head's backend; a custom head calls ``sustech_survival.api`` instead.

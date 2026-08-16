@@ -152,9 +152,9 @@ def _check_late_risk(deadline_str: str, *, force_late: bool = False) -> None:
         )
 
 
-# ─────────────────────────────────────────────────────────────────────────
+# -------------------------------------------------------------------------
 # BB session helper for live discovery (used by HomeworkItem.from_submission_page)
-# ─────────────────────────────────────────────────────────────────────────
+# -------------------------------------------------------------------------
 
 _BB_BASE = "https://bb.sustech.edu.cn"
 
@@ -259,7 +259,7 @@ class Item:
 
 
 
-# ── Item subclasses ──
+# -- Item subclasses --
 class FileItem(Item):
     """Item with downloadable file attachments (PDF, doc, etc.)."""
     TYPE = "file"

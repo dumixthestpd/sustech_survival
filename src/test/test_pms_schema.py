@@ -21,7 +21,7 @@ from sustech_survival.pms.schema import (
 )
 
 
-# ── Paper name/id roundtrip ──────────────────────────────────────────────────
+# -- Paper name/id roundtrip --------------------------------------------------
 
 class TestPaperName:
     def test_known_codes(self):
@@ -39,7 +39,7 @@ class TestPaperName:
         assert paper_id("unspecified") == PAPER_UNSPECIFIED
 
 
-# ── Station parsing ─────────────────────────────────────────────────────────
+# -- Station parsing ---------------------------------------------------------
 
 class TestStation:
     def _raw(self, **overrides):
@@ -127,7 +127,7 @@ class TestStation:
         assert "1011" in md
 
 
-# ── ServerGroup ─────────────────────────────────────────────────────────────
+# -- ServerGroup -------------------------------------------------------------
 
 class TestServerGroup:
     def test_parse(self):
@@ -136,7 +136,7 @@ class TestServerGroup:
         assert g.sz_name == "OPMServer"
 
 
-# ── PrintJob parsing ────────────────────────────────────────────────────────
+# -- PrintJob parsing --------------------------------------------------------
 
 class TestPrintJob:
     def _raw(self, **overrides):
@@ -205,7 +205,7 @@ class TestPrintJob:
         assert "黑白" in md
 
 
-# ── ScanJob parsing ─────────────────────────────────────────────────────────
+# -- ScanJob parsing ---------------------------------------------------------
 
 class TestScanJob:
     def test_basic(self):
@@ -222,7 +222,7 @@ class TestScanJob:
         assert s.datetime_str == "2026.06.11 17:40:39"
 
 
-# ── UsageRecord parsing ─────────────────────────────────────────────────────
+# -- UsageRecord parsing -----------------------------------------------------
 
 class TestUsageRecord:
     def test_basic(self):

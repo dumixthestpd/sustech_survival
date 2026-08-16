@@ -12,7 +12,7 @@
 (function () {
   "use strict";
 
-  // ── State ────────────────────────────────────────────────────────────────
+  // -- State ----------------------------------------------------------------
   const state = {
     facilities: [],
     busStops: [],
@@ -23,7 +23,7 @@
     day: "workday",
   };
 
-  // ── Map setup ───────────────────────────────────────────────────────────
+  // -- Map setup -----------------------------------------------------------
   // We serve a modified copy of the style locally at /static/pmtiles-style.json
   // with all external URLs replaced with local proxy URLs (to avoid CORS
   // issues — see server's /pmtiles-proxy/ endpoint).
@@ -190,7 +190,7 @@
 
   map.addControl(new maplibregl.NavigationControl(), "top-right");
 
-  // ── Legend (bottom-right) ──────────────────────────────────────────────
+  // -- Legend (bottom-right) ----------------------------------------------
   // Color-coded by line so the user knows which is which. Buildings /
   // gates / bus stops render gray on the map until you hover near them,
   // so the legend explains what each color means when revealed.
@@ -229,7 +229,7 @@
   // (Live buses use HTML markers — click → popup is wired in
   //  renderLiveBusMarkers, no MapLibre click handler needed.)
 
-  // ── Proximity-based dot visibility ──────────────────────────────────────
+  // -- Proximity-based dot visibility --------------------------------------
   // Dots default to invisible. They appear when:
   //   - cursor is within PROXIMITY_PX of them ("near" state)
   //   - cursor is directly on them ("hover" state)
@@ -303,7 +303,7 @@
     clearAllNear();
   });
 
-  // ── Hover tooltips for facility dots ────────────────────────────────────
+  // -- Hover tooltips for facility dots ------------------------------------
   // MapLibre doesn't have Leaflet's bindTooltip; we manage a single Popup
   // that follows the cursor on mouseenter and hides on mouseleave.
   // Also: gray dots turn colored on hover via feature-state.
@@ -375,7 +375,7 @@
       `<div style="padding:20px;color:#c00">Failed to load basemap: ${err.message}</div>`;
   });
 
-  // ── Loaders ──────────────────────────────────────────────────────────────
+  // -- Loaders --------------------------------------------------------------
   async function loadJSON(path) {
     const r = await fetch(path);
     if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`);
@@ -479,7 +479,7 @@
     } catch (_) {}
   }
 
-  // ── Renderers (sidebar only — map renders via MapLibre layers) ──────────
+  // -- Renderers (sidebar only — map renders via MapLibre layers) ----------
 
   function renderSchedule() {
     const target = document.getElementById("schedule-content");
@@ -551,7 +551,7 @@
     return "#00ab5b";
   }
 
-  // ── Live bus markers (single rotating SVG, body + chevron) ──────────────
+  // -- Live bus markers (single rotating SVG, body + chevron) --------------
   // Each live bus is a single MapLibre Marker whose element is an SVG
   // shaped like a teardrop / map-pin: a colored circle body with a
   // white triangle embedded on the right side, pointing in the bus's
@@ -633,7 +633,7 @@
     </div>`;
   }
 
-  // ── Utilities ────────────────────────────────────────────────────────────
+  // -- Utilities ------------------------------------------------------------
   function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 
   function popupHTML(props) {
@@ -665,7 +665,7 @@
     el.style.color = isError ? "#ffcccc" : "rgba(255,255,255,0.85)";
   }
 
-  // ── Auto-refresh countdown ───────────────────────────────────────────────
+  // -- Auto-refresh countdown -----------------------------------------------
   let refreshCountdown = 30;
   const REFRESH_INTERVAL_S = 30;
   setInterval(() => {
@@ -678,7 +678,7 @@
     el.dataset.manualUpdate = "";  // clear flag set by manual refresh
   }, 1000);
 
-  // ── Wiring ──────────────────────────────────────────────────────────────
+  // -- Wiring --------------------------------------------------------------
   document.getElementById("refresh-btn").addEventListener("click", () => {
     // Pause the auto-refresh countdown for one cycle so user sees "Updated HH:MM:SS"
     const el = document.getElementById("last-update");

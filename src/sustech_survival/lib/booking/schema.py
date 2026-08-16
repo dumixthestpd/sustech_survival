@@ -29,7 +29,7 @@ from datetime import date, datetime
 from typing import List, Optional
 
 
-# ── Time-only string helpers ─────────────────────────────────────────────────
+# -- Time-only string helpers -------------------------------------------------
 
 _ISO_RE = re.compile(
     r"^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?$"
@@ -87,7 +87,7 @@ def format_ic_dt(dt: datetime) -> str:
     return f"{dt.year:04d}-{dt.month:02d}-{dt.day:02d} {dt.hour:02d}:{dt.minute:02d}:00"
 
 
-# ── Lab (楼层 / 区域) ────────────────────────────────────────────────────────
+# -- Lab (楼层 / 区域) --------------------------------------------------------
 
 
 @dataclass
@@ -108,7 +108,7 @@ class Lab:
         )
 
 
-# ── Room (设备 / 房间) ────────────────────────────────────────────────────────
+# -- Room (设备 / 房间) --------------------------------------------------------
 
 
 @dataclass
@@ -189,7 +189,7 @@ class CampusGroup:
         )
 
 
-# ── Room idle summary (homepage) ─────────────────────────────────────────────
+# -- Room idle summary (homepage) ---------------------------------------------
 
 
 @dataclass
@@ -215,7 +215,7 @@ class RoomIdleCategory:
         return self.total_quantity - self.idle_quantity
 
 
-# ── Reservation ──────────────────────────────────────────────────────────────
+# -- Reservation --------------------------------------------------------------
 
 
 # Status bitmask values (from the IC booking system).
@@ -369,7 +369,7 @@ class ResvMember:
         )
 
 
-# ── User info (whoami) ──────────────────────────────────────────────────────
+# -- User info (whoami) ------------------------------------------------------
 
 
 @dataclass
@@ -412,7 +412,7 @@ class UserInfo:
         return f"UserInfo({self.true_name} / accNo={self.acc_no} / pid={self.pid})"
 
 
-# ── Build a reservation create payload ───────────────────────────────────────
+# -- Build a reservation create payload ---------------------------------------
 
 
 def build_reservation_payload(

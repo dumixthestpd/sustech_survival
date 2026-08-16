@@ -14,7 +14,7 @@
 
 ## Sections of `tis.js`
 
-The `// ──` headers are the index. Each header marks a region of the
+The `// --` headers are the index. Each header marks a region of the
 file. The regions are:
 
 ```
@@ -98,7 +98,7 @@ Three-column CSS grid (`grid-template-columns: 380px 1fr 300px`).
 | #filter-pills      |                          | "Safe" actions:        |
 | #results-header    |                          |  Export ICS · Save ·   |
 |   ◻ select all     |                          |  Load                  |
-| #results (cards)   |                          | ── "Real actions" ──   |
+| #results (cards)   |                          | -- "Real actions" --   |
 |                    |                          |  Sync to TIS · Drop    |
 |                    |                          | Enrollment status      |
 +--------------------+--------------------------+------------------------+

@@ -40,7 +40,7 @@ from sustech_survival.tis.classroom.classroom import (
 )
 
 
-# ── Parser tests (pure offline) ─────────────────────────────────────────────
+# -- Parser tests (pure offline) ---------------------------------------------
 
 
 class TestParseKey:
@@ -126,7 +126,7 @@ class TestExpandWeekPattern:
         assert _expand_week_pattern("1-9,11-15") == [1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15]
 
 
-# ── RoomScheduleEntry ───────────────────────────────────────────────────────
+# -- RoomScheduleEntry -------------------------------------------------------
 
 
 class TestRoomScheduleEntry:
@@ -191,7 +191,7 @@ class TestRoomScheduleEntry:
         assert e.when_str == "1-15周 周日 第6节"
 
 
-# ── Time helpers ────────────────────────────────────────────────────────────
+# -- Time helpers ------------------------------------------------------------
 
 
 class TestCurrentPeriod:
@@ -226,7 +226,7 @@ class TestCurrentWeekdayAndPeriod:
         assert period == 3
 
 
-# ── LiveOccupancyClient integration (mocked) ───────────────────────────────
+# -- LiveOccupancyClient integration (mocked) -------------------------------
 
 
 class TestLiveOccupancyClientMocked:
@@ -304,7 +304,7 @@ class TestLiveOccupancyClientMocked:
         assert cdkb_calls == 1
 
 
-# ── Building name aliases (verified 2026-06-28) ─────────────────────────────
+# -- Building name aliases (verified 2026-06-28) -----------------------------
 
 
 class TestNormalizeRoomName:
@@ -360,7 +360,7 @@ class TestNormalizeRoomName:
 
 
 
-# ── Mark for live tests (skipped by default) ────────────────────────────────
+# -- Mark for live tests (skipped by default) --------------------------------
 
 
 class TestFirstFullWeekStart:

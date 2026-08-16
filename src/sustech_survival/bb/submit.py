@@ -100,9 +100,9 @@ def _safe_staged_name(target_name: str, fallback_suffix: str = ".pdf") -> str:
     return safe
 
 
-# ─────────────────────────────────────────────────────────────────────────
+# -------------------------------------------------------------------------
 # Session / cookie helpers
-# ─────────────────────────────────────────────────────────────────────────
+# -------------------------------------------------------------------------
 
 def _bb_session() -> requests.Session:
     """Return a fresh requests.Session with current BB cookies.
@@ -154,9 +154,9 @@ def _clean_filename(name: str) -> str:
     )
 
 
-# ─────────────────────────────────────────────────────────────────────────
+# -------------------------------------------------------------------------
 # _get_upload_form — fetch the uploadAssignment page + parse hidden fields
-# ─────────────────────────────────────────────────────────────────────────
+# -------------------------------------------------------------------------
 
 def _get_upload_form(course_id: str, content_id: str) -> dict:
     """GET the uploadAssignment page and extract all hidden form fields.
@@ -224,12 +224,12 @@ def _get_upload_form(course_id: str, content_id: str) -> dict:
     }
 
 
-# ─────────────────────────────────────────────────────────────────────────
+# -------------------------------------------------------------------------
 # The "magic" fields BB's file picker adds to the form when a file is staged.
 # See javascript/ngui/widget.js → preparePickedFilesForSubmit, getPickedFiles.
 # Without these, the file is silently dropped (server creates an attempt
 # with size=0 file).
-# ─────────────────────────────────────────────────────────────────────────
+# -------------------------------------------------------------------------
 
 _FILE_PICKER_LOCAL_FIELDS = {
     "newFile_attachmentType": "L",          # 'L' = LOCAL (file is in the multipart)
@@ -240,9 +240,9 @@ _FILE_PICKER_LOCAL_FIELDS = {
 }
 
 
-# ─────────────────────────────────────────────────────────────────────────
+# -------------------------------------------------------------------------
 # submit_assignment_rest — end-to-end REST submission (the primitive)
-# ─────────────────────────────────────────────────────────────────────────
+# -------------------------------------------------------------------------
 
 @consequence_rich(Consequence(
     name="bb.submit_assignment_rest",
@@ -389,9 +389,9 @@ def submit_assignment_rest(
         return failure(f"REST submit error: {e}", exception_type=type(e).__name__)
 
 
-# ─────────────────────────────────────────────────────────────────────────
+# -------------------------------------------------------------------------
 # submit_file — convenience wrapper (legacy `bb.submit_file` API)
-# ─────────────────────────────────────────────────────────────────────────
+# -------------------------------------------------------------------------
 
 def submit_file(content_id, file_path, course_id=None, submitted_name=None):
     """Submit a file to a BB assignment via REST (no browser).
@@ -443,9 +443,9 @@ def submit_file(content_id, file_path, course_id=None, submitted_name=None):
     return result.to_tuple()
 
 
-# ─────────────────────────────────────────────────────────────────────────
+# -------------------------------------------------------------------------
 # submit_assignment — legacy-signature wrapper over the REST primitive
-# ─────────────────────────────────────────────────────────────────────────
+# -------------------------------------------------------------------------
 
 def submit_assignment(course_id, content_id, file_paths, skip_dedup=False,
                       text_content=None, name_override=None,
@@ -480,9 +480,9 @@ def submit_assignment(course_id, content_id, file_paths, skip_dedup=False,
     )
 
 
-# ─────────────────────────────────────────────────────────────────────────
+# -------------------------------------------------------------------------
 # Attempt checks — REST-based (reimplemented from the Playwright scrapers)
-# ─────────────────────────────────────────────────────────────────────────
+# -------------------------------------------------------------------------
 
 def check_attempts(content_id, course_id=None):
     """Return (attempt_count, assignment_name) for a content item.
@@ -535,9 +535,9 @@ __all__ = [
 ]
 
 
-# ─────────────────────────────────────────────────────────────────────────
+# -------------------------------------------------------------------------
 # Quick demo / sanity check
-# ─────────────────────────────────────────────────────────────────────────
+# -------------------------------------------------------------------------
 
 if __name__ == "__main__":
     import sys

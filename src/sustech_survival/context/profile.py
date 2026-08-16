@@ -21,7 +21,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Optional
 
-# ── Blank template (also shipped as templates/profile.md) ────────────────────
+# -- Blank template (also shipped as templates/profile.md) --------------------
 
 _BLANK_MD = """\
 # SUSTech Student Profile
@@ -51,7 +51,7 @@ _generated {{generated_at}}_
 """
 
 
-# ── Session + discovery helpers (all guarded) ────────────────────────────────
+# -- Session + discovery helpers (all guarded) --------------------------------
 
 def _tis_auth():
     """Ensure a working TIS session, or raise a helpful error."""
@@ -89,7 +89,7 @@ def _scalar(d: dict, *keys: str) -> str:
     return ""
 
 
-# ── Core fetch: build a profile dict ────────────────────────────────────────
+# -- Core fetch: build a profile dict ----------------------------------------
 
 def fetch_profile(*, semester=None) -> dict[str, Any]:
     """Query TIS for the current user's identity + academic snapshot.
@@ -151,7 +151,7 @@ def fetch_profile(*, semester=None) -> dict[str, Any]:
     return profile
 
 
-# ── Renders the filled profile to a path ────────────────────────────────────
+# -- Renders the filled profile to a path ------------------------------------
 
 def gen_usr_profile(path: Optional[str] = None, *, template: Optional[str] = None) -> str:
     """Generate the user's filled profile Markdown and write it to ``path``.

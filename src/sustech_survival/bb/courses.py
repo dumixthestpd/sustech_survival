@@ -29,7 +29,7 @@ SKIP_COURSE_NAMES = {
 }
 
 
-# ── REST-based course discovery ────────────────────────────────────────────────
+# -- REST-based course discovery ------------------------------------------------
 
 def session():
     """Return requests.Session with BB cookies from SSO auth layer."""
@@ -103,7 +103,7 @@ def refresh_courses_json() -> List[Dict[str, str]]:
     return courses
 
 
-# ── Course Data ────────────────────────────────────────────────────────────────
+# -- Course Data ----------------------------------------------------------------
 
 def refresh_if_stale(max_age_hours=24):
     """Refresh courses.json if it is older than max_age_hours or missing."""
@@ -203,7 +203,7 @@ def list_courses():
     return [(c["id"], c.get("name", "Unknown")) for c in load_courses()]
 
 
-# ── Assignment Discovery (REST-only) ─────────────────────────────────────────
+# -- Assignment Discovery (REST-only) -----------------------------------------
 
 def discover_assignments_for_course(course_id_str):
     """

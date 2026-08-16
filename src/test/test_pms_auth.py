@@ -23,7 +23,7 @@ from sustech_survival.sso.authlib.pms import (
 )
 
 
-# ── RSA encrypt helper ──────────────────────────────────────────────────────
+# -- RSA encrypt helper ------------------------------------------------------
 
 class TestRsaEncrypt:
     """Known plaintext → known ciphertext (deterministic for fixed key)."""
@@ -73,7 +73,7 @@ THUZvjrkr+bjMQWNeCwIBAw==
         assert ct1 != ct2
 
 
-# ── Authorizer construction ────────────────────────────────────────────────
+# -- Authorizer construction ------------------------------------------------
 
 class TestPMSAuthConstruction:
     def test_base_url(self):
@@ -92,7 +92,7 @@ class TestPMSAuthConstruction:
         assert RePMSAuth is PMSAuth
 
 
-# ── Off-campus detection on auth endpoints ──────────────────────────────────
+# -- Off-campus detection on auth endpoints ----------------------------------
 
 class TestPMSAuthOffCampus:
     """PMS auth endpoints return 403 off-campus. check() must surface the
@@ -152,7 +152,7 @@ def requests_mock_cookies():
     return RequestsCookieJar()
 
 
-# ── Live tests ──────────────────────────────────────────────────────────────
+# -- Live tests --------------------------------------------------------------
 
 @pytest.mark.live
 class TestPMSAuthLive:

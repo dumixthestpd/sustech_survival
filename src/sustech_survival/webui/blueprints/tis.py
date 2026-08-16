@@ -124,14 +124,14 @@ def _int_or_none(v):
         return None
 
 
-# ── Page ────────────────────────────────────────────────────────────────────
+# -- Page --------------------------------------------------------------------
 @bp.route("/tis")
 def page():
     xn, xq = _parse_sem(request.args)
     return render_template("tis.html", xn=xn, xq=xq)
 
 
-# ── API ──────────────────────────────────────────────────────────────────────
+# -- API ----------------------------------------------------------------------
 @bp.route("/api/tis/info")
 def api_info():
     """Semester info + filter options for the course search UI.
@@ -524,7 +524,7 @@ def _raw_schedule_slot(row: dict) -> "dict | None":
     }
 
 
-# ── Solver: non-conflicting section combinations with priority dropping ─────
+# -- Solver: non-conflicting section combinations with priority dropping -----
 def _slots_overlap(a: dict, b: dict) -> bool:
     if a.get("day") != b.get("day"):
         return False
@@ -733,7 +733,7 @@ def api_solve():
     })
 
 
-# ── Write side (dry-run by default; commit is opt-in) ───────────────────────
+# -- Write side (dry-run by default; commit is opt-in) -----------------------
 def _write(action: str, rwh: str, *, dry_run: bool, **kw):
     xn, xq = _parse_sem(request.args)
     try:
@@ -795,12 +795,12 @@ def api_remove_cart():
                   pylx=b.get("pylx"))
 
 
-# ── NCES community eval overlay ──────────────────────────────────────────────
+# -- NCES community eval overlay ----------------------------------------------
 # Moved to blueprints/nces.py — NCES is its own submodule parallel to TIS,
 # not a feature of TIS. See sustech_survival/nces/. Endpoint paths: /api/nces/*.
 
 
-# ── Selection course types (xkfsdm codes) ───────────────────────────────────
+# -- Selection course types (xkfsdm codes) -----------------------------------
 @bp.route("/api/tis/course-types")
 def api_course_types():
     """Return available selection course types (xkfsdm list) from TIS.
@@ -817,7 +817,7 @@ def api_course_types():
     return jsonify({"course_types": types})
 
 
-# ── Bid panel (积分选课) ─────────────────────────────────────────────────────
+# -- Bid panel (积分选课) -----------------------------------------------------
 @bp.route("/api/tis/round")
 def api_round():
     """Return the current selection round's bid-relevant metadata.

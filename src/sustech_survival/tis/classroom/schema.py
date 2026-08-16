@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 
 
-# ── Constants ────────────────────────────────────────────────────────────────
+# -- Constants ----------------------------------------------------------------
 
 DAY_CHARS = "一二三四五六日"
 DAY_NAMES_ZH = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"]
@@ -52,7 +52,7 @@ def day_char_to_int(c: str) -> int:
         return 0
 
 
-# ── Parsing ──────────────────────────────────────────────────────────────────
+# -- Parsing ------------------------------------------------------------------
 
 
 # Match a single schedule line:
@@ -165,7 +165,7 @@ def parse_kcxx(kcxx_html: str) -> List[dict]:
     return slots
 
 
-# ── Dataclasses ──────────────────────────────────────────────────────────────
+# -- Dataclasses --------------------------------------------------------------
 
 
 @dataclass

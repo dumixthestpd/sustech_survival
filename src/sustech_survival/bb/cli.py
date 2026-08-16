@@ -30,7 +30,7 @@ from .query import (
     format_item,
 )
 
-# ── Helpers ────────────────────────────────────────────────────────────
+# -- Helpers ------------------------------------------------------------
 
 def em(s):
     return click.style(s, bold=True)
@@ -63,7 +63,7 @@ def load_session_or_exit():
         sys.exit(1)
 
 
-# ── Last course cache ──────────────────────────────────────────────────
+# -- Last course cache --------------------------------------------------
 
 _LAST_COURSE_FILE = Path(__file__).parent / "lastcourse.txt"
 
@@ -83,7 +83,7 @@ def set_last_course(cid):
     _LAST_COURSE_FILE.write_text(cid)
 
 
-# ── Safe wrappers ──────────────────────────────────────────────────────
+# -- Safe wrappers ------------------------------------------------------
 
 def safe_attempts(ctx, numeric_cid, content_id):
     try:
@@ -92,7 +92,7 @@ def safe_attempts(ctx, numeric_cid, content_id):
         return []
 
 
-# ── Assignment list command ────────────────────────────────────────────
+# -- Assignment list command --------------------------------------------
 
 def list_assignments(ctx, numeric_cid, course_name, assignments):
     """List all assignments with attempt counts."""
@@ -107,7 +107,7 @@ def list_assignments(ctx, numeric_cid, course_name, assignments):
         print()
 
 
-# ── All-status command ─────────────────────────────────────────────────
+# -- All-status command -------------------------------------------------
 
 def all_status(ctx, numeric_cid, course_name, assignments):
     """Show submitted/not submitted for all assignments."""
@@ -120,7 +120,7 @@ def all_status(ctx, numeric_cid, course_name, assignments):
     print()
 
 
-# ── Single assignment command ──────────────────────────────────────────
+# -- Single assignment command ------------------------------------------
 
 def single_assignment(ctx, session_cookies, numeric_cid,
                        content_id, attempt_arg, download_flag, output_dir):
@@ -216,7 +216,7 @@ def single_assignment(ctx, session_cookies, numeric_cid,
                 click.secho(f"    ✗ {fname}: {e}", fg="red")
 
 
-# ── CLI group + commands ───────────────────────────────────────────────
+# -- CLI group + commands -----------------------------------------------
 
 @click.group()
 @click.pass_context
@@ -225,7 +225,7 @@ def cli(ctx):
     ctx.ensure_object(dict)
 
 
-# ── Session commands ────────────────────────────────────────────────────────
+# -- Session commands --------------------------------------------------------
 
 @cli.command(name="session")
 @click.argument("cmd", default="check", type=click.Choice(["check", "login", "refresh"]))

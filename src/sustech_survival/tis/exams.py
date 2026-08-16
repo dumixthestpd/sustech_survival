@@ -79,9 +79,9 @@ def run(export: str = None):
         day_exams = by_date[date]
         day_name = day_exams[0].get("XQJMC", "")
         day_name_en = day_exams[0].get("XQJMC_EN", "")
-        print(f"  {'─' * 60}")
+        print(f"  {'-' * 60}")
         print(f"  📆 {date} ({day_name} / {day_name_en})")
-        print(f"  {'─' * 60}")
+        print(f"  {'-' * 60}")
         for e in day_exams:
             course = e.get("KCMC", "?")
             code = e.get("KCDM", "")

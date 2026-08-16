@@ -39,7 +39,7 @@ from .schema import (
 )
 
 
-# ── Endpoint URLs ───────────────────────────────────────────────────────────
+# -- Endpoint URLs -----------------------------------------------------------
 
 LIVE_API = "https://bus.sustcra.com"          # live bus GPS + station GeoJSON
 SCHEDULE_BASE = "https://sustech.online"      # bus config + times + buildings
@@ -63,7 +63,7 @@ class TransitClient:
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         )
 
-    # ── Facilities (buildings + gates) ────────────────────────────────────────
+    # -- Facilities (buildings + gates) ----------------------------------------
 
     def list_buildings(self) -> List[Facility]:
         """Fetch all buildings from sustech.online (bus.sustcra.com/geojson)."""
@@ -130,7 +130,7 @@ class TransitClient:
                 out.append(f)
         return out
 
-    # ── Bus lines + schedules ────────────────────────────────────────────────
+    # -- Bus lines + schedules ------------------------------------------------
 
     def list_bus_lines(self, day_type: str = DAY_WORKDAY) -> List[BusLine]:
         """Fetch bus config for a day type. workday or holiday."""
@@ -191,7 +191,7 @@ class TransitClient:
             minute_on_road=data.get("minuteOnRoad", 25),
         )
 
-    # ── Bus routes (stops + path geometry) ───────────────────────────────────
+    # -- Bus routes (stops + path geometry) -----------------------------------
 
     def _line_codes(self) -> List[str]:
         """Available route codes (XYBS1, XYBS2)."""
@@ -244,7 +244,7 @@ class TransitClient:
             f"Tried: {candidates}"
         )
 
-    # ── Live bus positions ──────────────────────────────────────────────────
+    # -- Live bus positions --------------------------------------------------
 
     def get_live_positions(self, include_shuttles: bool = True) -> List[LiveBus]:
         """Poll the live feed. Returns every active bus + (optionally) EV shuttle.
@@ -265,7 +265,7 @@ class TransitClient:
                 continue  # monitor endpoint may go down — don't fail the whole call
         return out
 
-    # ── Navigation ───────────────────────────────────────────────────────────
+    # -- Navigation -----------------------------------------------------------
 
     def shortest_path(
         self,
@@ -439,7 +439,7 @@ class TransitClient:
             # conservative per-edge pad is acceptable for short campus routes.
             pass  # we leave it; full transfer penalty would need a 2-layer graph
 
-    # ── GeoJSON export (for the website) ────────────────────────────────────
+    # -- GeoJSON export (for the website) ------------------------------------
 
     def fetch_elevation(self, points: List[tuple]) -> dict:
         """Batch-fetch elevation (m) from Open-Elevation API.
@@ -530,7 +530,7 @@ class TransitClient:
             })
         return {"type": "FeatureCollection", "features": features}
 
-    # ── Routing (removed 2026-06-13) ────────────────────────────────────────
+    # -- Routing (removed 2026-06-13) ----------------------------------------
     # The OSMnx-based walking route was a series of half-fixes that kept
     # degrading into worse UX (edgey/pointy polylines, scattered-dots
     # look, straight-line shortcuts through buildings). Per user request
@@ -677,13 +677,13 @@ class TransitClient:
         return written
 
 
-# ── Errors ──────────────────────────────────────────────────────────────────
+# -- Errors ------------------------------------------------------------------
 
 class TransitError(Exception):
     """Raised when transit APIs return an error or no path exists."""
 
 
-# ── Module-level singleton ─────────────────────────────────────────────────
+# -- Module-level singleton -------------------------------------------------
 
 def _build_default_client() -> TransitClient:
     return TransitClient()

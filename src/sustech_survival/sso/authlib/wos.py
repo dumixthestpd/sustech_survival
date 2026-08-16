@@ -113,13 +113,13 @@ class WoSAuth(ShibbolethAuthorizer):
         page = self.page
 
         try:
-            # ── Step 1: Clarivate access portal ───────────────────────────────
+            # -- Step 1: Clarivate access portal -------------------------------
             print(f"[WoS] Navigating to {self.SP_INIT_URL} ...")
             page.goto(self.SP_INIT_URL, wait_until="domcontentloaded", timeout=30000)
             page.wait_for_timeout(3000)
             print(f"  → {page.url}")
 
-            # ── Step 2: Institution combobox → CARSI WAYF ───────────────────
+            # -- Step 2: Institution combobox → CARSI WAYF -------------------
             wayf_ok = self.handle_wayf(page)
             if not wayf_ok:
                 print("⚠ Failed to select institution in WoS portal")
@@ -136,7 +136,7 @@ class WoSAuth(ShibbolethAuthorizer):
                 self.browser.close()
                 return False
 
-            # ── Step 3: CARSI WAYF → search SUSTech + submit ───────────────
+            # -- Step 3: CARSI WAYF → search SUSTech + submit ---------------
             from ..providers.carsi import login_via_carsi
 
             print("  → Handling CARSI WAYF ...")
@@ -160,7 +160,7 @@ class WoSAuth(ShibbolethAuthorizer):
                 self.browser.close()
                 return False
 
-            # ── Step 4: CAS login ──────────────────────────────────────────
+            # -- Step 4: CAS login ------------------------------------------
             print(f"  → Logging in as {username} ...")
             page.fill('input[name="username"]', username)
             page.fill('input[name="password"]', password)
@@ -177,7 +177,7 @@ class WoSAuth(ShibbolethAuthorizer):
                 else:
                     print(f"  → Unexpected URL: {page.url}")
 
-            # ── Step 5: IdP consent — accept ───────────────────────────────
+            # -- Step 5: IdP consent — accept -------------------------------
             if "idp.sustech.edu.cn" in page.url:
                 try:
                     accept_btn = page.locator(
@@ -193,7 +193,7 @@ class WoSAuth(ShibbolethAuthorizer):
                 except Exception as e:
                     print(f"  ⚠ Could not click Accept: {e}")
 
-            # ── Done ────────────────────────────────────────────────────────
+            # -- Done --------------------------------------------------------
             final_url = page.url
             cookies = {c['name']: c['value'] for c in self.ctx.cookies()}
             wos_cookies = [k for k in cookies if any(

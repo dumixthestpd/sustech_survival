@@ -22,7 +22,7 @@ from sustech_survival.transit.schema import (
 )
 
 
-# ── Haversine ──────────────────────────────────────────────────────────────
+# -- Haversine --------------------------------------------------------------
 
 class TestHaversine:
     def test_same_point_zero(self):
@@ -44,7 +44,7 @@ class TestHaversine:
         assert 800 < d < 1500
 
 
-# ── Facility parsing ───────────────────────────────────────────────────────
+# -- Facility parsing -------------------------------------------------------
 
 class TestFacilityFromBldg:
     def test_basic(self):
@@ -111,7 +111,7 @@ class TestFacilityFromBusStop:
         assert f.meta["station_id"] == 1
 
 
-# ── BusSubRoute parsing ───────────────────────────────────────────────────
+# -- BusSubRoute parsing ---------------------------------------------------
 
 class TestBusSubRoute:
     def test_basic(self):
@@ -139,7 +139,7 @@ class TestBusSubRoute:
         assert sub.direction == DIR_CW
 
 
-# ── BusSchedule ───────────────────────────────────────────────────────────
+# -- BusSchedule -----------------------------------------------------------
 
 class TestBusSchedule:
     def _sched(self):
@@ -179,7 +179,7 @@ class TestBusSchedule:
         assert not s.is_running_now(8 * 60 + 30)
 
 
-# ── LiveBus ─────────────────────────────────────────────────────────────────
+# -- LiveBus -----------------------------------------------------------------
 
 class TestLiveBus:
     def test_basic(self):
@@ -211,7 +211,7 @@ class TestLiveBus:
         assert gj["geometry"]["coordinates"] == [114.0, 22.6]
 
 
-# ── Route (Path) ───────────────────────────────────────────────────────────
+# -- Route (Path) -----------------------------------------------------------
 
 class TestRoute:
     def test_to_markdown(self):

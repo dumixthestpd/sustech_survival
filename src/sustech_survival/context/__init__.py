@@ -34,14 +34,14 @@ from enum import Enum
 from typing import Optional, Union
 
 
-# ── Shared constants ──────────────────────────────────────────────────────
+# -- Shared constants ------------------------------------------------------
 
 CHINA_TZ = timezone(timedelta(hours=8))
 SUSTECH_LAT = 22.6029
 SUSTECH_LON = 113.9283
 
 
-# ── Academic calendar ─────────────────────────────────────────────────────
+# -- Academic calendar -----------------------------------------------------
 
 ACADEMIC_CALENDARS = {
     "2026 Spring": {
@@ -59,7 +59,7 @@ ACADEMIC_CALENDARS = {
 }
 
 
-# ── China holidays ────────────────────────────────────────────────────────
+# -- China holidays --------------------------------------------------------
 
 HOLIDAY_DATA = {
     2026: {
@@ -132,7 +132,7 @@ HOLIDAY_DATA = {
 }
 
 
-# ── Time override (for testing / predictions / tracebacks) ───────────────
+# -- Time override (for testing / predictions / tracebacks) ---------------
 
 OVERRIDE_TIME: Union[float, None] = None
 """If set, all schedule-aware computations use this Unix timestamp instead of now."""
@@ -145,7 +145,7 @@ def now_() -> datetime:
     return datetime.now(CHINA_TZ)
 
 
-# ── Levels ────────────────────────────────────────────────────────────────
+# -- Levels ----------------------------------------------------------------
 
 class Level(str, Enum):
     TERSE = "terse"
@@ -156,7 +156,7 @@ class Level(str, Enum):
 _LEVEL_ORDER = {Level.TERSE: 0, Level.NORMAL: 1, Level.VERBOSE: 2}
 
 
-# ── Network helpers (module-level, shared) ───────────────────────────────
+# -- Network helpers (module-level, shared) -------------------------------
 
 def fetch_json(url: str, timeout: int = 10) -> Optional[dict]:
     try:
@@ -246,7 +246,7 @@ def fetch_library_status() -> str:
         return "Unknown"
 
 
-# ── Schedule helpers (used by class_now) ─────────────────────────────────
+# -- Schedule helpers (used by class_now) ---------------------------------
 
 def slot_times(zc: int) -> dict:
     """Fetch actual 50-min slot start/end times from queryKbjg.
@@ -392,7 +392,7 @@ def get_schedule_reminder(ts: float) -> dict:
         return {}
 
 
-# ── BB deadline / TIS eval fetchers ───────────────────────────────────────
+# -- BB deadline / TIS eval fetchers ---------------------------------------
 
 def fetch_next_deadline() -> Optional[dict]:
     """Get nearest BB assignment with due date. Returns {name, due, days_left}.
@@ -505,7 +505,7 @@ def fetch_next_eval() -> Optional[dict]:
         return None
 
 
-# ── Academic-info helpers ─────────────────────────────────────────────────
+# -- Academic-info helpers -------------------------------------------------
 
 def get_academic_info(dt: datetime) -> tuple:
     """Returns (week_str, phase_str, label).
@@ -583,9 +583,9 @@ def is_holiday(dt: datetime) -> str:
     return ""
 
 
-# ─────────────────────────────────────────────────────────────────────────
+# -------------------------------------------------------------------------
 # Context — single class with tiered exporters
-# ─────────────────────────────────────────────────────────────────────────
+# -------------------------------------------------------------------------
 
 class Context:
     """A student's daily context. str(ctx) returns a formatted string.
@@ -621,7 +621,7 @@ class Context:
         else:
             self.dt = now_()
 
-    # ── Sync properties (always populated) ───────────────────────────────
+    # -- Sync properties (always populated) -------------------------------
 
     @property
     def date(self) -> str:
@@ -682,7 +682,7 @@ class Context:
             object.__setattr__(self, cache_key, reminder)
         return getattr(self, cache_key, {}).get("now") or ""
 
-    # ── Lazy I/O properties (cached after first access) ─────────────────
+    # -- Lazy I/O properties (cached after first access) -----------------
 
     @property
     def weather(self) -> Optional[dict]:
@@ -775,7 +775,7 @@ class Context:
             self._exam_cache = fetch_next_exam()
         return self._exam_cache
 
-    # ── Tiered exporters ────────────────────────────────────────────────
+    # -- Tiered exporters ------------------------------------------------
 
     def to_str(self, *, level: Union[str, Level, None] = None) -> str:
         """Render the context at the given level (default: self.level)."""
@@ -810,7 +810,7 @@ class Context:
     def __str__(self) -> str:
         return self.to_str()
 
-    # ── Internal helpers ────────────────────────────────────────────────
+    # -- Internal helpers ------------------------------------------------
 
     def _resolve_level(self, level: Union[str, Level, None]) -> Level:
         if level is None:
@@ -917,11 +917,11 @@ __all__ = [
     "fetch_profile", "gen_usr_profile",
 ]
 
-# ── User-profile helpers (context/profile.py) ─────────────────────────────
+# -- User-profile helpers (context/profile.py) -----------------------------
 from .profile import fetch_profile, gen_usr_profile  # noqa: E402
 
 
-# ── Quick demo ───────────────────────────────────────────────────────────
+# -- Quick demo -----------------------------------------------------------
 
 if __name__ == "__main__":
     print("=== terse ===")

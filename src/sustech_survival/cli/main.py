@@ -33,7 +33,7 @@ import click
 from .._version import __version__
 
 
-# ── Mount helpers ───────────────────────────────────────────
+# -- Mount helpers -------------------------------------------
 
 def _mount(module: str, target: click.Group) -> None:
     """Import ``<module>.cli:cli`` and copy its commands onto ``target``.

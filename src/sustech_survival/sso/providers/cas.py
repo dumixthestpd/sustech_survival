@@ -40,7 +40,7 @@ class CASAuthorizer(Authorizer):
     SUBMIT_VALUE: str = "提交"  # works for BB/Lib; None to skip
     _idp_cas_base: str = CAS_BASE
 
-    # ── Private CAS flow ─────────────────────────────────────────────────────
+    # -- Private CAS flow -----------------------------------------------------
 
     def _get_ticket_cookies(self, username: str, password: str) -> dict:
         """Full headless CAS flow. Returns cookie dict.

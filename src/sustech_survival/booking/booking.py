@@ -84,7 +84,7 @@ class BookingClient:
     BASE_URL = BOOKING_BASE
     API_BASE = BOOKING_API
 
-    # ── Construction ────────────────────────────────────────────────────────
+    # -- Construction --------------------------------------------------------
 
     def __init__(self, session: requests.Session, *, _auth=None):
         self.s = session
@@ -92,7 +92,7 @@ class BookingClient:
         # on auth-error responses. If None, errors propagate without retry.
         self._auth = _auth
 
-    # ── Internal: API call + auth-error retry ───────────────────────────────
+    # -- Internal: API call + auth-error retry -------------------------------
 
     def _call(self, method: str, data: Optional[dict] = None,
               *, _is_retry: bool = False) -> dict:
@@ -142,7 +142,7 @@ class BookingClient:
             )
         return payload
 
-    # ── User ────────────────────────────────────────────────────────────────
+    # -- User ----------------------------------------------------------------
 
     def whoami(self) -> dict:
         """Return the cached user profile from the last successful login.
@@ -153,7 +153,7 @@ class BookingClient:
         user = getattr(self._auth, "_user_info", {}) if self._auth else {}
         return user or {}
 
-    # ── Rooms (场地) ────────────────────────────────────────────────────────
+    # -- Rooms (场地) --------------------------------------------------------
 
     def rooms(self, *, keyword: str = "", page: int = 1, page_size: int = 100) -> List[Room]:
         """List rooms. `keyword` is filtered CLIENT-side (case-insensitive
@@ -188,7 +188,7 @@ class BookingClient:
                 return room
         return None
 
-    # ── My meetings (我的预约) ──────────────────────────────────────────────
+    # -- My meetings (我的预约) ----------------------------------------------
 
     def my_meetings(self, *, page: int = 1, page_size: int = 50) -> List[MyMeeting]:
         """List the current user's bookings, paged."""
@@ -199,7 +199,7 @@ class BookingClient:
         rows = (payload.get("Data") or {}).get("rows") or []
         return [MyMeeting.from_api(r) for r in rows]
 
-    # ── Create / update / cancel ───────────────────────────────────────────
+    # -- Create / update / cancel -------------------------------------------
 
     def add_meeting(
         self,
@@ -240,7 +240,7 @@ class BookingClient:
         return payload.get("Data") or {}
 
 
-# ── Module-level singleton ──────────────────────────────────────────────────
+# -- Module-level singleton --------------------------------------------------
 
 
 def booking():

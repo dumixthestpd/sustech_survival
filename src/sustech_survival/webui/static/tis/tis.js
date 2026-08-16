@@ -1,4 +1,4 @@
-/* ───────────────────────────────────────────────────────────────────────────
+/* ---------------------------------------------------------------------------
  * TIS page SPA — 4171 lines, single IIFE, no build step.
  *
  * Files in this module:
@@ -6,7 +6,7 @@
  *   static/tis/tis.js   this file — state, render, cascade, persistence
  *   blueprints/tis.py   HTTP routes (13 endpoints)
  *
- * Sections in this file (the `// ──` headers are the index):
+ * Sections in this file (the `// --` headers are the index):
  *   DOM refs · State · Loading bar · HTTP helpers · Semester helpers ·
  *   Color/time helpers · Catalog loaders · Results render · NCES brief ·
  *   NCES eval page · Picked list + mutators · ICS export · Flash/utils ·
@@ -35,12 +35,12 @@
  *
  * Module doc: docs/en/webui-architecture.md — facts about this module
  * only. Workflow, procedure, and "how to use" are NOT in module docs.
- * ─────────────────────────────────────────────────────────────────────────── */
+ * --------------------------------------------------------------------------- */
 
 (function() {
 'use strict';
 
-// ── DOM refs ──────────────────────────────────────────────────────────────
+// -- DOM refs --------------------------------------------------------------
 var SEM_SEL = document.getElementById('sem-select');
 var KW = document.getElementById('kw');
 var F_COL = document.getElementById('f-college');
@@ -84,7 +84,7 @@ var BRIEF_INFLIGHT = null;  // current fetch XHR
 var BRIEF_HOVER_TIMER = null;
 var GRID_LEGEND = document.getElementById('grid-legend');
 
-// ── Bid panel refs + state (积分选课) ─────────────────────────────────────
+// -- Bid panel refs + state (积分选课) -------------------------------------
 var BID_BAR = document.getElementById('bid-bar');
 var BID_BOXES = document.getElementById('bid-boxes');
 var BID_META = document.getElementById('bp-meta');
@@ -116,7 +116,7 @@ var EXISTING_BIDS = {};      // { rwh: bid_int } — bids already set on TIS for
                               // (read from d.enrolled[]/d.cart[] in search_personal response)
 
 
-// ── State ─────────────────────────────────────────────────────────────────
+// -- State -----------------------------------------------------------------
 var CAT = [];               // full course list from latest server fetch
 var ALL_CAT = [];           // cached full catalog for client-side filtering
 var PICKED = {};            // { rwh: courseDict }
@@ -155,7 +155,7 @@ var _evalLoadId = 0;       // monotonic token — incremented on every selectCou
                            // loadCourses() captures it at call time and discards the
                            // response if the token changed (guards against fast toggles).
 
-// ── Loading bar (bar only — never touches results or stat) ──────────────
+// -- Loading bar (bar only — never touches results or stat) --------------
 var LB = document.getElementById('loading-bar');
 var LB_FILL = LB.querySelector('.lb-fill');
 var LB_REQ_ID = 0;          // monotonically increasing request id
@@ -184,7 +184,7 @@ function loadingEnd(id) {
   setTimeout(function() { LB.classList.remove('active'); }, 400);
 }
 
-// ── Sync progress overlay ─────────────────────────────────────────────
+// -- Sync progress overlay ---------------------------------------------
 // Distinct from the 2px shimmer bar (which fires for every fetch). The
 // overlay is for TIS-mutating operations (Sync to TIS, Drop all enrolled)
 // so the user can clearly see (a) a real write is in flight, (b) the
@@ -249,7 +249,7 @@ window.addEventListener('beforeunload', function(e) {
   }
 });
 
-// ── HTTP helpers (transport only — UI updates are caller's job) ──────────
+// -- HTTP helpers (transport only — UI updates are caller's job) ----------
 // No timeout: TIS is frequently slow over VPN, and a hard timeout would
 // abort requests the user knows to expect as slow. The caller owns error
 // handling via its .catch() — there, network errors surface as flash
@@ -278,7 +278,7 @@ var DAYS = 7;
 var DAY_NAMES = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 var ROW_HEIGHT = 38;
 
-// ── Semester helpers ─────────────────────────────────────────────────────
+// -- Semester helpers -----------------------------------------------------
 
 function semesterLabel(xn, xq) {
   var season = xq === '1' ? 'Fall' : xq === '2' ? 'Spring' : 'Summer';
@@ -382,7 +382,7 @@ function sem() {
 function currentXn() { return SEM_SEL.value.split('|')[0]; }
 function currentXq() { return SEM_SEL.value.split('|')[1]; }
 
-// ── Helpers ───────────────────────────────────────────────────────────────
+// -- Helpers ---------------------------------------------------------------
 
 var PALETTE = ['#3a7ade','#3fb950','#d29922','#a371f7','#f07178','#2cb89e','#e3b341','#6cc6ff','#ff7b72','#56d364','#bc8cff','#ffa657'];
 
@@ -497,10 +497,10 @@ function parseBlockedInput(str) {
   return result;
 }
 
-// ── Semester dropdown init ────────────────────────────────────────────────
+// -- Semester dropdown init ------------------------------------------------
 buildSemesterOptions();
 
-// ── API callers ───────────────────────────────────────────────────────────
+// -- API callers -----------------------------------------------------------
 
 function loadInfo() {
   var qs = sem();
@@ -1012,7 +1012,7 @@ function renderCard(c) {
   return card;
 }
 
-// ── Filter pills ──────────────────────────────────────────────────────────
+// -- Filter pills ----------------------------------------------------------
 function renderFilterPills() {
   var pills = [];
   var clearAll = false;
@@ -1090,7 +1090,7 @@ function renderFilterPills() {
   });
 }
 
-// ── Hover brief card (NCES structured) ─────────────────────────────────────
+// -- Hover brief card (NCES structured) -------------------------------------
 function briefRender(d) {
   if (!d.available) {
     var reason = escapeHtml(d.reason || 'not in NCES index');
@@ -1291,7 +1291,7 @@ BRIEF_CARD.addEventListener('mouseenter', function() {
 });
 BRIEF_CARD.addEventListener('mouseleave', function() { briefHide(); });
 
-// ── NCES Course Eval tab ─────────────────────────────────────────────────
+// -- NCES Course Eval tab -------------------------------------------------
 //
 // Three render modes share the same #eval-out div:
 //   - browse: paginated course list (default), fetched from /api/nces/browse
@@ -1376,7 +1376,7 @@ function renderEvalNotFound(d) {
       '" target="_blank" rel="noopener">Search NCES ↗</a></div>' : '');
 }
 
-// ── Browse list (default view) ───────────────────────────────────────────
+// -- Browse list (default view) -------------------------------------------
 function renderEvalBrowse() {
   EVAL_MODE = 'browse';
   if (EVAL_OUT.dataset.mode === 'browse' && !EVAL_OUT.innerHTML) {
@@ -1480,7 +1480,7 @@ function _termIdToDisplay(term_id) {
   return term_id.slice(0, 4) + season;
 }
 
-// ── Detail view (one course, full reviews) ───────────────────────────────
+// -- Detail view (one course, full reviews) -------------------------------
 function renderEvalDetail(nces_id) {
   EVAL_MODE = 'detail';
   EVAL_OUT.dataset.mode = 'detail';
@@ -1584,7 +1584,7 @@ function renderEvalDetailCard(d) {
   '</div>';
 }
 
-// ── Pick screen — shown when the TIS section has no exact match in NCES,
+// -- Pick screen — shown when the TIS section has no exact match in NCES,
 // or the matched section has no reviews yet. Asks the user to pick which
 // NCES course they want to inspect. Courses are grouped into two
 // categories so the user can choose based on what they care about:
@@ -1917,7 +1917,7 @@ function renderEvalBrief(d) {
   }
 }
 
-// ── Picked sections ───────────────────────────────────────────────────────
+// -- Picked sections -------------------------------------------------------
 
 function addPicked(course) {
   PICKED[course.rwh] = JSON.parse(JSON.stringify(course));
@@ -2087,7 +2087,7 @@ function renderPickItem(c) {
   return div;
 }
 
-// ── Drag-to-reorder picked list (priority for the solver) ───────────────
+// -- Drag-to-reorder picked list (priority for the solver) ---------------
 // PICKED is { rwh: course }. JS object key order is preserved since ES2015
 // (insertion order for string keys, integer-like keys first). So moving
 // rwh X to position N = remove X from PICKED, re-insert at the right
@@ -2182,9 +2182,9 @@ function updateSolveCodes() {
   SOLVE_CODES.textContent = codeList.length ? codeList.join(', ') : 'none';
 }
 
-// ── Weekly Grid (merged multi-period blocks, per-cell column packing) ──
+// -- Weekly Grid (merged multi-period blocks, per-cell column packing) --
 
-// ── Weekly Grid (reusable: sections → blocks → tables) ─────────────────
+// -- Weekly Grid (reusable: sections → blocks → tables) -----------------
 
 // Lightweight overlap check between two sections (any shared day+period+week).
 // Mirrors the backend _slots_overlap() but client-side so the solver
@@ -2752,7 +2752,7 @@ function hideBlockPanel() {
   if (p && p.parentNode) p.parentNode.removeChild(p);
 }
 
-// ── Course-block context menu (step-1 / step-3 grids) ────────────────────
+// -- Course-block context menu (step-1 / step-3 grids) --------------------
 // Right-click on a .blk[data-rwh] shows a small action menu:
 //   - View NCES course page ↗  (always)
 //   - Remove course from schedule  (only for picks; enrolled blocks
@@ -2991,7 +2991,7 @@ function loadBlockedFromInput() {
   });
 }
 
-// ── Enrolled ──────────────────────────────────────────────────────────────
+// -- Enrolled --------------------------------------------------------------
 
 function loadEnrolled() {
   // User removed the dedicated "Enrollment status" right-panel display,
@@ -3049,7 +3049,7 @@ function loadEnrolled() {
   });
 }
 
-// ── Solver (priority-based course dropping) ──────────────────────────────
+// -- Solver (priority-based course dropping) ------------------------------
 
 function solve() {
   var codes = {};
@@ -3119,7 +3119,7 @@ function solve() {
     var idx = SOLVER_IDX;
     var total = flat.length;
 
-    // ── code → name lookup (PICKED first, CAT fallback) ─────────────
+    // -- code → name lookup (PICKED first, CAT fallback) -------------
     // The name is the user-facing primary identifier. Code is shown only
     // as a parenthetical for disambiguation (e.g. "生物学原理 (BIO103)").
     var codeToName = {};
@@ -3154,7 +3154,7 @@ function solve() {
       SOLVER_IDX = idx;  // keep module scope in sync for hoisted ←/→
       var sol = flat[idx];
 
-      // ── Per-solution annotations ───────────────────────────────────
+      // -- Per-solution annotations -----------------------------------
       // (a) "One code one class rule" — codes the user picked multiple
       //     sections of. The solution keeps ONE; the others are not in
       //     `sol.dropped` (which is keyed by code) so we compute them here.
@@ -3286,7 +3286,7 @@ function solve() {
         ? ' <span class="dropped">Dropped: ' + joinCodeNames(sol.dropped) + '</span>'
         : '';
 
-      // ── Categorized drop-group list (top of solve output) ───────────
+      // -- Categorized drop-group list (top of solve output) -----------
       // One section per group. The header is the dropped-set (using
       // course NAMES, code in parens). The count badge shows how many
       // combinations fall in this group. Clicking jumps to the first
@@ -3414,7 +3414,7 @@ function applySolution(sol) {
   FOCUSED_SAVED_IDX = -1;
 }
 
-// ── Save / Compare / Focus ───────────────────────────────────────────────
+// -- Save / Compare / Focus -----------------------------------------------
 // Save a solver solution to localStorage. Does NOT touch PICKED — that's
 // what "Apply" is for. The saved schedule is a snapshot you can browse
 // later without changing your current picks.
@@ -4093,7 +4093,7 @@ function switchTab(name) {
   switchStep(1);
 }
 
-// ── NCES detail sheet ──────────────────────────────────────────────────
+// -- NCES detail sheet --------------------------------------------------
 // The old eval tab is gone — NCES is now a hover-brief on each card.
 // Clicking a course card opens this near-fullscreen modal (the sheet).
 // "View NCES detail" (from the brief) opens the same sheet.
@@ -4160,10 +4160,10 @@ function closeNcesSheet() {
 }
 
 
-// ── Event binding ─────────────────────────────────────────────────────────
+// -- Event binding ---------------------------------------------------------
 
 
-// ── Bid panel (积分选课) ─────────────────────────────────────────────
+// -- Bid panel (积分选课) ---------------------------------------------
 // Visible only in personal mode + when at least one section is picked
 // + no schedule conflicts. Refreshes the round info on every render.
 function bidShouldShow() {
@@ -4405,7 +4405,7 @@ function renderBidPanel() {
   updateAssignUnbiddedButton();
 }
 
-// ── Click / drag handlers on a bid box ─────────────────────────────────
+// -- Click / drag handlers on a bid box ---------------------------------
 function attachBidBoxHandlers() {
   var boxes = BID_BOXES.querySelectorAll('.bid-box');
   for (var i = 0; i < boxes.length; i++) {
@@ -4523,7 +4523,7 @@ function drawArrow(srcBox, x, y) {
   BID_DRAG.arrowEl.innerHTML = svg;
 }
 
-// ── Single-click edit ───────────────────────────────────────────────────
+// -- Single-click edit ---------------------------------------------------
 // Picks read/write PICKED_BIDS. Locked-enrolled (ENROLLED_RWH minus
 // PICKED, in locked mode) read/write EXISTING_BIDS — that's the source
 // of truth TIS gave us, and it's what submitBids routes to the
@@ -4746,7 +4746,7 @@ function cancelBidEdit() {
   BID_EDIT = null;
 }
 
-// ── Transfer overlay (drag-and-release confirmation) ──────────────────
+// -- Transfer overlay (drag-and-release confirmation) ------------------
 function _bidBoxName(c) {
   return c.name || c.name_en || c.section_name || c.code || '';
 }
@@ -4836,7 +4836,7 @@ function showTransferOverlay(srcRwh, dstRwh) {
   overlay.addEventListener('click', onClickOut);
 }
 
-// ── Submit to TIS ───────────────────────────────────────────────────────
+// -- Submit to TIS -------------------------------------------------------
 // BID_SUBMIT is the old bp-submit button (no longer in HTML — the new
 // step-④ terminal action row has btn-sync-tis instead, wired in
 // DOMContentLoaded). Guard the legacy handler in case the element comes
@@ -4968,7 +4968,7 @@ document.addEventListener('DOMContentLoaded', function() {
   // Load any saved schedules from previous sessions (Compare pane source)
   loadSavedSchedules();
 
-  // ── Stepper wiring (5-step workflow) ─────────────────────────────
+  // -- Stepper wiring (5-step workflow) -----------------------------
   // The step chips are the new top-of-center tabs. Clicking a chip
   // jumps to that step. Current step is highlighted in accent; completed
   // steps turn OK green. The "Grid" toggle shows/hides the weekly grid
@@ -4990,7 +4990,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
-  // ── ←/→ keyboard nav in steps 3 + 4 ──────────────────────────────────
+  // -- ←/→ keyboard nav in steps 3 + 4 ----------------------------------
   // In step 3 (Schedule), ←/→ cycles solver solutions. In step 4
   // (Compare), ←/→ cycles between candidate cards (when one is
   // focused). Esc unfocuses. Page position is preserved (the solver
@@ -5048,7 +5048,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   });
 
-  // ── Step 4 terminal action wiring (Export ICS, Sync to TIS) ────────
+  // -- Step 4 terminal action wiring (Export ICS, Sync to TIS) --------
   var btnExportIcs = document.getElementById('btn-export-ics');
   if (btnExportIcs) btnExportIcs.onclick = exportICS;
   var btnSyncTis = document.getElementById('btn-sync-tis');
@@ -5057,7 +5057,7 @@ document.addEventListener('DOMContentLoaded', function() {
   var btnFillUnbidded = document.getElementById('btn-bid-fill-unbidded');
   if (btnFillUnbidded) btnFillUnbidded.onclick = assignOneToUnbidded;
 
-  // ── NCES detail sheet wiring (replaces the eval tab) ──────────────
+  // -- NCES detail sheet wiring (replaces the eval tab) --------------
   var ncesSheet = document.getElementById('nces-sheet');
   var ncesSheetBackdrop = document.getElementById('nces-sheet-backdrop');
   var ncesSheetClose = document.getElementById('nces-sheet-close');
@@ -5072,7 +5072,7 @@ document.addEventListener('DOMContentLoaded', function() {
   // Load info (this also triggers auto-load of all courses)
   document.getElementById('btn-info').addEventListener('click', loadInfo);
 
-  // ── NCES eval toolbar wiring ───────────────────────────────────────
+  // -- NCES eval toolbar wiring ---------------------------------------
   EVAL_SEARCH_EL  = document.getElementById('eval-search');
   EVAL_SORT_EL    = document.getElementById('eval-sort');
   EVAL_PREV_EL    = document.getElementById('eval-prev');
@@ -5134,7 +5134,7 @@ document.addEventListener('DOMContentLoaded', function() {
   // full loaded 1503-course cache.
   document.getElementById('btn-search').addEventListener('click', onFilterChangeImmediate);
 
-  // ── Mode-dependent DOM (Selection vs Catalog) ────────────────────────
+  // -- Mode-dependent DOM (Selection vs Catalog) ------------------------
   // Single source of truth for which rows show in which mode. Called
   // on cold load AND on every mode toggle so the two paths never drift.
   function applyModeVisibility() {
@@ -5228,7 +5228,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
-  // ── Refresh: catalog + load — single button now (formerly two
+  // -- Refresh: catalog + load — single button now (formerly two
   //    buttons: "Refresh catalog" + "🔄 Refresh load"). User feedback
   //    that the info is "stable" and only needs refreshing on page
   //    entry / explicit manual action — no need for two separate
@@ -5381,7 +5381,7 @@ document.addEventListener('DOMContentLoaded', function() {
     setTimeout(solve, 100);
   });
 
-  // ── Compare-step (step 4) toolbar wiring ────────────────────────
+  // -- Compare-step (step 4) toolbar wiring ------------------------
   // The compare step has three primary actions: load more JSONs into
   // the candidate list, clear the candidate list, and export the
   // whole list as a single .zip. We also support drag-drop of JSON
@@ -5437,15 +5437,15 @@ document.addEventListener('DOMContentLoaded', function() {
   // unclear (the data existed in localStorage but no file was shown).
   // Now the user is always explicit about which file they're working with.
   initDragDropLoad();
-  // ── Picked-panel action buttons (must exist in DOM before any user
-  //     can interact with them, even on a fresh page with no picks). ──
+  // -- Picked-panel action buttons (must exist in DOM before any user
+  //     can interact with them, even on a fresh page with no picks). --
   initPickedActions();
 
-  // ── END DOMContentReady ──────────────────────────────────────────
+  // -- END DOMContentReady ------------------------------------------
 });
-// ── END outer IIFE ────────────────────────────────────────────────
+// -- END outer IIFE ------------------------------------------------
 
-// ── Picked-panel actions (right column) ──────────────────────────────────
+// -- Picked-panel actions (right column) ----------------------------------
 // The right column is the "picks management" surface — local data (Save,
 // Load) + the one server-side op on ENROLLED_RWH (Drop all). The terminal
 // actions on the picks (Export ICS, Sync to TIS) live in step ④ of the
@@ -5669,7 +5669,7 @@ function removeSelectedPicks() {
   updatePickedActionsState();
 }
 
-// ── File-based save/load (no localStorage) ──────────────────────────────
+// -- File-based save/load (no localStorage) ------------------------------
 // Picks live in memory only. There is no localStorage auto-save/auto-restore
 // — the user explicitly loads a file (via the button or by drag-drop) and
 // explicitly saves to a new timestamped file when they're done.
@@ -5738,7 +5738,7 @@ function initDragDropLoad() {
 
 // Shared by the Load button and drag-drop. Validates the JSON shape,
 // then either replaces or merges with the current PICKED set.
-// ── Picks file load with rwh verification ──────────────────────────────
+// -- Picks file load with rwh verification ------------------------------
 // readPicksFile → verifyPicksBeforeLoad → (user confirms) → applyPicksFromData.
 // Each rwh in the saved file is pinged against /api/tis/course/<rwh>;
 // if TIS returns 404 the section has been removed/renamed since the
@@ -6027,7 +6027,7 @@ function savePicksToFile() {
     ' → ' + filename, 'ok');
 }
 
-// ── Real actions (talk to TIS) ────────────────────────────────────────────
+// -- Real actions (talk to TIS) --------------------------------------------
 // Both use confirm() with a verbose preview. No fake-safety disable — the
 // user must read the preview and click OK to commit a real action. The
 // server is the final gate, so any server-side rejection (auth, course
@@ -6180,7 +6180,7 @@ function dropAllEnrolled() {
   _next(0);
 }
 
-// ── ICS export (was exportICal / parseSlotsForIcal — renamed for consistency) ──
+// -- ICS export (was exportICal / parseSlotsForIcal — renamed for consistency) --
 function exportICS() {
   var keys = Object.keys(PICKED);
   if (!keys.length) { flash('No sections picked — nothing to export.', 'warn'); return; }
@@ -6226,5 +6226,5 @@ function parseSlotsForICS(c) {
   }
   return out;
 }
-// ── END outer IIFE ────────────────────────────────────────────────
+// -- END outer IIFE ------------------------------------------------
 })();

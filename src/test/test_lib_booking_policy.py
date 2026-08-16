@@ -32,7 +32,7 @@ from sustech_survival.lib.booking.client import (
 )
 
 
-# ── _is_3plus_person_room ────────────────────────────────────────────────────
+# -- _is_3plus_person_room ----------------------------------------------------
 
 
 class TestIs3PlusPersonRoom:
@@ -59,7 +59,7 @@ class TestIs3PlusPersonRoom:
         assert _is_3plus_person_room("") is None
 
 
-# ── validate_against_policy ─────────────────────────────────────────────────
+# -- validate_against_policy -------------------------------------------------
 
 
 class TestValidateAgainstPolicy:
@@ -67,7 +67,7 @@ class TestValidateAgainstPolicy:
 
     NOW = datetime(2026, 7, 1, 12, 0)  # reference time for all tests
 
-    # ── 1.2: max 2 days in advance ─────────────────────────────────────
+    # -- 1.2: max 2 days in advance -------------------------------------
 
     def test_advance_within_2_days_ok(self):
         warnings = validate_against_policy(
@@ -121,7 +121,7 @@ class TestValidateAgainstPolicy:
         # Past is a warning, not an error (the error is the duration)
         assert all(w.severity != "error" for w in past_warnings)
 
-    # ── 1.2: max 2 hours per booking ───────────────────────────────────
+    # -- 1.2: max 2 hours per booking -----------------------------------
 
     def test_duration_1h_ok(self):
         warnings = validate_against_policy(
@@ -183,7 +183,7 @@ class TestValidateAgainstPolicy:
         errors = [w for w in warnings if w.severity == "error"]
         assert any("non-positive" in w.message for w in errors)
 
-    # ── 1.3: 3+ person rooms need 2+ co-applicants ──────────────────────
+    # -- 1.3: 3+ person rooms need 2+ co-applicants ----------------------
 
     def test_3plus_room_with_3_members_ok(self):
         # C201 is 3-6 person, booker + 2 co-applicants = 3 members
@@ -251,7 +251,7 @@ class TestValidateAgainstPolicy:
         # No group errors (we don't know the room capacity)
         assert not any("3+ person" in w.message for w in warnings)
 
-    # ── 1.6: cancellation deadline (advisory at create time) ───────────
+    # -- 1.6: cancellation deadline (advisory at create time) -----------
 
     def test_cancellation_deadline_warning(self):
         # Begin is 5 minutes from now — too late to cancel
@@ -265,7 +265,7 @@ class TestValidateAgainstPolicy:
         assert any("10-minute cancellation deadline" in w.message for w in warn_only)
 
 
-# ── validate_cancellation_timing ───────────────────────────────────────────
+# -- validate_cancellation_timing -------------------------------------------
 
 
 class TestValidateCancellationTiming:
@@ -320,7 +320,7 @@ class TestValidateCancellationTiming:
         assert any("10 minutes" in w.message for w in errors)
 
 
-# ── Integration: validate_against_policy returns a list of PolicyWarning ────
+# -- Integration: validate_against_policy returns a list of PolicyWarning ----
 
 
 class TestPolicyWarningDataclass:
@@ -343,7 +343,7 @@ class TestPolicyWarningDataclass:
         assert any(w.severity == "error" for w in warnings)
 
 
-# ── Integration: LibBookingError vs LibBookingPolicyError ──────────────────
+# -- Integration: LibBookingError vs LibBookingPolicyError ------------------
 
 
 class TestPolicyErrorClasses:

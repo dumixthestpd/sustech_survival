@@ -22,7 +22,7 @@ from typing import List, Optional
 from sustech_survival.semester import Semester
 
 
-# ── Date / time helpers ──────────────────────────────────────────────────────
+# -- Date / time helpers ------------------------------------------------------
 
 
 _DT_FORMATS = (
@@ -83,7 +83,7 @@ def _parse_hlddct(v) -> bool:
     return False
 
 
-# ── Audit status (审核状态) ──────────────────────────────────────────────────
+# -- Audit status (审核状态) --------------------------------------------------
 
 
 @dataclass
@@ -109,7 +109,7 @@ class AuditStatus:
         )
 
 
-# ── Borrow time slot (jtsjlist entry) ────────────────────────────────────────
+# -- Borrow time slot (jtsjlist entry) ----------------------------------------
 
 
 @dataclass
@@ -155,7 +155,7 @@ class BorrowTimeSlot:
         }
 
 
-# ── Borrow detail row (cdjymxlist entry) ─────────────────────────────────────
+# -- Borrow detail row (cdjymxlist entry) -------------------------------------
 
 
 @dataclass
@@ -245,7 +245,7 @@ class BorrowDetail:
         )
 
 
-# ── Audit progress node (审批流程节点) ───────────────────────────────────────
+# -- Audit progress node (审批流程节点) ---------------------------------------
 
 
 @dataclass
@@ -277,7 +277,7 @@ class AuditNode:
         )
 
 
-# ── Permission result (yzkg) ────────────────────────────────────────────────
+# -- Permission result (yzkg) ------------------------------------------------
 
 
 @dataclass
@@ -299,7 +299,7 @@ class PermissionResult:
         return cls(allowed=s.strip() == "1", raw=s)
 
 
-# ── Borrow application (cdjyform) ────────────────────────────────────────────
+# -- Borrow application (cdjyform) --------------------------------------------
 
 
 # Status constants (server returns Chinese strings directly)
@@ -592,7 +592,7 @@ def _detail_to_api(d: BorrowDetail, semester_key: str = "",
     }
 
 
-# ── Venue occupancy entry (queryChangDiZhanYongShiJian) ──────────────────────
+# -- Venue occupancy entry (queryChangDiZhanYongShiJian) ----------------------
 
 
 @dataclass
@@ -651,7 +651,7 @@ def _weekday_to_date(week: int, weekday: int, semester: Semester) -> tuple[str, 
         return ("", "")
 
 
-# ── RowTicket — one (room × time) ticket ─────────────────────────────────────
+# -- RowTicket — one (room × time) ticket -------------------------------------
 
 
 @dataclass
@@ -673,7 +673,7 @@ class RowTicket:
     end_date: str = ""             # jsrq — YYYY-MM-DD
 
 
-# ── build_booking — translate (demand + tickets) → BorrowApplication ─────────
+# -- build_booking — translate (demand + tickets) → BorrowApplication ---------
 
 
 def build_booking(
@@ -805,7 +805,7 @@ def build_booking(
     return reconstructed
 
 
-# ── Public exports ────────────────────────────────────────────────────────────
+# -- Public exports ------------------------------------------------------------
 
 
 __all__ = [

@@ -22,7 +22,7 @@ from sustech_survival.transit import (
 )
 
 
-# ── Module surface ──────────────────────────────────────────────────────────
+# -- Module surface ----------------------------------------------------------
 
 class TestModuleExports:
     def test_all_classes(self):
@@ -44,7 +44,7 @@ class TestModuleExports:
         assert WALK_CONNECT_RADIUS_M > 0
 
 
-# ── Construction ───────────────────────────────────────────────────────────
+# -- Construction -----------------------------------------------------------
 
 class TestTransitClientConstruction:
     def test_default_session(self):
@@ -63,7 +63,7 @@ class TestTransitClientConstruction:
         assert "Macintosh" in c.session.headers["User-Agent"]
 
 
-# ── Live API tests ─────────────────────────────────────────────────────────
+# -- Live API tests ---------------------------------------------------------
 
 @pytest.mark.live
 class TestLiveAPI:

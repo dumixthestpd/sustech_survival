@@ -32,7 +32,7 @@ from sustech_survival.consequence import (
 )
 
 
-# ── POST helper ────────────────────────────────────────────────────────
+# -- POST helper --------------------------------------------------------
 
 def _post_xsxk(self, endpoint: str, payload: dict, *,
                dry_run: bool, rwh: str) -> dict:
@@ -81,7 +81,7 @@ def _build(self, **kw) -> dict:
     return build_queryform(sem=self._sem, auth=self._auth, **kw)
 
 
-# ── Single-pick writes ──────────────────────────────────────────────────
+# -- Single-pick writes --------------------------------------------------
 
 @consequence_rich(Consequence(
     name="selectcourse.add_course",
@@ -214,7 +214,7 @@ def remove_from_cart(self, rwh: str, *, dry_run: bool = True,
                        dry_run=dry_run, rwh=rwh)
 
 
-# ── Bid (积分 / 选课系数) ──────────────────────────────────────────────
+# -- Bid (积分 / 选课系数) ----------------------------------------------
 
 def update_bid(self, rwh: str, bid: int, *,
                where: str = "enrolled",

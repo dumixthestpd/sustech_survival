@@ -62,7 +62,7 @@ def login_via_carsi(
 
     page.wait_for_timeout(2000)
 
-    # ── Step 1: Search for university ──────────────────────────────────────
+    # -- Step 1: Search for university --------------------------------------
     try:
         search_input = page.locator(
             f"input[placeholder='{search_placeholder}']"
@@ -75,7 +75,7 @@ def login_via_carsi(
         print(f"  ⚠ Could not fill search input: {e}")
         return False
 
-    # ── Step 2: Find and click the institution link ─────────────────────────
+    # -- Step 2: Find and click the institution link -------------------------
     # The CARSI WAYF uses selectidp(entityID, name) onclick on <li> elements.
     # After search, only matching results remain visible.
     clicked = False
@@ -100,7 +100,7 @@ def login_via_carsi(
 
     page.wait_for_timeout(1000)
 
-    # ── Step 3: Submit the form (click "登录") ─────────────────────────────
+    # -- Step 3: Submit the form (click "登录") -----------------------------
     try:
         submit_btn = page.get_by_text(submit_button_text, exact=True).first
         submit_btn.click()
@@ -109,7 +109,7 @@ def login_via_carsi(
         print(f"  ⚠ Could not click submit button: {e}")
         return False
 
-    # ── Step 4: Wait for redirect to IdP ───────────────────────────────────
+    # -- Step 4: Wait for redirect to IdP -----------------------------------
     time.sleep(timeout / 1000)
     return True
 

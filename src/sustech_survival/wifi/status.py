@@ -43,7 +43,7 @@ class Event:
         return asdict(self)
 
 
-# ── Current association ──────────────────────────────────────────────────────
+# -- Current association ------------------------------------------------------
 
 def _wifi_interface() -> str:
     """Auto-discover the Wi-Fi interface (en0 on most Macs, en1 on Mac Mini / Ethernet-first)."""
@@ -89,7 +89,7 @@ def current_association(interface: str | None = None) -> dict | None:
 
     info: dict = {"interface": interface}
 
-    # ── Try system_profiler (most reliable on 14+) ──
+    # -- Try system_profiler (most reliable on 14+) --
     try:
         text_proc = subprocess.run(
             ["system_profiler", "SPAirPortDataType"],
@@ -102,7 +102,7 @@ def current_association(interface: str | None = None) -> dict | None:
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
         pass
 
-    # ── ipconfig fallback for BSSID + DHCP info ──
+    # -- ipconfig fallback for BSSID + DHCP info --
     if "bssid" not in info:
         try:
             proc = subprocess.run(
@@ -181,7 +181,7 @@ def _parse_current_network_block(text: str) -> dict | None:
     return None
 
 
-# ── Recent events ────────────────────────────────────────────────────────────
+# -- Recent events ------------------------------------------------------------
 
 # log show line format (filtered to Wi-Fi subsystem):
 #   2026-08-09 03:14:25.123456+0800  wifid  ...some message

@@ -45,7 +45,7 @@ from sustech_survival.selectcourse import (
 from sustech_survival.selectcourse.queryform import build_queryform
 
 
-# ── Test helpers ───────────────────────────────────────────────────────────
+# -- Test helpers -----------------------------------------------------------
 
 
 def _stub_auth(sc, response_json=None):
@@ -91,7 +91,7 @@ def _seed_catalog_id(sc, rwh="TEST-RWH", hex_id="TEST-HEX-ID"):
     ]
 
 
-# ── build_queryform shape (the old `_build_queryform` test) ────────────────
+# -- build_queryform shape (the old `_build_queryform` test) ----------------
 
 
 class TestBuildQueryform:
@@ -156,7 +156,7 @@ class TestBuildQueryform:
         assert qf2["p_ids"] == ["a", "b"]
 
 
-# ── Dry-run safety ─────────────────────────────────────────────────────────
+# -- Dry-run safety ---------------------------------------------------------
 
 
 class TestDryRun:
@@ -228,7 +228,7 @@ class TestDryRun:
         sc._auth.ensure.assert_not_called()
 
 
-# ── Real-call semantics ────────────────────────────────────────────────────
+# -- Real-call semantics ----------------------------------------------------
 
 
 class TestRealCall:
@@ -293,7 +293,7 @@ class TestRealCall:
         assert exc_info.value.jg == "-1"
 
 
-# ── Error class ────────────────────────────────────────────────────────────
+# -- Error class ------------------------------------------------------------
 
 
 class TestEnrollmentError:
@@ -312,7 +312,7 @@ class TestEnrollmentError:
         assert e.rwh == "R"
 
 
-# ── Public API exports ─────────────────────────────────────────────────────
+# -- Public API exports -----------------------------------------------------
 
 
 class TestPublicExports:

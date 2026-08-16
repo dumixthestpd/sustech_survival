@@ -19,7 +19,7 @@ from sustech_survival.tis.classroom.schema import (
 )
 
 
-# ── Schedule-export dataclasses ────────────────────────────────────────────
+# -- Schedule-export dataclasses --------------------------------------------
 #
 # These types are the structured form of "where/when a class meets" —
 # the unit of time that the TUI schedule grid, the web UI course picker,

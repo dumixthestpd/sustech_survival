@@ -1,4 +1,4 @@
-﻿# SSO 鈥?Auth Infrastructure
+# SSO 鈥?Auth Infrastructure
 
 **What:** Base classes for authenticated access to SUSTech systems. Handles CAS tickets (headless) and Shibboleth/CARSI (browser-based).
 

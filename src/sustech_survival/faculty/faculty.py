@@ -80,7 +80,7 @@ class FacultyClient:
         self.workers = workers
         self._session: Optional[requests.Session] = None
 
-    # ── Session management ────────────────────────────────────────────────────
+    # -- Session management ----------------------------------------------------
 
     @property
     def session(self) -> requests.Session:
@@ -107,14 +107,14 @@ class FacultyClient:
             self._session.close()
             self._session = None
 
-    # ── Public properties ─────────────────────────────────────────────────────
+    # -- Public properties -----------------------------------------------------
 
     @property
     def departments(self) -> List[str]:
         """All 50+ known SUSTech department names (just the names, no HTTP)."""
         return list(DEPARTMENTS)
 
-    # ── Public operations ─────────────────────────────────────────────────────
+    # -- Public operations -----------------------------------------------------
 
     def list(
         self,
@@ -195,7 +195,7 @@ class FacultyClient:
         """Fetch one profile and return AI-readable Markdown. ~2.2s."""
         return self.get(slug).to_markdown()
 
-    # ── Private HTTP helpers ──────────────────────────────────────────────────
+    # -- Private HTTP helpers --------------------------------------------------
 
     def _list_cards(self, dept: str, *, limit: Optional[int] = None) -> List[IndexCard]:
         """Paginate ?ajax=users for one department, return IndexCard list."""
@@ -278,7 +278,7 @@ class FacultyClient:
                     return out
         return out
 
-    # ── Private scoring ───────────────────────────────────────────────────────
+    # -- Private scoring -------------------------------------------------------
 
     @staticmethod
     def _score_into(fac: Faculty, terms: List[str]) -> bool:
@@ -329,6 +329,6 @@ class FacultyClient:
         return ""
 
 
-# ── Module-level singleton ────────────────────────────────────────────────────
+# -- Module-level singleton ----------------------------------------------------
 
 faculty = FacultyClient()

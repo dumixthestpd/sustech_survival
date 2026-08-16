@@ -103,7 +103,7 @@ class LibBookingClient:
     BASE_URL = BOOKING_BASE
     API_BASE = BOOKING_API
 
-    # ── Construction ────────────────────────────────────────────────────────
+    # -- Construction --------------------------------------------------------
 
     def __init__(self, session: requests.Session, *, _auth=None):
         self.s = session
@@ -111,7 +111,7 @@ class LibBookingClient:
         # on auth-error responses. If None, errors propagate without retry.
         self._auth = _auth
 
-    # ── Internal: API call with auth-error retry ───────────────────────────
+    # -- Internal: API call with auth-error retry ---------------------------
 
     def _call(
         self, method: str, path: str, *, params: Optional[dict] = None,
@@ -176,14 +176,14 @@ class LibBookingClient:
             )
         return body.get("data")
 
-    # ── Read: whoami ────────────────────────────────────────────────────────
+    # -- Read: whoami --------------------------------------------------------
 
     def whoami(self) -> UserInfo:
         """Return the current user's profile (from `auth/userInfo`)."""
         data = self._call("GET", "/auth/userInfo")
         return UserInfo.from_api(data)
 
-    # ── Read: homepage summary ──────────────────────────────────────────────
+    # -- Read: homepage summary ----------------------------------------------
 
     def home_summary(self) -> List[RoomIdleCategory]:
         """Return the homepage idle summary — 10 categories with idle counts.
@@ -193,7 +193,7 @@ class LibBookingClient:
         data = self._call("GET", "/home/page/room/idle") or []
         return [RoomIdleCategory.from_api(r) for r in data]
 
-    # ── Read: labs (楼层 / 区域) ─────────────────────────────────────────────
+    # -- Read: labs (楼层 / 区域) ---------------------------------------------
 
     def labs(self, class_kind: int = DEFAULT_CLASS_KIND) -> List[Lab]:
         """Return the list of labs for a given classKind.
@@ -206,7 +206,7 @@ class LibBookingClient:
         ) or []
         return [Lab.from_api(r) for r in data]
 
-    # ── Read: rooms in a (kind, lab) ────────────────────────────────────────
+    # -- Read: rooms in a (kind, lab) ----------------------------------------
 
     def rooms(
         self,
@@ -229,7 +229,7 @@ class LibBookingClient:
         ) or []
         return [CampusGroup.from_api(c) for c in data]
 
-    # ── Read: my reservations ───────────────────────────────────────────────
+    # -- Read: my reservations -----------------------------------------------
 
     def reservation_count(self) -> int:
         """Return the current reservation count for the logged-in user."""
@@ -313,7 +313,7 @@ class LibBookingClient:
                 return r
         return None
 
-    # ── Write: create reservation (destructive — dry-run by default) ────────
+    # -- Write: create reservation (destructive — dry-run by default) --------
 
     @consequence_rich(Consequence(
         name="libbooking.add_reservation",
@@ -381,7 +381,7 @@ class LibBookingClient:
             resv_member=resv_member,
             memo=memo,
         )
-        # ── Policy check ──────────────────────────────────────────────────
+        # -- Policy check --------------------------------------------------
         # For BOTH dry-run and commit paths: compute the warnings list
         # once, attach to the dry-run result, raise on commit. This
         # way dry-run ALWAYS stages the payload (you can inspect what
@@ -439,7 +439,7 @@ class LibBookingClient:
                             return r.dev_name
         return None
 
-    # ── Write: cancel reservation (destructive — dry-run by default) ────────
+    # -- Write: cancel reservation (destructive — dry-run by default) --------
 
     @consequence_rich(Consequence(
         name="libbooking.cancel_reservation",
@@ -552,7 +552,7 @@ class LibBookingClient:
         return result if result is not None else {}
 
 
-# ── Policy enforcement (per "讨论间使用办法" 2026-06-29) ─────────────────
+# -- Policy enforcement (per "讨论间使用办法" 2026-06-29) -----------------
 
 
 class LibBookingPolicyError(LibBookingError):
@@ -622,7 +622,7 @@ def validate_against_policy(
     warnings: List[PolicyWarning] = []
     now = now or datetime.now()
 
-    # ── 1.2: max 2 days in advance ──────────────────────────────────────
+    # -- 1.2: max 2 days in advance --------------------------------------
     delta = begin - now
     if delta.total_seconds() > 2 * 24 * 3600:
         warnings.append(PolicyWarning(
@@ -637,7 +637,7 @@ def validate_against_policy(
             f"the server will likely reject it.",
         ))
 
-    # ── 1.2: max 2 hours per booking ────────────────────────────────────
+    # -- 1.2: max 2 hours per booking ------------------------------------
     duration = end - begin
     if duration.total_seconds() > 2 * 3600:
         hours = duration.total_seconds() / 3600
@@ -653,7 +653,7 @@ def validate_against_policy(
             f"end must be after begin.",
         ))
 
-    # ── 1.3: 3+ person rooms need 2+ co-applicants ──────────────────────
+    # -- 1.3: 3+ person rooms need 2+ co-applicants ----------------------
     is_3plus = _is_3plus_person_room(dev_name)
     if is_3plus is True:
         members = resv_member or []
@@ -672,7 +672,7 @@ def validate_against_policy(
             f"(memberKind={member_kind}) is allowed but not required.",
         ))
 
-    # ── 1.6: cancellation deadline (10 min before start) ──────────────
+    # -- 1.6: cancellation deadline (10 min before start) --------------
     # This is enforced in `cancel_reservation`, not here. But we can
     # still warn at create-time if the user creates a reservation
     # they wouldn't be able to cancel in time. The condition is:
@@ -727,7 +727,7 @@ def validate_cancellation_timing(
     return warnings
 
 
-# ── Singleton getter ─────────────────────────────────────────────────────────
+# -- Singleton getter ---------------------------------------------------------
 
 
 _BOOKING_INSTANCE: Optional[LibBookingClient] = None

@@ -1,4 +1,4 @@
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # programs.py — WS Student Exchange Program search & browse
 #
 # REST endpoints discovered (2026-06-01):
@@ -6,7 +6,7 @@
 #   GET /StudentExchange_2247/GetShortProjectListForStudent.do   ← paginated list
 #   GET /StudentExchange_2247/GetShortProjectListCountForStudent.do ← count
 #   GET /StudentExchange_2247/ProjectDetail2247.do   ← HTML detail page
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 from __future__ import annotations
 
 import html
@@ -19,10 +19,10 @@ import requests
 
 from ..sso import WSAuth
 
-# ── Base URL ────────────────────────────────────────────────────────────────────
+# -- Base URL --------------------------------------------------------------------
 WS_BASE = "https://ws.sustech.edu.cn"
 
-# ── Auth singleton ─────────────────────────────────────────────────────────────
+# -- Auth singleton -------------------------------------------------------------
 _AUTH: WSAuth | None = None
 
 
@@ -60,7 +60,7 @@ def user_token() -> tuple[str, str]:
     return _token_cache
 
 
-# ── Helpers ─────────────────────────────────────────────────────────────────
+# -- Helpers -----------------------------------------------------------------
 
 _MS_DATE_RE = re.compile(r"\\/Date\((-?\d+)\)\\/")
 
@@ -88,7 +88,7 @@ def clean_str(s: str) -> str:
     return s
 
 
-# ── Key fields kept in list response ───────────────────────────────────────────
+# -- Key fields kept in list response -------------------------------------------
 _PROGRAM_LIST_FIELDS = {
     "ID", "Code", "Name", "NameEn", "YearCode",
     "ProjectType", "ProjectTypeText",
@@ -122,7 +122,7 @@ _PROGRAM_LIST_FIELDS = {
 }
 
 
-# ── API: list programs ─────────────────────────────────────────────────────────
+# -- API: list programs ---------------------------------------------------------
 
 def list_programs(
     *,
@@ -232,7 +232,7 @@ def get_count(
         return 0
 
 
-# ── API: program detail ───────────────────────────────────────────────────────
+# -- API: program detail -------------------------------------------------------
 
 def get_program_detail(
     id: int | str,

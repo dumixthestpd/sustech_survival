@@ -17,7 +17,7 @@ from sustech_survival.selectcourse.course import (
 )
 
 
-# ── Fixtures: synthetic data ─────────────────────────────────────────────
+# -- Fixtures: synthetic data ---------------------------------------------
 
 
 def _make_span(day=1, day_name="周一", p_start=3, p_end=4,
@@ -62,7 +62,7 @@ def _make_course(code="MSE306", name="材料科学实验", section="001",
     )
 
 
-# ── _format_weeks_label ───────────────────────────────────────────────────
+# -- _format_weeks_label ---------------------------------------------------
 
 
 class TestWeeksLabel:
@@ -86,7 +86,7 @@ class TestWeeksLabel:
         assert _format_weeks_label([5, 1, 3]) == "1,3,5 周"
 
 
-# ── SectionSpan ──────────────────────────────────────────────────────────
+# -- SectionSpan ----------------------------------------------------------
 
 
 class TestSectionSpan:
@@ -115,7 +115,7 @@ class TestSectionSpan:
             s.day = 5  # type: ignore[misc]
 
 
-# ── SectionTable ─────────────────────────────────────────────────────────
+# -- SectionTable ---------------------------------------------------------
 
 
 class TestSectionTable:
@@ -179,7 +179,7 @@ class TestSectionTable:
         assert d["spans"][0]["room"] == "人文社科教学楼B302"
 
 
-# ── export_schedule_table ────────────────────────────────────────────────
+# -- export_schedule_table ------------------------------------------------
 
 
 class TestExportScheduleTable:
@@ -239,7 +239,7 @@ class TestExportScheduleTable:
         assert "周三" in lines[2]
 
 
-# ── Integration with CLI command ─────────────────────────────────────────
+# -- Integration with CLI command -----------------------------------------
 
 
 class TestCLIExportTable:

@@ -26,7 +26,7 @@ _TYPE_ICON = {
     "text": "[text]", "unknown": "[?]",
 }
 
-# ── Session ──────────────────────────────────────────────────────────────────
+# -- Session ------------------------------------------------------------------
 
 def session():
     """Return requests.Session with BB cookies.
@@ -55,7 +55,7 @@ def api(path, session=None):
     return r.json()
 
 
-# ── Course Discovery ─────────────────────────────────────────────────────────
+# -- Course Discovery ---------------------------------------------------------
 
 def discover_courses(term_id=None):
     """
@@ -90,7 +90,7 @@ def discover_courses(term_id=None):
         return []
 
 
-# ── Content Tree Walk ────────────────────────────────────────────────────────
+# -- Content Tree Walk --------------------------------------------------------
 
 def walk_contents(course_id, parent_id=None, session=None):
     """
@@ -122,7 +122,7 @@ def walk_contents(course_id, parent_id=None, session=None):
             yield from walk_contents(course_id, item["id"], session)
 
 
-# ── Page Discovery ───────────────────────────────────────────────────────────
+# -- Page Discovery -----------------------------------------------------------
 
 def discover_pages(course_id, *, refresh=False):
     """
@@ -171,7 +171,7 @@ def discover_pages(course_id, *, refresh=False):
     return results
 
 
-# ── Page Items ───────────────────────────────────────────────────────────────
+# -- Page Items ---------------------------------------------------------------
 
 def classify_item_type(handler: str) -> str:
     """Map contentHandler ID to item type string."""
@@ -252,7 +252,7 @@ def scrape_page_items(content_id, course_id, course_name):
     return [row]
 
 
-# ── Course ID Resolver ──────────────────────────────────────────────────────
+# -- Course ID Resolver ------------------------------------------------------
 
 
 def resolve_course(content_id):
@@ -298,7 +298,7 @@ def resolve_course(content_id):
     raise ValueError(f"content_id {content_id} not found in any course")
 
 
-# ── Full Discovery ────────────────────────────────────────────────────────────
+# -- Full Discovery ------------------------------------------------------------
 
 def discover_all_items(*, course_filter=None, text_filter=None,
                        type_filter=None, hide_types=None, show_types=None,
@@ -368,7 +368,7 @@ def discover_all_items(*, course_filter=None, text_filter=None,
     return all_items
 
 
-# ── Formatting ────────────────────────────────────────────────────────────────
+# -- Formatting ----------------------------------------------------------------
 
 def format_item(u, verbose=False):
     t = u.get("type", "?")
@@ -413,7 +413,7 @@ def print_stats(stats, courses=None):
             print(f"  {icon} {t:<12} {cnt:>4}")
 
 
-# ── Backward compat shims ────────────────────────────────────────────────────
+# -- Backward compat shims ----------------------------------------------------
 
 def load_structure():
     return {}

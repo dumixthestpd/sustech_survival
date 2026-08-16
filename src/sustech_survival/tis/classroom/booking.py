@@ -65,7 +65,7 @@ from .booking_schema import (
 )
 
 
-# ── Endpoint paths ────────────────────────────────────────────────────────────
+# -- Endpoint paths ------------------------------------------------------------
 
 EP_YZKG = f"{TIS_BASE}/cdjy/yzkg"
 EP_SHZTLIST = f"{TIS_BASE}/cdjy/shztlist"
@@ -76,14 +76,14 @@ EP_CREATE = f"{TIS_BASE}/cdjy/addChangDiJieYongShenQing/1"
 WORKFLOW_CDJY = "CDJYLC"
 
 
-# ── Errors ───────────────────────────────────────────────────────────────────
+# -- Errors -------------------------------------------------------------------
 
 
 class BorrowError(RuntimeError):
     """Any failure from the TIS 场地借用 API or its auth flow."""
 
 
-# ── Internal helpers ─────────────────────────────────────────────────────────
+# -- Internal helpers ---------------------------------------------------------
 
 
 def _looks_off_campus(r: requests.Response) -> bool:
@@ -112,7 +112,7 @@ def _extract_rows(content) -> list:
     return []
 
 
-# ── Client ────────────────────────────────────────────────────────────────────
+# -- Client --------------------------------------------------------------------
 
 
 class VenueBorrowClient:
@@ -132,7 +132,7 @@ class VenueBorrowClient:
         self._live_client = live_client
         self._sess = session
 
-    # ── Session management ────────────────────────────────────────────────
+    # -- Session management ------------------------------------------------
 
     def ensure_session(self) -> requests.Session:
         """Return a logged-in TIS session. Cached after first call."""
@@ -149,7 +149,7 @@ class VenueBorrowClient:
         sess.headers.setdefault("RoleCode", "00")
         return sess
 
-    # ── Internal: API call ────────────────────────────────────────────────
+    # -- Internal: API call ------------------------------------------------
 
     def _post(
         self, url: str, *, data: Optional[dict] = None, json_body: Optional[dict] = None
@@ -177,14 +177,14 @@ class VenueBorrowClient:
         except (ValueError, json.JSONDecodeError):
             return r.text
 
-    # ── Permission check ──────────────────────────────────────────────────
+    # -- Permission check --------------------------------------------------
 
     def check_permission(self, semester: Semester) -> PermissionResult:
         """Check if the current user is allowed to borrow venues this semester."""
         raw = self._post(EP_YZKG, data={"xn": semester.xn, "xq": semester.xq})
         return PermissionResult.from_api(raw)
 
-    # ── Audit statuses (workflow reference) ────────────────────────────────
+    # -- Audit statuses (workflow reference) --------------------------------
 
     def list_audit_statuses(self) -> List[AuditStatus]:
         """List the venue-borrowing workflow statuses."""
@@ -192,7 +192,7 @@ class VenueBorrowClient:
         content = _strip_envelope(raw)
         return [AuditStatus.from_api(r) for r in _extract_rows(content)]
 
-    # ── Venue occupancy (read availability) ────────────────────────────────
+    # -- Venue occupancy (read availability) --------------------------------
 
     def query_venue_occupancy(
         self,
@@ -217,7 +217,7 @@ class VenueBorrowClient:
         content = _strip_envelope(raw)
         return [VenueOccupancySlot.from_api(r) for r in _extract_rows(content)]
 
-    # ── Create application (the one real action) ──────────────────────────
+    # -- Create application (the one real action) --------------------------
 
     @consequence_rich(Consequence(
         name="classroom.create_borrow_application",
@@ -266,7 +266,7 @@ class VenueBorrowClient:
         return BorrowApplication.from_api(content) if content else form
 
 
-# ── Singleton ─────────────────────────────────────────────────────────────────
+# -- Singleton -----------------------------------------------------------------
 
 
 def venue_borrow(
@@ -293,7 +293,7 @@ def venue_borrow(
 _default_venue_borrow_client: Optional[VenueBorrowClient] = None
 
 
-# ── book() — the human-facing single entry point ─────────────────────────┐
+# -- book() — the human-facing single entry point -------------------------+
 
 
 def book(
