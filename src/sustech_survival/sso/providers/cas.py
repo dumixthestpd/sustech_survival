@@ -12,17 +12,16 @@
 
 import re
 import ssl
-import urllib3.util.ssl_ as _us_ssl
-_orig = _us_ssl.create_urllib3_context
-_OP_LEGACY = getattr(ssl, 'OP_LEGACY_SERVER_CONNECT', 0x4)
-def patched(protocol=None):
-    ctx = _orig(protocol)
-    ctx.options |= _OP_LEGACY
-    return ctx
-_us_ssl.create_urllib3_context = patched
 import requests
 from ..authorizer import Authorizer, AuthorizerError, CAS_BASE, UA
 from sustech_survival.exceptions import InvalidCredentials, NetworkError
+
+# Constant used only inside the scoped legacy CAS SSL context below. It is NOT
+# applied process-wide: the legacy-TLS tweak belongs to the CAS session alone,
+# never to unrelated urllib3/requests traffic in the process (a former
+# import-time monkeypatch of urllib3.util.ssl_.create_urllib3_context was removed
+# for exactly that reason — it weakened TLS for every connection).
+_OP_LEGACY = getattr(ssl, 'OP_LEGACY_SERVER_CONNECT', 0x4)
 
 
 class CASAuthorizer(Authorizer):

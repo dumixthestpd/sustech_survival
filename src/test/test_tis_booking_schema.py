@@ -314,12 +314,12 @@ REAL_APPLICATION = {
     "jhdh": "JY20260628001",
     "shztmc": "保存待审核",
     "sqr": "<name>",
-    "sqrdh": "13908478929",
+    "sqrdh": "13900000000",
     "sqrzgh": "<sid>",
     "sqrdw": "材料科学与工程系",
     "sqrdwdh": "01",
     "syr": "<name>",
-    "syrdh": "13908478929",
+    "syrdh": "13900000000",
     "syrzgh": "<sid>",
     "syrdwdm": "01",
     "xnxq": "2025-2026-2",
@@ -359,7 +359,7 @@ class TestBorrowApplication:
         assert b.jhdh == "JY20260628001"
         assert b.status == "保存待审核"
         assert b.applicant_name == "<name>"
-        assert b.applicant_phone == "13908478929"
+        assert b.applicant_phone == "13900000000"
         assert b.applicant_employee_id == "<sid>"
         assert b.applicant_dept == "材料科学与工程系"
         assert b.semester == Semester("2025-2026-2")
@@ -519,11 +519,11 @@ class TestNestedIntegration:
     def test_construct_full_booking_from_scratch(self):
         app = BorrowApplication(
             applicant_name="<name>",
-            applicant_phone="13908478929",
+            applicant_phone="13900000000",
             applicant_employee_id="<sid>",
             applicant_dept="材料科学与工程系",
             user_name="<name>",
-            user_phone="13908478929",
+            user_phone="13900000000",
             user_employee_id="<sid>",
             semester=Semester("2025-2026-2"),
             weeks="5-8",

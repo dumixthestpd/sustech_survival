@@ -43,7 +43,8 @@ class Season(Enum):
 
     @classmethod
     def from_term_num(cls, n: int) -> "Season":
-        return cls(n)
+        """Alias of :meth:`from_int` — 1→FALL, 2→SPRING, 3→SUMMER."""
+        return {1: cls.FALL, 2: cls.SPRING, 3: cls.SUMMER}[n]
 
 
 class Semester:

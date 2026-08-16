@@ -49,9 +49,15 @@ def create_app(*, transit_data_dir: Optional[str] = None,
     app.config["TRANSIT_DATA_DIR"] = transit_data_dir
 
     # ── Brand assets (logo / favicon) ───────────────────────────────────
+    # Icon (favicon + page logo mark) = the square torch-only lockup.
+    # Document-front / home-page hero = the full (torch + wordmark) lockup.
     @app.route("/logo.svg")
     def _logo():
         return send_from_directory(str(RESOURCES), "logo.svg")
+
+    @app.route("/logo-full.svg")
+    def _logo_full():
+        return send_from_directory(str(RESOURCES), "logo-full-transparent.svg")
 
     @app.route("/favicon.svg")
     def _favicon():

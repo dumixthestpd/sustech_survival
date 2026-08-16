@@ -3,7 +3,7 @@
 # sustech-survival
 
 <p align="center">
-  <img src="src/sustech_survival/resources/logo.svg"
+  <img src="src/sustech_survival/resources/logo-full-transparent.svg"
        alt="sustech-survival" width="360">
 </p>
 

@@ -63,16 +63,16 @@ class TestParseKey:
 
 class TestParseSksjBorrowing:
     def test_single_week(self):
-        text = "【借用】[17周]\n使用人:井水淼\n联系电话:18926762778"
+        text = "【借用】[17周]\n使用人:李四\n联系电话:13811112222"
         p = parse_sksj(text)
         assert p["type"] == "borrowing"
         assert p["weeks"] == [17]
-        assert p["borrower"] == "井水淼"
-        assert p["phone"] == "18926762778"
+        assert p["borrower"] == "李四"
+        assert p["phone"] == "13811112222"
         assert p["course_name"] is None
 
     def test_week_range(self):
-        text = "【借用】[1-9周]\n使用人:张三\n联系电话:13908478929"
+        text = "【借用】[1-9周]\n使用人:张三\n联系电话:13900000000"
         p = parse_sksj(text)
         assert p["weeks"] == [1, 2, 3, 4, 5, 6, 7, 8, 9]
 
@@ -133,7 +133,7 @@ class TestRoomScheduleEntry:
     def test_from_api_borrowing(self):
         raw = {
             "KCDM": "jy",
-            "SKSJ": "【借用】[17周]\n使用人:井水淼\n联系电话:18926762778",
+            "SKSJ": "【借用】[17周]\n使用人:李四\n联系电话:13811112222",
             "SKSJ_EN": "招生活动",
             "XB": 19,
             "KEY": "xq7_jc6",
@@ -144,8 +144,8 @@ class TestRoomScheduleEntry:
         assert e.weekday == 7
         assert e.period_start == 6
         assert e.weeks == [17]
-        assert e.borrower == "井水淼"
-        assert e.phone == "18926762778"
+        assert e.borrower == "李四"
+        assert e.phone == "13811112222"
         assert e.purpose == "招生活动"
 
     def test_from_api_course(self):
@@ -237,7 +237,7 @@ class TestLiveOccupancyClientMocked:
         cdkb_resp = MagicMock()
         cdkb_resp.json.return_value = [
             {"KCDM": "jy",
-             "SKSJ": "【借用】[17周]\n使用人:井水淼\n联系电话:18926762778",
+             "SKSJ": "【借用】[17周]\n使用人:李四\n联系电话:13811112222",
              "SKSJ_EN": "招生活动", "XB": 19, "KEY": "xq7_jc6"},
             {"KCDM": "MA111",
              "SKSJ": "【本】高等代数 II[陆康][14周][5-6节]",
@@ -261,7 +261,7 @@ class TestLiveOccupancyClientMocked:
         assert len(entries) == 2
         assert entries[0].is_borrowing
         assert entries[1].is_course
-        assert entries[0].borrower == "井水淼"
+        assert entries[0].borrower == "李四"
         assert entries[0].cddm == "YJ-123"
 
     def test_live_at_filters_by_weekday(self, mock_session, tmp_path,

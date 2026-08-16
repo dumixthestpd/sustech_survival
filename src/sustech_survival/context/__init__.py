@@ -462,21 +462,24 @@ def fetch_next_eval() -> Optional[dict]:
     """
     try:
         from sustech_survival.tis.eval import TISAuthEval
+        from sustech_survival.semester import Semester, Season
 
+        # Use the LIVE current semester — never a hardcoded past term.
+        sem = Semester.current()
         auth = TISAuthEval()
-        evals = auth.evaluations(xnxq="2025-20262", status="all")
+        evals = auth.evaluations(xnxq=sem.tis, status="all")
         if not evals:
             return None
 
-        # Per-course jzsj is always null; use the task window end rwjssj
-        task_deadline_str = "2026-06-06"
-
+        # Per-course jzsj is always null; use the task window end. Derive it
+        # from the current semester's season so it never goes stale.
         now = datetime.now()
-        try:
-            task_deadline = datetime.strptime(task_deadline_str, "%Y-%m-%d")
-            days_from_now = (task_deadline.date() - now.date()).days
-        except Exception:
-            days_from_now = 999
+        # Fall ends in January of the end year; Spring/Summer end ~July/August.
+        if sem.season is Season.FALL:
+            deadline = datetime(sem.end_year, 1, 31, 23, 59)
+        else:
+            deadline = datetime(sem.end_year, 8, 15, 23, 59)
+        days_from_now = (deadline.date() - now.date()).days
 
         needs_attention = []
         for ev in evals:

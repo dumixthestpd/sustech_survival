@@ -96,7 +96,7 @@ def get_courses(session=None, term_id="_57_1"):
         return (cid, name)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
-        futures = {ex.submit(_fetch_name, e): e for e in entries}
+        futures = {ex.submit(fetch_name, e): e for e in entries}
         courses = []
         for fut in concurrent.futures.as_completed(futures):
             try:
@@ -197,15 +197,6 @@ def upcoming_deadlines(days: int = 30) -> list[dict]:
     if not courses:
         raise _SessionExpired("无法获取课程列表，请重新登录")
 
-    # Filter to 2026-term courses
-    active_ids = {"_8053_1", "_8157_1", "_8221_1", "_8328_1", "_8343_1"}
-    courses = [
-        (c, n) for c, n in courses
-        if "2026" in n or c in active_ids
-    ]
-    if not courses:
-        courses = get_courses(session, term_id="_57_1")
-
     results = []
     for cid, cname in courses:
         try:
@@ -250,14 +241,6 @@ def run(days: int = 7, course_id: str = None):
     # 2. Filter
     if course_id:
         courses = [(c, n) for c, n in courses if c == course_id]
-    else:
-        active_ids = {"_8053_1", "_8157_1", "_8221_1", "_8328_1", "_8343_1"}
-        courses = [
-            (c, n) for c, n in courses
-            if "2026" in n or c in active_ids
-        ]
-        if not courses:
-            courses = get_courses(session, term_id="_57_1")
 
     all_items = []  # (course_name, name, due_iso, status, score, feedback)
 

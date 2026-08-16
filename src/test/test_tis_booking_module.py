@@ -210,11 +210,11 @@ class TestQueryVenueOccupancy:
 SAMPLE_FORM = BorrowApplication(
     id="",
     applicant_name="<name>",
-    applicant_phone="13908478929",
+    applicant_phone="13900000000",
     applicant_employee_id="<sid>",
     applicant_dept="材料科学与工程系",
     user_name="<name>",
-    user_phone="13908478929",
+    user_phone="13900000000",
     user_employee_id="<sid>",
     semester=Semester("2025-20262"),
     weeks="5-8",

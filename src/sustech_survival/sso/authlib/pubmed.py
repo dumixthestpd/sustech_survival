@@ -42,7 +42,7 @@ class PubMedAuth(Authorizer):
         super().__init__(skill_dir=skill_dir)
         self.http = requests.Session()
         self.http.headers.update({
-            "User-Agent": "sustech-survival/1.0 (SUSTech student; mailto:dumix@sustech.edu.cn)",
+            "User-Agent": "sustech-survival/1.0 (SUSTech student; mailto:dumix@local)",
             "Accept": "application/json",
         })
 

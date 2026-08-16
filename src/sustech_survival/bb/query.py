@@ -71,10 +71,10 @@ def discover_courses(term_id=None):
         term_id: DEPRECATED 2026-08-10 — accepted for backward compat but
             ignored. The previous /courses?termId={term_id} endpoint returned
             ALL courses in the term (term-wide catalog), not the user's
-            enrollments — which is why discover_courses() had a hardcoded
-            _ACTIVE_COURSE_IDS fallback in resolve_course(). My Courses
-            (tab_tab_group_id=_2_1) is enrollment-filtered, so termId is
-            irrelevant. Pass None (default) for new callers.
+            enrollments — which is why resolve_course() walked the paginated
+            course list. My Courses (tab_tab_group_id=_2_1) is
+            enrollment-filtered, so termId is irrelevant. Pass None (default)
+            for new callers.
 
     Returns:
         list of (course_id_str, course_name). course_id_str is the numeric
@@ -254,37 +254,19 @@ def scrape_page_items(content_id, course_id, course_name):
 
 # ── Course ID Resolver ──────────────────────────────────────────────────────
 
-# Known active courses for Spring 2026 (fallback if not in paginated course list)
-_ACTIVE_COURSE_IDS = ["_8053_1", "_8157_1", "_8221_1", "_8328_1", "_8343_1"]
-
 
 def resolve_course(content_id):
     """
     Find which course owns a content_id.
 
-    Strategy:
-      1. Check hardcoded active courses first (fast path for known courses)
-      2. Walk paginated course list from term _57_1
+    Walks the paginated course list from term _57_1 to find the owning course.
 
     Returns course_id string (numeric, e.g. "8343") or raises ValueError.
     """
     sess = _session()
     cids = [f"_{content_id}_1"]
 
-    # 1. Try hardcoded active courses (no pagination needed)
-    for bid in _ACTIVE_COURSE_IDS:
-        for cid in cids:
-            try:
-                r = sess.get(
-                    f"{BB_BASE}/learn/api/public/v1/courses/{bid}/contents/{cid}",
-                    timeout=5
-                )
-                if r.status_code == 200:
-                    return bid.lstrip("_").rstrip("_1")
-            except Exception:
-                pass
-
-    # 2. Search paginated course list
+    # Walk paginated course list
     offset = 0
     while True:
         try:

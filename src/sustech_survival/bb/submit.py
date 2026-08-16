@@ -75,6 +75,30 @@ _UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
 # Kept for callers that import bb_auth from this module (e.g. tests).
 bb_auth = BBAuth()
 
+# Characters Windows forbids in a file/dir name. The on-disk staged file is
+# sanitized to avoid copy2/copyfile crashing (WinError 123) on a target name
+# that is fine as a BB multipart filename but not as a filesystem path.
+_ILLEGAL_FS_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+
+def _safe_staged_name(target_name: str, fallback_suffix: str = ".pdf") -> str:
+    """Return a deterministic, filesystem-safe basename for a staged file.
+
+    ``target_name`` may legally contain characters that are fine in a BB
+    multipart filename but illegal in a Windows filesystem path (e.g.
+    ``<sid>-<name>-report.pdf``). The on-disk name is only a staging token —
+    BB's displayed name comes from the multipart filename, not the disk path.
+    """
+    safe = _ILLEGAL_FS_CHARS.sub("_", target_name)
+    safe = safe.strip().strip(".") or ("file" + fallback_suffix)
+    # Guard against reserved Windows names (CON, PRN, AUX, NUL, COM1-9, LPT1-9)
+    stem = safe.split(".")[0].upper()
+    if stem in {"CON", "PRN", "AUX", "NUL"} or (
+        stem.startswith("COM") and stem[3:].isdigit()
+    ) or (stem.startswith("LPT") and stem[3:].isdigit()):
+        safe = "staged_" + safe
+    return safe
+
 
 # ─────────────────────────────────────────────────────────────────────────
 # Session / cookie helpers
@@ -278,13 +302,15 @@ def submit_assignment_rest(
 
     print(f"  REST submit: course={course_id} content={content_id} file={target_name!r}")
 
-    # Stage the file with the target basename — BB records the staged file's
-    # basename as the displayed filename.
+    # Staging: BB records the *multipart filename* (form_data["newFile_linkTitle"])
+    # as the displayed name, so the on-disk staged name need not equal target_name.
+    # The on-disk name is sanitized to a safe basename because Windows rejects
+    # chars like `< > : " | ? *` in filesystem paths (a real bug: dry-run with a
+    # `<sid>-<name>-...pdf` name_override crashed on shutil.copy2). Dry-run never
+    # needs the copy — it only reports what *would* be submitted.
     staged_dir = Path(tempfile.gettempdir()) / "bb_submits"
-    staged_dir.mkdir(parents=True, exist_ok=True)
-    staged_path = staged_dir / target_name
-    if staged_path.resolve() != file_path_p:
-        shutil.copy2(file_path_p, staged_path)
+    staged_name = _safe_staged_name(target_name, file_path_p.suffix)
+    staged_path = staged_dir / staged_name
 
     try:
         # Step 1: GET the upload form (cookies, nonces, hidden fields)
@@ -308,6 +334,11 @@ def submit_assignment_rest(
                 staged_path=staged_path,
                 row_count=0,
             )
+
+        # Only a real (non-dry) submit needs to stage the file for the POST.
+        staged_dir.mkdir(parents=True, exist_ok=True)
+        if staged_path.resolve() != file_path_p:
+            shutil.copy2(file_path_p, staged_path)
 
         # Step 3: POST the form with the file in the multipart envelope.
         # Fresh session — CSRF nonce is in the form data (not session-bound),
