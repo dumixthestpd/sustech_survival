@@ -666,10 +666,11 @@ class TestCache:
 
     @pytest.fixture
     def isolated_cache(self, tmp_path, monkeypatch):
-        """Redirect cache writes to tmp_path."""
-        import sustech_survival._cache as cache_mod
-        monkeypatch.setattr(cache_mod, "TMP_ROOT", tmp_path, raising=False)
+        """Redirect cache writes to tmp_path via the cache.dir setting."""
+        import sustech_survival._settings as settings_mod
+        monkeypatch.setattr(settings_mod, "cache_dir", str(tmp_path))
         import sustech_survival.calendar as cal_mod
+        import sustech_survival._cache as cache_mod
         monkeypatch.setattr(cal_mod, "_cache", cache_mod)
         return tmp_path
 
@@ -817,9 +818,10 @@ class TestCacheNetworkFallback:
 
     @pytest.fixture
     def isolated_cache(self, tmp_path, monkeypatch):
-        import sustech_survival._cache as cache_mod
-        monkeypatch.setattr(cache_mod, "TMP_ROOT", tmp_path, raising=False)
+        import sustech_survival._settings as settings_mod
+        monkeypatch.setattr(settings_mod, "cache_dir", str(tmp_path))
         import sustech_survival.calendar as cal_mod
+        import sustech_survival._cache as cache_mod
         monkeypatch.setattr(cal_mod, "_cache", cache_mod)
         return tmp_path
 

@@ -92,5 +92,28 @@ def test_calendar_reads_local_repo(tmp_path):
 
 def test_cache_root_override(monkeypatch, tmp_path):
     import sustech_survival._cache as cache
-    monkeypatch.setattr(_settings, "cache_dir", str(tmp_path / "mycache"))
-    assert cache.tmp_root() == tmp_path / "mycache"
+    override = tmp_path / "mycache"
+    monkeypatch.setattr(_settings, "cache_dir", str(override))
+    assert cache.tmp_root() == override
+    # cache_path (the helper every consumer uses) must honour it too
+    assert cache.cache_path("calendar") == override / "calendar"
+    assert cache.cache_path("bb", "x.json") == override / "bb" / "x.json"
+
+
+def test_cache_path_defaults_to_package_tmp():
+    import sustech_survival._cache as cache
+    p = cache.cache_path("sometest")
+    # default root is <package>/tmp (unless overridden in this env)
+    assert p.parent == cache.package_root() / "tmp" or str(p).endswith("tmp/sometest")
+
+
+def test_clear_cache_honours_override(monkeypatch, tmp_path):
+    import sustech_survival._cache as cache
+    override = tmp_path / "mc"
+    monkeypatch.setattr(_settings, "cache_dir", str(override))
+    target = override / "sel" / "f.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("{}", encoding="utf-8")
+    n = cache.clear_cache("sel")
+    assert n == 1
+    assert not (override / "sel").exists()
