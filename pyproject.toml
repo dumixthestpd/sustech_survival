@@ -137,7 +137,7 @@ exclude = [
     "src/sustech_survival/credentials.example.txt",
     "src/sustech_survival/**/session.json",
     # Leave the oversized design master out of the wheel (only the display
-    # mark `logo.svg` / `logo-full.svg` are served).
+    # marks `logo.svg` / `logo-full.svg` / `logo-full-transparent.svg` ship).
     "src/sustech_survival/resources/logo-full-source.svg",
 ]
 
