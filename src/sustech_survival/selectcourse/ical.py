@@ -78,7 +78,7 @@ def courses_to_ical(semester: Semester, *, cal_name: Optional[str] = None) -> st
     lines: list[str] = [
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
-        "PRODID:-//sustech-survival//calendar//EN",
+        "PRODID:-//sustech_survival//calendar//EN",
         f"X-WR-CALNAME:{_escape(name)}",
         "CALSCALE:GREGORIAN",
     ]
@@ -94,7 +94,7 @@ def courses_to_ical(semester: Semester, *, cal_name: Optional[str] = None) -> st
                     desc_parts.append(f"Teacher: {ct.teacher}")
                 desc_parts.append(f"Week {_week_num(d, semester)}")
                 description = " | ".join(desc_parts)
-                uid = f"{uid_seed}-{d.isoformat()}-p{p}@sustech-survival"
+                uid = f"{uid_seed}-{d.isoformat()}-p{p}@sustech_survival"
                 lines.append("BEGIN:VEVENT")
                 lines.append(f"UID:{uid}")
                 lines.append(f"DTSTAMP:{_fmt_dt(datetime.now(timezone.utc))}")

@@ -8,7 +8,7 @@ correctly.
 
 References:
     sustech-dev/references/lib-booking-ic-2026-06-29.md — full API map
-    sustech-survival/references/sso-... — auth helper contract
+    sustech_survival/references/sso-... — auth helper contract
 """
 from __future__ import annotations
 

@@ -1,5 +1,5 @@
 """
-sustech-survival unified CLI.
+sustech_survival unified CLI.
 
 Single entry point for all submodules. Mirrors the ``git <subcmd>`` style::
 
@@ -568,7 +568,7 @@ def webui_install(source: str, skin_path: str) -> None:
     if source == "default" or (skin_path is None and source == "default"):
         dst = loader.install_skin("default", default=True)
         click.secho(f"✅ Installed the default skin → {dst}", fg="green")
-        click.echo("   It's now a folder under ~/.config/sustech-survival/webui/skins/")
+        click.echo("   It's now a folder under ~/.config/sustech_survival/webui/skins/")
         click.echo("   edit it, or run `sustech webui install --path <your-skin>` for your own.")
         return
     if skin_path:
@@ -973,7 +973,7 @@ def lib_search_cmd(query: str, scope: str, material_type: tuple, library: tuple,
 
     Uses Playwright because Primo's SSL config (sustc.primo.exlibrisgroup.com.cn)
     refuses modern OpenSSL's handshake — Python urllib/requests can't reach it.
-    If Playwright isn't installed (`pip install sustech-survival[playwright]`),
+    If Playwright isn't installed (`pip install sustech_survival[playwright]`),
     returns no results.
 
     Each result includes rank, title, format (图书/文章/期刊/...), detail URL,
@@ -1012,7 +1012,7 @@ def lib_search_cmd(query: str, scope: str, material_type: tuple, library: tuple,
     if not results:
         click.echo(
             "no results (auth required? Playwright installed? "
-            "→ pip install sustech-survival[playwright])", err=True)
+            "→ pip install sustech_survival[playwright])", err=True)
         raise SystemExit(1)
     for r in results:
         flags = []
@@ -1086,7 +1086,7 @@ def build_cli() -> click.Group:
     """
     @click.group(
         name="sustech",
-        help="sustech-survival unified CLI. Use `sustech <subcommand> --help` for details.",
+        help="sustech_survival unified CLI. Use `sustech <subcommand> --help` for details.",
         context_settings={"help_option_names": ["-h", "--help"]},
     )
     @click.version_option(__version__, "-V", "--version", prog_name="sustech")

@@ -72,7 +72,7 @@ class Authorizer(ABC):
 
     Credentials: read from credentials.txt (format: username:password).
     Resolution: SUSTECH_CREDENTIALS env var →
-    ~/.config/sustech-survival/credentials.txt →
+    ~/.config/sustech_survival/credentials.txt →
     ./credentials.txt → walk-up from package source.
     Access via auth.username / auth.password.
 
@@ -363,7 +363,7 @@ class Authorizer(ABC):
             raise AuthorizerError(
                 f"Credentials not found at {self._creds_file}\n"
                 "Set SUSTECH_CREDENTIALS env var, or create "
-                "~/.config/sustech-survival/credentials.txt (format: sid:password)"
+                "~/.config/sustech_survival/credentials.txt (format: sid:password)"
             )
         if ':' not in line:
             raise AuthorizerError(f"Invalid format in {self._creds_file} (need username:password)")
@@ -374,7 +374,7 @@ class Authorizer(ABC):
 
         Search order (first match wins):
           1. ``SUSTECH_CREDENTIALS`` env var — explicit path to a credentials file
-          2. ``~/.config/sustech-survival/credentials.txt`` — XDG-style user config
+          2. ``~/.config/sustech_survival/credentials.txt`` — XDG-style user config
           3. ``./credentials.txt`` — current working directory
           4. Walk up from this file looking for ``credentials.txt`` — dev/editable installs
         """
@@ -386,7 +386,7 @@ class Authorizer(ABC):
             return Path(env_path)
 
         # 2. XDG user config
-        xdg = Path.home() / ".config" / "sustech-survival" / "credentials.txt"
+        xdg = Path.home() / ".config" / "sustech_survival" / "credentials.txt"
         if xdg.exists():
             return xdg
 
