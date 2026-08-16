@@ -162,7 +162,7 @@ class PMSAuth(Authorizer):
         """
         from playwright.sync_api import sync_playwright
 
-        cf = Path(self.creds_file)
+        cf = Path(self._creds_file)
         if not cf.exists():
             raise AuthorizerError(f"No credentials at {cf}")
         line = cf.read_text().strip()

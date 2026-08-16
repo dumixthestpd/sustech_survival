@@ -3,7 +3,7 @@
 # sustech-survival
 
 <p align="center">
-  <img src="src/sustech_survival/resources/logo-full.svg"
+  <img src="src/sustech_survival/resources/logo-full-transparent.svg"
        alt="sustech-survival" width="360">
 </p>
 
@@ -47,20 +47,20 @@ By connecting the services at the code level, we simplify the campus systems, of
 
 ### 1. Install
 
-The CLI (`click`) is in core deps — `pip install git+https://github.com/dumixthestpd/sustech_survival.git` gives you both the Python API and the `sustech` command.
+The CLI (`click`) is in core deps — `pip install git+https://github.com/dumixthestpd/sustech-survival.git` gives you both the Python API and the `sustech` command.
 
 Extras add heavier optional capabilities:
 
 - `webui` — Flask SPA: TIS course selector + transit map + NCES hover cards
 - `nces` — Anubis PoW solver for NCES listing scrape
 - `papers` — cloudscraper for publisher sites that block plain requests
+- `playwright` — browser-backed BB download / submit (for UIs that only render in JS)
 - `all` — Everything above
 
 ```bash
-```bash
-pip install "sustech-survival @ git+https://github.com/dumixthestpd/sustech_survival.git"               # API + CLI only
-pip install "sustech-survival[webui] @ git+https://github.com/dumixthestpd/sustech_survival.git"        # + web UI
-pip install "sustech-survival[all] @ git+https://github.com/dumixthestpd/sustech_survival.git"          # everything
+pip install "sustech-survival @ git+https://github.com/dumixthestpd/sustech-survival.git"               # API + CLI only
+pip install "sustech-survival[webui] @ git+https://github.com/dumixthestpd/sustech-survival.git"        # + web UI
+pip install "sustech-survival[all] @ git+https://github.com/dumixthestpd/sustech-survival.git"          # everything
 ```
 
 ### 2. Authentication

@@ -37,7 +37,7 @@ class WoSAuth(ShibbolethAuthorizer):
 
     @property
     def submodule_dir(self):
-        return self.skill_root / "wos"
+        return self.skill_dir / "wos"
 
     def find_institution_link(self, page):
         return None
@@ -93,7 +93,7 @@ class WoSAuth(ShibbolethAuthorizer):
 
         # Load credentials
         if not username or not password:
-            cf = Path(self.creds_file)
+            cf = Path(self._creds_file)
             if cf.exists():
                 line = cf.read_text().strip()
                 if ':' in line:

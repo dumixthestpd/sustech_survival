@@ -49,7 +49,7 @@ class WileyAuth(Authorizer):
 
     @property
     def submodule_dir(self):
-        return self.skill_root / "wiley"
+        return self.skill_dir / "wiley"
 
 
 _wiley = WileyAuth(skill_dir=str(Path(__file__).resolve().parent.parent.parent.parent))

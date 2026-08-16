@@ -25,7 +25,7 @@ class TISAuthEval(TISAuth):
 
     def evaluations(
         self,
-        xnxq: str = "2025-2026-2",
+        xnxq: Optional[str] = None,
         status: str = "all",
     ) -> list[dict]:
         """
@@ -39,7 +39,8 @@ class TISAuthEval(TISAuth):
              → course list (kcmc, kcdm, lsjgzt, etc.)
 
         Args:
-            xnxq:   Semester code (e.g. "2025-20262" or "2025-2026-2")
+            xnxq:   Semester code (e.g. "2025-20262" or "2025-2026-2").
+                    Defaults to the live current semester.
             status: "all", "pending" (lsjgzt=0), or "saved" (lsjgzt=3)
 
         Returns list of course dicts with keys:
@@ -47,13 +48,14 @@ class TISAuthEval(TISAuth):
             wjid, jgwid, xnxq, rwh, questionnaire_uuid, theme_uuid, task_rwid
         """
         # Normalise xnxq: "2025-2026-2" → "2025-20262" (backend format)
+        if not xnxq:
+            from sustech_survival.semester import Semester
+            xnxq = Semester.current().tis
         xnxq_raw = xnxq  # preserve original for storage
         if xnxq and len(xnxq) == 11 and xnxq.count("-") == 2:
             # "2025-2026-2" → indices: 0-3=year, 4="-", 5-8=year2, 9="-", 10=term
             # "2025-20262" → indices: 0-3=year, 4="-", 5-9=year2+term, 10=empty
             xnxq = f"{xnxq[:4]}-{xnxq[5:9]}{xnxq[10]}"  # "2025-2026-2" → "2025-20262"
-        elif not xnxq:
-            xnxq = "2025-20262"
         sess = self.session
 
         # Step 1: get 3 category tasks
@@ -156,7 +158,7 @@ class TISAuthEval(TISAuth):
 
         return result
 
-    def open_evaluation(self, course: dict, xnxq: str = "2025-2026-2") -> Evaluation:
+    def open_evaluation(self, course: dict, xnxq: Optional[str] = None) -> Evaluation:
         """
         Open the evaluation form for a course dict (from evaluations()).
 
@@ -166,6 +168,9 @@ class TISAuthEval(TISAuth):
 
         Returns an Evaluation object. Call ``ev.load()`` then ``ev.save()``.
         """
+        if not xnxq:
+            from sustech_survival.semester import Semester
+            xnxq = Semester.current().tis_human
         from playwright.sync_api import sync_playwright
 
         target = course
@@ -272,7 +277,7 @@ class TISAuthEval(TISAuth):
 
     def auto_fill(
         self,
-        xnxq: str = "2025-2026-2",
+        xnxq: Optional[str] = None,
         courses: Optional[list[str]] = None,
         score: int = 10,
         text: str = "很好",
@@ -429,7 +434,7 @@ class TISAuthEval(TISAuth):
 
     def lazy_submit(
         self,
-        xnxq: str = "2025-2026-2",
+        xnxq: Optional[str] = None,
         courses: Optional[list[str]] = None,
         score: int = 10,
         text: str = "很好",
@@ -609,7 +614,7 @@ class TISAuthEval(TISAuth):
     def submit(
         self,
         course: str,
-        xnxq: str = "2025-2026-2",
+        xnxq: Optional[str] = None,
     ) -> dict:
         """
         Submit a single already-filled evaluation by clicking 提交.
@@ -728,7 +733,7 @@ class TISAuthEval(TISAuth):
 
 # ── standalone wrappers ───────────────────────────────────────────────────────────-
 def auto_fill(
-    xnxq: str = "2025-2026-2",
+    xnxq: Optional[str] = None,
     courses: Optional[list[str]] = None,
     score: int = 10,
     text: str = "很好",
@@ -744,7 +749,7 @@ def auto_fill(
     return auth.auto_fill(xnxq=xnxq, courses=courses, score=score, text=text)
 
 def lazy_submit(
-    xnxq: str = "2025-2026-2",
+    xnxq: Optional[str] = None,
     courses: Optional[list[str]] = None,
     score: int = 10,
     text: str = "很好",

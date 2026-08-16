@@ -259,7 +259,8 @@ def evals_cmd(pending):
         click.secho("No evaluation tasks found.", fg="yellow")
         return
 
-    xnxq = "2025-20262"  # Spring 2026
+    from sustech_survival.semester import Semester
+    xnxq = Semester.current().tis  # live current semester
     all_courses = []
 
     for task in tasks:

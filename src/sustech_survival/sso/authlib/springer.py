@@ -89,7 +89,7 @@ class SpringerAuth(Authorizer):
 
     @property
     def submodule_dir(self):
-        return self.skill_root / "springer"
+        return self.skill_dir / "springer"
 
 
 _springer = SpringerAuth(skill_dir=str(Path(__file__).resolve().parent.parent.parent.parent))

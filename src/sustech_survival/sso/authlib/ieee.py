@@ -109,7 +109,7 @@ class IEEEAuth(Authorizer):
 
     @property
     def submodule_dir(self):
-        return self.skill_root / "ieee"
+        return self.skill_dir / "ieee"
 
 
 _ieee = IEEEAuth(skill_dir=str(Path(__file__).resolve().parent.parent.parent.parent))

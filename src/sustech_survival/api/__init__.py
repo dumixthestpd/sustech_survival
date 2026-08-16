@@ -10,8 +10,9 @@ dashboard, …).
 - ``api.transit``— live bus positions, facilities
 - ``api.nces``   — course-evaluation listing/search/detail
 
-None of these import Flask. ``sustech_survival.webui`` mounts them as
-``/api/*`` routes; a different head could call them directly.
+None of these import Flask. The webui blueprints wire these data functions
+into the HTTP ``/api/*`` routes; a bespoke head (native app, CLI dashboard,
+skin) can call them directly.
 """
 from __future__ import annotations
 

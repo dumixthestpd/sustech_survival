@@ -52,7 +52,7 @@ class ScopusAuth(Authorizer):
 
     @property
     def submodule_dir(self):
-        return self.skill_root / "scopus"
+        return self.skill_dir / "scopus"
 
 
 _scopus = ScopusAuth(skill_dir=str(Path(__file__).resolve().parent.parent.parent.parent))

@@ -83,7 +83,7 @@ class LibBookingAuth(CASAuthorizer):
 
     @property
     def submodule_dir(self) -> Path:
-        return self.skill_root / "lib" / "booking"
+        return self.skill_dir / "lib" / "booking"
 
     @property
     def session_file(self) -> Path:

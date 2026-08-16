@@ -63,7 +63,7 @@ class ACSAuth(Authorizer):
 
     @property
     def submodule_dir(self):
-        return self.skill_root / "acs"
+        return self.skill_dir / "acs"
 
 
 _acm = ACSAuth(skill_dir=str(Path(__file__).resolve().parent.parent.parent.parent))

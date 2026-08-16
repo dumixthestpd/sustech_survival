@@ -82,7 +82,7 @@ class JSTORAuth(Authorizer):
 
     @property
     def submodule_dir(self):
-        return self.skill_root / "jstor"
+        return self.skill_dir / "jstor"
 
 
 _jstor = JSTORAuth(skill_dir=str(Path(__file__).resolve().parent.parent.parent.parent))

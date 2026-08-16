@@ -4,7 +4,7 @@ import requests
 from typing import Optional
 
 UNPAYWALL_BASE = "https://api.unpaywall.org/v2"
-EMAIL = "dumix@sustech.edu.cn"  # Required by Unpaywall TOS
+EMAIL = "dumix@local"  # Required by Unpaywall TOS
 
 
 def resolve_oa_pdf(doi: str) -> tuple[bool, Optional[str]]:

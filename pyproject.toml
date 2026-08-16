@@ -115,8 +115,6 @@ include = [
     "src/sustech_survival/**/*.py",
     # Non-Python assets shipped with the package.
     "src/sustech_survival/resources/**/*",
-    "src/sustech_survival/references/**/*.md",
-    "src/sustech_survival/docs/**/*.md",
     # context profile template.
     "src/sustech_survival/context/templates/**/*",
     # Web UI: skin-loader head + shipped default skin assets.
@@ -159,9 +157,6 @@ exclude = [
     "**/credentials.txt",
     "**/session.json",
 ]
-
-[tool.hatch.build.targets.wheel.shared-data]
-"src/sustech_survival/resources" = "sustech_survival/resources"
 
 # ── Pytest (used by `pip install -e .[all]` + dev workflow) ──────────────
 

@@ -4,8 +4,12 @@ sustech_survival.webui.loader — the skin loader (the "head").
 This is a THIN, replaceable layer. It does two things:
 
   1. picks the active skin and serves its static assets + entry page, and
-  2. mounts the ``/api/*`` JSON contract, implemented in
-     ``sustech_survival.api`` (the core, Flask-free data layer).
+  2. provides the ``sustech_survival.api`` Flask-free data contract.
+
+The HTTP ``/api/*`` routes themselves are implemented by the webui
+blueprints (``webui/blueprints/*``) and wrap the ``sustech_survival.api``
+data functions. A custom head may call ``sustech_survival.api`` directly
+instead of going through the web UI.
 
 Skins are self-contained folders under ``webui/skins/`` (shipped default) or
 ``~/.config/sustech-survival/webui/skins/`` (user-installed). Each skin has a

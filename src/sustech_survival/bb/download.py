@@ -59,31 +59,16 @@ def api(path, session=None):
 
 # ── Course/Content Resolution ─────────────────────────────────────────────────
 
-# Known active courses for Spring 2026
-_ACTIVE_COURSE_IDS = ["_8053_1", "_8157_1", "_8221_1", "_8328_1", "_8343_1"]
-
 
 def resolve_course(content_id):
     """
-    Find which course owns a content_id (fast path: check active courses first).
+    Find which course owns a content_id.
     Returns course_id string e.g. "8343".
     """
     sess = session()
     cids = [f"_{content_id}_1"]
 
-    for bid in _ACTIVE_COURSE_IDS:
-        for cid in cids:
-            try:
-                r = sess.get(
-                    f"{BB_BASE}/learn/api/public/v1/courses/{bid}/contents/{cid}",
-                    timeout=5
-                )
-                if r.status_code == 200:
-                    return bid.lstrip("_").rstrip("_1")
-            except Exception:
-                pass
-
-    # Fallback: paginated course list
+    # Walk the paginated course list (term _57_1) to find the owning course.
     offset = 0
     while True:
         try:
