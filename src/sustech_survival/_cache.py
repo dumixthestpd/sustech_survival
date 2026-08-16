@@ -26,6 +26,10 @@ from typing import Any, Optional, Tuple
 
 
 _PACKAGE_ROOT: Path = Path(__file__).resolve().parent
+# Default cache root lives next to the package. The override-able setting
+# `cache.dir` (see _settings) may redirect it to a writable dir for a
+# system install; tmp_root() honours that. Modules that cache must call
+# tmp_root()/cache_path(), not read TMP_ROOT directly.
 TMP_ROOT: Path = _PACKAGE_ROOT / "tmp"
 
 
@@ -35,8 +39,13 @@ def package_root() -> Path:
 
 
 def tmp_root() -> Path:
-    """``<sustech_survival>/tmp`` — the cache root for all modules."""
-    return TMP_ROOT
+    """The active cache root — default `<package>/tmp`, overridable via settings.
+
+    Reading this (not the bare ``TMP_ROOT`` constant) is the correct way to
+    locate the cache, so a ``SUSTECH_CACHE_DIR``/config override is honoured.
+    """
+    from . import _settings
+    return Path(_settings.cache_dir) if _settings.cache_dir else TMP_ROOT
 
 
 def cache_path(module: str, *parts: str) -> Path:

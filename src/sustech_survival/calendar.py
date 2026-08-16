@@ -69,16 +69,14 @@ INDEX_WEEKDAY: tuple[Weekday, ...] = (
 
 # -- Constants ---------------------------------------------------
 
-DEFAULT_REPO = (
-    "https://raw.githubusercontent.com/dumixthestpd/sustech-calendar/main/2026"
-)
-# Base URL without the trailing year segment — used to construct the
-# year-specific URL inside ``AcademicCalendar.load`` so that
-# ``load(2027)`` doesn't silently fall back to ``2026``'s data via the
-# hardcoded DEFAULT_REPO. See load() for the substitution.
-DEFAULT_REPO_BASE = (
-    "https://raw.githubusercontent.com/dumixthestpd/sustech-calendar/main"
-)
+# The academic-calendar source is override-able (see sustech_survival._settings)
+# so a user can point it at a local/private more-detailed calendar. The default
+# is the GitHub-hosted sustech-calendar repo. Base excludes the trailing <year>.
+from . import _settings
+DEFAULT_REPO_BASE = _settings.calendar_repo_base
+# Base URL with the year segment, kept for backward-compat (year substitution
+# in load() uses DEFAULT_REPO_BASE; DEFAULT_REPO remains the 2026 default).
+DEFAULT_REPO = f"{DEFAULT_REPO_BASE}/2026"
 _LOCAL_REPO = os.environ.get("SUSTECH_CALENDAR_LOCAL_REPO")
 
 
@@ -730,7 +728,17 @@ class AcademicCalendar:
         # otherwise load(2027) silently fetches DEFAULT_REPO's 2026.
         if base_url == DEFAULT_REPO:
             base_url = f"{DEFAULT_REPO_BASE}/{year}"
-        if online:
+
+        # A local path base (the override-able calendar.repo_base setting may
+        # point at a local mirror) is read straight off disk — no HTTP/ETag.
+        from pathlib import Path as _Path
+        _is_local = (not str(base_url).startswith(("http://", "https://")))
+        if _is_local and online:
+            _local_root = str(_Path(base_url) / str(year))
+            ug = _read_json(f"{_local_root}/undergraduate.json")
+            gr = _read_json(f"{_local_root}/graduate.json")
+            ge = _read_json(f"{_local_root}/general.json")
+        elif online:
             ug = _fetch_json_cached(year, "undergraduate.json", base_url,
                                     cached=cached, refresh=refresh)
             gr = _fetch_json_cached(year, "graduate.json", base_url,

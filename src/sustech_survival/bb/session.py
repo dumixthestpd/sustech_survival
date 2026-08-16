@@ -15,7 +15,7 @@ BB_BASE = "https://bb.sustech.edu.cn"
 SKILL_ROOT = BB_DIR.parent.parent.parent
 
 # Legacy file paths — auth no longer reads/writes these (BBAuth uses
-# in-memory TTL via the Authorizer base class, iron law #12). Kept for
+# in-memory TTL via the Authorizer base class). Kept for
 # backward compat with code that may reference them.
 SESSION_FILE = BB_DIR / "session.json"  # legacy — not used for auth
 COURSES_FILE = BB_DIR / "courses.json"

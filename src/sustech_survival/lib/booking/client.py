@@ -341,7 +341,7 @@ class LibBookingClient:
         """Create a reservation.
 
         `dry_run=True` (default) stages the payload, returns it as a dict,
-        and exits without POSTing — the safe default per iron law #3.
+        and exits without POSTing — the safe default.
         Set `dry_run=False` to actually commit.
 
         `enforce_policy=True` (default) validates against the library
