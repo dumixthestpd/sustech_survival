@@ -122,7 +122,7 @@ print(ctx.to_str())
 python -m sustech_survival.webui
 ```
 
-浏览器打开 `http://localhost:61019` —— TIS 选课界面（含冲突求解）、
+浏览器打开 `http://localhost:20129` —— TIS 选课界面（含冲突求解）、
 校园巴士地图（实时 GPS）、每个课程的 NCES 悬浮卡片。
 
 ---

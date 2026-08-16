@@ -123,7 +123,7 @@ print(ctx.to_str())
 python -m sustech_survival.webui
 ```
 
-Open `http://localhost:61019` — TIS course selector with conflict-free
+Open `http://localhost:20129` — TIS course selector with conflict-free
 scheduling, transit map with live bus GPS, NCES hover cards on every course.
 
 ---
