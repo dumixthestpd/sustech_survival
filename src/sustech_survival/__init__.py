@@ -42,7 +42,7 @@ from . import sso
 # -- papers -----------------------------------------------------------------
 from . import papers
 
-# -- context (replaces old quickcontext) ---------------------------------
+# -- context -------------------------------------------------------------
 from .context import Context, Level  # noqa: F401
 
 # -- semester (canonical type for entire package) ------------------------

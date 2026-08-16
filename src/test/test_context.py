@@ -9,11 +9,9 @@ Covers:
   - to_dict(level=...) tiered dict
   - __str__ defaults to instance level
   - OVERRIDE_TIME / dt injection for deterministic tests
-  - Old quickcontext shim re-exports with DeprecationWarning
 """
 from __future__ import annotations
 
-import warnings
 from datetime import datetime
 from unittest.mock import patch
 
@@ -328,30 +326,6 @@ def test_override_time_changes_now():
     finally:
         from sustech_survival import context as ctx_mod
         ctx_mod.OVERRIDE_TIME = None
-
-
-# --- Deprecation shim ------------------------------------------------------
-
-def test_quickcontext_shim_emits_warning_and_reexports():
-    """The old quickcontext module should re-export Context with a DeprecationWarning."""
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        from sustech_survival.quickcontext import Context as OldContext, Level as OldLevel
-        assert OldContext is Context
-        assert OldLevel is Level
-        # At least one DeprecationWarning was emitted
-        dep_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
-        assert len(dep_warnings) >= 1
-        assert "quickcontext" in str(dep_warnings[0].message)
-        assert "context" in str(dep_warnings[0].message)
-
-
-def test_quickcontext_shim_reexports_constants():
-    """The shim should also re-export CHINA_TZ, ACADEMIC_CALENDARS, etc."""
-    from sustech_survival import quickcontext as qc
-    assert qc.CHINA_TZ is CHINA_TZ
-    assert qc.ACADEMIC_CALENDARS is ACADEMIC_CALENDARS
-    assert qc.HOLIDAY_DATA is HOLIDAY_DATA
 
 
 # --- fetch_next_exam (Q8: bb ddl + tis exams correlated in context) -----
