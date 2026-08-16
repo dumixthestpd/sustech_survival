@@ -1,6 +1,6 @@
----
+﻿---
 name: Bug report
-about: Report a crash or unexpected behavior in sustech-survival
+about: Report a crash or unexpected behavior in sustech_survival
 title: "[BUG] "
 labels: bug
 assignees: ""
@@ -15,7 +15,7 @@ Which subsystem does this affect?
 
 ## Environment
 
-- sustech-survival version: (run `pip show sustech-survival | grep Version`)
+- sustech_survival version: (run `pip show sustech_survival | grep Version`)
 - Python version: (run `python --version`)
 - OS: (e.g. macOS 26, Ubuntu 24.04)
 - Install method: (`pip install ...[all]` / `pip install -e .[all]` / git+ URL)
@@ -41,7 +41,7 @@ What actually happened. Paste the **full** traceback (not a screenshot of one).
 
 **DO NOT share real SUSTech credentials in the issue.** If the bug only
 reproduces under a specific account state (major, year, enrolled courses),
-describe the state — not the values.
+describe the state 鈥?not the values.
 
 ## Network / session log
 

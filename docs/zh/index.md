@@ -1,10 +1,7 @@
-# 文档首页 / Documentation Index
+﻿# 鏂囨。棣栭〉 / Documentation Index
 
-**语言 / Languages:** [English →](../en/index.md) · [中文 (当前)](#)
+**璇█ / Languages:** [English 鈫抅(../en/index.md) 路 [涓枃 (褰撳墠)](#)
 
-`sustech-survival` 的中文文档入口,与 `docs/en/` 平级。
-本目录是模块文档(选课、图书馆、教务、校历、班车……)的中文版位置 —— 文件被翻译后出现在这里,与英文版同样收录在 mkdocs 构建中,两套文档独立维护。
-
-当前各模块的中文翻译还在补充中。打开尚未翻译的模块会显示 `missing-translation.md` 占位页 —— 这是预期行为,不是缺失。
-
-要贡献翻译:在 `docs/zh/<module>.md` 新建文件,或翻译对应的 `docs/en/<module>.md`,然后开 PR。无需先征求许可。
+`sustech_survival` 鐨勪腑鏂囨枃妗ｅ叆鍙?涓?`docs/en/` 骞崇骇銆?鏈洰褰曟槸妯″潡鏂囨。(閫夎銆佸浘涔﹂銆佹暀鍔°€佹牎鍘嗐€佺彮杞︹€︹€?鐨勪腑鏂囩増浣嶇疆 鈥斺€?鏂囦欢琚炕璇戝悗鍑虹幇鍦ㄨ繖閲?涓庤嫳鏂囩増鍚屾牱鏀跺綍鍦?mkdocs 鏋勫缓涓?涓ゅ鏂囨。鐙珛缁存姢銆?
+褰撳墠鍚勬ā鍧楃殑涓枃缈昏瘧杩樺湪琛ュ厖涓€傛墦寮€灏氭湭缈昏瘧鐨勬ā鍧椾細鏄剧ず `missing-translation.md` 鍗犱綅椤?鈥斺€?杩欐槸棰勬湡琛屼负,涓嶆槸缂哄け銆?
+瑕佽础鐚炕璇?鍦?`docs/zh/<module>.md` 鏂板缓鏂囦欢,鎴栫炕璇戝搴旂殑 `docs/en/<module>.md`,鐒跺悗寮€ PR銆傛棤闇€鍏堝緛姹傝鍙€?

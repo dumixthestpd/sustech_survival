@@ -1,6 +1,6 @@
 """Uniform cache layout: <sustech_survival>/tmp/<module>/...
 
-All persistent caches in sustech-survival live under the package's own
+All persistent caches in sustech_survival live under the package's own
 directory (resolved via ``Path(__file__).parent``), so:
 
 - One canonical location, no env-var dance, no XDG branching.

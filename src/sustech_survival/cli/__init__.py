@@ -1,4 +1,4 @@
-"""sustech-survival unified CLI — ``sustech <subcommand>`` dispatch.
+"""sustech_survival unified CLI — ``sustech <subcommand>`` dispatch.
 
 Every subcommand group lives in a sibling module under ``cli/``
 (``transit.py``, ``faculty.py``, ``booking.py``, …) and is registered

@@ -12,7 +12,7 @@ Login-only reviews (per-user review text) require full CAS auth via the
 cas-proxy.cra.moe redirect — scaffolded but not yet implemented.
 
 Install:
-    pip install sustech-survival[nces]   # adds anubis-solver dep
+    pip install sustech_survival[nces]   # adds anubis-solver dep
 """
 from __future__ import annotations
 

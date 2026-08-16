@@ -3,7 +3,9 @@ requires = ["hatchling>=1.18"]
 build-backend = "hatchling.build"
 
 [project]
-name = "sustech-survival"
+# Distribution name is normalized (PEP 503 treats "-" and "_" as equal), kept
+# as underscore to match the repo slug and the import package spelling.
+name = "sustech_survival"
 description = "sustech_survival is a Python module that allows API-level SUSTech service calls. It satisfies everyday needs of SUSTech students including BB, TIS, library, PMS, and more."
 readme = "README.md"
 license = "PolyForm-Noncommercial-1.0.0"
@@ -82,16 +84,16 @@ docs = [
     "mkdocs-static-i18n>=1.2",
 ]
 all = [
-    "sustech-survival[playwright,webui,nces,papers,pms]",
+    "sustech_survival[playwright,webui,nces,papers,pms]",
     # Note: [docs] is intentionally NOT in [all] — it's a doc-author-only
     # extra. Library users don't need MkDocs.
 ]
 
 [project.urls]
-Homepage = "https://github.com/dumixthestpd/sustech-survival"
-Documentation = "https://github.com/dumixthestpd/sustech-survival#readme"
-Issues = "https://github.com/dumixthestpd/sustech-survival/issues"
-Changelog = "https://github.com/dumixthestpd/sustech-survival/releases"
+Homepage = "https://github.com/dumixthestpd/sustech_survival"
+Documentation = "https://github.com/dumixthestpd/sustech_survival#readme"
+Issues = "https://github.com/dumixthestpd/sustech_survival/issues"
+Changelog = "https://github.com/dumixthestpd/sustech_survival/releases"
 
 [project.scripts]
 # Unified subcommand dispatcher — `sustech bb`, `sustech tis`, etc.

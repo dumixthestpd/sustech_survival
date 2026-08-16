@@ -12,7 +12,7 @@ data functions. A custom head may call ``sustech_survival.api`` directly
 instead of going through the web UI.
 
 Skins are self-contained folders under ``webui/skins/`` (shipped default) or
-``~/.config/sustech-survival/webui/skins/`` (user-installed). Each skin has a
+``~/.config/sustech_survival/webui/skins/`` (user-installed). Each skin has a
 ``manifest.json`` describing its name, entry page, and which ``/api/*``
 endpoints it needs.
 
@@ -39,7 +39,7 @@ from pathlib import Path
 # Shipped default skin lives in this package under skins/default.
 _PKG_SKINS = Path(__file__).resolve().parent / "skins"
 # User-installed skins cache.
-_USER_SKINS = Path.home() / ".config" / "sustech-survival" / "webui" / "skins"
+_USER_SKINS = Path.home() / ".config" / "sustech_survival" / "webui" / "skins"
 
 
 @dataclass(frozen=True)
