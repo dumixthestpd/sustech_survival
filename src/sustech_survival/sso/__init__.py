@@ -46,7 +46,11 @@ examples of each pattern.
 
 # -- Public API ----------------------------------------------------------------
 
-from .authorizer import Authorizer, AuthorizerError, CAS_BASE, UA, require_auth
+from .authorizer import (
+    Authorizer, AuthorizerError, CAS_BASE, UA, require_auth,
+    cred_set, cred_clear,
+    resolve_creds_path, write_credentials, read_credentials,
+)
 from .providers.cas import CASAuthorizer
 from .providers.shibboleth import ShibbolethAuthorizer
 from .providers.wifi import WiFiAuth
@@ -66,6 +70,11 @@ __all__ = [
     "PMSAuth",
     "require_auth",
     "ensured",
+    "cred_set",
+    "cred_clear",
+    "resolve_creds_path",
+    "write_credentials",
+    "read_credentials",
 ]
 
 

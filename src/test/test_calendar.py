@@ -666,9 +666,8 @@ class TestCache:
 
     @pytest.fixture
     def isolated_cache(self, tmp_path, monkeypatch):
-        """Redirect cache writes to tmp_path via the cache.dir setting."""
-        import sustech_survival._settings as settings_mod
-        monkeypatch.setattr(settings_mod, "cache_dir", str(tmp_path))
+        """Redirect cache writes to tmp_path via the SUSTECH_CACHE_DIR env var."""
+        monkeypatch.setenv("SUSTECH_CACHE_DIR", str(tmp_path))
         import sustech_survival.calendar as cal_mod
         import sustech_survival._cache as cache_mod
         monkeypatch.setattr(cal_mod, "_cache", cache_mod)
@@ -818,8 +817,7 @@ class TestCacheNetworkFallback:
 
     @pytest.fixture
     def isolated_cache(self, tmp_path, monkeypatch):
-        import sustech_survival._settings as settings_mod
-        monkeypatch.setattr(settings_mod, "cache_dir", str(tmp_path))
+        monkeypatch.setenv("SUSTECH_CACHE_DIR", str(tmp_path))
         import sustech_survival.calendar as cal_mod
         import sustech_survival._cache as cache_mod
         monkeypatch.setattr(cal_mod, "_cache", cache_mod)
@@ -843,3 +841,59 @@ class TestCacheNetworkFallback:
                 2026, "undergraduate",
                 base_url="http://127.0.0.1:1/dead-server",
             )
+
+
+class TestRepoBaseKwarg:
+    """The calendar source default comes from a constant (env override at
+    import) and every load takes an explicit base_url= — no settings object."""
+
+    def test_default_repo_base_is_constant(self):
+        import sustech_survival.calendar as cal
+        assert cal.DEFAULT_REPO_BASE.startswith("http")
+        assert "sustech-calendar" in cal.DEFAULT_REPO_BASE
+        assert str(cal.DEFAULT_REPO).startswith(cal.DEFAULT_REPO_BASE)
+
+    def test_load_accepts_base_url_override(self, fake_calendar_server):
+        base_url, _ = fake_calendar_server
+        cal = AcademicCalendar.load(2026, "undergraduate", base_url=base_url,
+                                    cached=False)
+        assert cal.year == 2026
+        assert cal.spring is not None
+
+    def test_reads_local_repo_off_disk(self, tmp_path):
+        """base_url pointing at a local dir reads straight off disk — no HTTP."""
+        year = 2026
+        base = tmp_path / "cal"
+        (base / str(year)).mkdir(parents=True, exist_ok=True)
+
+        def _sem(season_key, final_weeks):
+            return {
+                "start": "2026-02-23" if season_key == "spring" else "2026-08-24",
+                "end":   "2026-06-30" if season_key == "spring" else "2027-01-10",
+                "sign_in": "2026-02-24" if season_key == "spring" else "2026-08-25",
+                "teaching_start": "2026-02-25" if season_key == "spring" else "2026-09-07",
+                "total_teaching_weeks": 17,
+                "midterm": {"start": "2026-04-13", "end": "2026-04-26",
+                            "equivalent_weeks": [8, 9]},
+                "final": {"start": "2026-06-08" if season_key == "spring" else "2027-01-04",
+                          "end": "2026-06-18" if season_key == "spring" else "2027-01-10",
+                          "equivalent_weeks": final_weeks},
+                "compensatories": [],
+            }
+
+        payload = {
+            "spring_semester": _sem("spring", [16, 17]),
+            "fall_semester": _sem("fall", [17]),
+        }
+        (base / str(year) / "undergraduate.json").write_text(
+            json.dumps(payload), encoding="utf-8")
+        (base / str(year) / "graduate.json").write_text(
+            json.dumps(payload), encoding="utf-8")
+        (base / str(year) / "general.json").write_text(
+            json.dumps({"holidays": []}), encoding="utf-8")
+
+        cal = AcademicCalendar.load(year, level="undergraduate",
+                                    base_url=str(base), online=True, cached=False)
+        assert cal.year == year
+        assert cal.spring is not None
+        assert cal.fall is not None

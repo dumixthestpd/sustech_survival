@@ -15,7 +15,8 @@ Architecture mirrors `sustech_survival.booking.BookingClient`:
 The full campus schedule (~1499 courses × N slots) is fetched once, parsed
 into ScheduleSlots, and indexed. Subsequent queries are O(1) dict lookups.
 
-Cache: stored under ``<sustech_survival>/tmp/classroom/`` with a timestamp.
+Cache: stored under the unified cache root
+``<cwd>/__sustech_cache__/classroom/`` with a timestamp.
 Default TTL: 3600s. Pass ``max_age=0`` to force a refresh.
 """
 from __future__ import annotations
@@ -130,7 +131,8 @@ class ClassroomOccupancy:
     def __init__(self, *, xn: Optional[str] = None, xq: Optional[str] = None,
                  semester: Optional[Semester] = None,
                  max_age: int = DEFAULT_TTL,
-                 live_client: Optional[LiveOccupancyClient] = None):
+                 live_client: Optional[LiveOccupancyClient] = None,
+                 cache_dir: Optional[Path] = None):
         if semester is not None:
             self._sem = semester
         elif xn is None and xq is None:
@@ -139,10 +141,11 @@ class ClassroomOccupancy:
             current = Semester.current()
             self._sem = Semester(xn or current.xn, xq or current.xq)
         self.max_age = max_age
-        # Cache lives in the uniform package-scoped tmp/ tree.
+        # Cache lives in the unified __sustech_cache__ tree; caller may pass
+        # an explicit cache_dir= to override (tests / custom locations).
         from sustech_survival import _cache
         self._cache_helper = _cache
-        self.cache_dir = _cache.cache_path("classroom")
+        self.cache_dir = cache_dir or _cache.cache_path("classroom")
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._slots: Optional[List[ScheduleSlot]] = None
         self._rooms: Optional[Dict[str, Room]] = None

@@ -157,7 +157,7 @@ def sso_creds_set(sid: Optional[str], password: Optional[str]) -> None:
         password = click.prompt("SUSTech password", hide_input=True,
                                 confirmation_prompt=True)
     try:
-        target = write_credentials(sid, password)  # default ~/.config path
+        target = write_credentials(sid, password)  # default: ./credentials.txt (cwd)
     except Exception as e:  # noqa: BLE001 — surface a clean message
         click.secho(f"Failed to write credentials: {e}", fg="red")
         raise SystemExit(1)
@@ -166,8 +166,18 @@ def sso_creds_set(sid: Optional[str], password: Optional[str]) -> None:
 
 @sso_creds_cmd.command(name="status", help="Show the credentials path + existence.")
 def sso_creds_status() -> None:
-    """Print the resolved credentials path and whether it exists (never the password)."""
-    from ..sso.authorizer import resolve_creds_path
+    """Print the resolved creds source and whether the file exists.
+
+    Precedence: cred_set() (in-memory) > ./credentials.txt (cwd) >
+    SUSTECH_CREDENTIALS env var. Never prints the password.
+    """
+    from ..sso.authorizer import resolve_creds_path, _IN_MEMORY_CREDS
+    if _IN_MEMORY_CREDS is not None:
+        click.secho("Credentials source: cred_set() (in memory)", bold=True)
+        click.echo("File: n/a (in-memory override active)")
+        click.echo("Set a file: `sustech sso creds set --sid 12410000` "
+                   "(password prompts hidden).")
+        return
     path = resolve_creds_path()
     click.secho(f"Credentials path: {path}", bold=True)
     click.echo(f"Exists: {path.exists()}")

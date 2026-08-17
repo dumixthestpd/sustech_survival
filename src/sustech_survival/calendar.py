@@ -69,11 +69,14 @@ INDEX_WEEKDAY: tuple[Weekday, ...] = (
 
 # -- Constants ---------------------------------------------------
 
-# The academic-calendar source is override-able (see sustech_survival._settings)
-# so a user can point it at a local/private more-detailed calendar. The default
-# is the GitHub-hosted sustech-calendar repo. Base excludes the trailing <year>.
-from . import _settings
-DEFAULT_REPO_BASE = _settings.calendar_repo_base
+# The academic-calendar source is override-able via the SUSTECH_CALENDAR_REPO
+# env var (or per-call base_url= kwarg), so a user can point it at a local /
+# private more-detailed calendar. The default is the GitHub-hosted
+# sustech-calendar repo. Base excludes the trailing <year>.
+DEFAULT_REPO_BASE = os.environ.get(
+    "SUSTECH_CALENDAR_REPO",
+    "https://raw.githubusercontent.com/dumixthestpd/sustech-calendar/main",
+)
 # Base URL with the year segment, kept for backward-compat (year substitution
 # in load() uses DEFAULT_REPO_BASE; DEFAULT_REPO remains the 2026 default).
 DEFAULT_REPO = f"{DEFAULT_REPO_BASE}/2026"
@@ -688,6 +691,7 @@ class AcademicCalendar:
         cached: bool = True,
         refresh: bool = False,
         base_url: str = DEFAULT_REPO,
+        cache_root: Optional[Path] = None,
     ) -> "AcademicCalendar":
         """Load the academic calendar for the given year.
 
@@ -699,8 +703,9 @@ class AcademicCalendar:
                      When ``online=False`` the cache is not consulted,
                      and ``$SUSTECH_CALENDAR_LOCAL_REPO`` must be set.
         ``cached``:  (only when ``online=True``) consult and update the
-                     on-disk cache under
-                     ``<sustech_survival>/tmp/calendar/{year}/``.
+                     on-disk cache under the unified cache root
+                     (``<cwd>/__sustech_cache__/calendar/{year}/`` —
+                     override via ``SUSTECH_CACHE_DIR`` or ``cache_root=``).
                      Set ``cached=False`` for one-shot loads that should
                      never touch the disk (e.g. tests).
         ``refresh``: (only when ``online=True``) ignore any cached ETag and
@@ -708,11 +713,15 @@ class AcademicCalendar:
                      after upstream publishes a fix you want immediately,
                      or if your local cache has somehow drifted.
         ``base_url``: override the GitHub raw base URL (forks, mirrors).
+        ``cache_root``: explicit cache root for the per-year JSON cache
+            (default: the unified ``__sustech_cache__`` dir; pass a Path to
+            isolate tests or point at a custom location).
 
         Cache behaviour in detail:
           * First load (no cache): downloads all three JSONs, saves them
-            under ``tmp/calendar/{year}/`` with a ``.meta.json`` containing
-            the server's ETag, fetched timestamp, source URL, and SHA-1.
+            under ``{cache_root}/calendar/{year}/`` with a ``.meta.json``
+            containing the server's ETag, fetched timestamp, source URL,
+            and SHA-1.
           * Subsequent loads: sends ``If-None-Match`` per file. 304 means
             the cached copy is still fresh; 200 means the body is new and
             gets rewritten to disk.
@@ -720,6 +729,9 @@ class AcademicCalendar:
             copy rather than raising — the whole point of caching is
             resilience.
         """
+        from pathlib import Path as _Path
+        if cache_root is not None:
+            cache_root = _Path(cache_root)
         if level not in ("undergraduate", "graduate"):
             raise CalendarError(
                 f"level must be 'undergraduate' or 'graduate', got {level!r}"
@@ -729,9 +741,8 @@ class AcademicCalendar:
         if base_url == DEFAULT_REPO:
             base_url = f"{DEFAULT_REPO_BASE}/{year}"
 
-        # A local path base (the override-able calendar.repo_base setting may
-        # point at a local mirror) is read straight off disk — no HTTP/ETag.
-        from pathlib import Path as _Path
+        # A local path base (the base_url= kwarg / SUSTECH_CALENDAR_REPO env
+        # may point at a local mirror) is read straight off disk — no HTTP/ETag.
         _is_local = (not str(base_url).startswith(("http://", "https://")))
         if _is_local and online:
             _local_root = str(_Path(base_url) / str(year))
@@ -740,11 +751,14 @@ class AcademicCalendar:
             ge = _read_json(f"{_local_root}/general.json")
         elif online:
             ug = _fetch_json_cached(year, "undergraduate.json", base_url,
-                                    cached=cached, refresh=refresh)
+                                    cached=cached, refresh=refresh,
+                                    cache_root=cache_root)
             gr = _fetch_json_cached(year, "graduate.json", base_url,
-                                    cached=cached, refresh=refresh)
+                                    cached=cached, refresh=refresh,
+                                    cache_root=cache_root)
             ge = _fetch_json_cached(year, "general.json", base_url,
-                                    cached=cached, refresh=refresh)
+                                    cached=cached, refresh=refresh,
+                                    cache_root=cache_root)
         else:
             if not _LOCAL_REPO:
                 raise CalendarError(
@@ -846,24 +860,24 @@ class AcademicCalendar:
 _META_FILENAME = ".meta.json"
 
 
-def _meta_path(year: int) -> Path:
-    """``<sustech_survival>/tmp/calendar/{year}/.meta.json``."""
-    return _cache.cache_path("calendar", str(year), _META_FILENAME)
+def _meta_path(year: int, cache_root: Optional[Path] = None) -> Path:
+    """``<cache_root>/calendar/{year}/.meta.json``."""
+    return _cache.cache_path("calendar", str(year), _META_FILENAME, root=cache_root)
 
 
-def _payload_path(year: int, filename: str) -> Path:
-    """``<sustech_survival>/tmp/calendar/{year}/{filename}``."""
-    return _cache.cache_path("calendar", str(year), filename)
+def _payload_path(year: int, filename: str, cache_root: Optional[Path] = None) -> Path:
+    """``<cache_root>/calendar/{year}/{filename}``."""
+    return _cache.cache_path("calendar", str(year), filename, root=cache_root)
 
 
-def _load_meta(year: int) -> dict:
+def _load_meta(year: int, cache_root: Optional[Path] = None) -> dict:
     """Read the per-year meta sidecar; empty dict if missing/corrupt."""
-    return _cache.load_json(_meta_path(year)) or {}
+    return _cache.load_json(_meta_path(year, cache_root)) or {}
 
 
-def _save_meta(year: int, meta: dict) -> None:
+def _save_meta(year: int, meta: dict, cache_root: Optional[Path] = None) -> None:
     """Write the per-year meta sidecar atomically."""
-    _cache.save_json(_meta_path(year), meta)
+    _cache.save_json(_meta_path(year, cache_root), meta)
 
 
 def _fetch_json_cached(
@@ -873,6 +887,7 @@ def _fetch_json_cached(
     *,
     cached: bool,
     refresh: bool,
+    cache_root: Optional[Path] = None,
 ) -> dict:
     """Fetch one JSON, honouring the per-year cache and ETag.
 
@@ -885,16 +900,19 @@ def _fetch_json_cached(
             body and update meta.
           - If no cache exists, GET, save body and meta.
 
+    ``cache_root``: explicit cache root (default: the unified
+    ``__sustech_cache__`` dir via :func:`sustech_survival._cache.tmp_root`).
+
     Network failures with a valid cached copy fall back to the cached
     body — that's the whole point of caching for resilience.
     """
     url = f"{base_url}/{filename}"
-    target = _payload_path(year, filename)
+    target = _payload_path(year, filename, cache_root)
 
     if not cached:
         return _fetch_json(url)
 
-    meta = _load_meta(year)
+    meta = _load_meta(year, cache_root)
     cached_etag = None if refresh else meta.get("files", {}).get(filename, {}).get("etag")
 
     try:
@@ -921,17 +939,19 @@ def _fetch_json_cached(
             # 304 but no body on disk — shouldn't happen, but re-download
             # to recover rather than blow up.
             body, new_etag, status = _cache.http_get_with_etag(url, None)
-            return _decode_and_cache(year, filename, body, new_etag, url)
+            return _decode_and_cache(year, filename, body, new_etag, url,
+                                     cache_root=cache_root)
         # Refresh the fetched_at timestamp so we can see when we last
         # successfully validated.
         meta.setdefault("files", {}).setdefault(filename, {})["fetched_at"] = (
             datetime.now(timezone.utc).isoformat()
         )
-        _save_meta(year, meta)
+        _save_meta(year, meta, cache_root)
         return cached_body
 
     # status == 200 (or anything else that returned a body) — cache it.
-    return _decode_and_cache(year, filename, body, new_etag, url)
+    return _decode_and_cache(year, filename, body, new_etag, url,
+                             cache_root=cache_root)
 
 
 def _decode_and_cache(
@@ -940,6 +960,8 @@ def _decode_and_cache(
     body: bytes | None,
     etag: str | None,
     source_url: str,
+    *,
+    cache_root: Optional[Path] = None,
 ) -> dict:
     """Decode a response body, persist to cache + meta, return parsed dict."""
     if body is None:
@@ -948,9 +970,9 @@ def _decode_and_cache(
         data = json.loads(body)
     except json.JSONDecodeError as e:
         raise CalendarError(f"invalid JSON from {source_url}: {e}") from e
-    target = _payload_path(year, filename)
+    target = _payload_path(year, filename, cache_root)
     _cache.save_json(target, data)
-    meta = _load_meta(year)
+    meta = _load_meta(year, cache_root)
     meta.setdefault("year", year)
     meta.setdefault("source_url", source_url.rsplit("/", 1)[0])
     meta.setdefault("files", {})[filename] = {
@@ -959,7 +981,7 @@ def _decode_and_cache(
         "sha1": _cache.sha1_bytes(body),
         "size": len(body),
     }
-    _save_meta(year, meta)
+    _save_meta(year, meta, cache_root)
     return data
 
 
