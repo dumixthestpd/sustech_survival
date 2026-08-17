@@ -126,6 +126,97 @@ _mount_into(tis_cmd, "classroom", "tis.classroom")
 
 
 # ========================================================================
+# sso — shared credentials + auth
+# ========================================================================
+
+@click.group(name="sso", help="SSO — shared CAS auth backbone.")
+def sso_cmd() -> None:
+    pass
+
+
+@sso_cmd.command(name="credentials", help="Show or write the shared credentials file.")
+@click.option("--sid", default=None, help="SUSTech SID (e.g. 12410000).")
+@click.option("--password", default=None, help="SUSTech password.")
+@click.option("--status", "show", is_flag=True, help="Only show the resolved path + existence.")
+def sso_credentials(sid: Optional[str], password: Optional[str], show: bool) -> None:
+    """Write or inspect the shared credentials file.
+
+    No args + --status: prints the resolved path and whether it exists (never
+    prints the password). With --sid/--password (or prompts): writes
+    ``~/.config/sustech_survival/credentials.txt`` (0600).
+    """
+    from ..sso.authorizer import resolve_creds_path, write_credentials
+
+    path = resolve_creds_path()
+    if show or not (sid or password):
+        exists = path.exists()
+        click.secho(f"Credentials path: {path}", bold=True)
+        click.echo(f"Exists: {exists}")
+        click.echo("Set them: `sustech sso credentials --sid 12410000` "
+                   "(password prompts hidden).")
+        return
+
+    if not sid:
+        sid = click.prompt("SUSTech SID", type=str)
+    if not password:
+        password = click.prompt("SUSTech password", hide_input=True,
+                                confirmation_prompt=True)
+    try:
+        target = write_credentials(sid, password, path=path)
+    except Exception as e:  # noqa: BLE001 — surface a clean message
+        click.secho(f"Failed to write credentials: {e}", fg="red")
+        raise SystemExit(1)
+    click.secho(f"✅ credentials written to {target} (mode 0600)", fg="green")
+
+
+@sso_cmd.command(name="check", help="Verify credentials against CAS (no service binding).")
+def sso_check() -> None:
+    """Validate that the stored SID+password authenticates on SUSTech CAS.
+
+    Performs only the CAS accounting check (GET login page → POST creds →
+    expect a ticket redirect). A 302/303 ``ticket=`` stub means VALID; a
+    re-rendered login form means INVALID. Requires network + credentials.
+    """
+    from ..sso.authorizer import read_credentials, resolve_creds_path, AuthorizerError
+    from ..exceptions import InvalidCredentials, NetworkError
+    try:
+        sid, pw = read_credentials()
+    except AuthorizerError as e:
+        click.secho(f"❌ {e}", fg="red")
+        raise SystemExit(1)
+
+    try:
+        from ..sso.providers.cas import CASAuthorizer
+    except Exception as e:  # noqa: BLE001
+        click.secho(f"❌ cannot import CAS provider: {e}", fg="red")
+        raise SystemExit(1)
+
+    class _Probe(CASAuthorizer):
+        BASE_URL = "https://cas.sustech.edu.cn"
+        SERVICE_URL = "https://cas.sustech.edu.cn/cas/login?service=data"
+        SUBMIT_VALUE = ""
+        _idp_cas_base = "https://cas.sustech.edu.cn/cas/login"
+
+    probe = _Probe()
+    try:
+        cookies = probe._get_ticket_cookies(sid, pw)
+    except InvalidCredentials as e:
+        click.secho(f"❌ INVALID — {sid} was rejected by CAS.", fg="red")
+        raise SystemExit(2)
+    except NetworkError as e:
+        click.secho(f"❌ NETWORK — cannot reach CAS: {e}", fg="red")
+        raise SystemExit(3)
+    except Exception as e:  # noqa: BLE001
+        click.secho(f"❌ CAS check failed: {e}", fg="red")
+        raise SystemExit(4)
+
+    click.secho(
+        f"✅ VALID — {sid} authenticated on CAS "
+        f"({len(cookies)} cookies returned; no service touched).",
+        fg="green")
+
+
+# ========================================================================
 # transit — campus navigation and bus data
 # ========================================================================
 
@@ -1096,6 +1187,7 @@ def build_cli() -> click.Group:
     cli.add_command(bb_cmd)
     cli.add_command(tis_cmd)
     cli.add_command(ws_cmd)
+    cli.add_command(sso_cmd)
     cli.add_command(transit_cmd)
     cli.add_command(context_cmd)
     cli.add_command(profile_cmd)

@@ -60,6 +60,79 @@ class AuthorizerError(Exception):
     """Raised when auth fails."""
 
 
+# ── Credential-file helpers (shared by the CLI and Authorizer) ───────────────
+
+def resolve_creds_path() -> Path:
+    """Resolve the credentials.txt path (first match wins).
+
+    1. ``SUSTECH_CREDENTIALS`` env var — explicit path
+    2. ``~/.config/sustech_survival/credentials.txt`` — XDG user config
+    3. ``./credentials.txt`` — current working directory
+    4. Walk up from this source tree (dev/editable installs)
+
+    Returns the *intended* path even if it does not yet exist (so the error
+    message can tell the user where to create it).
+    """
+    import os
+
+    env_path = os.environ.get("SUSTECH_CREDENTIALS")
+    if env_path:
+        return Path(env_path)
+
+    xdg = Path.home() / ".config" / "sustech_survival" / "credentials.txt"
+    if xdg.exists():
+        return xdg
+
+    cwd_creds = Path.cwd() / "credentials.txt"
+    if cwd_creds.exists():
+        return cwd_creds
+
+    here = Path(__file__).resolve().parent
+    for parent in [here, here.parent, here.parent.parent, here.parent.parent.parent]:
+        if (parent / "credentials.txt").exists():
+            return parent / "credentials.txt"
+
+    return xdg
+
+
+def write_credentials(sid: str, password: str, path: Optional[Path] = None) -> Path:
+    """Write a credentials.txt value ``sid:password`` with restrictive perms.
+
+    Default path is :func:`resolve_creds_path`. Writes to the user config path
+    ``~/.config/sustech_survival/credentials.txt`` (not the source tree) by
+    default, so ``pip install`` users get a stable, gitignored location.
+    Creates parent dirs and chmods to 0600 (owner read/write only).
+    """
+    target = path or (Path.home() / ".config" / "sustech_survival" / "credentials.txt")
+    if ":" in sid or "\n" in sid or "\n" in password:
+        raise AuthorizerError("sid/password must not contain ':' or newlines")
+    import os
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_suffix(".tmp")
+    tmp.write_text(f"{sid}:{password}\n", encoding="utf-8")
+    try:
+        os.chmod(tmp, 0o600)
+    except (OSError, NotImplementedError):  # Windows: no-op-ish; site-packages layout ok
+        pass
+    tmp.replace(target)
+    return target
+
+
+def read_credentials(path: Optional[Path] = None) -> tuple[str, str]:
+    """Read ``(sid, password)`` from the resolved credentials file.
+
+    Raises :class:`AuthorizerError` if the file is missing or malformed.
+    """
+    p = path or resolve_creds_path()
+    try:
+        line = p.read_text(encoding="utf-8").strip()
+    except (OSError, FileNotFoundError):
+        raise AuthorizerError(f"No credentials at {p} — set SUSTECH_CREDENTIALS or run `sustech sso credentials set`")
+    if ":" not in line:
+        raise AuthorizerError(f"Invalid format in {p} (need sid:password)")
+    return line.split(":", 1)
+
+
 # ── Authorizer ───────────────────────────────────────────────────────────────
 
 class Authorizer(ABC):
