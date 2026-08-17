@@ -83,21 +83,24 @@ def my_function(auth=None):
     r = auth.session.get(...)
 ```
 
-凭据文件查找顺序（先找到的优先）：
+凭据按三级优先级解析（越靠后越优先）：
 
-1. `SUSTECH_CREDENTIALS` 环境变量 —— 凭据文件的完整路径
-2. `~/.config/sustech_survival/credentials.txt` —— XDG 风格的用户配置
-3. `./credentials.txt` —— 当前工作目录
-4. 从包源码向上搜索 —— 开发/可编辑安装
+1. `sustech_survival.sso.cred_set(sid=..., pwd=...)` —— 内存中设置，最高优先级
+2. `./credentials.txt` —— 当前工作目录
+3. `SUSTECH_CREDENTIALS` 环境变量 —— 凭据文件的完整路径
 
 格式：`学号:密码`。会话仅保存在**内存中** —— 不写 `session.json` 到磁盘。
 
-**普通 `pip install` 之后，包内并不会自带凭据文件** —— 运行时不会打包 `credentials.txt`。你需要自己创建（上面的“从包源码向上搜索”在 site-packages 里找不到任何东西），例如：
+```python
+from sustech_survival import sso
+sso.cred_set(sid="12410000", pwd="your-password-here")   # 内存中，优先级最高
+```
+
+**普通 `pip install` 之后，包内并不会自带凭据文件** —— 运行时不会打包 `credentials.txt`。一条命令即可配置（写入当前工作目录的 `./credentials.txt`，权限 600）：
 
 ```bash
-# 一次性配置：写入你的学号+密码（权限 600）
-echo '12410000:your-password-here' > ~/.config/sustech_survival/credentials.txt
-chmod 600 ~/.config/sustech_survival/credentials.txt
+sustech sso creds set --sid 12410000 --pass 'your-password-here'
+# （省略 --pass 会以隐藏方式提示输入；--password 也是别名）
 ```
 
 已安装并想先确认凭据可用（不做真实操作）：
