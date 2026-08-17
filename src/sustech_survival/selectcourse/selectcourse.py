@@ -77,7 +77,7 @@ class SelectCourseClient:
 
     def __init__(self, *, semester: Optional[Semester] = None,
                  xn: Optional[str] = None, xq: Optional[str] = None,
-                 max_age: int = DEFAULT_TTL):
+                 max_age: int = DEFAULT_TTL, cache_dir: Optional[Path] = None):
         if semester is not None:
             self._sem = semester
             self.xn = semester.xn
@@ -95,10 +95,12 @@ class SelectCourseClient:
             self.xn = self._sem.xn
             self.xq = self._sem.xq
         self.max_age = max_age
-        # Cache lives in the uniform package-scoped tmp/ tree.
+        # Cache lives in the uniform unified __sustech_cache__ tree. The
+        # caller may pass an explicit cache_dir= to override (tests, custom
+        # locations); None uses the package default.
         from sustech_survival import _cache
         self._cache_helper = _cache
-        self.cache_dir = _cache.cache_path("selectcourse")
+        self.cache_dir = cache_dir or _cache.cache_path("selectcourse")
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._courses: Optional[List[Course]] = None
         # In-memory cache for the queryXkdqXnxq "current TIS active term"

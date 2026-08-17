@@ -1,17 +1,24 @@
-"""Uniform cache layout: <sustech_survival>/tmp/<module>/...
+"""Uniform cache layout: <cwd>/__sustech_cache__/<module>/...
 
-All persistent caches in sustech_survival live under the package's own
-directory (resolved via ``Path(__file__).parent``), so:
+All persistent caches in sustech_survival live in ONE unified directory
+named ``__sustech_cache__`` (pytest-style), resolved against the working
+directory and managed exclusively by this module:
 
-- One canonical location, no env-var dance, no XDG branching.
-- When running from a clone, cache is inside the repo (``src/sustech_survival/tmp/``)
-  and is naturally gitignored.
-- When installed via ``pip``, cache lives next to the package code in
-  ``site-packages`` (writable on user installs on macOS / ``--user`` on Linux).
+- One canonical location next to wherever the user runs the program —
+  no scattered dirs, no XDG branching, no writes into the user profile.
+- When running inside a clone, the cache is ``<cwd>/__sustech_cache__/``
+  and is meant to be gitignored (see the repo's .gitignore).
+- When installed via ``pip``, the cache lands in the working directory the
+  user invokes the tool from — always writable, always one dir.
 
 Every module that needs to cache anything on disk should use these helpers
-rather than constructing its own paths. The canonical location is the
-single path returned by :func:`tmp_root` — there are no legacy locations.
+rather than constructing its own paths. The canonical root is the single
+path returned by :func:`tmp_root` — there are no legacy locations.
+
+Override: set ``$SUSTECH_CACHE_DIR`` (absolute or relative — relative
+resolves against the working directory at call time), or pass ``root=`` to
+:func:`cache_path` / :func:`tmp_root`-based functions explicitly.
+No config file, no settings registry — kwargs and one env var.
 """
 from __future__ import annotations
 
@@ -26,11 +33,14 @@ from typing import Any, Optional, Tuple
 
 
 _PACKAGE_ROOT: Path = Path(__file__).resolve().parent
-# Default cache root lives next to the package. The override-able setting
-# `cache.dir` (see _settings) may redirect it to a writable dir for a
-# system install; tmp_root() honours that. Modules that cache must call
-# tmp_root()/cache_path(), not read TMP_ROOT directly.
+# Back-compat constant: the old default root next to the package. New code
+# must call tmp_root() — the active root defaults to <cwd>/__sustech_cache__
+# and honours $SUSTECH_CACHE_DIR.
 TMP_ROOT: Path = _PACKAGE_ROOT / "tmp"
+
+# Default unified cache dir name (pytest-style). May be overridden by the
+# SUSTECH_CACHE_DIR env var or an explicit root= kwarg.
+DEFAULT_CACHE_DIR = "__sustech_cache__"
 
 
 def package_root() -> Path:
@@ -38,19 +48,23 @@ def package_root() -> Path:
     return _PACKAGE_ROOT
 
 
-def tmp_root() -> Path:
-    """The active cache root — default `<package>/tmp`, overridable via settings.
+def tmp_root(root: Optional[Path] = None) -> Path:
+    """The active cache root.
 
-    Reading this (not the bare ``TMP_ROOT`` constant) is the correct way to
-    locate the cache, so a ``SUSTECH_CACHE_DIR``/config override is honoured.
+    Precedence: explicit ``root`` kwarg > ``$SUSTECH_CACHE_DIR`` env var >
+    ``<cwd>/__sustech_cache__``. Relative values resolve against the working
+    directory at call time. Reading this (not the bare ``TMP_ROOT``
+    constant) is the correct way to locate the cache.
     """
-    from . import _settings
-    return Path(_settings.cache_dir) if _settings.cache_dir else TMP_ROOT
+    raw = root or os.environ.get("SUSTECH_CACHE_DIR") or DEFAULT_CACHE_DIR
+    p = Path(raw).expanduser()
+    return p if p.is_absolute() else Path.cwd() / p
 
 
-def cache_path(module: str, *parts: str) -> Path:
+def cache_path(module: str, *parts: str, root: Optional[Path] = None) -> Path:
     """Return ``<root>/<module>/<parts...>`` where ``<root>`` is the active
-    cache root (:func:`tmp_root`, which honours the ``cache.dir`` setting).
+    cache root (:func:`tmp_root` — kwarg ``root``, env ``SUSTECH_CACHE_DIR``,
+    or the default ``<cwd>/__sustech_cache__``).
 
     The directory is NOT created — call :func:`ensure_cachedir` before
     writing. This split lets read-only probes (e.g. "does this cache file
@@ -58,7 +72,7 @@ def cache_path(module: str, *parts: str) -> Path:
     """
     if not module or "/" in module or "\\" in module or module in (".", ".."):
         raise ValueError(f"invalid cache module name: {module!r}")
-    root = tmp_root()
+    root = tmp_root(root)
     if parts:
         return root / module / Path(*parts)
     return root / module
@@ -70,19 +84,20 @@ def ensure_cachedir(path: Path) -> Path:
     return path
 
 
-def clear_cache(module: str) -> int:
-    """Delete every cached file under ``<root>/<module>/`` where ``<root>`` is
-    the active cache root (:func:`tmp_root`).
+def clear_cache(module: str, root: Optional[Path] = None) -> int:
+    """Delete every cached file under ``<root>/<module>/``.
 
-    Returns the number of files removed. No-op (returns 0) if the module
-    has no cache yet. Granular cleanup (e.g. "only year 2026 of the
-    calendar cache") is the responsibility of the module that owns the
-    cache layout — this helper wipes everything for a module in one shot.
+    ``root`` defaults to the active cache root (:func:`tmp_root` — kwarg,
+    env, or default unified dir). Returns the number of files removed.
+    No-op (returns 0) if the module has no cache yet. Granular cleanup (e.g.
+    "only year 2026 of the calendar cache") is the responsibility of the
+    module that owns the cache layout — this helper wipes everything for a
+    module in one shot.
     """
     import shutil
     if not module or "/" in module or "\\" in module or module in (".", ".."):
         raise ValueError(f"invalid cache module name: {module!r}")
-    target = tmp_root() / module
+    target = tmp_root(root) / module
     if not target.exists():
         return 0
     count = sum(1 for _ in target.rglob("*") if _.is_file())

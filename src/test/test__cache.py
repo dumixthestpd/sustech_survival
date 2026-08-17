@@ -24,7 +24,6 @@ from pathlib import Path
 import pytest
 
 from sustech_survival import _cache
-from sustech_survival import _settings as cache_settings
 
 
 # -- cache_path ---------------------------------------------------
@@ -235,7 +234,7 @@ class TestEnsureCachedir:
 
 class TestClearCache:
     def test_wipes_everything_for_module(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(cache_settings, "cache_dir", str(tmp_path))
+        monkeypatch.setenv("SUSTECH_CACHE_DIR", str(tmp_path))
         # Populate two modules.
         _cache.save_json(_cache.cache_path("mod_a", "x.json"), {"n": 1})
         _cache.save_json(_cache.cache_path("mod_a", "sub", "y.json"), {"n": 2})
@@ -248,9 +247,46 @@ class TestClearCache:
         assert _cache.cache_path("mod_b", "z.json").exists()
 
     def test_no_op_when_module_unknown(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(cache_settings, "cache_dir", str(tmp_path))
+        monkeypatch.setenv("SUSTECH_CACHE_DIR", str(tmp_path))
         assert _cache.clear_cache("never_existed") == 0
 
     def test_invalid_module_name_rejected(self):
         with pytest.raises(ValueError):
             _cache.clear_cache("a/b")
+
+
+# -- default root + root= kwarg ---------------------------------
+
+
+class TestCacheRootKwarg:
+    def test_default_root_is_cwd_underscore_cache(self, monkeypatch, tmp_path):
+        """Default root is <cwd>/__sustech_cache__ — one unified dir."""
+        monkeypatch.delenv("SUSTECH_CACHE_DIR", raising=False)
+        monkeypatch.chdir(tmp_path)
+        assert _cache.tmp_root() == tmp_path / "__sustech_cache__"
+        assert _cache.cache_path("sometest") == tmp_path / "__sustech_cache__" / "sometest"
+
+    def test_env_override_absolute(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SUSTECH_CACHE_DIR", str(tmp_path))
+        assert _cache.tmp_root() == tmp_path
+
+    def test_env_override_relative_resolves_against_cwd(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SUSTECH_CACHE_DIR", "rel_cache")
+        monkeypatch.chdir(tmp_path)
+        assert _cache.tmp_root() == tmp_path / "rel_cache"
+
+    def test_explicit_root_kwarg_beats_env(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SUSTECH_CACHE_DIR", str(tmp_path / "env_dir"))
+        explicit = tmp_path / "kwarg_dir"
+        assert _cache.tmp_root(root=explicit) == explicit
+        assert _cache.cache_path("mod", "x.json", root=explicit) == explicit / "mod" / "x.json"
+        assert _cache.cache_path("mod", root=explicit) == explicit / "mod"
+
+    def test_clear_cache_honours_env_override(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SUSTECH_CACHE_DIR", str(tmp_path))
+        target = tmp_path / "sel" / "f.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("{}", encoding="utf-8")
+        n = _cache.clear_cache("sel")
+        assert n == 1
+        assert not (tmp_path / "sel").exists()

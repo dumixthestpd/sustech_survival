@@ -504,18 +504,20 @@ def current_week(
 class LiveOccupancyClient:
     """Live per-room schedule from TIS 场地课表 (cdkb).
 
-    Cache: stored under ``<sustech_survival>/tmp/classroom/live/`` with a
+    Cache: stored under ``<cwd>/__sustech_cache__/classroom/live/`` with a
     per-room filename ``live_<xn>_<xq>_<cddm>.json``. Default TTL: 3600s.
     """
 
     BASE_URL = TIS_BASE
 
-    def __init__(self, *, max_age: int = DEFAULT_TTL):
+    def __init__(self, *, max_age: int = DEFAULT_TTL,
+                 cache_dir: Optional[Path] = None):
         self.max_age = max_age
-        # Cache lives in the uniform package-scoped tmp/ tree.
+        # Cache lives in the unified __sustech_cache__ tree; caller may pass
+        # an explicit cache_dir= to override (tests / custom locations).
         from sustech_survival import _cache
         self._cache_helper = _cache
-        self.cache_dir = _cache.cache_path("classroom", "live")
+        self.cache_dir = cache_dir or _cache.cache_path("classroom", "live")
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._sess: Optional[requests.Session] = None
 

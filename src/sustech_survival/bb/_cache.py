@@ -4,7 +4,7 @@ Lightweight file-based cache for BB scraper results.
 
 Storage layout (uniform across the package):
 
-    <sustech_survival>/tmp/bb/{prefix}_{arg1}_{arg2}.json
+    <cwd>/__sustech_cache__/bb/{prefix}_{arg1}_{arg2}.json
 
 Each entry is a JSON file:
     {"ts": unix_timestamp, "ttl": seconds, "data": ...}
@@ -17,7 +17,8 @@ from pathlib import Path
 from sustech_survival import _cache as _pkg_cache
 
 CACHE_DIR = _pkg_cache.cache_path("bb")
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
+# NOT created at import — cache_path must stay side-effect free (iron law:
+# read-only probes never touch disk). set() ensures the dir before writing.
 
 DEFAULT_TTL = 3600  # 1 hour
 
@@ -49,6 +50,7 @@ def get(prefix: str, *args, ttl: int = DEFAULT_TTL):
 
 def set(prefix: str, data, *args, ttl: int = DEFAULT_TTL):
     """Write data to cache with current timestamp."""
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
     key_file = CACHE_DIR / cache_key(prefix, *args)
     entry = {"ts": time.time(), "ttl": ttl, "data": data}
     with open(key_file, "w") as f:

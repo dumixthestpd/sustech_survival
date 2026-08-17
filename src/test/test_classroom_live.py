@@ -252,9 +252,7 @@ class TestLiveOccupancyClientMocked:
 
     def test_query_room_returns_entries(self, mock_session, tmp_path,
                                          monkeypatch):
-        from sustech_survival import _cache
-        from sustech_survival import _settings as _cs
-        monkeypatch.setattr(_cs, "cache_dir", str(tmp_path))
+        monkeypatch.setenv("SUSTECH_CACHE_DIR", str(tmp_path))
         client = LiveOccupancyClient()
         client._sess = mock_session
         entries = client.query_room("YJ-123", xn="2025-2026", xq="2",
@@ -267,9 +265,7 @@ class TestLiveOccupancyClientMocked:
 
     def test_live_at_filters_by_weekday(self, mock_session, tmp_path,
                                          monkeypatch):
-        from sustech_survival import _cache
-        from sustech_survival import _settings as _cs
-        monkeypatch.setattr(_cs, "cache_dir", str(tmp_path))
+        monkeypatch.setenv("SUSTECH_CACHE_DIR", str(tmp_path))
         client = LiveOccupancyClient()
         client._sess = mock_session
         entries = client.query_room("YJ-123", xn="2025-2026", xq="2",
@@ -287,9 +283,7 @@ class TestLiveOccupancyClientMocked:
         assert len(hits) == 0
 
     def test_cache_persists(self, mock_session, tmp_path, monkeypatch):
-        from sustech_survival import _cache
-        from sustech_survival import _settings as _cs
-        monkeypatch.setattr(_cs, "cache_dir", str(tmp_path))
+        monkeypatch.setenv("SUSTECH_CACHE_DIR", str(tmp_path))
         client = LiveOccupancyClient()
         client._sess = mock_session
         # First call: hits mock_session

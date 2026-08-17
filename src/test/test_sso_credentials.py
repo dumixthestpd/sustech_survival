@@ -55,11 +55,78 @@ def test_resolve_creds_path_env(monkeypatch, tmp_path):
     assert resolve_creds_path() == tmp_path / "x.txt"
 
 
-def test_resolve_creds_path_defaults_to_xdg(monkeypatch):
+def test_resolve_creds_path_defaults_to_cwd(monkeypatch, tmp_path, capsys):
     monkeypatch.delenv("SUSTECH_CREDENTIALS", raising=False)
-    # Path.home() default — just assert it's under a path named credentials.txt
-    p = resolve_creds_path()
-    assert p.name == "credentials.txt"
+    old = os.getcwd()
+    os.chdir(tmp_path)
+    try:
+        p = resolve_creds_path()
+        assert p == tmp_path / "credentials.txt"
+        assert p.name == "credentials.txt"
+    finally:
+        os.chdir(old)
+
+
+def test_resolve_creds_path_cwd_file_wins_over_env(monkeypatch, tmp_path):
+    """The cwd credentials.txt takes precedence over the env var path."""
+    cwd_creds = tmp_path / "credentials.txt"
+    cwd_creds.write_text("12410000:from-cwd", encoding="utf-8")
+    monkeypatch.setenv("SUSTECH_CREDENTIALS", str(tmp_path / "env.txt"))
+    old = os.getcwd()
+    os.chdir(tmp_path)
+    try:
+        assert resolve_creds_path() == cwd_creds
+    finally:
+        os.chdir(old)
+
+
+# ── cred_set / cred_clear in-memory override ────────────────────────────────
+
+def test_cred_set_in_memory_override(monkeypatch, tmp_path):
+    """cred_set() beats cwd file and env var — no file, no user dir."""
+    import sustech_survival.sso.authorizer as A
+    # Stale sources exist below cred_set in precedence
+    cwd_creds = tmp_path / "credentials.txt"
+    cwd_creds.write_text("00000000:from-file", encoding="utf-8")
+    monkeypatch.setenv("SUSTECH_CREDENTIALS", str(tmp_path / "env.txt"))
+    monkeypatch.setenv("SUSTECH_HOME", str(tmp_path))  # ensure no Path.home() usage
+    old = os.getcwd()
+    os.chdir(tmp_path)
+    try:
+        A.cred_set("12410000", "from-memory")
+        try:
+            sid, pw = read_credentials()
+            assert (sid, pw) == ("12410000", "from-memory")
+        finally:
+            A.cred_clear()
+    finally:
+        os.chdir(old)
+
+
+def test_cred_set_cleared_then_file_used(monkeypatch, tmp_path):
+    import sustech_survival.sso.authorizer as A
+    cwd_creds = tmp_path / "credentials.txt"
+    cwd_creds.write_text("12410000:from-file", encoding="utf-8")
+    monkeypatch.delenv("SUSTECH_CREDENTIALS", raising=False)
+    old = os.getcwd()
+    os.chdir(tmp_path)
+    try:
+        A.cred_set("1", "mem")
+        A.cred_clear()
+        sid, pw = read_credentials()
+        assert (sid, pw) == ("12410000", "from-file")
+    finally:
+        A.cred_clear()
+        os.chdir(old)
+
+
+def test_cred_set_rejects_bad_values():
+    import sustech_survival.sso.authorizer as A
+    with pytest.raises(AuthorizerError):
+        A.cred_set("bad:colon", "pw")
+    with pytest.raises(AuthorizerError):
+        A.cred_set("sid", "pw\npw")
+    A.cred_clear()
 
 
 # ── CLI: `sustech sso creds set` / `sustech sso creds status` ────────────

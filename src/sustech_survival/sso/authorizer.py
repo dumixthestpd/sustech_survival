@@ -45,6 +45,11 @@ __all__ = [
     "require_auth",
     "CAS_BASE",
     "UA",
+    "cred_set",
+    "cred_clear",
+    "resolve_creds_path",
+    "write_credentials",
+    "read_credentials",
 ]
 
 
@@ -62,48 +67,78 @@ class AuthorizerError(Exception):
 
 # ── Credential-file helpers (shared by the CLI and Authorizer) ───────────────
 
-def resolve_creds_path() -> Path:
-    """Resolve the credentials.txt path (first match wins).
+# In-memory credentials set via sustech_survival.sso.cred_set(); highest
+# precedence — it overrides both the SUSTECH_CREDENTIALS env var and a
+# credentials.txt in the working directory. Nothing is ever written to disk
+# for this path (no user-profile writes).
+_IN_MEMORY_CREDS: Optional[tuple[str, str]] = None
 
-    1. ``SUSTECH_CREDENTIALS`` env var — explicit path
-    2. ``~/.config/sustech_survival/credentials.txt`` — XDG user config
-    3. ``./credentials.txt`` — current working directory
-    4. Walk up from this source tree (dev/editable installs)
+
+def cred_set(sid: str, pwd: str = "", *, password: Optional[str] = None) -> None:
+    """Programmatically set credentials in memory (highest precedence).
+
+    Overrides both the ``SUSTECH_CREDENTIALS`` env var and a
+    ``credentials.txt`` in the working directory for this process.
+    Nothing is written to disk — no files, no user-profile writes.
+
+    Usage::
+
+        from sustech_survival import sso
+        sso.cred_set(sid="12410000", pwd="example-pwd")
+
+    ``password`` is accepted as an alias of ``pwd``.
+    """
+    global _IN_MEMORY_CREDS
+    p = pwd if pwd else password
+    if not sid or not p:
+        raise AuthorizerError("cred_set requires both sid and pwd/password")
+    if ":" in sid or "\n" in sid or "\n" in p:
+        raise AuthorizerError("sid/password must not contain ':' or newlines")
+    _IN_MEMORY_CREDS = (sid, p)
+
+
+def cred_clear() -> None:
+    """Drop the in-memory credentials set by :func:`cred_set`."""
+    global _IN_MEMORY_CREDS
+    _IN_MEMORY_CREDS = None
+
+
+def resolve_creds_path() -> Path:
+    """Resolve the credentials.txt path (first match wins for *files*).
+
+    Precedence (later listed wins — matches ``cred_set`` > cwd file > env):
+
+    1. ``./credentials.txt`` — current working directory
+    2. ``SUSTECH_CREDENTIALS`` env var — explicit path
+       (default: ``./credentials.txt``, for error messages / `sustech sso creds set`)
 
     Returns the *intended* path even if it does not yet exist (so the error
-    message can tell the user where to create it).
+    message can tell the user where to create it). Note: credentials set via
+    :func:`cred_set` live in memory and have no path — check
+    :func:`read_credentials` for the full precedence chain.
     """
     import os
-
-    env_path = os.environ.get("SUSTECH_CREDENTIALS")
-    if env_path:
-        return Path(env_path)
-
-    xdg = Path.home() / ".config" / "sustech_survival" / "credentials.txt"
-    if xdg.exists():
-        return xdg
 
     cwd_creds = Path.cwd() / "credentials.txt"
     if cwd_creds.exists():
         return cwd_creds
 
-    here = Path(__file__).resolve().parent
-    for parent in [here, here.parent, here.parent.parent, here.parent.parent.parent]:
-        if (parent / "credentials.txt").exists():
-            return parent / "credentials.txt"
+    env_path = os.environ.get("SUSTECH_CREDENTIALS")
+    if env_path:
+        return Path(env_path)
 
-    return xdg
+    return cwd_creds
 
 
 def write_credentials(sid: str, password: str, path: Optional[Path] = None) -> Path:
     """Write a credentials.txt value ``sid:password`` with restrictive perms.
 
-    Default path is :func:`resolve_creds_path`. Writes to the user config path
-    ``~/.config/sustech_survival/credentials.txt`` (not the source tree) by
-    default, so ``pip install`` users get a stable, gitignored location.
-    Creates parent dirs and chmods to 0600 (owner read/write only).
+    Default target is the active credentials location: ``./credentials.txt``
+    in the working directory (or the ``SUSTECH_CREDENTIALS`` env path if the
+    cwd file does not exist yet). Never writes into the user profile or the
+    source tree. Creates parent dirs and chmods to 0600 (owner read/write only).
     """
-    target = path or (Path.home() / ".config" / "sustech_survival" / "credentials.txt")
+    target = path or resolve_creds_path()
     if ":" in sid or "\n" in sid or "\n" in password:
         raise AuthorizerError("sid/password must not contain ':' or newlines")
     import os
@@ -119,15 +154,24 @@ def write_credentials(sid: str, password: str, path: Optional[Path] = None) -> P
 
 
 def read_credentials(path: Optional[Path] = None) -> tuple[str, str]:
-    """Read ``(sid, password)`` from the resolved credentials file.
+    """Return ``(sid, password)`` with the full three-way precedence:
 
-    Raises :class:`AuthorizerError` if the file is missing or malformed.
+    1. :func:`cred_set` — in-memory override (highest)
+    2. ``./credentials.txt`` — current working directory
+    3. ``SUSTECH_CREDENTIALS`` env var — explicit file path
+
+    Raises :class:`AuthorizerError` if no source yields credentials.
     """
+    if _IN_MEMORY_CREDS is not None:
+        return _IN_MEMORY_CREDS
     p = path or resolve_creds_path()
     try:
         line = p.read_text(encoding="utf-8").strip()
     except (OSError, FileNotFoundError):
-        raise AuthorizerError(f"No credentials at {p} — set SUSTECH_CREDENTIALS or run `sustech sso credentials set`")
+        raise AuthorizerError(
+            f"No credentials at {p} — run `sustech sso creds set`, "
+            "set SUSTECH_CREDENTIALS, or call `sustech_survival.sso.cred_set(...)`"
+        )
     if ":" not in line:
         raise AuthorizerError(f"Invalid format in {p} (need sid:password)")
     return line.split(":", 1)
@@ -143,10 +187,10 @@ class Authorizer(ABC):
         BASE_URL    — the service's root URL (e.g. "https://tis.sustech.edu.cn")
         SERVICE_URL — where the IdP/SSO redirects after auth
 
-    Credentials: read from credentials.txt (format: username:password).
-    Resolution: SUSTECH_CREDENTIALS env var →
-    ~/.config/sustech_survival/credentials.txt →
-    ./credentials.txt → walk-up from package source.
+    Credentials: read with three-way precedence (later wins):
+    1. ``sustech_survival.sso.cred_set(sid, pwd)`` — in-memory, highest
+    2. ``./credentials.txt`` — current working directory
+    3. ``SUSTECH_CREDENTIALS`` env var — explicit file path
     Access via auth.username / auth.password.
 
     Usage::
@@ -429,53 +473,33 @@ class Authorizer(ABC):
     # ── Credentials ─────────────────────────────────────────────────────────
 
     def _read_creds(self) -> tuple[str, str]:
+        """Credentials with the unified three-way precedence.
+
+        1. :func:`cred_set` — in-memory override (highest)
+        2. ``./credentials.txt`` — current working directory
+        3. ``SUSTECH_CREDENTIALS`` env var — explicit file path
+        """
+        if _IN_MEMORY_CREDS is not None:
+            return _IN_MEMORY_CREDS
+        cf = self._creds_file
         try:
-            with open(self._creds_file) as f:
+            with open(cf) as f:
                 line = f.read().strip()
         except FileNotFoundError:
             raise AuthorizerError(
-                f"Credentials not found at {self._creds_file}\n"
-                "Set SUSTECH_CREDENTIALS env var, or create "
-                "~/.config/sustech_survival/credentials.txt (format: sid:password)"
+                f"Credentials not found at {cf}\n"
+                "Run `sustech sso creds set`, set SUSTECH_CREDENTIALS, "
+                "or call `sustech_survival.sso.cred_set(...)` (format: sid:password)"
             )
         if ':' not in line:
-            raise AuthorizerError(f"Invalid format in {self._creds_file} (need username:password)")
+            raise AuthorizerError(f"Invalid format in {cf} (need username:password)")
         return line.split(':', 1)
 
     def _resolve_creds_file(self) -> Path:
-        """Resolve credentials.txt location.
-
-        Search order (first match wins):
-          1. ``SUSTECH_CREDENTIALS`` env var — explicit path to a credentials file
-          2. ``~/.config/sustech_survival/credentials.txt`` — XDG-style user config
-          3. ``./credentials.txt`` — current working directory
-          4. Walk up from this file looking for ``credentials.txt`` — dev/editable installs
+        """Resolve credentials.txt location — delegates to the unified
+        module-level :func:`resolve_creds_path` (cwd file > env var > cwd).
         """
-        import os
-
-        # 1. Env var — explicit override
-        env_path = os.environ.get("SUSTECH_CREDENTIALS")
-        if env_path:
-            return Path(env_path)
-
-        # 2. XDG user config
-        xdg = Path.home() / ".config" / "sustech_survival" / "credentials.txt"
-        if xdg.exists():
-            return xdg
-
-        # 3. CWD
-        cwd_creds = Path.cwd() / "credentials.txt"
-        if cwd_creds.exists():
-            return cwd_creds
-
-        # 4. Walk up from package source (editable installs / dev tree)
-        here = Path(__file__).resolve().parent
-        for parent in [here, here.parent, here.parent.parent, here.parent.parent.parent]:
-            if (parent / "credentials.txt").exists():
-                return parent / "credentials.txt"
-
-        # Default: XDG path (even if it doesn't exist yet — error message will guide)
-        return xdg
+        return resolve_creds_path()
 
     @property
     def _creds_file(self) -> Path:

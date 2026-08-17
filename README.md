@@ -84,18 +84,22 @@ def my_function(auth=None):
     r = auth.session.get(...)
 ```
 
-**Credentials are resolved in this order (first match wins):**
+**Credentials are resolved with three-way precedence (later wins):**
 
-1. `SUSTECH_CREDENTIALS` env var — explicit path to a credentials file
-2. `~/.config/sustech_survival/credentials.txt` — XDG-style user config
-3. `./credentials.txt` — current working directory
-4. Walk-up from package source — dev/editable installs
+1. `sustech_survival.sso.cred_set(sid=..., pwd=...)` — in-memory, highest
+2. `./credentials.txt` — current working directory
+3. `SUSTECH_CREDENTIALS` env var — explicit path to a credentials file
 
 Format: `sid:password`. Sessions are kept **in memory only** — no `session.json` on disk.
 
+```python
+from sustech_survival import sso
+sso.cred_set(sid="12410000", pwd="your-password-here")   # in-memory, wins
+```
+
 **After a plain `pip install`, credentials do NOT ship with the package** — the
 package never bundles a `credentials.txt`. Set them with one command
-(writes `~/.config/sustech_survival/credentials.txt`, mode 600):
+(writes `./credentials.txt` in the working directory, mode 600):
 
 ```bash
 sustech sso creds set --sid 12410000 --pass 'your-password-here'

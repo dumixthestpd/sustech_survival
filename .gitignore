@@ -16,7 +16,10 @@ bb-courses.json
 content_discovery.json
 
 # Cache — personal per-user state
-# Canonical location: <sustech_survival>/tmp/<module>/...
+# Canonical location: <cwd>/__sustech_cache__/<module>/... (one unified dir,
+# managed by sustech_survival._cache — pytest-style). Also ignore the legacy
+# package-local tmp/ if it lingers from older versions.
+__sustech_cache__/
 src/sustech_survival/tmp/
 
 # Cookies — personal auth tokens (never commit)
