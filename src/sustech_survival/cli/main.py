@@ -134,27 +134,22 @@ def sso_cmd() -> None:
     pass
 
 
-@sso_cmd.command(name="credentials", help="Show or write the shared credentials file.")
+@sso_cmd.group(name="creds", help="Shared credentials file (set / status).")
+def sso_creds_cmd() -> None:
+    pass
+
+
+@sso_creds_cmd.command(name="set", help="Write the shared credentials file.")
 @click.option("--sid", default=None, help="SUSTech SID (e.g. 12410000).")
-@click.option("--password", default=None, help="SUSTech password.")
-@click.option("--status", "show", is_flag=True, help="Only show the resolved path + existence.")
-def sso_credentials(sid: Optional[str], password: Optional[str], show: bool) -> None:
-    """Write or inspect the shared credentials file.
+@click.option("--pass", "password", "--password", default=None,
+              help="SUSTech password (or prompt, hidden).")
+def sso_creds_set(sid: Optional[str], password: Optional[str]) -> None:
+    """Write ``sid:password`` to the shared credentials file (0600).
 
-    No args + --status: prints the resolved path and whether it exists (never
-    prints the password). With --sid/--password (or prompts): writes
-    ``~/.config/sustech_survival/credentials.txt`` (0600).
+    Usage: ``sustech sso creds set --sid 12410000 --pass '...'``
+    Omitting ``--sid`` or ``--pass`` prompts for them (password hidden).
     """
-    from ..sso.authorizer import resolve_creds_path, write_credentials
-
-    path = resolve_creds_path()
-    if show or not (sid or password):
-        exists = path.exists()
-        click.secho(f"Credentials path: {path}", bold=True)
-        click.echo(f"Exists: {exists}")
-        click.echo("Set them: `sustech sso credentials --sid 12410000` "
-                   "(password prompts hidden).")
-        return
+    from ..sso.authorizer import write_credentials
 
     if not sid:
         sid = click.prompt("SUSTech SID", type=str)
@@ -162,11 +157,28 @@ def sso_credentials(sid: Optional[str], password: Optional[str], show: bool) -> 
         password = click.prompt("SUSTech password", hide_input=True,
                                 confirmation_prompt=True)
     try:
-        target = write_credentials(sid, password, path=path)
+        target = write_credentials(sid, password)  # default ~/.config path
     except Exception as e:  # noqa: BLE001 — surface a clean message
         click.secho(f"Failed to write credentials: {e}", fg="red")
         raise SystemExit(1)
     click.secho(f"✅ credentials written to {target} (mode 0600)", fg="green")
+
+
+@sso_creds_cmd.command(name="status", help="Show the credentials path + existence.")
+def sso_creds_status() -> None:
+    """Print the resolved credentials path and whether it exists (never the password)."""
+    from ..sso.authorizer import resolve_creds_path
+    path = resolve_creds_path()
+    click.secho(f"Credentials path: {path}", bold=True)
+    click.echo(f"Exists: {path.exists()}")
+    click.echo("Set them: `sustech sso creds set --sid 12410000` "
+               "(password prompts hidden).")
+
+
+@sso_creds_cmd.command(name="path", hidden=True, help="Print the resolved credentials path.")
+def sso_creds_path() -> None:
+    from ..sso.authorizer import resolve_creds_path
+    click.echo(str(resolve_creds_path()))
 
 
 @sso_cmd.command(name="check", help="Verify credentials against CAS (no service binding).")

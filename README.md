@@ -94,22 +94,20 @@ def my_function(auth=None):
 Format: `sid:password`. Sessions are kept **in memory only** — no `session.json` on disk.
 
 **After a plain `pip install`, credentials do NOT ship with the package** — the
-package never bundles a `credentials.txt`. You must create one (the walk-up in
-step 4 finds nothing in site-packages), e.g.:
+package never bundles a `credentials.txt`. Set them with one command
+(writes `~/.config/sustech_survival/credentials.txt`, mode 600):
 
 ```bash
-# one-time setup: write your SUSTech SID + password (mode 600)
-echo '12410000:your-password-here' > ~/.config/sustech_survival/credentials.txt
-chmod 600 ~/.config/sustech_survival/credentials.txt
+sustech sso creds set --sid 12410000 --pass 'your-password-here'
+# (omit --pass to prompt, hidden; --password also works)
 ```
 
-Already installed and want to confirm the creds work against a system before a
-real call? Use any read-only authenticated command:
+Already installed and want to confirm the creds work before a real call:
 
 ```bash
+sustech sso check                        # validate against CAS, no service binding
 python -m sustech_survival.lib.login   # Library Primo (headless CAS login)
 sustech pms check                      # verify PMS auth
-sustech bb --help                       # list bb subcommands
 ```
 
 > Note: there is currently NO `sustech <svc> session login|check|refresh`
