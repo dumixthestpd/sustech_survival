@@ -92,13 +92,23 @@ def my_function(auth=None):
 
 格式：`学号:密码`。会话仅保存在**内存中** —— 不写 `session.json` 到磁盘。
 
-各模块的 CLI 提供 `session login | check | refresh`：
+**普通 `pip install` 之后，包内并不会自带凭据文件** —— 运行时不会打包 `credentials.txt`。你需要自己创建（上面的“从包源码向上搜索”在 site-packages 里找不到任何东西），例如：
 
 ```bash
-sustech bb session login
-sustech tis session refresh
-python -m sustech_survival.lib.login   # 图书馆 Primo
+# 一次性配置：写入你的学号+密码（权限 600）
+echo '12410000:your-password-here' > ~/.config/sustech_survival/credentials.txt
+chmod 600 ~/.config/sustech_survival/credentials.txt
 ```
+
+已安装并想先确认凭据可用（不做真实操作）：
+
+```bash
+python -m sustech_survival.lib.login   # 图书馆 Primo（无头 CAS 登录）
+sustech pms check                      # 校验 PMS 认证
+sustech bb --help                      # 列出 bb 子命令
+```
+
+> 说明：目前**没有** `sustech <服务> session login|check|refresh` 这类子命令（README 早先写的不存在）。请在 Python 里用 `ensure()` / `auth.check()`，或用上面各模块的只读命令。
 
 ### 3. 示例用法
 
@@ -136,26 +146,43 @@ python -m sustech_survival.webui
 ## 架构
 
 ```
+# 第一行 —— 官方系统（南科大提供；我们去对接）
 sustech_survival/
-├── bb/                ← Blackboard Learn / 毕博
-├── tis/               ← TIS / 教学信息服务
-│   └── classroom/     ← TIS 教室查询 + 场地借用 (cdjy)
-├── lib/               ← 图书馆 (Primo)
-│   └── booking/       ← IC 图书馆预约
-├── sso/               ← 共享认证底座（CAS + Shibboleth）
-├── pms/               ← 联创打印
-├── transit/           ← 校园巴士地图（自建）
-├── faculty/           ← 教师目录（自建）
-├── selectcourse/      ← TIS 选课辅助（自建）
-│   └── ical.py        ← .ics 导出（自建）
-├── booking/           ← E-Hall / 网上办事大厅
-├── ws/                ← SUSTech Global / 外事
-├── context/           ← 每日快照（自建）
-├── nces/              ← 牛哇课程评价
-├── papers/            ← CrossRef / CNKI / WoS / RSC（自建）
-├── calendar.py        ← 校历与日期智能（自建）
-├── exceptions.py
-└── webui/             ← Flask 单页应用（自建）：TIS + transit + NCES + iCal
+├── sso/      ← 统一 SSO 底座（CAS / Shibboleth；authorizer 层）
+├── bb/       ← Blackboard Learn (毕博)
+├── tis/      ← TIS 教学信息服务
+│   └── classroom/  ← TIS 教室查询 + 场地借用 (cdjy)
+├── lib/      ← 图书馆 (Primo)
+│   └── booking/   ← IC 图书馆预约（研讨室）
+├── pms/      ← 联创打印
+├── ws/       ← SUSTech Global 外事
+├── booking/  ← E-Hall 网上办事大厅
+├── nces/     ← 牛哇课程评价
+└── transit/  ← 校巴时刻 + 实时 GPS + 校园地图 官方数据
+
+# 第二行 —— 我们自建（在官方系统之上自己做的模块）
+│
+├── selectcourse/   ← TIS 选课辅助（浏览 / 加退 / 购物车）
+│   └── ical.py     ← 已选学期的 .ics 导出
+├── faculty/        ← 教师目录（列表 / 搜索 / 档案）
+├── context/        ← 每日快照（日期、截止、当前课程、天气、AQI）
+├── calendar.py     ← 校历与日期智能
+├── papers/         ← 学术检索 / 抓取（CrossRef、CNKI、WoS、RSC）
+├── webui/          ← Flask 单页应用（TIS + transit + NCES + iCal）
+└── api/            ← 无 Flask 的 JSON 契约，供 webui / 自定义 skin 使用
+
+# sso / authorizer —— 简化继承关系
+Authorizer                      （抽象基类：ensure/check/refresh，内存会话，过期自检）
+ ├── CASAuthorizer              （CAS 3.0 握手：取 execution token → POST 凭据 → 换票据）
+ │     ├── TISAuth              BASE_URL + SERVICE_URL = TIS
+ │     ├── BBAuth               BASE_URL + SERVICE_URL = 毕博
+ │     ├── LibAuth              BASE_URL + SERVICE_URL = 图书馆 Primo
+ │     ├── WiFiAuth             BASE_URL + SERVICE_URL = 校园 Wi-Fi 网关
+ │     └── NCESAuth             CAS 经 Keycloak OIDC + cas-proxy（非普通票据）
+ ├── ShibbolethAuthorizer       （Shibboleth：CNKIAuth、WoSAuth）
+ ├── BookingAuth                （ehall authcenter，非普通 CAS）
+ ├── PMSAuth、ACSAuth、JSTORAuth、IEEEAuth、SpringerAuth、WileyAuth、ScopusAuth、PubMedAuth（直接继承 Authorizer）
+ └── WSAuth                     （经 WSProvider）
 ```
 
 ---

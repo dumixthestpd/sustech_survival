@@ -84,7 +84,7 @@ def my_function(auth=None):
     r = auth.session.get(...)
 ```
 
-Credentials are resolved in this order (first match wins):
+**Credentials are resolved in this order (first match wins):**
 
 1. `SUSTECH_CREDENTIALS` env var — explicit path to a credentials file
 2. `~/.config/sustech_survival/credentials.txt` — XDG-style user config
@@ -93,13 +93,28 @@ Credentials are resolved in this order (first match wins):
 
 Format: `sid:password`. Sessions are kept **in memory only** — no `session.json` on disk.
 
-Each module's CLI exposes `session login | check | refresh`:
+**After a plain `pip install`, credentials do NOT ship with the package** — the
+package never bundles a `credentials.txt`. You must create one (the walk-up in
+step 4 finds nothing in site-packages), e.g.:
 
 ```bash
-sustech bb session login
-sustech tis session refresh
-python -m sustech_survival.lib.login   # Library Primo
+# one-time setup: write your SUSTech SID + password (mode 600)
+echo '12410000:your-password-here' > ~/.config/sustech_survival/credentials.txt
+chmod 600 ~/.config/sustech_survival/credentials.txt
 ```
+
+Already installed and want to confirm the creds work against a system before a
+real call? Use any read-only authenticated command:
+
+```bash
+python -m sustech_survival.lib.login   # Library Primo (headless CAS login)
+sustech pms check                      # verify PMS auth
+sustech bb --help                       # list bb subcommands
+```
+
+> Note: there is currently NO `sustech <svc> session login|check|refresh`
+> subcommand — those shown here historically were not implemented. Use
+> `ensure()` / `auth.check()` in Python, or the per-module read commands above.
 
 ### 3. Example use
 
@@ -137,26 +152,43 @@ scheduling, transit map with live bus GPS, NCES hover cards on every course.
 ## Architecture
 
 ```
+# Row 1 — OFFICIAL systems (provided by SUSTech; we authenticate against / query them)
 sustech_survival/
-├── bb/                ← Blackboard Learn
-├── tis/               ← Teaching Information System (TIS)
-│   └── classroom/     ← TIS classroom inquiry + venue-borrow (cdjy)
-├── lib/               ← SUSTech Library (Primo)
-│   └── booking/       ← IC library booking (research rooms, etc.)
-├── sso/               ← Shared auth backbone (CAS + Shibboleth)
-├── pms/               ← Campus Printing System
-├── transit/           ← Bus + campus map (we built)
-├── faculty/           ← Faculty directory (we built)
-├── selectcourse/      ← TIS course selection helper (we built)
-│   └── ical.py        ← .ics export (we built)
-├── booking/           ← E-Hall (ehall.sustech.edu.cn)
-├── ws/                ← SUSTech Global (international programs)
-├── context/           ← Daily-use snapshot (we built)
-├── nces/              ← Niuwa Curriculum Evaluation System
-├── papers/            ← CrossRef / CNKI / WoS / RSC (we built)
-├── calendar.py        ← Academic calendar + date intelligence (we built)
-├── exceptions.py
-└── webui/             ← Flask SPA (we built): TIS + transit + NCES + iCal
+├── sso/      ← Shared SSO backbone (CAS / Shibboleth; the authorizer layer)
+├── bb/       ← Blackboard Learn
+├── tis/      ← Teaching Information System (TIS)
+│   └── classroom/  ← TIS classroom inquiry + venue-borrow (cdjy)
+├── lib/      ← SUSTech Library (Primo)
+│   └── booking/   ← IC library booking (research rooms)
+├── pms/      ← Campus Printing System
+├── ws/       ← SUSTech Global (international programs)
+├── booking/  ← E-Hall (ehall.sustech.edu.cn)
+├── nces/     ← Niuwa Curriculum Evaluation System
+└── transit/  ← official bus schedule + live GPS + campus map data
+
+# Row 2 — WE BUILT (our own modules on top of those systems)
+│
+├── selectcourse/   ← TIS choice helper (browse / add / drop / cart)
+│   └── ical.py     ← .ics export of an enrolled semester
+├── faculty/        ← Faculty directory (list / search / profile)
+├── context/        ← Daily-use snapshot (date, deadlines, class-now, weather, AQI)
+├── calendar.py     ← Academic calendar + date intelligence
+├── papers/         ← scholarly search / fetch (CrossRef, CNKI, WoS, RSC)
+├── webui/          ← Flask SPA (TIS + transit + NCES + iCal)
+└── api/            ← Flask-free JSON contract the webui / a custom skin consumes
+
+# sso / authorizer — simplified inheritance
+Authorizer                      (abstract base: ensure/check/refresh, in-memory session, stale detection)
+ ├── CASAuthorizer              (CAS 3.0 handshake: fetch execution token → POST creds → exchange ticket)
+ │     ├── TISAuth              BASE_URL + SERVICE_URL = TIS
+ │     ├── BBAuth               BASE_URL + SERVICE_URL = Blackboard
+ │     ├── LibAuth              BASE_URL + SERVICE_URL = Library Primo
+ │     ├── WiFiAuth             BASE_URL + SERVICE_URL = campus Wi-Fi gateway
+ │     └── NCESAuth             CAS via Keycloak OIDC + cas-proxy (not a plain ticket)
+ ├── ShibbolethAuthorizer       (Shibboleth: CNKIAuth, WoSAuth)
+ ├── BookingAuth                (ehall authcenter, not plain CAS)
+ ├── PMSAuth, ACSAuth, JSTORAuth, IEEEAuth, SpringerAuth, WileyAuth, ScopusAuth, PubMedAuth (direct Authorizer)
+ └── WSAuth                     (via WSProvider)
 ```
 
 ---
