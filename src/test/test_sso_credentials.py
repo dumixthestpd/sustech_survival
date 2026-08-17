@@ -62,37 +62,56 @@ def test_resolve_creds_path_defaults_to_xdg(monkeypatch):
     assert p.name == "credentials.txt"
 
 
-# ── CLI: `sustech sso credentials` ─────────────────────────────────────────
+# ── CLI: `sustech sso creds set` / `sustech sso creds status` ────────────
 
-def test_cli_status(monkeypatch, tmp_path):
+def test_cli_creds_status(monkeypatch, tmp_path):
     from click.testing import CliRunner
-    from sustech_survival.cli.main import sso_credentials
-    monkeypatch.setenv("SUSTECH_CREDENTIALS", str(tmp_path / "creds.txt"))
-    r = CliRunner().invoke(sso_credentials, ["--status"])
+    from sustech_survival.cli.main import sso_creds_status
+    import sustech_survival.sso.authorizer as A
+    monkeypatch.setattr(A, "resolve_creds_path", lambda: tmp_path / "creds.txt")
+    r = CliRunner().invoke(sso_creds_status, [])
     assert r.exit_code == 0
     assert "creds.txt" in r.output
     assert "Exists: False" in r.output
 
 
-def test_cli_write(monkeypatch, tmp_path):
+def test_cli_creds_set_pass(monkeypatch, tmp_path):
     from click.testing import CliRunner
-    from sustech_survival.cli.main import sso_credentials
+    from sustech_survival.cli.main import sso_creds_set
+    import sustech_survival.sso.authorizer as A
     target = tmp_path / "creds.txt"
-    monkeypatch.setenv("SUSTECH_CREDENTIALS", str(target))
+    monkeypatch.setattr(A, "write_credentials",
+                        lambda sid, pw, path=None: target.write_text(f"{sid}:{pw}\n", encoding="utf-8") or target)
     r = CliRunner().invoke(
-        sso_credentials, ["--sid", "12410000", "--password", "cli-pass"])
+        sso_creds_set, ["--sid", "12410000", "--pass", "cli-pass"])
     assert r.exit_code == 0
     assert target.read_text().strip() == "12410000:cli-pass"
 
 
-def test_cli_write_prompts_hidden(monkeypatch, tmp_path):
-    """Without --password, it should prompt (hidden); here we feed stdin."""
+def test_cli_creds_set_password_alias(monkeypatch, tmp_path):
+    """--password is accepted as an alias of --pass."""
     from click.testing import CliRunner
-    from sustech_survival.cli.main import sso_credentials
+    from sustech_survival.cli.main import sso_creds_set
+    import sustech_survival.sso.authorizer as A
     target = tmp_path / "creds.txt"
-    monkeypatch.setenv("SUSTECH_CREDENTIALS", str(target))
+    monkeypatch.setattr(A, "write_credentials",
+                        lambda sid, pw, path=None: target.write_text(f"{sid}:{pw}\n", encoding="utf-8") or target)
     r = CliRunner().invoke(
-        sso_credentials, ["--sid", "12410000"],
+        sso_creds_set, ["--sid", "12410000", "--password", "cli-pass"])
+    assert r.exit_code == 0
+    assert target.read_text().strip() == "12410000:cli-pass"
+
+
+def test_cli_creds_set_prompts_hidden(monkeypatch, tmp_path):
+    """Without --pass, it prompts (hidden); here we feed stdin."""
+    from click.testing import CliRunner
+    from sustech_survival.cli.main import sso_creds_set
+    import sustech_survival.sso.authorizer as A
+    target = tmp_path / "creds.txt"
+    monkeypatch.setattr(A, "write_credentials",
+                        lambda sid, pw, path=None: target.write_text(f"{sid}:{pw}\n", encoding="utf-8") or target)
+    r = CliRunner().invoke(
+        sso_creds_set, ["--sid", "12410000"],
         input="prompted-pw\nprompted-pw\n")
     assert r.exit_code == 0
     assert target.read_text().strip() == "12410000:prompted-pw"
