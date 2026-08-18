@@ -135,10 +135,12 @@ print(ctx.to_str())
 **Web UI (most common workflow):**
 
 ```bash
-python -m sustech_survival.webui
+sustech webui
 ```
 
-Opens the web ui at port `20129`.
+Serves the web UI on its default head at port `20129`. Use
+`sustech webui serve --skin <name>` to pick a different installed head
+(see [Installing Different webui Heads](#installing-different-webui-heads)).
 
 ---
 
