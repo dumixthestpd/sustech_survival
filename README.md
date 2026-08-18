@@ -67,10 +67,13 @@ pip install "sustech_survival[all] @ git+https://github.com/dumixthestpd/sustech
 
 Shared CAS auth backbone lives in `sustech_survival/sso/authorizer.py`.
 Every per-system login (BB, TIS, Library, WS, PMS, NCES, Booking, ...) is
-just an `Authorizer` subclass — pick one and call `ensure()`:
+just an `Authorizer` subclass — the abstract base defines how to check a
+session, refresh when expired, and detect a stale response, while each
+subclass only sets a few parameters (`BASE_URL`, `SERVICE_URL`) to point at
+a specific system. Pick one and call `ensure()`:
 
 ```python
-from sustech_survival.sso import TISAuth
+from sustech_survival.sso import TISAuth      # any auth subclass works
 
 auth = TISAuth()                       # singleton-per-class
 ok, reason = auth.ensure()             # check session, auto-refresh if expired
@@ -84,22 +87,23 @@ def my_function(auth=None):
     r = auth.session.get(...)
 ```
 
-**Credentials are resolved with three-way precedence (later wins):**
+The module accepts credentials in three ways:
 
-1. `sustech_survival.sso.cred_set(sid=..., pwd=...)` — in-memory, highest
-2. `./credentials.txt` — current working directory
-3. `SUSTECH_CREDENTIALS` env var — explicit path to a credentials file
+1. `sustech_survival.sso.cred_set(sid=..., pwd=...)` — a temporary override at
+   the root level; the auth instances use these in-memory credentials from that
+   line onward.
+2. `./credentials.txt` in the current working directory — the reference used in
+   the absence of an override. Format: `sid:password`.
+3. `SUSTECH_CREDENTIALS` environmental variable — the path to a `sid:password`
+   file.
 
-Format: `sid:password`. Sessions are kept **in memory only** — no `session.json` on disk.
 
 ```python
 from sustech_survival import sso
 sso.cred_set(sid="12410000", pwd="your-password-here")   # in-memory, wins
 ```
 
-**After a plain `pip install`, credentials do NOT ship with the package** — the
-package never bundles a `credentials.txt`. Set them with one command
-(writes `./credentials.txt` in the working directory, mode 600):
+The following command writes `./credentials.txt` in the working directory:
 
 ```bash
 sustech sso creds set --sid 12410000 --pass 'your-password-here'
@@ -109,14 +113,8 @@ sustech sso creds set --sid 12410000 --pass 'your-password-here'
 Already installed and want to confirm the creds work before a real call:
 
 ```bash
-sustech sso check                        # validate against CAS, no service binding
-python -m sustech_survival.lib.login   # Library Primo (headless CAS login)
-sustech pms check                      # verify PMS auth
+sustech sso check                        # validate against CAS
 ```
-
-> Note: there is currently NO `sustech <svc> session login|check|refresh`
-> subcommand — those shown here historically were not implemented. Use
-> `ensure()` / `auth.check()` in Python, or the per-module read commands above.
 
 ### 3. Example use
 
@@ -140,10 +138,34 @@ print(ctx.to_str())
 python -m sustech_survival.webui
 ```
 
-Open `http://localhost:20129` — TIS course selector with conflict-free
-scheduling, transit map with live bus GPS, NCES hover cards on every course.
+Opens the web ui at port `20129`.
 
 ---
+
+
+## Installing Different webui Heads
+
+The web UI is a *head* — a self-contained skin folder (with a `manifest.json`)
+that the `webui` serves. You can install and switch between several heads.
+
+```bash
+# 1. Copy the built-in head into your user config so you can edit/skin it
+sustech webui install default
+
+# 2. Install your own head (a directory that has a manifest.json)
+sustech webui install --path /path/to/my-head
+
+# 3. See what's installed and which is active
+sustech webui skins
+
+# 4. Serve a specific installed head
+sustech webui serve --skin my-head
+```
+
+Installed heads live under `~/.config/sustech_survival/webui/skins/`.
+The `sustech_survival.api` Flask-free JSON contract is what a custom head
+consumes — see [Web UI](docs/en/webui.md) and the loader
+(`src/sustech_survival/webui/loader.py`).
 
 ## Related projects
 
@@ -154,44 +176,32 @@ scheduling, transit map with live bus GPS, NCES hover cards on every course.
 ## Architecture
 
 ```
-# Row 1 — OFFICIAL systems (provided by SUSTech; we authenticate against / query them)
 sustech_survival/
-├── sso/      ← Shared SSO backbone (CAS / Shibboleth; the authorizer layer)
-├── bb/       ← Blackboard Learn
-├── tis/      ← Teaching Information System (TIS)
-│   └── classroom/  ← TIS classroom inquiry + venue-borrow (cdjy)
-├── lib/      ← SUSTech Library (Primo)
-│   └── booking/   ← IC library booking (research rooms)
-├── pms/      ← Campus Printing System
-├── ws/       ← SUSTech Global (international programs)
-├── booking/  ← E-Hall (ehall.sustech.edu.cn)
-├── nces/     ← Niuwa Curriculum Evaluation System
-└── transit/  ← official bus schedule + live GPS + campus map data
-
-# Row 2 — WE BUILT (our own modules on top of those systems)
+├── sso/          Official: shared SSO / authorizer backbone (CAS, Shibboleth)
+├── bb/           Official: Blackboard Learn
+├── tis/          Official: Teaching Information System (TIS)
+│   └── classroom/    TIS classroom inquiry + venue-borrow (cdjy)
+├── lib/          Official: SUSTech Library (Primo)
+│   └── booking/      IC library booking (research rooms)
+├── pms/          Official: Campus Printing System
+├── ws/           Official: SUSTech Global (international programs)
+├── booking/      Official: E-Hall (ehall.sustech.edu.cn)
+├── nces/         Official: Niuwa Curriculum Evaluation System
+├── transit/      Official: bus schedule + live GPS + campus map data
 │
-├── selectcourse/   ← TIS choice helper (browse / add / drop / cart)
-│   └── ical.py     ← .ics export of an enrolled semester
-├── faculty/        ← Faculty directory (list / search / profile)
-├── context/        ← Daily-use snapshot (date, deadlines, class-now, weather, AQI)
-├── calendar.py     ← Academic calendar + date intelligence
-├── papers/         ← scholarly search / fetch (CrossRef, CNKI, WoS, RSC)
-├── webui/          ← Flask SPA (TIS + transit + NCES + iCal)
-└── api/            ← Flask-free JSON contract the webui / a custom skin consumes
-
-# sso / authorizer — simplified inheritance
-Authorizer                      (abstract base: ensure/check/refresh, in-memory session, stale detection)
- ├── CASAuthorizer              (CAS 3.0 handshake: fetch execution token → POST creds → exchange ticket)
- │     ├── TISAuth              BASE_URL + SERVICE_URL = TIS
- │     ├── BBAuth               BASE_URL + SERVICE_URL = Blackboard
- │     ├── LibAuth              BASE_URL + SERVICE_URL = Library Primo
- │     ├── WiFiAuth             BASE_URL + SERVICE_URL = campus Wi-Fi gateway
- │     └── NCESAuth             CAS via Keycloak OIDC + cas-proxy (not a plain ticket)
- ├── ShibbolethAuthorizer       (Shibboleth: CNKIAuth, WoSAuth)
- ├── BookingAuth                (ehall authcenter, not plain CAS)
- ├── PMSAuth, ACSAuth, JSTORAuth, IEEEAuth, SpringerAuth, WileyAuth, ScopusAuth, PubMedAuth (direct Authorizer)
- └── WSAuth                     (via WSProvider)
+├── selectcourse/ We built: TIS choice helper (browse / add / drop / cart)
+│   └── ical.py       .ics export of an enrolled semester
+├── faculty/      We built: faculty directory (list / search / profile)
+├── context/      We built: daily-use snapshot (date, deadlines, class-now, weather, AQI)
+├── calendar.py   We built: academic calendar + date intelligence
+├── papers/       We built: scholarly search / fetch (CrossRef, CNKI, WoS, RSC)
+├── webui/        We built: Flask SPA (TIS + transit + NCES + iCal)
+└── api/          We built: Flask-free JSON contract the webui / a custom skin consumes
 ```
+
+The `sso` layer is the shared auth backbone: `Authorizer` is the abstract
+base, and each service's login is just an `Authorizer` subclass. See the
+[Quick start](#2-authentication) for how one handles credentials.
 
 ---
 
