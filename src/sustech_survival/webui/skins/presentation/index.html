@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
+<title>sustech_survival — Web UI</title>
+<style>
+  :root{
+    --bg0:#070b13;--bg1:#0b1420;--bg2:#101c2c;
+    --card:rgba(255,255,255,.045);--card2:rgba(255,255,255,.07);
+    --line:rgba(255,255,255,.10);--line2:rgba(255,255,255,.18);
+    --ink:#eaf2fb;--mut:#94a8be;--dim:#5c7188;
+    --org:#ed7005;--org2:#ff9c3d;--teal:#004851;--teal2:#40d0c0;
+    --disp:"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:
+      radial-gradient(1200px 800px at 80% -10%, rgba(237,112,5,.10), transparent 60%),
+      radial-gradient(1000px 700px at -10% 110%, rgba(64,208,192,.08), transparent 60%),
+      linear-gradient(160deg,var(--bg0),var(--bg1) 45%,var(--bg2));
+    color:var(--ink);font-family:var(--disp);min-height:100vh;display:flex;flex-direction:column;user-select:none}
+  header{padding:2rem 2.5rem;display:flex;align-items:center;gap:1.1rem;border-bottom:1px solid var(--line)}
+  header img{height:3rem;width:auto}
+  header h1{font-size:1.5rem;font-weight:800;letter-spacing:-.01em}
+  header h1 span{color:var(--org2)}
+  header p{color:var(--mut);font-size:.92rem;margin-top:.25rem}
+  main{flex:1;padding:2.5rem;display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1.5rem;align-content:start}
+  .card{display:flex;flex-direction:column;gap:.4rem;text-decoration:none;color:inherit;
+        background:var(--card);border:1px solid var(--line);border-radius:16px;padding:1.6rem;
+        transition:transform .15s,background .15s,border-color .15s}
+  .card:hover{transform:translateY(-3px);background:var(--card2);border-color:rgba(237,112,5,.5)}
+  .card .icon{font-size:2.4rem}
+  .card h2{margin-top:.5rem;font-size:1.25rem;font-weight:700}
+  .card p{margin-top:.3rem;color:var(--mut);font-size:.9rem;line-height:1.5}
+  .kicker{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--org2);font-weight:600;margin-top:.6rem}
+  .kicker::before{content:"";width:22px;height:2px;background:var(--org);border-radius:2px}
+  footer{padding:1.2rem 2.5rem;border-top:1px solid var(--line);color:var(--dim);font-size:.78rem}
+  footer a{color:var(--teal2);text-decoration:none}
+</style>
+</head>
+<body>
+<header>
+  <img src="/logo-full.svg" alt="sustech_survival">
+  <div>
+    <h1>SUSTech <span>Survival</span> — Web UI</h1>
+    <p>一个端口，一个入口。选择要继续的子模块。</p>
+  </div>
+</header>
+<main>
+  <a class="card" href="/tis">
+    <div class="icon">📅</div>
+    <h2>TIS 选课</h2>
+    <p>浏览课程目录、搜索课程、构建无冲突的周课表、查看 NCES 同学评教，并试运行加/退课。</p>
+    <span class="kicker">/tis</span>
+  </a>
+  <a class="card" href="/transit">
+    <div class="icon">🚌</div>
+    <h2>Transit — 校园地图</h2>
+    <p>实时校巴 GPS、时刻表，以及 GPS 对齐的 MapLibre + PMTiles 校园地图。</p>
+    <span class="kicker">/transit</span>
+  </a>
+</main>
+<footer>sustech_survival · 统一 Web UI · <a href="/api/tis/info">TIS API</a> · <a href="/api/transit/live">Transit live</a></footer>
+</body>
+</html>

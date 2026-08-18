@@ -128,7 +128,18 @@ def _int_or_none(v):
 @bp.route("/tis")
 def page():
     xn, xq = _parse_sem(request.args)
-    return render_template("tis.html", xn=xn, xq=xq)
+    # The active head may provide its own /tis page. A custom (non-default)
+    # head is authoritative: if it ships no tis.html, the feature is dropped
+    # (404). Only the shipped default head falls back to the package template.
+    from flask import current_app, abort, send_from_directory
+    from pathlib import Path as _Path
+    sr = current_app.config.get("SKIN_ROOT")
+    _skin_root = _Path(sr) if sr else None
+    if _skin_root and (_skin_root / "tis.html").is_file():
+        return send_from_directory(_skin_root, "tis.html")
+    if current_app.config.get("SKIN_IS_DEFAULT", False):
+        return render_template("tis.html", xn=xn, xq=xq)
+    abort(404)
 
 
 # -- API ----------------------------------------------------------------------

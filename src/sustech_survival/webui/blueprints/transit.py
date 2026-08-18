@@ -31,6 +31,34 @@ _TRANSIT_WEB = (Path(__file__).resolve().parents[2]
                 / "transit" / "web")
 
 
+def _active_skin_transit():
+    """Path to the active skin's transit dir (``<skin>/transit``) if present,
+    else ``None`` — a custom head that ships no transit dir has dropped the
+    feature. The shipped default head falls back to the package ``transit/web``.
+    """
+    from flask import current_app
+    from pathlib import Path as _Path
+    root = current_app.config.get("SKIN_ROOT")
+    if root:
+        p = _Path(root) / "transit"
+        if p.is_dir():
+            return p
+    return None
+
+
+def _transit_root():
+    """Resolve the transit web root for the active head."""
+    from flask import current_app
+    skin_t = _active_skin_transit()
+    if skin_t is not None:
+        return skin_t
+    # Custom (non-default) skins get no transit fallback. The default head
+    # uses the package transit/web.
+    if current_app.config.get("SKIN_IS_DEFAULT", False):
+        return _TRANSIT_WEB
+    return None
+
+
 def _data_dir() -> Optional[Path]:
     d = current_app.config.get("TRANSIT_DATA_DIR")
     return Path(d) if d else None
@@ -51,21 +79,22 @@ def _maybe_start_live_refresh():
 @bp.route("/transit")
 def page():
     _maybe_start_live_refresh()
-    idx = _TRANSIT_WEB / "index.html"
+    _root = _transit_root()
+    if not _root:
+        abort(404)  # active head dropped the transit feature
+    idx = _root / "index.html"
     if not idx.exists():
         return Response(
             "<h1>Transit web files not found</h1>"
-            "<p>Expected transit/web/index.html in the package.</p>", 500)
-    return send_from_directory(_TRANSIT_WEB, "index.html")
+            "<p>Expected transit/index.html in the active skin (or transit/web in the package).</p>", 500)
+    return send_from_directory(idx.parent, "index.html")
 
 
-@bp.route("/static/<path:filename>")
-def static(filename: str):
-    # Transit frontend assets at root /static/.
-    f = _TRANSIT_WEB / "static" / filename
-    if f.is_file():
-        return send_from_directory(_TRANSIT_WEB / "static", filename)
-    abort(404)
+# NOTE: transit's /static/<path> assets are served by the app-level
+# /static/<path> handler in webui/app.py (which owns the single rule and
+# resolves transit assets through _transit_root()). Registering a second
+# /static/<path> rule here would shadow the app handler for ALL skins and
+# break shared assets like /static/tis/tis.js.
 
 
 @bp.route("/data/<path:filename>")
