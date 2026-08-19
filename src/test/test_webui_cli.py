@@ -24,7 +24,11 @@ from sustech_survival.cli.main import (
 )
 
 # Shipped package skins (user cache is hidden by the fixture below).
-PACKAGE_SKINS = ["default", "sustech_orange", "sustech_official_light"]
+PACKAGE_SKINS = [
+    "default", "sustech_orange", "sustech_official_light",
+    "sustech_midnight", "sustech_aurora", "sustech_paper",
+    "sustech_neon", "sustech_emerald",
+]
 
 
 @pytest.fixture()

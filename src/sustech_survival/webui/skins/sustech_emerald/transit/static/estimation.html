@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <title>How we estimate transit times — SUSTech Transit</title>
+  <style>
+    :root { --primary: #0066cc; --bg: #f7f7fa; --text: #1a1a1a; --text-dim: #666; --border: #e0e0e8; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      line-height: 1.6; }
+    header { background: linear-gradient(135deg, var(--primary) 0%, #004999 100%); color: #fff;
+      padding: 16px 24px; }
+    header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+    header a { color: #fff; text-decoration: none; opacity: 0.85; font-size: 12px; }
+    main { max-width: 760px; margin: 0 auto; padding: 32px 24px; }
+    h2 { margin-top: 32px; font-size: 18px; color: var(--text); border-bottom: 1px solid var(--border);
+      padding-bottom: 6px; }
+    h3 { margin-top: 22px; font-size: 14px; color: var(--text-dim); text-transform: uppercase;
+      letter-spacing: 0.5px; }
+    p, ul, table { font-size: 14px; }
+    code { background: #eef0f5; padding: 1px 5px; border-radius: 3px; font-family: "SF Mono", "Menlo", monospace;
+      font-size: 13px; }
+    pre { background: #1e1e1e; color: #e0e0e0; padding: 12px 14px; border-radius: 4px;
+      overflow-x: auto; font-size: 12px; line-height: 1.5; }
+    pre code { background: none; color: inherit; padding: 0; }
+    table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+    th, td { padding: 6px 10px; border-bottom: 1px solid var(--border); text-align: left;
+      font-size: 13px; }
+    th { background: #f0f0f5; font-weight: 600; }
+    .formula { background: #fff; padding: 14px 18px; border-left: 3px solid var(--primary);
+      border-radius: 0 4px 4px 0; margin: 12px 0; font-size: 14px; }
+    .formula .var { font-family: "SF Mono", "Menlo", monospace; color: var(--primary); }
+    .note { background: #fff8e1; border-left: 3px solid #f59f00; padding: 10px 14px;
+      border-radius: 0 4px 4px 0; font-size: 13px; margin: 16px 0; }
+    .back-link { display: inline-block; margin-top: 32px; font-size: 13px; color: var(--primary);
+      text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>ⓘ How we estimate transit times</h1>
+    <a href="/">← Back to map</a>
+  </header>
+  <main>
+    <p>
+      Travel times in <strong>SUSTech Transit</strong> are computed from real
+      geometry (OpenStreetMap footways) + real elevation (Open-Elevation
+      API), using three simple formulas. You can tune all the constants by
+      editing <code>state.PARAMS</code> in <code>web/static/app.js</code>.
+    </p>
+
+    <h2>Speeds (defaults)</h2>
+    <table>
+      <thead><tr><th>Constant</th><th>Default</th><th>What</th></tr></thead>
+      <tbody>
+        <tr><td><code>walkFlatKmh</code></td><td>4.5 km/h</td><td>Pedestrian flat-ground speed</td></tr>
+        <tr><td><code>bikeFlatKmh</code></td><td>16.0 km/h</td><td>Casual cyclist flat-ground speed</td></tr>
+        <tr><td><code>toblerMaxKmh</code></td><td>6.0 km/h</td><td>Peak Tobler speed (at -5% downhill)</td></tr>
+        <tr><td><code>toblerAscentCoef</code></td><td>3.5</td><td>Tobler's slope-sensitivity <code>k</code></td></tr>
+        <tr><td><code>bikeClimbCoef</code></td><td>10.0</td><td>Bike climb-fraction multiplier</td></tr>
+        <tr><td><code>transferPenaltyMin</code></td><td>5 min</td><td>Per-bus-transfer pad</td></tr>
+        <tr><td><code>waitHeadwayMin</code></td><td>10 min</td><td>Typical bus headway</td></tr>
+      </tbody>
+    </table>
+
+    <h2>🚶 Walk — Tobler's hiking function (1993)</h2>
+    <p>
+      The classic model: speed is maximized at a gentle downhill slope
+      (-5%) and falls off rapidly uphill. Slope <code>s</code> is in m/m
+      (rise/run); positive = uphill.
+    </p>
+    <div class="formula">
+      <code>v(s) = toblerMaxKmh · exp(-toblerAscentCoef · |s + 0.05|)</code><br>
+      <code>duration_min = (distance_m / 1000) / v(s) · 60</code>
+    </div>
+    <p>
+      At +5% uphill: <code>v ≈ 2.4 km/h</code>. At -15% downhill:
+      <code>v ≈ 3.0 km/h</code>. Symmetric around the optimum.
+    </p>
+
+    <h2>🚴 Bike — climb-fraction model</h2>
+    <p>
+      Cycling is dominated by <strong>vertical gain per unit distance</strong>.
+      Downhill is essentially free (gravity + freewheel). Uphill requires
+      real work proportional to the climb fraction.
+    </p>
+    <div class="formula">
+      <code>climbFraction = max(0, climb_m) / max(distance_m, 1)</code><br>
+      <code>speed_kmh = bikeFlatKmh / (1 + bikeClimbCoef · climbFraction)</code><br>
+      <code>duration_min = (distance_m / 1000) / speed_kmh · 60</code>
+    </div>
+    <p>
+      At 6.25% climb (typical 荔园↔欣园 over 茶光山): ~8 km/h. At 15%
+      climb: ~5.3 km/h. Flat: 16 km/h.
+    </p>
+
+    <h2>🚌 Bus — 2.5 min/km + transfer penalty</h2>
+    <div class="formula">
+      <code>duration_min = (distance_m / 1000) · 2.5 + 0.1 + transferPenaltyMin / 2</code>
+    </div>
+    <p>
+      The 2.5 min/km rate matches the campus schedule's
+      <code>minuteOnRoad = 25</code> for the ~10 km inner loop (≈10 km/h average).
+      Elevation doesn't matter for a diesel bus. The half-transfer penalty
+      approximates average wait time; full transfer cost is a future TODO.
+    </p>
+
+    <h2>How the graph is built</h2>
+    <p>Three kinds of nodes:</p>
+    <ul>
+      <li><strong>Facility</strong> (buildings, gates, bus stops) — from
+        <code>facilities.geojson</code> + <code>bus_stops.geojson</code></li>
+      <li><strong>Footway vertex</strong> — every coordinate from
+        <code>footways.json</code> (OSM Overpass)</li>
+    </ul>
+    <p>Three kinds of edges:</p>
+    <ul>
+      <li><strong>Walk (footway)</strong> — consecutive vertices along an
+        OSM footway/path. Used by walk, bike, and transit modes.</li>
+      <li><strong>Walk (access)</strong> — each facility ↔ its nearest
+        footway vertex within 80 m. Used by walk, bike, transit.</li>
+      <li><strong>Bus</strong> — consecutive bus stops on each line/direction.
+        Used by bus and transit modes.</li>
+    </ul>
+    <p>If <code>footways.json</code> is missing or empty, the graph falls back
+      to direct facility-to-facility edges within 250 m (the old "straight
+      line" behavior).</p>
+
+    <h2>Mode filtering</h2>
+    <table>
+      <thead><tr><th>UI mode</th><th>Allowed edge modes</th></tr></thead>
+      <tbody>
+        <tr><td><code>walk</code></td><td>walk only</td></tr>
+        <tr><td><code>bike</code></td><td>walk only (cyclist on path)</td></tr>
+        <tr><td><code>bus</code></td><td>bus only</td></tr>
+        <tr><td><code>transit</code></td><td>walk + bus</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Tuning guide</h2>
+    <p>
+      All formulas are in <code>web/static/app.js</code>, function
+      <code>segmentDuration(lat1, lng1, lat2, lng2, mode)</code>.
+      Edit <code>state.PARAMS</code> at the top of the file to taste.
+      For best results, calibrate against your own timing:
+    </p>
+    <ol>
+      <li>Pick a route you walk regularly (e.g. dorm → 食堂).</li>
+      <li>Time it with a stopwatch.</li>
+      <li>Compare to the model's estimate — adjust
+        <code>walkFlatKmh</code> if it's consistently off.</li>
+      <li>For a hilly route, adjust <code>toblerAscentCoef</code> if the uphill
+        portion is over/underestimated.</li>
+    </ol>
+
+    <div class="note">
+      <strong>Want more realism?</strong> Future improvements (in priority order):
+      <ol>
+        <li><strong>Schedule-aware wait time</strong> — use the bus
+          timetable to compute actual wait at the next departure.</li>
+        <li><strong>Per-transfer cost</strong> — charge the full transfer
+          penalty only when the path actually changes bus lines.</li>
+        <li><strong>Live bus mode</strong> — if a bus is currently within
+          200 m of your origin, treat it as a free ride.</li>
+        <li><strong>Snap-to-2-vertices</strong> — currently each facility
+          snaps to the single nearest footway node; for proper path
+          geometry we should snap to the two nearest (one in each direction).</li>
+        <li><strong>UI sliders</strong> — let users pick their own
+          walk/bike speeds ("I'm fast", "I hate hills").</li>
+      </ol>
+    </div>
+
+    <a class="back-link" href="/">← Back to map</a>
+  </main>
+</body>
+</html>
