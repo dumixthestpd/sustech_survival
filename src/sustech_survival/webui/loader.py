@@ -12,11 +12,11 @@ data functions. A custom head may call ``sustech_survival.api`` directly
 instead of going through the web UI.
 
 Skins are self-contained folders under ``webui/skins/`` (shipped default) or
-the unified on-disk cache (user-installed — ``<cwd>/__sustech_cache__/webui/
-skins/`` by default, or ``$SUSTECH_CACHE_DIR/webui/skins`` — see
-:mod:`sustech_survival._cache`). Each skin has a ``manifest.json`` describing
-its name, entry page, which ``/api/*`` endpoints it needs, and the minimum
-``sustech_survival`` module version it requires (``requires``).
+the user's home dot-directory (user-installed — ``~/.sustech_survival/skins/``,
+override ``$SUSTECH_CONFIG_DIR``; see :mod:`sustech_survival._cache`). Each
+skin has a ``manifest.json`` describing its name, entry page, which ``/api/*``
+endpoints it needs, and the minimum ``sustech_survival`` module version it
+requires (``requires``).
 
 Core ``sustech_survival`` never imports this module; the CLI's ``sustech
 webui serve`` lazily imports it. A user can drop ``webui/`` entirely and the
@@ -48,15 +48,16 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-from .._cache import cache_path
+from .._cache import config_root
 from .._version import __version__
 
 # Shipped default skin lives in this package under skins/default.
 _PKG_SKINS = Path(__file__).resolve().parent / "skins"
-# User-installed skins live in the unified on-disk cache (cwd-relative
-# `<cwd>/__sustech_cache__/webui/skins`, or $SUSTECH_CACHE_DIR), consistent
-# with every other outside-module datum this project persists.
-_USER_SKINS = cache_path("webui", "skins")
+# User-installed skins live in the user's home dot-directory
+# (`~/.sustech_survival/skins`, or $SUSTECH_CONFIG_DIR/skins) — OWNED user
+# data, so it sits beside (not inside) the disposable cache. Consistent with
+# the project's unified on-disk store (see sustech_survival._cache).
+_USER_SKINS = config_root() / "skins"
 
 
 def _parse_version(v: str) -> tuple:

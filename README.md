@@ -161,7 +161,7 @@ The web UI is a *head* — a self-contained skin folder (with a `manifest.json`)
 that the `webui` serves. You can install and switch between several heads.
 
 ```bash
-# 1. Copy the built-in head into your user config so you can edit/skin it
+# 1. Copy the built-in head into your user data dir so you can edit/skin it
 sustech webui install default
 
 # 2. Install your own head (a directory that has a manifest.json)
@@ -172,9 +172,18 @@ sustech webui skins
 
 # 4. Serve a specific installed head
 sustech webui serve --skin my-head
+
+# 4b. OR serve a head straight from its directory — no install/copy
+sustech webui serve --skin-path /path/to/my-head
 ```
 
-Installed heads live under `~/.config/sustech_survival/webui/skins/`.
+Installed heads are copied into `~/.sustech_survival/skins/` (the project's
+home dot-directory; override with `$SUSTECH_CONFIG_DIR`). Use
+`--skin-path <dir>` to serve a head directly from its own directory without
+copying it (e.g. one under version control) — it just records the path.
+Disposable caches (calendar, BB, classroom) live separately under
+`~/.sustech_survival/cache/`.
+
 The `sustech_survival.api` Flask-free JSON contract is what a custom head
 consumes — see [Web UI](docs/en/webui.md) and the loader
 (`src/sustech_survival/webui/loader.py`).

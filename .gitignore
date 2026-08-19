@@ -16,9 +16,10 @@ bb-courses.json
 content_discovery.json
 
 # Cache — personal per-user state
-# Canonical location: <cwd>/__sustech_cache__/<module>/... (one unified dir,
-# managed by sustech_survival._cache — pytest-style). Also ignore the legacy
-# package-local tmp/ if it lingers from older versions.
+# Caches now live in the user's home dot-dir: ~/.sustech_survival/cache/
+# (outside the repo — see sustech_survival._cache). The old cwd-relative
+# __sustech_cache__/ entry is kept defensively for stray copies from older
+# versions, plus the legacy package-local tmp/ during migration.
 __sustech_cache__/
 src/sustech_survival/tmp/
 

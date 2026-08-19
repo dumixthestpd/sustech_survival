@@ -704,7 +704,7 @@ class AcademicCalendar:
                      and ``$SUSTECH_CALENDAR_LOCAL_REPO`` must be set.
         ``cached``:  (only when ``online=True``) consult and update the
                      on-disk cache under the unified cache root
-                     (``<cwd>/__sustech_cache__/calendar/{year}/`` —
+                     (``~/.sustech_survival/cache/calendar/{year}/`` —
                      override via ``SUSTECH_CACHE_DIR`` or ``cache_root=``).
                      Set ``cached=False`` for one-shot loads that should
                      never touch the disk (e.g. tests).
@@ -714,7 +714,7 @@ class AcademicCalendar:
                      or if your local cache has somehow drifted.
         ``base_url``: override the GitHub raw base URL (forks, mirrors).
         ``cache_root``: explicit cache root for the per-year JSON cache
-            (default: the unified ``__sustech_cache__`` dir; pass a Path to
+            (default: the unified ``~/.sustech_survival/cache`` dir; pass a Path to
             isolate tests or point at a custom location).
 
         Cache behaviour in detail:
@@ -901,7 +901,7 @@ def _fetch_json_cached(
           - If no cache exists, GET, save body and meta.
 
     ``cache_root``: explicit cache root (default: the unified
-    ``__sustech_cache__`` dir via :func:`sustech_survival._cache.tmp_root`).
+    ``~/.sustech_survival/cache`` dir via :func:`sustech_survival._cache.tmp_root`).
 
     Network failures with a valid cached copy fall back to the cached
     body — that's the whole point of caching for resilience.
