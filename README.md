@@ -145,11 +145,12 @@ print(ctx.to_str())
 **Web UI (most common workflow):**
 
 ```bash
-sustech webui
+sustech webui serve
 ```
 
-Serves the web UI on its default head at port `20129`. Use
-`sustech webui serve --skin <name>` to pick a different installed head
+Starts the web UI on its default head at port `20129`. (`sustech webui`
+alone just prints help — the server only starts with an explicit `serve`.)
+Use `sustech webui serve --skin <name>` to pick a different installed head
 (see [Installing Different webui Heads](#installing-different-webui-heads)).
 
 ---

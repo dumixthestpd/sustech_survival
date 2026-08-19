@@ -10,12 +10,14 @@ never touch the real ``~/.config``.
 from __future__ import annotations
 
 import json
+import sys
 
 import pytest
 from click.testing import CliRunner
 
 import sustech_survival.webui.loader as loader
 from sustech_survival.cli.main import (
+    webui_cmd,
     webui_skins,
     webui_install,
     webui_serve,
@@ -165,3 +167,33 @@ def test_webui_serve_skin_path_unknown_skin_path_not_a_dir(isolated, runner):
                       ["--skin-path", str(isolated.parent / "does-not-exist")])
     assert r.exit_code == 1
     assert "cannot serve --skin-path" in r.output
+
+
+# ── `sustech webui` alone must NOT serve (help only) ───────────────────────
+
+def test_webui_no_subcommand_shows_help_not_serve(isolated, runner, monkeypatch):
+    """Bare `sustech webui` must not start a server — it shows help (exit 2)
+    and never calls run()."""
+    from sustech_survival.webui import app as webui_app
+    called = []
+
+    def fake_run(**kwargs):
+        called.append(kwargs)
+        return 0
+
+    monkeypatch.setattr(webui_app, "run", fake_run)
+    r = runner.invoke(webui_cmd, [])
+    assert r.exit_code == 2                 # usage error: no subcommand given
+    assert "Usage:" in r.output
+    assert "serve" in r.output              # help lists the subcommands
+    assert called == []                     # run() was never invoked
+
+
+def test_webui_module_no_args_prints_usage(monkeypatch, capsys):
+    """`python -m sustech_survival.webui` with no args prints usage and does
+    not serve."""
+    import sustech_survival.webui.__main__ as m
+    monkeypatch.setattr(sys, "argv", ["sustech_survival.webui"])
+    rc = m.main()
+    assert rc == 2
+    assert "usage:" in capsys.readouterr().out
