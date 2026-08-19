@@ -4,10 +4,9 @@ All user-owned data sustech_survival persists lives in ONE dot-directory in
 the user's home, ``~/.sustech_survival/``, managed exclusively by this module:
 
 - ``~/.sustech_survival/cache/<module>/`` — disposable caches (calendar,
-  BB, classroom, selectcourse). This replaces the old cwd-relative
-  ``__sustech_cache__`` root.
+  BB, classroom, selectcourse) plus any per-module working files. This
+  replaces the old cwd-relative ``__sustech_cache__`` root.
 - ``~/.sustech_survival/skins/``     — user-installed webui skins.
-- ``~/.sustech_survival/tmp/``       — short-lived owned scratch/ staging.
 - ``~/.sustech_survival/config.json``— the one user-editable settings file.
 - ``~/.sustech_survival/credentials.txt`` — shared credentials (default).
 
@@ -21,7 +20,9 @@ Rationale for a home dotdir (vs the previous cwd ``__sustech_cache__``):
 
 Every module that caches on disk should use these helpers rather than
 constructing its own paths. The canonical roots are :func:`config_root`
-(user data), :func:`tmp_root`/`cache_path` (cache), and :func:`user_tmp`.
+(user data) and :func:`tmp_root`/`cache_path` (cache). There is no separate
+scratch dir — staging and working files live under ``cache/<module>/`` like
+everything else, so ``clear_cache`` means exactly "clear the cache".
 
 Overrides:
   - ``$SUSTECH_HOME`` — relocate the WHOLE tree. Defaults to the user's home
@@ -61,8 +62,6 @@ DEFAULT_CONFIG_DIR = ".sustech_survival"
 # Disposable cache root name inside the config dir. May be relocated entirely
 # via the SUSTECH_CACHE_DIR env var or an explicit root= kwarg.
 CACHE_SUBDIR = "cache"
-# Staging / scratch subdir inside the config dir (e.g. BB submission staging).
-TMP_SUBDIR = "tmp"
 
 
 def package_root() -> Path:
@@ -108,15 +107,6 @@ def config_root(root: Optional[Path] = None) -> Path:
         p = Path(direct).expanduser()
         return p if p.is_absolute() else user_home() / p
     return home_root(root) / DEFAULT_CONFIG_DIR
-
-
-def user_tmp(root: Optional[Path] = None) -> Path:
-    """Staging / scratch dir inside the user data tree: ``config_root()/tmp``.
-
-    Used for short-lived owned scratch (e.g. BB submission staging) that must
-    still live under ``~/.sustech_survival`` rather than the OS temp dir.
-    """
-    return config_root(root) / TMP_SUBDIR
 
 
 def config_file(filename: str = "config.json", root: Optional[Path] = None) -> Path:

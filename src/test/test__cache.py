@@ -5,7 +5,7 @@ These tests are offline. They cover the public surface used by every
 module that needs to persist anything to disk:
 
 - ``cache_path(module, *parts)`` — path resolution under
-  ``<sustech_survival>/tmp/<module>/...``
+  ``~/.sustech_survival/cache/<module>/...``
 - ``save_json`` / ``load_json`` — atomic write + safe read
 - ``http_get_with_etag`` — 200 / 304 / error handling
 
@@ -332,16 +332,10 @@ class TestHomeRoot:
         assert _cache.home_root() == tmp_path / "data"
 
 
-# -- user_tmp / config_file / load_config -----------------------------------
+# -- config_file / load_config ----------------------------------------------
 
 
-class TestUserTmpAndConfig:
-    def test_user_tmp_under_config_root(self, monkeypatch, tmp_path):
-        monkeypatch.delenv("SUSTECH_HOME", raising=False)
-        monkeypatch.delenv("SUSTECH_CONFIG_DIR", raising=False)
-        monkeypatch.setattr(_cache, "user_home", lambda: tmp_path)
-        assert _cache.user_tmp() == tmp_path / ".sustech_survival" / "tmp"
-
+class TestConfigFile:
     def test_config_file_is_config_json_under_root(self, monkeypatch, tmp_path):
         monkeypatch.delenv("SUSTECH_HOME", raising=False)
         monkeypatch.delenv("SUSTECH_CONFIG_DIR", raising=False)
