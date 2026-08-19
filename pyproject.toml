@@ -52,6 +52,8 @@ dependencies = [
 [project.optional-dependencies]
 # CLI support (click) is in core deps — [project.scripts] ships a `sustech` entry point.
 # Each group below adds one capability on top of the core library.
+# Version floors are kept minimal and broad (Python >=3.10 throughout) so the
+# resolver picks the newest compatible release on any supported Python.
 webui = [
     # Unified web UI at / — TIS course selector + transit map + future submodules.
     "flask>=2.3",
@@ -68,8 +70,10 @@ nces = [
     "anubis-solver>=0.1",
 ]
 papers = [
-    # Academic paper fetch — cloudscraper for publisher sites that block plain requests.
-    "cloudscraper>=1.3",
+    # Academic paper fetch — cloudscraper for publisher sites that block
+    # plain requests. NOTE: cloudscraper's latest release is 1.2.x — there is
+    # no 1.3, so the floor must stay below it or the extra can never resolve.
+    "cloudscraper>=1.2",
 ]
 pms = [
     # PMS auth — pycryptodome for RSA password encryption (联创 PMS).
@@ -82,7 +86,14 @@ docs = [
     "mkdocs-static-i18n>=1.2",
 ]
 all = [
-    "sustech_survival[playwright,webui,nces,papers,pms]",
+    # Everything above, expanded inline (NO self-reference like
+    # `sustech_survival[...]` — that made pip probe PyPI for our own package
+    # during `pip install -e ".[all]"` and slowed/derailed resolution).
+    "flask>=2.3",
+    "playwright>=1.40",
+    "anubis-solver>=0.1",
+    "cloudscraper>=1.2",
+    "pycryptodome>=3.15",
     # Note: [docs] is intentionally NOT in [all] — it's a doc-author-only
     # extra. Library users don't need MkDocs.
 ]
