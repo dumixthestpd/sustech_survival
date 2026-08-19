@@ -16,7 +16,7 @@ The full campus schedule (~1499 courses × N slots) is fetched once, parsed
 into ScheduleSlots, and indexed. Subsequent queries are O(1) dict lookups.
 
 Cache: stored under the unified cache root
-``<cwd>/__sustech_cache__/classroom/`` with a timestamp.
+``~/.sustech_survival/cache/classroom/`` with a timestamp.
 Default TTL: 3600s. Pass ``max_age=0`` to force a refresh.
 """
 from __future__ import annotations
@@ -141,8 +141,8 @@ class ClassroomOccupancy:
             current = Semester.current()
             self._sem = Semester(xn or current.xn, xq or current.xq)
         self.max_age = max_age
-        # Cache lives in the unified __sustech_cache__ tree; caller may pass
-        # an explicit cache_dir= to override (tests / custom locations).
+        # Cache lives in the unified ~/.sustech_survival/cache tree; caller may
+        # pass an explicit cache_dir= to override (tests / custom locations).
         from sustech_survival import _cache
         self._cache_helper = _cache
         self.cache_dir = cache_dir or _cache.cache_path("classroom")

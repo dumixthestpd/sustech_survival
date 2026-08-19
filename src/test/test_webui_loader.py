@@ -181,17 +181,21 @@ def test_skin_from_path_rejects_non_skin(_tmp_skins, tmp_path):
         loader.skin_from_path(bad_dir)
 
 
-# ── user-skin location uses the unified on-disk cache (no ~/.config) ──────
+# ── user-skin location uses the home dot-directory (no cache, no ~/.config) ─
 
-def test_user_skins_under_unified_cache():
-    """_USER_SKINS must live under the project's unified cache convention
-    (<cwd>/__sustech_cache__/webui/skins or $SUSTECH_CACHE_DIR), never
-    ~/.config. It's resolved at import time, so we assert structure/shape
-    rather than a specific cwd."""
+def test_user_skins_under_home_dotdir():
+    """_USER_SKINS must live in the user's home dot-directory
+    (~/.sustech_survival/skins or $SUSTECH_CONFIG_DIR/skins) — never a
+    cwd-relative cache (no __sustech_cache__) and never ~/.config. It's
+    resolved at import time, so we assert structure/shape rather than a
+    specific HOME."""
     p = loader._USER_SKINS
     assert p.is_absolute()
     assert p.name == "skins"
-    assert p.parent.name == "webui"
-    assert "__sustech_cache__" in str(p)
+    # own dir under the home dot-directory, not nested under cache/
+    assert p.parent.name == ".sustech_survival"
+    assert p.parent == pathlib.Path.home() / ".sustech_survival"
+    assert "__sustech_cache__" not in str(p)
     assert ".config" not in str(p)
+    assert "cache" not in p.parts  # skins sit beside cache/, not inside it
 

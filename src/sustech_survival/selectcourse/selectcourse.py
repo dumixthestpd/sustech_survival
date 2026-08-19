@@ -95,7 +95,7 @@ class SelectCourseClient:
             self.xn = self._sem.xn
             self.xq = self._sem.xq
         self.max_age = max_age
-        # Cache lives in the uniform unified __sustech_cache__ tree. The
+        # Cache lives in the uniform unified ~/.sustech_survival/cache tree. The
         # caller may pass an explicit cache_dir= to override (tests, custom
         # locations); None uses the package default.
         from sustech_survival import _cache

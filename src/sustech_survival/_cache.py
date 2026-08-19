@@ -1,24 +1,33 @@
-"""Uniform cache layout: <cwd>/__sustech_cache__/<module>/...
+"""Unified on-disk store under the user's home: ~/.sustech_survival/.
 
-All persistent caches in sustech_survival live in ONE unified directory
-named ``__sustech_cache__`` (pytest-style), resolved against the working
-directory and managed exclusively by this module:
+All user-owned data sustech_survival persists lives in ONE dot-directory in
+the user's home, ``~/.sustech_survival/`` (override: ``$SUSTECH_CONFIG_DIR``),
+managed exclusively by this module:
 
-- One canonical location next to wherever the user runs the program —
-  no scattered dirs, no XDG branching, no writes into the user profile.
-- When running inside a clone, the cache is ``<cwd>/__sustech_cache__/``
-  and is meant to be gitignored (see the repo's .gitignore).
-- When installed via ``pip``, the cache lands in the working directory the
-  user invokes the tool from — always writable, always one dir.
+- ``~/.sustech_survival/cache/`` — disposable caches (calendar JSON, BB
+  request snapshots, classroom live data). This replaces the old
+  cwd-relative ``__sustech_cache__`` root.
+- ``~/.sustech_survival/skins/``  — user-installed webui skins (owned data).
 
-Every module that needs to cache anything on disk should use these helpers
-rather than constructing its own paths. The canonical root is the single
-path returned by :func:`tmp_root` — there are no legacy locations.
+Rationale for a home dotdir (vs the previous cwd ``__sustech_cache__``):
+  - Deterministic across working directories — skins/data no longer land in
+    *whichever* directory the CLI happened to be run from.
+  - A dotfile is the conventional home for durable user state.
+  - Caches and user-owned data are kept apart: disposable derived data under
+    ``cache/``, things the user actually owns (skins) under ``skins/``.
 
-Override: set ``$SUSTECH_CACHE_DIR`` (absolute or relative — relative
-resolves against the working directory at call time), or pass ``root=`` to
-:func:`cache_path` / :func:`tmp_root`-based functions explicitly.
-No config file, no settings registry — kwargs and one env var.
+Every module that caches on disk should use these helpers rather than
+constructing its own paths. The canonical roots are :func:`config_root`
+(user data) and :func:`tmp_root` (cache).
+
+Overrides:
+  - ``$SUSTECH_CONFIG_DIR`` — custom location of the user dot-directory
+    (skins + the default cache root).
+  - ``$SUSTECH_CACHE_DIR`` — relocate ONLY the cache root elsewhere
+    (e.g. tests point this at ``tmp_path``). When unset, the cache lives at
+    ``config_root() / "cache"``.
+  - ``root=`` kwarg to :func:`cache_path` / :func:`tmp_root` still wins.
+No config file, no settings registry — kwargs and env vars.
 """
 from __future__ import annotations
 
@@ -34,13 +43,17 @@ from typing import Any, Optional, Tuple
 
 _PACKAGE_ROOT: Path = Path(__file__).resolve().parent
 # Back-compat constant: the old default root next to the package. New code
-# must call tmp_root() — the active root defaults to <cwd>/__sustech_cache__
-# and honours $SUSTECH_CACHE_DIR.
+# must call tmp_root() — the active cache root defaults to
+# ~/.sustech_survival/cache and honours $SUSTECH_CACHE_DIR.
 TMP_ROOT: Path = _PACKAGE_ROOT / "tmp"
 
-# Default unified cache dir name (pytest-style). May be overridden by the
-# SUSTECH_CACHE_DIR env var or an explicit root= kwarg.
-DEFAULT_CACHE_DIR = "__sustech_cache__"
+# The single home dot-directory that holds all user-owned sustech_survival
+# data (skins + the default cache root). May be overridden by the
+# SUSTECH_CONFIG_DIR env var.
+DEFAULT_CONFIG_DIR = ".sustech_survival"
+# Disposable cache root name inside the config dir. May be relocated entirely
+# via the SUSTECH_CACHE_DIR env var or an explicit root= kwarg.
+CACHE_SUBDIR = "cache"
 
 
 def package_root() -> Path:
@@ -48,23 +61,49 @@ def package_root() -> Path:
     return _PACKAGE_ROOT
 
 
+def user_home() -> Path:
+    """The current user's home directory.
+
+    Resolved via ``~`` expansion (``Path("~").expanduser()``), which respects
+    ``$HOME`` / ``USERPROFILE``. Kept as a small helper so callers and tests
+    can redirect the home base deterministically.
+    """
+    return Path("~").expanduser()
+
+
+def config_root(root: Optional[Path] = None) -> Path:
+    """The home dot-directory holding user data: ``~/.sustech_survival``.
+
+    Precedence: explicit ``root`` kwarg > ``$SUSTECH_CONFIG_DIR`` env var >
+    ``~/.sustech_survival``. Relative values resolve against the home dir.
+    The directory is NOT created; callers create paths as needed.
+    """
+    raw = root or os.environ.get("SUSTECH_CONFIG_DIR") or DEFAULT_CONFIG_DIR
+    p = Path(raw).expanduser()
+    home = user_home()
+    return p if p.is_absolute() else home / p
+
+
 def tmp_root(root: Optional[Path] = None) -> Path:
     """The active cache root.
 
     Precedence: explicit ``root`` kwarg > ``$SUSTECH_CACHE_DIR`` env var >
-    ``<cwd>/__sustech_cache__``. Relative values resolve against the working
-    directory at call time. Reading this (not the bare ``TMP_ROOT``
-    constant) is the correct way to locate the cache.
+    ``config_root() / "cache"`` (i.e. ``~/.sustech_survival/cache`` by
+    default). An explicit ``$SUSTECH_CACHE_DIR`` is absolute or resolves
+    against the working directory at call time. Reading this (not the bare
+    ``TMP_ROOT`` constant) is the correct way to locate the cache.
     """
-    raw = root or os.environ.get("SUSTECH_CACHE_DIR") or DEFAULT_CACHE_DIR
-    p = Path(raw).expanduser()
-    return p if p.is_absolute() else Path.cwd() / p
+    raw = root or os.environ.get("SUSTECH_CACHE_DIR")
+    if raw:
+        p = Path(raw).expanduser()
+        return p if p.is_absolute() else Path.cwd() / p
+    return config_root() / CACHE_SUBDIR
 
 
 def cache_path(module: str, *parts: str, root: Optional[Path] = None) -> Path:
     """Return ``<root>/<module>/<parts...>`` where ``<root>`` is the active
     cache root (:func:`tmp_root` — kwarg ``root``, env ``SUSTECH_CACHE_DIR``,
-    or the default ``<cwd>/__sustech_cache__``).
+    or the default ``~/.sustech_survival/cache``).
 
     The directory is NOT created — call :func:`ensure_cachedir` before
     writing. This split lets read-only probes (e.g. "does this cache file

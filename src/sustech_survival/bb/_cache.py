@@ -4,7 +4,7 @@ Lightweight file-based cache for BB scraper results.
 
 Storage layout (uniform across the package):
 
-    <cwd>/__sustech_cache__/bb/{prefix}_{arg1}_{arg2}.json
+    ~/.sustech_survival/cache/bb/{prefix}_{arg1}_{arg2}.json
 
 Each entry is a JSON file:
     {"ts": unix_timestamp, "ttl": seconds, "data": ...}

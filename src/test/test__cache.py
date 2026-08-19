@@ -259,12 +259,30 @@ class TestClearCache:
 
 
 class TestCacheRootKwarg:
-    def test_default_root_is_cwd_underscore_cache(self, monkeypatch, tmp_path):
-        """Default root is <cwd>/__sustech_cache__ — one unified dir."""
+    def test_default_root_is_home_dotdir_cache(self, monkeypatch, tmp_path):
+        """Default cache root is ~/.sustech_survival/cache — home-based, not
+        cwd-based (no /__sustech_cache__), one unified dot-directory."""
         monkeypatch.delenv("SUSTECH_CACHE_DIR", raising=False)
-        monkeypatch.chdir(tmp_path)
-        assert _cache.tmp_root() == tmp_path / "__sustech_cache__"
-        assert _cache.cache_path("sometest") == tmp_path / "__sustech_cache__" / "sometest"
+        monkeypatch.delenv("SUSTECH_CONFIG_DIR", raising=False)
+        monkeypatch.setattr(_cache, "user_home", lambda: tmp_path)
+        assert _cache.tmp_root() == tmp_path / ".sustech_survival" / "cache"
+        assert _cache.cache_path("sometest") == \
+            tmp_path / ".sustech_survival" / "cache" / "sometest"
+
+    def test_config_root_default_is_home_dotdir(self, monkeypatch, tmp_path):
+        """config_root() defaults to ~/.sustech_survival; env override wins."""
+        monkeypatch.delenv("SUSTECH_CONFIG_DIR", raising=False)
+        monkeypatch.delenv("SUSTECH_CACHE_DIR", raising=False)
+        monkeypatch.setattr(_cache, "user_home", lambda: tmp_path)
+        assert _cache.config_root() == tmp_path / ".sustech_survival"
+        # cache lives *inside* the config dir by default
+        assert _cache.tmp_root().parent == _cache.config_root()
+
+    def test_config_root_env_override(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("SUSTECH_CONFIG_DIR", str(tmp_path / "cfg"))
+        assert _cache.config_root() == tmp_path / "cfg"
+        # skins + default cache both hang off the configured dir
+        assert _cache.tmp_root() == tmp_path / "cfg" / "cache"
 
     def test_env_override_absolute(self, tmp_path, monkeypatch):
         monkeypatch.setenv("SUSTECH_CACHE_DIR", str(tmp_path))
