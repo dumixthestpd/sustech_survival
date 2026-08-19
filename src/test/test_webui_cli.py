@@ -120,3 +120,48 @@ def test_webui_serve_unknown_skin_exits_with_list(isolated, runner):
     assert "does-not-exist" in r.output
     assert "sustech_orange" in r.output  # lists the available skins
     assert "sustech_official_light" in r.output
+
+
+# ── webui serve --skin-path validation (does NOT start a server) ───────────
+
+def test_webui_serve_skin_path_valid_proceeds_to_run(isolated, runner, monkeypatch):
+    """--skin-path points at a valid skin dir; validation passes and serve
+    proceeds to run() (which we stub out so the test doesn't start a server)."""
+    src = isolated.parent / "vc-skin"
+    (src / "static").mkdir(parents=True)
+    (src / "manifest.json").write_text(
+        json.dumps({"name": "vc-skin", "version": "0.1.0", "entry": "index.html"}),
+        encoding="utf-8")
+    (src / "index.html").write_text("<h1>x</h1>", encoding="utf-8")
+
+    captured = {}
+    # _webui_serve_impl does `from ..webui.app import run` locally, so stub the
+    # run symbol on webui.app (where it lives) to avoid starting a real server.
+    from sustech_survival.webui import app as webui_app
+    def fake_run(**kwargs):
+        captured.update(kwargs)
+        return 0
+    monkeypatch.setattr(webui_app, "run", fake_run)
+
+    r = runner.invoke(webui_serve, ["--skin-path", str(src)])
+    assert r.exit_code == 0
+    # the resolved path was threaded into run() (create_app receives skin_path)
+    assert captured["skin_path"] == str(src)
+
+
+def test_webui_serve_skin_path_invalid_exits(isolated, runner):
+    """--skin-path pointing at a non-skin dir exits 1 with an actionable msg,
+    before any server is started."""
+    bad = isolated.parent / "not-a-skin"
+    bad.mkdir()  # no manifest.json / entry
+    r = runner.invoke(webui_serve, ["--skin-path", str(bad)])
+    assert r.exit_code == 1
+    assert "cannot serve --skin-path" in r.output
+
+
+def test_webui_serve_skin_path_unknown_skin_path_not_a_dir(isolated, runner):
+    """--skin-path to a missing directory exits 1 with a clear message."""
+    r = runner.invoke(webui_serve,
+                      ["--skin-path", str(isolated.parent / "does-not-exist")])
+    assert r.exit_code == 1
+    assert "cannot serve --skin-path" in r.output

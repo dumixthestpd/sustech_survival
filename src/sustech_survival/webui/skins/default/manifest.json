@@ -1,6 +1,7 @@
 {
   "name": "default",
   "version": "0.1.0",
+  "requires": "2026.8.0",
   "entry": "index.html",
   "api": [
     "/api/tis/info",

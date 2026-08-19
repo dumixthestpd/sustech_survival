@@ -63,6 +63,16 @@ pip install "sustech_survival[webui] @ git+https://github.com/dumixthestpd/suste
 pip install "sustech_survival[all] @ git+https://github.com/dumixthestpd/sustech_survival.git"          # everything
 ```
 
+When the install is complete, run
+
+```bash
+where sustech
+# or
+sustech version
+```
+
+to see if it is added to PATH.
+
 ### 2. Authentication
 
 Shared CAS auth backbone lives in `sustech_survival/sso/authorizer.py`.
