@@ -1,19 +1,22 @@
-"""``python -m sustech_survival.webui`` — start the unified web UI.
+"""``python -m sustech_survival.webui`` — the unified web UI entry point.
 
 Supports the documented form::
 
     python -m sustech_survival.webui serve [--port N] [--host H] \\
-        [--transit-data DIR] [--debug]
+        [--transit-data DIR] [--skin NAME] [--skin-path DIR] [--debug]
 
-With no subcommand it starts the server directly (matching ``python -m
-sustech_survival.webui`` in the README). Also reachable via the unified CLI
-``sustech webui serve`` and ``sustech webui open``.
+With NO subcommand it prints usage and exits — it never starts a server
+implicitly; ``serve`` must be explicit. Also reachable via the unified CLI
+``sustech webui serve`` / ``sustech webui open``.
 """
 from __future__ import annotations
 
 import sys
 
 from sustech_survival.webui.app import DEFAULT_PORT, run
+
+_USAGE = ("usage: python -m sustech_survival.webui serve [--port N] [--host H] "
+          "[--transit-data DIR] [--skin NAME] [--skin-path DIR] [--debug]")
 
 
 def main() -> int:
@@ -25,8 +28,17 @@ def main() -> int:
     skin = None
     skin_path = None
 
-    if argv and argv[0] == "serve":
-        argv = argv[1:]
+    if not argv:
+        print(_USAGE)
+        return 2  # missing subcommand — show usage, do not serve
+    if argv[0] != "serve":
+        if argv[0] in ("--help", "-h"):
+            print(_USAGE)
+            return 0
+        print(_USAGE)
+        print(f"error: unknown subcommand {argv[0]!r} — only `serve` is supported")
+        return 2
+    argv = argv[1:]
     # parse --port/-p, --host/-H, --transit-data, --skin, --skin-path
     i = 0
     while i < len(argv):
@@ -44,7 +56,7 @@ def main() -> int:
         if a in ("--debug", "-d"):
             i += 1; continue
         if a in ("--help", "-h"):
-            print("usage: python -m sustech_survival.webui [serve] [--port N] [--host H] [--transit-data DIR] [--skin NAME] [--skin-path DIR] [--debug]")
+            print(_USAGE)
             return 0
         i += 1
 

@@ -610,33 +610,25 @@ def papers_search(query: str, max_results: int, min_year: int | None) -> None:
 # webui — the Flask app is mounted here as subcommands
 # ========================================================================
 
-# ``sustech webui`` with no subcommand = serve the default head.
+# ``sustech webui`` alone = show help (never an implicit serve). Only an
+# explicit ``sustech webui serve`` starts the server.
 @click.group(
     name="webui",
-    help="Unified Flask web UI (TIS + transit). `sustech webui` serves the default head.",
-    invoke_without_command=True,
+    help="Unified Flask web UI (TIS + transit). Run `sustech webui serve` to start it.",
 )
-@click.option("--port", "-p", type=int, default=None, help="Port (default 20129).")
-@click.option("--host", "-H", default="0.0.0.0", show_default=True)
-@click.option("--skin", "skin", default=None,
-              help="Name of an installed skin to serve. Omit to use the first "
-                   "installed skin (or the built-in default).")
-@click.option("--skin-path", "skin_path", default=None,
-              help="Serve a skin directly from a directory path (no install). "
-                   "Wins over --skin / any installed skin.")
-@click.pass_context
-def webui_cmd(ctx: click.Context, port: Optional[int], host: str,
-              skin: Optional[str], skin_path: Optional[str]) -> None:
-    """With no subcommand, serve the web UI on its default head."""
-    if ctx.invoked_subcommand is None:
-        _webui_serve_impl(port=port, host=host, skin=skin, skin_path=skin_path,
-                          transit_data_dir=None, debug=False)
+def webui_cmd() -> None:
+    """Web-UI commands: serve, open, install, skins.
+
+    `sustech webui` alone prints this help — nothing is started. Run
+    `sustech webui serve` to start the server (or `sustech webui open`
+    to open the default head in your browser).
+    """
 
 
 def _webui_serve_impl(port: Optional[int], host: str, skin: Optional[str],
                       skin_path: Optional[str], transit_data_dir: Optional[str],
                       debug: bool) -> None:
-    """Shared implementation of `sustech webui` / `sustech webui serve`."""
+    """Shared implementation of `sustech webui serve`."""
     from ..webui.app import run, DEFAULT_PORT
     from ..webui import loader
     if skin_path:
