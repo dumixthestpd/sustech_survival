@@ -544,7 +544,7 @@ class TransitClient:
     ) -> Dict:
         raise TransitError("Routing is disabled in this build. Use the bus stop / building dot click to inspect locations.")
 
-    def _get_walk_graph(self, cache_path: str = "/tmp/transit_data/campus_walk_graph.graphml"):  # pragma: no cover
+    def _get_walk_graph(self, cache_path: str = "~/.sustech_survival/cache/transit/campus_walk_graph.graphml"):  # pragma: no cover
         return None
 
 

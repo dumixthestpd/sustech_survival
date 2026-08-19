@@ -53,12 +53,12 @@ from __future__ import annotations
 
 import re
 import shutil
-import tempfile
 from pathlib import Path
 from typing import Optional
 
 import requests
 
+from sustech_survival import _cache
 from sustech_survival.sso import BBAuth
 from sustech_survival.consequence import (
     Severity, Consequence, consequence_rich,
@@ -308,7 +308,9 @@ def submit_assignment_rest(
     # chars like `< > : " | ? *` in filesystem paths (a real bug: dry-run with a
     # `<sid>-<name>-...pdf` name_override crashed on shutil.copy2). Dry-run never
     # needs the copy — it only reports what *would* be submitted.
-    staged_dir = Path(tempfile.gettempdir()) / "bb_submits"
+    # Staging under the user-owned tree (~/.sustech_survival/tmp/bb_submits)
+    # so BB upload staging stays inside the project's storage, not OS temp.
+    staged_dir = _cache.user_tmp() / "bb_submits"
     staged_name = _safe_staged_name(target_name, file_path_p.suffix)
     staged_path = staged_dir / staged_name
 

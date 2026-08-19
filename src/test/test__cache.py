@@ -308,3 +308,62 @@ class TestCacheRootKwarg:
         n = _cache.clear_cache("sel")
         assert n == 1
         assert not (tmp_path / "sel").exists()
+
+
+# -- SUSTECH_HOME: one changeable anchor for the whole tree -----------------
+
+
+class TestHomeRoot:
+    def test_home_root_defaults_to_user_home(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("SUSTECH_HOME", raising=False)
+        monkeypatch.setattr(_cache, "user_home", lambda: tmp_path)
+        assert _cache.home_root() == tmp_path
+
+    def test_home_root_env_override(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("SUSTECH_HOME", str(tmp_path / "anchor"))
+        assert _cache.home_root() == tmp_path / "anchor"
+        # the whole tree follows: cache + skins hang off the anchor
+        assert _cache.config_root() == tmp_path / "anchor" / ".sustech_survival"
+        assert _cache.tmp_root() == tmp_path / "anchor" / ".sustech_survival" / "cache"
+
+    def test_home_root_relative_resolves_against_home(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("SUSTECH_HOME", "data")
+        monkeypatch.setattr(_cache, "user_home", lambda: tmp_path)
+        assert _cache.home_root() == tmp_path / "data"
+
+
+# -- user_tmp / config_file / load_config -----------------------------------
+
+
+class TestUserTmpAndConfig:
+    def test_user_tmp_under_config_root(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("SUSTECH_HOME", raising=False)
+        monkeypatch.delenv("SUSTECH_CONFIG_DIR", raising=False)
+        monkeypatch.setattr(_cache, "user_home", lambda: tmp_path)
+        assert _cache.user_tmp() == tmp_path / ".sustech_survival" / "tmp"
+
+    def test_config_file_is_config_json_under_root(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("SUSTECH_HOME", raising=False)
+        monkeypatch.delenv("SUSTECH_CONFIG_DIR", raising=False)
+        monkeypatch.setattr(_cache, "user_home", lambda: tmp_path)
+        assert _cache.config_file() == tmp_path / ".sustech_survival" / "config.json"
+
+    def test_load_config_missing_returns_empty(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(_cache, "config_file",
+                            lambda root=None: tmp_path / "nope.json")
+        assert _cache.load_config() == {}
+
+    def test_load_config_reads_file(self, monkeypatch, tmp_path):
+        cfg = tmp_path / "config.json"
+        cfg.write_text(json.dumps({"downloads_dir": "D:/out", "bb": {"x": 1}}),
+                       encoding="utf-8")
+        monkeypatch.setattr(_cache, "config_file",
+                            lambda root=None: cfg)
+        assert _cache.load_config() == {"downloads_dir": "D:/out", "bb": {"x": 1}}
+
+    def test_load_config_corrupt_returns_empty(self, monkeypatch, tmp_path):
+        cfg = tmp_path / "config.json"
+        cfg.write_text("{not json", encoding="utf-8")
+        monkeypatch.setattr(_cache, "config_file",
+                            lambda root=None: cfg)
+        assert _cache.load_config() == {}
