@@ -700,14 +700,10 @@ def webui_install(source: str, skin_path: str) -> None:
     Then ``sustech webui serve`` / ``open`` uses the newest installed skin.
     """
     from ..webui import loader
-    if source == "default" or (skin_path is None and source == "default"):
-        dst = loader.install_skin("default", default=True)
-        click.secho(f"✅ Installed the default skin → {dst}", fg="green")
-        click.echo("   It's now a folder under ~/.config/sustech_survival/webui/skins/")
-        click.echo("   edit it, or run `sustech webui install --path <your-skin>` for your own.")
-        return
+    from pathlib import Path
+
+    # An explicit --path wins over the positional SOURCE default of "default".
     if skin_path:
-        from pathlib import Path
         p = Path(skin_path)
         if not p.is_dir():
             click.secho(f"not a directory: {p}", fg="red")
@@ -719,9 +715,26 @@ def webui_install(source: str, skin_path: str) -> None:
             raise SystemExit(1)
         click.secho(f"✅ Installed skin → {dst}", fg="green")
         return
-    click.secho("pass a skin directory via --path, or use the default.",
-                fg="yellow")
-    raise SystemExit(1)
+
+    # `source == "default"` → install the shipped default head (moddable copy).
+    if source == "default":
+        dst = loader.install_skin("default", default=True)
+        click.secho(f"✅ Installed the default skin → {dst}", fg="green")
+        click.echo("   It's now a folder under ~/.config/sustech_survival/webui/skins/")
+        click.echo("   edit it, or run `sustech webui install --path <your-skin>` for your own.")
+        return
+
+    # Otherwise treat SOURCE as a directory path to a custom skin.
+    p = Path(source)
+    if not p.is_dir():
+        click.secho(f"not a directory / unknown source: {source}", fg="red")
+        raise SystemExit(1)
+    try:
+        dst = loader.install_skin(p)
+    except ValueError as e:
+        click.secho(f"not a valid skin: {e}", fg="red")
+        raise SystemExit(1)
+    click.secho(f"✅ Installed skin → {dst}", fg="green")
 
 
 @webui_cmd.command(name="skins", help="List installed web-UI skins.")
