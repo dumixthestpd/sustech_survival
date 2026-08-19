@@ -621,23 +621,33 @@ def papers_search(query: str, max_results: int, min_year: int | None) -> None:
 @click.option("--skin", "skin", default=None,
               help="Name of an installed skin to serve. Omit to use the first "
                    "installed skin (or the built-in default).")
+@click.option("--skin-path", "skin_path", default=None,
+              help="Serve a skin directly from a directory path (no install). "
+                   "Wins over --skin / any installed skin.")
 @click.pass_context
 def webui_cmd(ctx: click.Context, port: Optional[int], host: str,
-              skin: Optional[str]) -> None:
+              skin: Optional[str], skin_path: Optional[str]) -> None:
     """With no subcommand, serve the web UI on its default head."""
     if ctx.invoked_subcommand is None:
-        _webui_serve_impl(port=port, host=host, skin=skin,
+        _webui_serve_impl(port=port, host=host, skin=skin, skin_path=skin_path,
                           transit_data_dir=None, debug=False)
 
 
 def _webui_serve_impl(port: Optional[int], host: str, skin: Optional[str],
-                      transit_data_dir: Optional[str], debug: bool) -> None:
+                      skin_path: Optional[str], transit_data_dir: Optional[str],
+                      debug: bool) -> None:
     """Shared implementation of `sustech webui` / `sustech webui serve`."""
     from ..webui.app import run, DEFAULT_PORT
     from ..webui import loader
-    if skin:
+    if skin_path:
         try:
-            _sel = loader.find_skin(skin)          # validate up front
+            loader.skin_from_path(skin_path)     # validate up front
+        except ValueError as e:
+            click.secho(f"cannot serve --skin-path: {e}", fg="red")
+            raise SystemExit(1)
+    elif skin:
+        try:
+            loader.find_skin(skin)               # validate up front
         except KeyError as e:
             click.secho(f"cannot serve: {e}", fg="red")
             click.echo("  install a skin first, e.g. `sustech webui install default`, "
@@ -649,9 +659,10 @@ def _webui_serve_impl(port: Optional[int], host: str, skin: Optional[str],
         click.secho("no skins installed — serving the built-in default head.",
                     fg="yellow")
         click.echo("  tip: `sustech webui install default` copies it into your "
-                   "config so you can skin/mod it.")
+                   "on-disk skin cache so you can skin/mod it.")
     run(host=host, port=port or DEFAULT_PORT,
-        transit_data_dir=transit_data_dir, skin=skin, debug=debug)
+        transit_data_dir=transit_data_dir, skin=skin, skin_path=skin_path,
+        debug=debug)
 
 
 @webui_cmd.command(name="serve", help="Start the web UI.")
@@ -662,18 +673,26 @@ def _webui_serve_impl(port: Optional[int], host: str, skin: Optional[str],
 @click.option("--skin", "skin", default=None,
               help="Name of an installed skin to serve. Omit to use the first "
                    "installed skin (or the built-in default).")
+@click.option("--skin-path", "skin_path", default=None,
+              help="Serve a skin directly from a directory path (no install). "
+                   "Wins over --skin / any installed skin.")
 @click.option("--debug/--no-debug", default=False)
 def webui_serve(port: Optional[int], host: str,
                 transit_data_dir: Optional[str], skin: Optional[str],
-                debug: bool) -> None:
+                skin_path: Optional[str], debug: bool) -> None:
     """Start the web UI.
 
     ``--skin`` changes the active head on the spot: name any installed skin
     (see ``sustech webui skins``) and it becomes the served page immediately,
     without re-installing. If ``--skin`` names something unknown, serve exits
     with the list of installed skins and an install hint.
+
+    ``--skin-path <dir>`` serves a skin straight from a directory on disk —
+    no install/copy into the cache — and wins over ``--skin``. Use it to
+    point at a skin under version control or a local copy you're still
+    editing.
     """
-    _webui_serve_impl(port=port, host=host, skin=skin,
+    _webui_serve_impl(port=port, host=host, skin=skin, skin_path=skin_path,
                       transit_data_dir=transit_data_dir, debug=debug)
 
 
@@ -720,7 +739,7 @@ def webui_install(source: str, skin_path: str) -> None:
     if source == "default":
         dst = loader.install_skin("default", default=True)
         click.secho(f"✅ Installed the default skin → {dst}", fg="green")
-        click.echo("   It's now a folder under ~/.config/sustech_survival/webui/skins/")
+        click.echo(f"   Saved under the on-disk skin cache: {dst.parent}")
         click.echo("   edit it, or run `sustech webui install --path <your-skin>` for your own.")
         return
 

@@ -34,7 +34,8 @@ RESOURCES = Path(__file__).resolve().parent.parent / "resources"
 
 
 def create_app(*, transit_data_dir: Optional[str] = None,
-               skin: Optional[str] = None) -> Flask:
+               skin: Optional[str] = None,
+               skin_path: Optional[str] = None) -> Flask:
     """Build the skin-loader Flask app.
 
     ``transit_data_dir``: optional exported transit GeoJSON dir.
@@ -42,6 +43,8 @@ def create_app(*, transit_data_dir: Optional[str] = None,
       None, the first installed skin is used; if none are installed the shipped
       default is used. An unknown name raises ``KeyError`` with the available
       list (callers should surface it with an actionable message).
+    ``skin_path``: serve a skin directly from a directory path (no install).
+      Mutually exclusive with ``skin``; wins over any installed/name lookup.
     """
     app = Flask(
         __name__,
@@ -66,10 +69,16 @@ def create_app(*, transit_data_dir: Optional[str] = None,
         return send_from_directory(str(RESOURCES), "logo.svg")
 
     # -- Active skin -----------------------------------------------------
-    # Prefer the explicitly requested skin; else the first installed; else
-    # the shipped default. create_app still works with ZERO installed skins
-    # (the user just gets the in-package default head).
-    if skin is not None:
+    # Resolution order: explicit skin_path -> explicit skin name -> first
+    # installed -> shipped default. create_app still works with ZERO installed
+    # skins (the user just gets the in-package default head).
+    if skin_path is not None:
+        try:
+            _skin = loader.skin_from_path(skin_path)
+        except ValueError as e:
+            raise ValueError(f"cannot serve --skin-path: {e}") from None
+        _is_default = (_skin.name == "default")
+    elif skin is not None:
         _skin = loader.find_skin(skin)          # raises KeyError if unknown
         _is_default = (_skin.name == "default")
     else:
@@ -85,6 +94,13 @@ def create_app(*, transit_data_dir: Optional[str] = None,
     app.config["SKIN"] = _skin.name
     app.config["SKIN_VERSION"] = _skin.version
     app.config["SKIN_ROOT"] = str(_skin_root)
+    app.config["SKIN_REQUIRES"] = getattr(_skin, "requires", "")
+    # If this skin needs a newer sustech_survival, surface that clearly. A
+    # missing feature would otherwise fail confusingly at runtime.
+    _req_warn = getattr(_skin, "check_requires", lambda: None)()
+    if _req_warn:
+        app.logger.warning(_req_warn)
+        print(f"⚠️  {_req_warn}")
     # A custom (non-default) head is AUTHORITATIVE: the app serves only the
     # pages/assets the skin ships, and `/api/*` (the sustech_survival.api
     # contract) is the data surface. The shipped default head additionally
@@ -151,11 +167,13 @@ def create_app(*, transit_data_dir: Optional[str] = None,
 def run(*, port: int = DEFAULT_PORT, host: str = "0.0.0.0",
         transit_data_dir: Optional[str] = None,
         skin: Optional[str] = None,
+        skin_path: Optional[str] = None,
         debug: bool = False) -> int:
     """Create the app and serve it forever. Returns 0 on clean exit."""
-    app = create_app(transit_data_dir=transit_data_dir, skin=skin)
+    app = create_app(transit_data_dir=transit_data_dir, skin=skin,
+                     skin_path=skin_path)
     app.config["PORT"] = port
-    skin_name = app.config.get("SKIN") or skin or "default"
+    skin_name = app.config.get("SKIN") or skin or (skin_path or "default")
     print(f"✅ SUSTech web UI serving at http://localhost:{port}")
     print(f"   Skin: {skin_name}")
     print("   Ctrl-C to stop")

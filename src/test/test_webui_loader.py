@@ -118,3 +118,80 @@ def test_install_skin_rejects_invalid(_tmp_skins):
     bad.mkdir(exist_ok=True)  # no manifest
     with pytest.raises(ValueError):
         loader.install_skin(bad, default=False)
+
+
+# ── requires (minimum sustech_survival version) ────────────────────────────
+
+def test_manifest_requires_parsed_into_skin(_tmp_skins):
+    usr, pkg = _tmp_skins
+    d = pkg / "req"
+    (d / "static").mkdir(parents=True)
+    (d / "index.html").write_text("<h1>hi</h1>", encoding="utf-8")
+    (d / "manifest.json").write_text(json.dumps(
+        {"name": "req", "version": "1.0.0", "entry": "index.html",
+         "requires": "2099.1.0"}), encoding="utf-8")
+    s = loader.find_skin("req")
+    assert s.requires == "2099.1.0"
+    # a future requirement is NOT satisfied by the current module
+    assert s.check_requires() is not None
+
+
+def test_requires_satisfied_has_no_warning(_tmp_skins):
+    usr, pkg = _tmp_skins
+    d = pkg / "ok"
+    (d / "static").mkdir(parents=True)
+    (d / "index.html").write_text("<h1>hi</h1>", encoding="utf-8")
+    (d / "manifest.json").write_text(json.dumps(
+        {"name": "ok", "version": "1.0.0", "entry": "index.html",
+         "requires": "2020.1.0"}), encoding="utf-8")
+    s = loader.find_skin("ok")
+    assert s.requires == "2020.1.0"
+    assert s.check_requires() is None   # old requirement, easily satisfied
+
+
+def test_missing_requires_is_optional(_tmp_skins):
+    usr, pkg = _tmp_skins
+    _make_skin(usr, "plain")
+    s = loader.find_skin("plain")
+    assert s.requires == ""
+    assert s.check_requires() is None
+
+
+# ── skin_from_path (serve --skin-path without installing) ─────────────────
+
+def test_skin_from_path_builds_skin(_tmp_skins, tmp_path):
+    src = tmp_path / "my-skin"
+    (src / "static").mkdir(parents=True)
+    (src / "index.html").write_text("<h1>hi</h1>", encoding="utf-8")
+    (src / "manifest.json").write_text(json.dumps(
+        {"name": "my-skin", "version": "0.5.0", "entry": "index.html"}), encoding="utf-8")
+    s = loader.skin_from_path(src)
+    assert s.name == "my-skin"
+    assert s.version == "0.5.0"
+    assert s.root == src.resolve()
+    assert s.index.exists()
+
+
+def test_skin_from_path_rejects_non_skin(_tmp_skins, tmp_path):
+    with pytest.raises(ValueError):
+        loader.skin_from_path(tmp_path / "missing")        # not a dir
+    bad_dir = tmp_path / "bad"
+    bad_dir.mkdir()                                        # no manifest
+    with pytest.raises(ValueError):
+        loader.skin_from_path(bad_dir)
+
+
+# ── user-skin location uses the unified on-disk cache (no ~/.config) ──────
+
+def test_user_skins_under_unified_cache():
+    """_USER_SKINS must live under the project's unified cache convention
+    (<cwd>/__sustech_cache__/webui/skins or $SUSTECH_CACHE_DIR), never
+    ~/.config. It's resolved at import time, so we assert structure/shape
+    rather than a specific cwd."""
+    p = loader._USER_SKINS
+    assert p.is_absolute()
+    assert p.name == "skins"
+    assert p.parent.name == "webui"
+    assert "__sustech_cache__" in str(p)
+    assert ".config" not in str(p)
+

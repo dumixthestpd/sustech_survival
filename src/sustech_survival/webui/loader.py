@@ -12,9 +12,11 @@ data functions. A custom head may call ``sustech_survival.api`` directly
 instead of going through the web UI.
 
 Skins are self-contained folders under ``webui/skins/`` (shipped default) or
-``~/.config/sustech_survival/webui/skins/`` (user-installed). Each skin has a
-``manifest.json`` describing its name, entry page, and which ``/api/*``
-endpoints it needs.
+the unified on-disk cache (user-installed — ``<cwd>/__sustech_cache__/webui/
+skins/`` by default, or ``$SUSTECH_CACHE_DIR/webui/skins`` — see
+:mod:`sustech_survival._cache`). Each skin has a ``manifest.json`` describing
+its name, entry page, which ``/api/*`` endpoints it needs, and the minimum
+``sustech_survival`` module version it requires (``requires``).
 
 Core ``sustech_survival`` never imports this module; the CLI's ``sustech
 webui serve`` lazily imports it. A user can drop ``webui/`` entirely and the
@@ -24,10 +26,20 @@ the CLI).
 Layout of a skin::
 
     my-skin/
-      manifest.json      # {"name", "version", "entry": "index.html"}
+      manifest.json      # {"name", "version", "entry", "requires", ...}
       index.html         # served at / when the skin is active
       static/            # served at /static/<path> (skin-static)
       api-note.md        # (optional) which /api/* this skin uses
+
+``manifest.json`` fields:
+  - ``name``   required            — the skin's unique name
+  - ``entry``  optional (default ``index.html``) — entry page
+  - ``version`` optional (default ``0``)          — the skin's own version
+  - ``requires`` optional          — minimum ``sustech_survival`` module
+                        version this skin needs, e.g. ``"2026.8.16"``.
+                        If the running module is older, the loader warns
+                        (or errors when ``strict=True``).
+  - ``api``    optional            — the ``/api/*`` endpoints the skin calls
 """
 from __future__ import annotations
 
@@ -36,10 +48,37 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+from .._cache import cache_path
+from .._version import __version__
+
 # Shipped default skin lives in this package under skins/default.
 _PKG_SKINS = Path(__file__).resolve().parent / "skins"
-# User-installed skins cache.
-_USER_SKINS = Path.home() / ".config" / "sustech_survival" / "webui" / "skins"
+# User-installed skins live in the unified on-disk cache (cwd-relative
+# `<cwd>/__sustech_cache__/webui/skins`, or $SUSTECH_CACHE_DIR), consistent
+# with every other outside-module datum this project persists.
+_USER_SKINS = cache_path("webui", "skins")
+
+
+def _parse_version(v: str) -> tuple:
+    """Best-effort numeric version tuple for comparisons.
+
+    ``sustech_survival`` versions look like ``2026.8.16.dev0220``; we compare
+    the leading integer dotted segments numerically and ignore any trailing
+    alpha/dev suffix.
+    """
+    import re
+    parts = []
+    for seg in re.split(r"[.-]", str(v)):
+        m = re.match(r"(\d+)", seg)
+        if m is None:
+            break
+        parts.append(int(m.group(1)))
+    return tuple(parts)
+
+
+def _version_ge(installed: str, required: str) -> bool:
+    """True if ``installed`` >= ``required`` (numeric dotted comparison)."""
+    return _parse_version(installed) >= _parse_version(required)
 
 
 @dataclass(frozen=True)
@@ -49,10 +88,22 @@ class Skin:
     version: str
     root: Path
     entry: str = "index.html"
+    requires: str = ""               # minimum sustech_survival version, if any
 
     @property
     def index(self) -> Path:
         return self.root / self.entry
+
+    def check_requires(self) -> str | None:
+        """Return a warning string if this skin needs a newer sustech_survival."""
+        if not self.requires:
+            return None
+        if not _version_ge(__version__, self.requires):
+            return (
+                f"skin {self.name!r} requires sustech_survival >= "
+                f"{self.requires}, but the installed module is {__version__}"
+            )
+        return None
 
 
 def _read_manifest(skin_dir: Path) -> dict:
@@ -65,6 +116,17 @@ def _read_manifest(skin_dir: Path) -> dict:
 def _is_valid_skin(skin_dir: Path) -> bool:
     mf = _read_manifest(skin_dir)
     return (skin_dir / (mf.get("entry") or "index.html")).is_file()
+
+
+def _to_skin(d: Path) -> Skin:
+    mf = _read_manifest(d)
+    return Skin(
+        name=mf.get("name", d.name),
+        version=str(mf.get("version", "0")),
+        root=d,
+        entry=mf.get("entry", "index.html"),
+        requires=str(mf.get("requires", "") or ""),
+    )
 
 
 def default_skin() -> Path:
@@ -82,13 +144,11 @@ def installed_skins() -> "list[Skin]":
         for d in sorted(base.iterdir()):
             if not d.is_dir() or not _is_valid_skin(d):
                 continue
-            mf = _read_manifest(d)
-            name = mf.get("name", d.name)
-            if name in seen:
+            s = _to_skin(d)
+            if s.name in seen:
                 continue
-            seen.add(name)
-            out.append(Skin(name=name, version=str(mf.get("version", "0")),
-                            root=d, entry=mf.get("entry", "index.html")))
+            seen.add(s.name)
+            out.append(s)
     return out
 
 
@@ -103,6 +163,22 @@ def find_skin(name: str) -> Skin:
         available = ", ".join(sorted(s.name for s in installed_skins())) or "(none)"
         raise KeyError(
             f"skin {name!r} is not installed. available skins: {available}") from None
+
+
+def skin_from_path(path: Path | str) -> Skin:
+    """Build a ``Skin`` from a literal directory, without installing it.
+
+    Used by ``sustech webui serve --skin-path <dir>`` so a skin can be
+    served directly from anywhere (no copy into the cache needed). Raises
+    ``ValueError`` if ``path`` isn't a valid skin directory.
+    """
+    root = Path(path).expanduser().resolve()
+    if not root.is_dir():
+        raise ValueError(f"not a directory: {root}")
+    if not _is_valid_skin(root):
+        raise ValueError(
+            f"not a valid skin (missing manifest.json or entry page): {root}")
+    return _to_skin(root)
 
 
 def install_skin(src: Path | str, *, default: bool = False) -> Path:
@@ -127,4 +203,4 @@ def install_skin(src: Path | str, *, default: bool = False) -> Path:
 
 
 __all__ = ["Skin", "default_skin", "find_skin", "installed_skins",
-           "install_skin", "_PKG_SKINS", "_USER_SKINS"]
+           "install_skin", "skin_from_path", "_PKG_SKINS", "_USER_SKINS"]
