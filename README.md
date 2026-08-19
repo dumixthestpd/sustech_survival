@@ -195,10 +195,9 @@ user dot-directory, `~/.sustech_survival/` (managed by
 
 ```
 ~/.sustech_survival/
-├── cache/<module>/      # disposable caches (calendar, bb, classroom,
-│                        #   selectcourse, ...) — each module under its name
+├── cache/<module>/      # disposable caches + per-module working files
+│                        #   (calendar, bb, classroom, selectcourse, ...)
 ├── skins/               # user-installed webui heads
-├── tmp/                 # short-lived owned scratch (e.g. BB submit staging)
 ├── credentials.txt      # default shared credentials (sid:password)
 └── config.json          # the one user-editable settings file
 ```
@@ -209,7 +208,10 @@ user dot-directory, `~/.sustech_survival/` (managed by
   `$SUSTECH_CACHE_DIR` relocates only the cache.
 - **Module caches** are uniformly created via
   `sustech_survival._cache.cache_path("<module>", ...)` and land under
-  `cache/<module>/` — no module hand-rolls its own location.
+  `cache/<module>/` — no module hand-rolls its own location. Per-module
+  working files (e.g. BB upload staging) live in the same tree, so
+  `_cache.clear_cache("<module>")` clears exactly that module's cache —
+  there is no separate scratch/tmp dir.
 - **`config.json`** is read with `_cache.load_config()`. Example:
   ```json
   { "downloads_dir": "D:/bb-downloads" }

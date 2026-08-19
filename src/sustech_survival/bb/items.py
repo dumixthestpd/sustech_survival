@@ -528,8 +528,8 @@ class HomeworkItem(Item):
             file_path: absolute path to the local file
             target_name: on-disk basename BB should show. Defaults to
                 file_path's basename. The file is staged under this name
-                in $TMPDIR/bb_submits/ so BB records it as the displayed
-                filename in the attempt receipt.
+                in ~/.sustech_survival/cache/bb/submits/ so BB records it as
+                the displayed filename in the attempt receipt.
             dry_run: if True, GET the form + simulate the POST, but don't
                 actually submit. Returns (True, "DRY-RUN: ...").
             skip_dedup: no-op for the REST path (REST doesn't do a per-

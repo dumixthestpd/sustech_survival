@@ -283,7 +283,8 @@ def submit_assignment_rest(
 
     Notes:
         - Stops at the first sign of trouble with explicit error messages.
-        - File is staged under target_name in $TMPDIR/bb_submits/ so the
+        - File is staged under target_name in
+          ~/.sustech_survival/cache/bb/submits/ so the
           BB-side filename matches.
     """
     file_path_p = Path(file_path).expanduser().resolve()
@@ -308,9 +309,10 @@ def submit_assignment_rest(
     # chars like `< > : " | ? *` in filesystem paths (a real bug: dry-run with a
     # `<sid>-<name>-...pdf` name_override crashed on shutil.copy2). Dry-run never
     # needs the copy — it only reports what *would* be submitted.
-    # Staging under the user-owned tree (~/.sustech_survival/tmp/bb_submits)
-    # so BB upload staging stays inside the project's storage, not OS temp.
-    staged_dir = _cache.user_tmp() / "bb_submits"
+    # Staging under the bb module cache (~/.sustech_survival/cache/bb/submits)
+    # so BB upload staging lives inside the project's storage; clearing the
+    # bb cache clears staging too.
+    staged_dir = _cache.cache_path("bb", "submits")
     staged_name = _safe_staged_name(target_name, file_path_p.suffix)
     staged_path = staged_dir / staged_name
 
