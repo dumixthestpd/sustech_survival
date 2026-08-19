@@ -751,13 +751,17 @@ def webui_install(source: str, skin_path: str) -> None:
 @webui_cmd.command(name="skins", help="List installed web-UI skins.")
 @click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
 def webui_skins(as_json: bool) -> None:
-    """Show which skins are available to serve and which is active."""
+    """Show which skins are installed (they live in ~/.sustech_survival/skins/).
+
+    Skins are installed to the home dot-directory; their on-disk location is
+    an implementation detail, so it is not shown here.
+    """
     from ..webui import loader
     skins = loader.installed_skins()
     if as_json:
         click.echo(_json.dumps([
-            {"name": s.name, "version": s.version, "entry": s.entry,
-             "path": str(s.root)} for s in skins
+            {"name": s.name, "version": s.version, "entry": s.entry}
+            for s in skins
         ], ensure_ascii=False, indent=2))
         return
     if not skins:
@@ -765,9 +769,9 @@ def webui_skins(as_json: bool) -> None:
         return
     active = skins[0]
     click.secho(f"{len(skins)} skin(s); active = {active.name}@{active.version}", bold=True)
-    click.echo("\t".join(("name", "version", "path")))
+    click.echo("\t".join(("name", "version")))
     for s in skins:
-        click.echo("\t".join((s.name, f"v{s.version}", str(s.root))))
+        click.echo("\t".join((s.name, f"v{s.version}")))
 
 
 # ========================================================================

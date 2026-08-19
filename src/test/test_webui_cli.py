@@ -23,12 +23,10 @@ from sustech_survival.cli.main import (
     webui_serve,
 )
 
-# Shipped package skins (user cache is hidden by the fixture below).
-PACKAGE_SKINS = [
-    "default", "sustech_orange", "sustech_official_light",
-    "sustech_midnight", "sustech_aurora", "sustech_paper",
-    "sustech_neon", "sustech_emerald",
-]
+# The only skin shipped inside the package (fallback). Other skins are
+# installed to ~/.sustech_survival/skins/ and found via the user cache,
+# which the fixture hides.
+PACKAGE_SKINS = ["default"]
 
 
 @pytest.fixture()
@@ -64,7 +62,7 @@ def test_webui_skins_json(isolated, runner):
     for d in data:
         assert "version" in d
         assert "entry" in d
-        assert "path" in d
+        assert "path" not in d   # skins live in home; location is not shown
 
 
 def test_webui_skins_shows_user_skins_first(isolated, runner, monkeypatch):
@@ -129,8 +127,7 @@ def test_webui_serve_unknown_skin_exits_with_list(isolated, runner):
     r = runner.invoke(webui_serve, ["--skin", "does-not-exist"])
     assert r.exit_code == 1
     assert "does-not-exist" in r.output
-    assert "sustech_orange" in r.output  # lists the available skins
-    assert "sustech_official_light" in r.output
+    assert "default" in r.output  # lists the available (package fallback) skin
 
 
 # ── webui serve --skin-path validation (does NOT start a server) ───────────

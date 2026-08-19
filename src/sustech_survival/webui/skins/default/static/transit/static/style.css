@@ -451,3 +451,16 @@ button:disabled { background: #999; cursor: not-allowed; }
   main { flex-direction: column; }
   #sidebar { width: 100%; max-height: 50%; }
 }
+
+/* ═══════ display redesign layer ═══════ */
+:root{--radius:12px;--radius-sm:8px;
+  --shadow:0 2px 8px rgba(0,0,0,.08),0 10px 30px rgba(0,0,0,.10)}
+#sidebar,.panel{border-radius:var(--radius);box-shadow:var(--shadow)}
+button,.btn,select,input{border-radius:8px;transition:all .15s ease}
+button:hover,.btn:hover{filter:brightness(1.06);transform:translateY(-1px)}
+.day-toggle button{border-radius:999px}
+.suggestions{border-radius:var(--radius-sm);box-shadow:var(--shadow)}
+.suggestions li{border-radius:6px}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:rgba(120,120,150,.35);border-radius:6px}
+*{scrollbar-width:thin}
