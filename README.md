@@ -68,7 +68,7 @@ When the install is complete, run
 ```bash
 where sustech
 # or
-sustech version
+sustech --version
 ```
 
 to see if it is added to PATH.

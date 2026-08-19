@@ -7,7 +7,6 @@ to controlled dirs so no user config is touched and tmp_path isn't required.
 from __future__ import annotations
 
 import json
-import pathlib
 
 import pytest
 
@@ -184,17 +183,17 @@ def test_skin_from_path_rejects_non_skin(_tmp_skins, tmp_path):
 # ── user-skin location uses the home dot-directory (no cache, no ~/.config) ─
 
 def test_user_skins_under_home_dotdir():
-    """_USER_SKINS must live in the user's home dot-directory
-    (~/.sustech_survival/skins or $SUSTECH_CONFIG_DIR/skins) — never a
-    cwd-relative cache (no __sustech_cache__) and never ~/.config. It's
-    resolved at import time, so we assert structure/shape rather than a
-    specific HOME."""
+    """_USER_SKINS must be config_root()/skins — the home dot-directory
+    (~/.sustech_survival/skins, or $SUSTECH_HOME/$SUSTECH_CONFIG_DIR) —
+    never a cwd-relative cache (no __sustech_cache__) and never ~/.config.
+    Derived from the same helper at import time, so it tracks the env."""
+    from sustech_survival import _cache
     p = loader._USER_SKINS
     assert p.is_absolute()
     assert p.name == "skins"
     # own dir under the home dot-directory, not nested under cache/
     assert p.parent.name == ".sustech_survival"
-    assert p.parent == pathlib.Path.home() / ".sustech_survival"
+    assert p == _cache.config_root() / "skins"
     assert "__sustech_cache__" not in str(p)
     assert ".config" not in str(p)
     assert "cache" not in p.parts  # skins sit beside cache/, not inside it

@@ -262,6 +262,7 @@ class TestCacheRootKwarg:
     def test_default_root_is_home_dotdir_cache(self, monkeypatch, tmp_path):
         """Default cache root is ~/.sustech_survival/cache — home-based, not
         cwd-based (no /__sustech_cache__), one unified dot-directory."""
+        monkeypatch.delenv("SUSTECH_HOME", raising=False)
         monkeypatch.delenv("SUSTECH_CACHE_DIR", raising=False)
         monkeypatch.delenv("SUSTECH_CONFIG_DIR", raising=False)
         monkeypatch.setattr(_cache, "user_home", lambda: tmp_path)
@@ -271,6 +272,7 @@ class TestCacheRootKwarg:
 
     def test_config_root_default_is_home_dotdir(self, monkeypatch, tmp_path):
         """config_root() defaults to ~/.sustech_survival; env override wins."""
+        monkeypatch.delenv("SUSTECH_HOME", raising=False)
         monkeypatch.delenv("SUSTECH_CONFIG_DIR", raising=False)
         monkeypatch.delenv("SUSTECH_CACHE_DIR", raising=False)
         monkeypatch.setattr(_cache, "user_home", lambda: tmp_path)
