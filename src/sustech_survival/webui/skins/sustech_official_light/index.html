@@ -4,7 +4,7 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
-<title>sustech_survival — Web UI</title>
+<title>SUSTech Survival — Web UI</title>
 <style>
   :root{
     --bg0:#faf8f3;--bg1:#fdfcfa;--bg2:#f3efe6;
@@ -13,32 +13,84 @@
     --ink:#1f2a2a;--mut:#5a6b68;--dim:#8a9896;
     --org:#dc6400;--org2:#f07830;--teal:#003030;--teal2:#18a8a8;
     --disp:"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+    --shadow-1:0 1px 2px rgba(0,48,48,.05),0 8px 24px rgba(0,48,48,.06);
+    --shadow-2:0 2px 4px rgba(0,48,48,.06),0 18px 48px rgba(0,48,48,.14);
+    --radius:20px;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%}
-  body{background:
-      radial-gradient(1200px 800px at 80% -10%, rgba(220,100,0,.10), transparent 60%),
-      radial-gradient(1000px 700px at -10% 110%, rgba(24,168,168,.08), transparent 60%),
+  body{
+    color:var(--ink);font-family:var(--disp);min-height:100vh;display:flex;flex-direction:column;
+    background:
+      radial-gradient(900px 600px at 85% -5%, rgba(220,100,0,.16), transparent 55%),
+      radial-gradient(800px 600px at -10% 110%, rgba(24,168,168,.14), transparent 55%),
+      radial-gradient(700px 500px at 60% 120%, rgba(240,120,48,.08), transparent 60%),
       linear-gradient(160deg,var(--bg0),var(--bg1) 45%,var(--bg2));
-    color:var(--ink);font-family:var(--disp);min-height:100vh;display:flex;flex-direction:column;user-select:none}
-  header{padding:2rem 2.5rem;display:flex;align-items:center;gap:1.1rem;border-bottom:1px solid var(--line);background:rgba(255,255,255,.6)}
-  header img{height:3rem;width:auto}
+    user-select:none;overflow-x:hidden;
+  }
+  /* slow drifting aurora blobs */
+  body::before,body::after{
+    content:"";position:fixed;border-radius:50%;filter:blur(70px);z-index:0;pointer-events:none;opacity:.5;
+  }
+  body::before{width:44vw;height:44vw;top:-12vw;right:-8vw;
+    background:radial-gradient(circle at 30% 30%, rgba(220,100,0,.35), transparent 70%);
+    animation:drift1 26s ease-in-out infinite alternate;}
+  body::after{width:38vw;height:38vw;bottom:-14vw;left:-10vw;
+    background:radial-gradient(circle at 70% 70%, rgba(24,168,168,.32), transparent 70%);
+    animation:drift2 32s ease-in-out infinite alternate;}
+  @keyframes drift1{from{transform:translate(0,0) scale(1)}to{transform:translate(-6vw,4vh) scale(1.15)}}
+  @keyframes drift2{from{transform:translate(0,0) scale(1.05)}to{transform:translate(6vw,-5vh) scale(.95)}}
+  header{
+    position:relative;z-index:2;padding:2.2rem 2.5rem 1.6rem;display:flex;align-items:center;gap:1.1rem;
+    border-bottom:1px solid rgba(231,225,213,.7);
+    background:linear-gradient(180deg, rgba(255,255,255,.72), rgba(255,255,255,.28));
+    backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  }
+  header img{height:3rem;width:auto;filter:drop-shadow(0 6px 14px rgba(0,48,48,.18));animation:pop .5s cubic-bezier(.2,.8,.2,1) both}
   header h1{font-size:1.5rem;font-weight:800;letter-spacing:-.01em;color:var(--teal)}
   header h1 span{color:var(--org)}
   header p{color:var(--mut);font-size:.92rem;margin-top:.25rem}
-  main{flex:1;padding:2.5rem;display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1.5rem;align-content:start}
-  .card{display:flex;flex-direction:column;gap:.4rem;text-decoration:none;color:inherit;
-        background:var(--card);border:1px solid var(--line);border-radius:16px;padding:1.6rem;
-        box-shadow:0 1px 3px rgba(0,48,48,.04);
-        transition:transform .15s,box-shadow .15s,border-color .15s}
-  .card:hover{transform:translateY(-3px);box-shadow:0 6px 18px rgba(0,48,48,.10);border-color:rgba(220,100,0,.45)}
-  .card .icon{font-size:2.4rem}
-  .card h2{margin-top:.5rem;font-size:1.25rem;font-weight:700;color:var(--teal)}
-  .card p{margin-top:.3rem;color:var(--mut);font-size:.9rem;line-height:1.5}
-  .kicker{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--org);font-weight:600;margin-top:.6rem}
-  .kicker::before{content:"";width:22px;height:2px;background:var(--org);border-radius:2px}
-  footer{padding:1.2rem 2.5rem;border-top:1px solid var(--line);color:var(--dim);font-size:.78rem;background:rgba(255,255,255,.6)}
-  footer a{color:var(--teal2);text-decoration:none}
+  main{
+    position:relative;z-index:1;flex:1;padding:2.5rem;display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1.6rem;align-content:center;max-width:1080px;width:100%;margin:0 auto;
+  }
+  .card{
+    display:flex;flex-direction:column;gap:.4rem;text-decoration:none;color:inherit;position:relative;overflow:hidden;
+    background:linear-gradient(165deg, rgba(255,255,255,.92), rgba(255,255,255,.66));
+    border:1px solid rgba(231,225,213,.9);border-radius:var(--radius);padding:1.9rem 1.8rem;
+    box-shadow:var(--shadow-1);
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    transition:transform .22s cubic-bezier(.2,.8,.2,1),box-shadow .22s,border-color .22s;
+    animation:rise .6s cubic-bezier(.2,.8,.2,1) both;
+  }
+  .card:nth-child(1){animation-delay:.05s}
+  .card:nth-child(2){animation-delay:.15s}
+  .card::before{ /* top accent line that expands on hover */
+    content:"";position:absolute;top:0;left:12%;right:12%;height:3px;border-radius:0 0 4px 4px;
+    background:linear-gradient(90deg,var(--org),var(--org2),var(--teal2));opacity:.55;
+    transition:left .3s ease,right .3s ease,opacity .3s ease;
+  }
+  .card:hover{transform:translateY(-6px);box-shadow:var(--shadow-2);border-color:rgba(220,100,0,.5)}
+  .card:hover::before{left:0;right:0;opacity:1}
+  .card .icon{font-size:2.6rem;line-height:1;filter:drop-shadow(0 4px 10px rgba(0,48,48,.16));transition:transform .25s ease}
+  .card:hover .icon{transform:translateY(-3px) scale(1.08) rotate(-4deg)}
+  .card h2{margin-top:.6rem;font-size:1.3rem;font-weight:700;color:var(--teal)}
+  .card p{margin-top:.35rem;color:var(--mut);font-size:.92rem;line-height:1.6}
+  .kicker{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--org);font-weight:600;margin-top:.9rem}
+  .kicker::before{content:"";width:22px;height:2px;background:var(--org);border-radius:2px;transition:width .25s ease}
+  .card:hover .kicker::before{width:34px}
+  footer{
+    position:relative;z-index:1;padding:1.2rem 2.5rem;border-top:1px solid rgba(231,225,213,.7);
+    color:var(--dim);font-size:.78rem;text-align:center;
+    background:linear-gradient(0deg, rgba(255,255,255,.6), rgba(255,255,255,.15));
+  }
+  footer a{color:var(--teal2);text-decoration:none;transition:color .15s}
+  footer a:hover{color:var(--org)}
+  @keyframes rise{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+  @keyframes pop{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion:reduce){
+    *,*::before,*::after{animation:none!important;transition:none!important}
+  }
 </style>
 </head>
 <body>

@@ -6,9 +6,9 @@
 <link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
 <title>TIS Course Selector · SUSTech Survival</title>
 <style>
-:root{--bg:#f5f6fa;--panel:#ffffff;--panel2:#eef1f6;--border:#d8dee8;--txt:#1a2233;--mut:#5d6b80;--fg:#1a2233;--teal:#003030;--teal2:#18a8a8;--accent:#dc6400;--accent2:#f07830;--ok:#2f9e5b;--warn:#e0941f;--bad:#d64535;--accent-rgb:220 100 0;--accent-dark:#b34a00;--radius:10px;--shadow:0 6px 20px rgba(26,34,51,.10);--shadow-lg:0 14px 40px rgba(26,34,51,.16)}
+:root{--bg:#faf6ef;--panel:#fffdf8;--panel2:#f1ebe0;--border:#e0d6c4;--txt:#2b2620;--mut:#7a6f5f;--fg:#2b2620;--teal:#23303a;--teal2:#8a6d3b;--accent:#b85c1f;--accent2:#cf7a3a;--ok:#4d8b59;--warn:#b08a2e;--bad:#a4473b;--accent-rgb:184 92 31;--accent-dark:#8f4518;--radius:8px;--shadow:0 4px 14px rgba(70,55,30,.12);--shadow-lg:0 12px 32px rgba(70,55,30,.18)}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;color:var(--txt);font-size:14px;overflow:hidden;background:radial-gradient(1100px 700px at 85% -10%,rgba(220,100,0,.12),transparent 60%),radial-gradient(900px 650px at -10% 110%,rgba(24,168,168,.10),transparent 60%),linear-gradient(160deg,#fafbfc,#ffffff 45%,#eef1f6)}
+body{font-family:"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;color:var(--txt);font-size:14px;overflow:hidden;background:radial-gradient(1100px 700px at 85% -10%,rgba(184,92,31,.08),transparent 60%),linear-gradient(160deg,#faf6ef,#fdfaf4 45%,#f0e8d8)}
 a{color:var(--accent2);text-decoration:none}
 header{display:flex;align-items:center;gap:1rem;padding:.9rem 1.4rem;border-bottom:1px solid var(--border);position:sticky;top:0;background:rgba(7,11,19,.82);backdrop-filter:blur(10px);z-index:20;flex-shrink:0}
 header h1{font-size:1.1rem;font-weight:600}
@@ -704,6 +704,24 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
 .bid-panel.over-budget .bid-bar{border-color:var(--bad);background:rgba(231,76,60,.12)}
 .bp-conflict-banner{display:none;background:rgba(241,196,15,.12);border:1px solid var(--warn);border-radius:4px;padding:.5rem .7rem;margin:.4rem 0 .5rem;font-size:.82rem;color:var(--warn);font-weight:600;line-height:1.4}
 .bid-panel.has-conflicts .bp-conflict-banner{display:block}
+
+/* ── skin polish: micro-interactions + refined surfaces ── */
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--mut) 30%,transparent);border-radius:8px;border:2px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,var(--accent) 55%,transparent);background-clip:padding-box}
+.c-card{transition:background .15s ease,border-color .15s ease,transform .15s ease}
+.c-card:hover{transform:translateX(2px)}
+button,select,input{transition:border-color .15s ease,box-shadow .15s ease,background .15s ease,transform .1s ease}
+button:active{transform:scale(.97)}
+button.primary:hover{filter:brightness(1.08);box-shadow:0 4px 14px rgba(var(--accent-rgb),.35)}
+button.primary:active{transform:scale(.97)}
+.slot-tag,.badge,.filter-pill{transition:transform .12s ease,box-shadow .12s ease}
+.slot-tag:hover,.filter-pill:hover{transform:translateY(-1px)}
+.flash{box-shadow:0 8px 28px rgba(0,0,0,.18)}
+.cmp-card,.brief-card,.eval-item,.bid-box{transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease}
+.cmp-card:hover,.brief-card:hover,.eval-item:hover,.bid-box:hover:not(.bid-box-locked){transform:translateY(-1px)}
+
 
 /* ── skin polish: micro-interactions + refined surfaces ── */
 ::-webkit-scrollbar{width:10px;height:10px}

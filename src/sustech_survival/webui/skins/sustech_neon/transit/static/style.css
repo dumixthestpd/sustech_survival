@@ -1,16 +1,16 @@
 /* sustech_survival.transit web UI styles — presentation dark theme */
 :root {
-  --bg: #f5f6fa;
-  --panel-bg: #ffffff;
-  --border: #dfe4ec;
-  --primary: #dc6400;
-  --primary-dark: #b34a00;
-  --accent-bus1: #18a8a8;
-  --accent-bus2: #f07830;
-  --accent-shuttle: #dc6400;
-  --text: #1a2233;
-  --text-dim: #5d6b80;
-  --shadow: 0 2px 8px rgba(0,0,0,0.12);
+  --bg: #0a0a14;
+  --panel-bg: #131322;
+  --border: #2c2c4a;
+  --primary: #22d3ee;
+  --primary-dark: #0ea5c9;
+  --accent-bus1: #34d399;
+  --accent-bus2: #e879f9;
+  --accent-shuttle: #facc15;
+  --text: #e8e8ff;
+  --text-dim: #8f8fc0;
+  --shadow: 0 2px 8px rgba(0,0,0,0.5);
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; color: var(--text); background: var(--bg); }
@@ -454,6 +454,14 @@ button:disabled { background: #999; cursor: not-allowed; }
   main { flex-direction: column; }
   #sidebar { width: 100%; max-height: 50%; }
 }
+
+/* ── skin polish ── */
+button,.btn{transition:all .15s ease}
+button:hover,.btn:hover{filter:brightness(1.06)}
+*{scrollbar-width:thin}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:rgba(120,120,150,.35);border-radius:6px}
+::-webkit-scrollbar-thumb:hover{background:rgba(0,0,0,.45)}
 
 /* ── skin polish ── */
 button,.btn{transition:all .15s ease}

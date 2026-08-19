@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
+<title>SUSTech Survival — Aurora</title>
+<style>
+  :root{--bg0:#0f1530;--bg1:#151d3f;--bg2:#0b1124;--card1:rgba(26,36,66,.85);--card2:rgba(20,28,54,.6);--line:rgba(96,112,168,.4);--ink:#eef2ff;--mut:#aab6dd;--dim:#6b76a3;--org:#a78bfa;--org2:#c4b5fd;--teal:#e0e7ff;--teal2:#67e8f9;--head1:rgba(15,21,48,.8);--head2:rgba(15,21,48,.3);--foot1:rgba(15,21,48,.5);--foot2:rgba(15,21,48,.08);--orb1:rgba(167,139,250,.55);--orb2:rgba(103,232,249,.4);--hov:rgba(167,139,250,.6);--shd:rgba(0,0,10,.55);--shadow-1:0 8px 24px rgba(5,8,28,.45);--shadow-2:0 18px 48px rgba(5,8,28,.6);--disp:'Segoe UI',system-ui,'PingFang SC','Microsoft YaHei',sans-serif}
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{color:var(--ink);font-family:var(--disp);min-height:100vh;display:flex;flex-direction:column;
+    background:linear-gradient(160deg,var(--bg0),var(--bg1) 50%,var(--bg2));user-select:none;overflow-x:hidden;}
+  body::before,body::after{content:"";position:fixed;border-radius:50%;filter:blur(70px);z-index:0;pointer-events:none;opacity:.5}
+  body::before{width:44vw;height:44vw;top:-12vw;right:-8vw;background:radial-gradient(circle at 30% 30%,var(--orb1),transparent 70%);animation:drift1 26s ease-in-out infinite alternate}
+  body::after{width:38vw;height:38vw;bottom:-14vw;left:-10vw;background:radial-gradient(circle at 70% 70%,var(--orb2),transparent 70%);animation:drift2 32s ease-in-out infinite alternate}
+  @keyframes drift1{from{transform:translate(0,0) scale(1)}to{transform:translate(-6vw,4vh) scale(1.15)}}
+  @keyframes drift2{from{transform:translate(0,0) scale(1.05)}to{transform:translate(6vw,-5vh) scale(.95)}}
+  header{position:relative;z-index:2;padding:2.2rem 2.5rem 1.6rem;display:flex;align-items:center;gap:1.1rem;
+    border-bottom:1px solid var(--line);background:linear-gradient(180deg,var(--head1),var(--head2));backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+  header img{height:3rem;width:auto;filter:drop-shadow(0 6px 14px var(--shd));animation:pop .5s cubic-bezier(.2,.8,.2,1) both}
+  header h1{font-size:1.5rem;font-weight:800;letter-spacing:-.01em;color:var(--teal)}
+  header h1 span{color:var(--org)}
+  header p{color:var(--mut);font-size:.92rem;margin-top:.25rem}
+  main{position:relative;z-index:1;flex:1;padding:2.5rem;display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1.6rem;align-content:center;max-width:1080px;width:100%;margin:0 auto}
+  .card{display:flex;flex-direction:column;gap:.4rem;text-decoration:none;color:inherit;position:relative;overflow:hidden;
+    background:linear-gradient(165deg,var(--card1),var(--card2));border:1px solid var(--line);border-radius:20px;padding:1.9rem 1.8rem;
+    box-shadow:var(--shadow-1);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    transition:transform .22s cubic-bezier(.2,.8,.2,1),box-shadow .22s,border-color .22s;animation:rise .6s cubic-bezier(.2,.8,.2,1) both}
+  .card:nth-child(1){animation-delay:.05s}
+  .card:nth-child(2){animation-delay:.15s}
+  .card::before{content:"";position:absolute;top:0;left:12%;right:12%;height:3px;border-radius:0 0 4px 4px;background:linear-gradient(90deg,var(--org),var(--org2),var(--teal2));opacity:.55;transition:left .3s ease,right .3s ease,opacity .3s ease}
+  .card:hover{transform:translateY(-6px);box-shadow:var(--shadow-2);border-color:var(--hov)}
+  .card:hover::before{left:0;right:0;opacity:1}
+  .card .icon{font-size:2.6rem;line-height:1;filter:drop-shadow(0 4px 10px var(--shd));transition:transform .25s ease}
+  .card:hover .icon{transform:translateY(-3px) scale(1.08) rotate(-4deg)}
+  .card h2{margin-top:.6rem;font-size:1.3rem;font-weight:700;color:var(--teal)}
+  .card p{margin-top:.35rem;color:var(--mut);font-size:.92rem;line-height:1.6}
+  .kicker{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--org);font-weight:600;margin-top:.9rem}
+  .kicker::before{content:"";width:22px;height:2px;background:var(--org);border-radius:2px;transition:width .25s ease}
+  .card:hover .kicker::before{width:34px}
+  footer{position:relative;z-index:1;padding:1.2rem 2.5rem;border-top:1px solid var(--line);color:var(--dim);font-size:.78rem;text-align:center;background:linear-gradient(0deg,var(--foot1),var(--foot2))}
+  footer a{color:var(--teal2);text-decoration:none;transition:color .15s}
+  footer a:hover{color:var(--org)}
+  body::before{width:50vw;height:50vw;background:radial-gradient(circle at 40% 40%,rgba(103,232,249,.4),transparent 65%);animation:drift1 22s ease-in-out infinite alternate}.card{border:1px solid rgba(167,139,250,.25)}
+  @keyframes rise{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+  @keyframes pop{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <img src="/logo-full.svg" alt="sustech_survival">
+  <div>
+    <h1>SUSTech <span>Survival</span> — Web UI</h1>
+    <p>暮色极光 · 渐变流转 · 同一个入口。</p>
+  </div>
+</header>
+<main>
+  <a class="card" href="/tis">
+    <div class="icon">🌌</div>
+    <h2>TIS 选课</h2>
+    <p>浏览课程目录、搜索课程、构建无冲突的周课表、查看 NCES 同学评教，并试运行加/退课。</p>
+    <span class="kicker">/tis</span>
+  </a>
+  <a class="card" href="/transit">
+    <div class="icon">🚍</div>
+    <h2>Transit — 校园地图</h2>
+    <p>实时校巴 GPS、时刻表，以及 GPS 对齐的 MapLibre + PMTiles 校园地图。</p>
+    <span class="kicker">/transit</span>
+  </a>
+</main>
+<footer>sustech_survival · 统一 Web UI · <a href="/api/tis/info">TIS API</a> · <a href="/api/transit/live">Transit live</a></footer>
+</body>
+</html>
