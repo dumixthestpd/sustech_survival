@@ -765,9 +765,9 @@ def webui_skins(as_json: bool) -> None:
         return
     active = skins[0]
     click.secho(f"{len(skins)} skin(s); active = {active.name}@{active.version}", bold=True)
+    click.echo("\t".join(("name", "version", "path")))
     for s in skins:
-        marker = "→" if s.name == active.name else " "
-        click.echo(f"  {marker} {s.name}  v{s.version}  → {s.root}")
+        click.echo("\t".join((s.name, f"v{s.version}", str(s.root))))
 
 
 # ========================================================================
