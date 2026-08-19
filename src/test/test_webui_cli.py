@@ -76,7 +76,12 @@ def test_webui_skins_shows_user_skins_first(isolated, runner, monkeypatch):
     loader.install_skin(alpha)
     r = runner.invoke(webui_skins, [])
     assert r.exit_code == 0
-    assert "alpha" in r.output.splitlines()[1]  # first listed line after the header
+    # "alpha" must be the FIRST skin row (tab-separated table). Row 0 is the
+    # "name\tversion\tpath" header; row 1 is the first data row.
+    rows = [ln for ln in r.output.splitlines() if "\t" in ln]
+    assert len(rows) >= 2          # header + at least one skin
+    assert rows[0].startswith("name\t")
+    assert rows[1].startswith("alpha\t")
 
 
 # ── webui install ──────────────────────────────────────────────────────────
