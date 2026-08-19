@@ -1,33 +1,39 @@
 """Unified on-disk store under the user's home: ~/.sustech_survival/.
 
 All user-owned data sustech_survival persists lives in ONE dot-directory in
-the user's home, ``~/.sustech_survival/`` (override: ``$SUSTECH_CONFIG_DIR``),
-managed exclusively by this module:
+the user's home, ``~/.sustech_survival/``, managed exclusively by this module:
 
-- ``~/.sustech_survival/cache/`` — disposable caches (calendar JSON, BB
-  request snapshots, classroom live data). This replaces the old
-  cwd-relative ``__sustech_cache__`` root.
-- ``~/.sustech_survival/skins/``  — user-installed webui skins (owned data).
+- ``~/.sustech_survival/cache/<module>/`` — disposable caches (calendar,
+  BB, classroom, selectcourse). This replaces the old cwd-relative
+  ``__sustech_cache__`` root.
+- ``~/.sustech_survival/skins/``     — user-installed webui skins.
+- ``~/.sustech_survival/tmp/``       — short-lived owned scratch/ staging.
+- ``~/.sustech_survival/config.json``— the one user-editable settings file.
+- ``~/.sustech_survival/credentials.txt`` — shared credentials (default).
 
 Rationale for a home dotdir (vs the previous cwd ``__sustech_cache__``):
-  - Deterministic across working directories — skins/data no longer land in
+  - Deterministic across working directories — data no longer lands in
     *whichever* directory the CLI happened to be run from.
   - A dotfile is the conventional home for durable user state.
   - Caches and user-owned data are kept apart: disposable derived data under
-    ``cache/``, things the user actually owns (skins) under ``skins/``.
+    ``cache/``, things the user actually owns (skins / credentials / config)
+    elsewhere under the same root.
 
 Every module that caches on disk should use these helpers rather than
 constructing its own paths. The canonical roots are :func:`config_root`
-(user data) and :func:`tmp_root` (cache).
+(user data), :func:`tmp_root`/`cache_path` (cache), and :func:`user_tmp`.
 
 Overrides:
-  - ``$SUSTECH_CONFIG_DIR`` — custom location of the user dot-directory
-    (skins + the default cache root).
-  - ``$SUSTECH_CACHE_DIR`` — relocate ONLY the cache root elsewhere
-    (e.g. tests point this at ``tmp_path``). When unset, the cache lives at
+  - ``$SUSTECH_HOME`` — relocate the WHOLE tree. Defaults to the user's home
+    so the dir is ``~/.sustech_survival``; e.g. ``SUSTECH_HOME=D:/data`` puts
+    everything under ``D:/data/.sustech_survival/``.
+  - ``$SUSTECH_CONFIG_DIR`` — direct override of the dot-directory itself.
+  - ``$SUSTECH_CACHE_DIR`` — relocate ONLY the cache root elsewhere (e.g.
+    tests point this at ``tmp_path``). When unset the cache lives at
     ``config_root() / "cache"``.
   - ``root=`` kwarg to :func:`cache_path` / :func:`tmp_root` still wins.
-No config file, no settings registry — kwargs and env vars.
+The single user settings file is :func:`config_file`/`load_config`
+(``config.json``); other than that — env vars and kwargs only.
 """
 from __future__ import annotations
 
@@ -48,12 +54,15 @@ _PACKAGE_ROOT: Path = Path(__file__).resolve().parent
 TMP_ROOT: Path = _PACKAGE_ROOT / "tmp"
 
 # The single home dot-directory that holds all user-owned sustech_survival
-# data (skins + the default cache root). May be overridden by the
-# SUSTECH_CONFIG_DIR env var.
+# data (skins, credentials, config.json, and the default cache root). Its
+# anchor defaults to the user's home (so the dir is ~/.sustech_survival) and
+# can be relocated with $SUSTECH_HOME.
 DEFAULT_CONFIG_DIR = ".sustech_survival"
 # Disposable cache root name inside the config dir. May be relocated entirely
 # via the SUSTECH_CACHE_DIR env var or an explicit root= kwarg.
 CACHE_SUBDIR = "cache"
+# Staging / scratch subdir inside the config dir (e.g. BB submission staging).
+TMP_SUBDIR = "tmp"
 
 
 def package_root() -> Path:
@@ -71,17 +80,57 @@ def user_home() -> Path:
     return Path("~").expanduser()
 
 
+def home_root(root: Optional[Path] = None) -> Path:
+    """The anchor that holds the user data dot-directory.
+
+    Precedence: explicit ``root`` kwarg > ``$SUSTECH_HOME`` env var >
+    the user's home (``~``). ``$SUSTECH_HOME`` makes the whole
+    ``.sustech_survival`` tree relocatable. Relative values resolve against
+    the home dir.
+    """
+    raw = root or os.environ.get("SUSTECH_HOME")
+    if raw:
+        p = Path(raw).expanduser()
+        return p if p.is_absolute() else user_home() / p
+    return user_home()
+
+
 def config_root(root: Optional[Path] = None) -> Path:
     """The home dot-directory holding user data: ``~/.sustech_survival``.
 
-    Precedence: explicit ``root`` kwarg > ``$SUSTECH_CONFIG_DIR`` env var >
-    ``~/.sustech_survival``. Relative values resolve against the home dir.
+    Precedence: ``$SUSTECH_CONFIG_DIR`` env var (direct dotdir override) >
+    ``home_root() / ".sustech_survival"`` (i.e. ``$SUSTECH_HOME/.sustech_survival``
+    or the default ``~/.sustech_survival``). An explicit ``root`` kwarg wins.
     The directory is NOT created; callers create paths as needed.
     """
-    raw = root or os.environ.get("SUSTECH_CONFIG_DIR") or DEFAULT_CONFIG_DIR
-    p = Path(raw).expanduser()
-    home = user_home()
-    return p if p.is_absolute() else home / p
+    direct = os.environ.get("SUSTECH_CONFIG_DIR")
+    if direct:
+        p = Path(direct).expanduser()
+        return p if p.is_absolute() else user_home() / p
+    return home_root(root) / DEFAULT_CONFIG_DIR
+
+
+def user_tmp(root: Optional[Path] = None) -> Path:
+    """Staging / scratch dir inside the user data tree: ``config_root()/tmp``.
+
+    Used for short-lived owned scratch (e.g. BB submission staging) that must
+    still live under ``~/.sustech_survival`` rather than the OS temp dir.
+    """
+    return config_root(root) / TMP_SUBDIR
+
+
+def config_file(filename: str = "config.json", root: Optional[Path] = None) -> Path:
+    """A user-owned config file inside the dotdir: ``config_root()/filename``."""
+    return config_root(root) / filename
+
+
+def load_config(root: Optional[Path] = None) -> dict:
+    """Read ``config_root()/config.json`` (empty dict if missing/corrupt).
+
+    This is the project's single user-editable settings file. No schema is
+    enforced here — consumers read the keys they care about.
+    """
+    return load_json(config_file(root=root)) or {}
 
 
 def tmp_root(root: Optional[Path] = None) -> Path:

@@ -38,6 +38,7 @@ from sustech_survival.exceptions import (
     NetworkError,
     SessionExpired,
 )
+from sustech_survival import _cache
 
 __all__ = [
     "Authorizer",
@@ -106,11 +107,11 @@ def cred_clear() -> None:
 def resolve_creds_path() -> Path:
     """Resolve the credentials.txt path (first match wins for *files*).
 
-    Precedence (later listed wins — matches ``cred_set`` > cwd file > env):
-
-    1. ``./credentials.txt`` — current working directory
-    2. ``SUSTECH_CREDENTIALS`` env var — explicit path
-       (default: ``./credentials.txt``, for error messages / `sustech sso creds set`)
+    Precedence (later listed wins — matches ``cred_set`` > cwd file > env > home):
+      - ``cred_set()`` in memory (highest, no disk)
+      - ``./credentials.txt`` — current working directory (legacy)
+      - ``SUSTECH_CREDENTIALS`` env var — explicit path
+      - ``~/.sustech_survival/credentials.txt`` — the project's home default
 
     Returns the *intended* path even if it does not yet exist (so the error
     message can tell the user where to create it). Note: credentials set via
@@ -127,7 +128,8 @@ def resolve_creds_path() -> Path:
     if env_path:
         return Path(env_path)
 
-    return cwd_creds
+    # Everything lands in the user's home dot-directory by default.
+    return _cache.config_root() / "credentials.txt"
 
 
 def write_credentials(sid: str, password: str, path: Optional[Path] = None) -> Path:

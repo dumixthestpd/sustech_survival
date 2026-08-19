@@ -55,16 +55,29 @@ def test_resolve_creds_path_env(monkeypatch, tmp_path):
     assert resolve_creds_path() == tmp_path / "x.txt"
 
 
-def test_resolve_creds_path_defaults_to_cwd(monkeypatch, tmp_path, capsys):
+def test_resolve_creds_path_defaults_to_home(monkeypatch, tmp_path):
+    """With no env and no cwd file, credentials default to the user's home
+    dot-directory: ~/.sustech_survival/credentials.txt (not cwd)."""
     monkeypatch.delenv("SUSTECH_CREDENTIALS", raising=False)
+    monkeypatch.delenv("SUSTECH_HOME", raising=False)
+    monkeypatch.delenv("SUSTECH_CONFIG_DIR", raising=False)
+    monkeypatch.setattr(authorizer._cache, "user_home", lambda: tmp_path)
     old = os.getcwd()
-    os.chdir(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir(parents=True, exist_ok=True)
+    os.chdir(elsewhere)
     try:
         p = resolve_creds_path()
-        assert p == tmp_path / "credentials.txt"
+        assert p == tmp_path / ".sustech_survival" / "credentials.txt"
         assert p.name == "credentials.txt"
     finally:
         os.chdir(old)
+
+def test_resolve_creds_path_home_override(monkeypatch, tmp_path):
+    """$SUSTECH_HOME relocates the whole tree, credentials included."""
+    monkeypatch.delenv("SUSTECH_CREDENTIALS", raising=False)
+    monkeypatch.setenv("SUSTECH_HOME", str(tmp_path / "anchor"))
+    assert resolve_creds_path() == tmp_path / "anchor" / ".sustech_survival" / "credentials.txt"
 
 
 def test_resolve_creds_path_cwd_file_wins_over_env(monkeypatch, tmp_path):

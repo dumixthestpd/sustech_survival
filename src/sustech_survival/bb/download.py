@@ -23,9 +23,26 @@ from urllib.parse import unquote
 
 import requests
 
+from sustech_survival import _cache
+
 # -- Session ------------------------------------------------------------------
 
 BB_BASE = "https://bb.sustech.edu.cn"
+
+
+def _default_out_dir(kind: str) -> Path:
+    """Default download output directory.
+
+    Precedence: explicit ``out_dir`` (caller) > ``config.json`` key
+    (``downloads_dir`` or ``bb.downloads_dir``) > ``~/.sustech_survival/
+    downloads/<kind>``. This keeps BB downloads inside the project's home
+    dot-directory instead of the OS Downloads folder by default.
+    """
+    cfg = _cache.load_config()
+    d = cfg.get("downloads_dir") or (cfg.get("bb") or {}).get("downloads_dir")
+    if d:
+        return Path(d).expanduser()
+    return _cache.config_root() / "downloads" / kind
 
 
 def session():
@@ -211,7 +228,7 @@ def download_content(content_id, out_dir=None):
         print(f"[download_content] No files: {title}")
         return []
 
-    out_dir = Path(out_dir) if out_dir else Path.home() / "Downloads" / "BB-content"
+    out_dir = Path(out_dir) if out_dir else _default_out_dir("BB-content")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     sess = session()
@@ -356,7 +373,7 @@ def download_submission(course_id, content_id, column_id=None, out_dir=None):
 
     Returns [] (no files downloadable without a browser).
     """
-    out_dir = Path(out_dir) if out_dir else Path.home() / "Downloads" / "BB-submissions"
+    out_dir = Path(out_dir) if out_dir else _default_out_dir("BB-submissions")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Resolve column_id from content_id if not provided

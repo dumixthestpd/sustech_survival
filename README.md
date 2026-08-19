@@ -177,16 +177,46 @@ sustech webui serve --skin my-head
 sustech webui serve --skin-path /path/to/my-head
 ```
 
-Installed heads are copied into `~/.sustech_survival/skins/` (the project's
-home dot-directory; override with `$SUSTECH_CONFIG_DIR`). Use
+Installed heads are copied into `~/.sustech_survival/skins/`. Use
 `--skin-path <dir>` to serve a head directly from its own directory without
 copying it (e.g. one under version control) — it just records the path.
-Disposable caches (calendar, BB, classroom) live separately under
-`~/.sustech_survival/cache/`.
 
 The `sustech_survival.api` Flask-free JSON contract is what a custom head
 consumes — see [Web UI](docs/en/webui.md) and the loader
 (`src/sustech_survival/webui/loader.py`).
+
+---
+
+## On-disk storage (one home dot-directory)
+
+Everything `sustech_survival` persists outside the package lives in ONE
+user dot-directory, `~/.sustech_survival/` (managed by
+`sustech_survival._cache`):
+
+```
+~/.sustech_survival/
+├── cache/<module>/      # disposable caches (calendar, bb, classroom,
+│                        #   selectcourse, ...) — each module under its name
+├── skins/               # user-installed webui heads
+├── tmp/                 # short-lived owned scratch (e.g. BB submit staging)
+├── credentials.txt      # default shared credentials (sid:password)
+└── config.json          # the one user-editable settings file
+```
+
+- **Changeable home root**: set `$SUSTECH_HOME` to relocate the whole tree
+  (e.g. `SUSTECH_HOME=D:/data` → everything under `D:/data/.sustech_survival/`).
+  `$SUSTECH_CONFIG_DIR` overrides the dot-directory directly;
+  `$SUSTECH_CACHE_DIR` relocates only the cache.
+- **Module caches** are uniformly created via
+  `sustech_survival._cache.cache_path("<module>", ...)` and land under
+  `cache/<module>/` — no module hand-rolls its own location.
+- **`config.json`** is read with `_cache.load_config()`. Example:
+  ```json
+  { "downloads_dir": "D:/bb-downloads" }
+  ```
+  BB downloads default to `downloads_dir` from `config.json` (or
+  `~/.sustech_survival/downloads/BB-content|BB-submissions`), never the OS
+  Downloads folder. Explicit `--output` / `out_dir` paths still win.
 
 ## Related projects
 

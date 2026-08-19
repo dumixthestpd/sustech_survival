@@ -138,7 +138,9 @@ def search_wos(query, max_results=10):
 
     if not search_input:
         print("[WoS Search] ❌ No search input visible!")
-        page.screenshot(path="/tmp/wos_search_fail.png")
+        from sustech_survival import _cache
+        _cache.user_tmp().mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(_cache.user_tmp() / "wos_search_fail.png"))
         page.close()
         return []
 
@@ -200,5 +202,8 @@ if __name__ == "__main__":
             has_paywall = any(x in html.lower() for x in ["subscribe", "access denied", "not authorized"])
             print(f"Paywall: {has_paywall}")
             if not has_paywall:
-                open("/tmp/wos_article_sample.html", "w").write(html)
-                print("Saved to /tmp/wos_article_sample.html")
+                from sustech_survival import _cache
+                _cache.user_tmp().mkdir(parents=True, exist_ok=True)
+                sample = _cache.user_tmp() / "wos_article_sample.html"
+                sample.write_text(html, encoding="utf-8")
+                print(f"Saved to {sample}")
