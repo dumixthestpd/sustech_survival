@@ -57,7 +57,7 @@ import json
 import threading
 from typing import Dict, List, Optional
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, jsonify, request
 
 from sustech_survival.semester import Semester, Season
 from sustech_survival.selectcourse.selectcourse import (
@@ -128,17 +128,15 @@ def _int_or_none(v):
 @bp.route("/tis")
 def page():
     xn, xq = _parse_sem(request.args)
-    # The active head may provide its own /tis page. A custom (non-default)
-    # head is authoritative: if it ships no tis.html, the feature is dropped
-    # (404). Only the shipped default head falls back to the package template.
+    # The active head owns its /tis page: the skin's root tis.html is served
+    # if present; a head that ships no tis.html has dropped the feature (404).
+    # There is NO package-level fallback template — skins are self-contained.
     from flask import current_app, abort, send_from_directory
     from pathlib import Path as _Path
     sr = current_app.config.get("SKIN_ROOT")
     _skin_root = _Path(sr) if sr else None
     if _skin_root and (_skin_root / "tis.html").is_file():
         return send_from_directory(_skin_root, "tis.html")
-    if current_app.config.get("SKIN_IS_DEFAULT", False):
-        return render_template("tis.html", xn=xn, xq=xq)
     abort(404)
 
 

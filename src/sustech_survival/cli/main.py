@@ -754,24 +754,44 @@ def webui_skins(as_json: bool) -> None:
     """Show which skins are installed (they live in ~/.sustech_survival/skins/).
 
     Skins are installed to the home dot-directory; their on-disk location is
-    an implementation detail, so it is not shown here.
+    an implementation detail, so it is not shown here. The active skin is the
+    one saved in config.json (webui.skin), else the first installed.
     """
     from ..webui import loader
+    from sustech_survival import _cache
     skins = loader.installed_skins()
+    configured = (_cache.load_config().get("webui") or {}).get("skin")
     if as_json:
         click.echo(_json.dumps([
-            {"name": s.name, "version": s.version, "entry": s.entry}
+            {"name": s.name, "version": s.version, "entry": s.entry,
+             "active": s.name == configured}
             for s in skins
         ], ensure_ascii=False, indent=2))
         return
     if not skins:
         click.echo("(no skins installed — `sustech webui install default` to set one up)")
         return
-    active = skins[0]
+    active = next((s for s in skins if s.name == configured), skins[0])
     click.secho(f"{len(skins)} skin(s); active = {active.name}@{active.version}", bold=True)
     click.echo("\t".join(("name", "version")))
     for s in skins:
         click.echo("\t".join((s.name, f"v{s.version}")))
+
+
+@webui_cmd.command(name="set-skin", help="Persist the default skin in config.json.")
+@click.argument("name")
+def webui_set_skin(name: str) -> None:
+    """Save ``name`` as the default web-ui skin in ~/.sustech_survival/config.json
+    (webui.skin). `sustech webui serve` (with no --skin) uses it."""
+    from ..webui import loader
+    from sustech_survival import _cache
+    try:
+        loader.find_skin(name)
+    except KeyError as e:
+        click.secho(f"cannot set skin: {e}", fg="red")
+        raise SystemExit(1)
+    _cache.update_config(webui={"skin": name})
+    click.secho(f"✅ default skin set to {name!r} (config.json → webui.skin)", fg="green")
 
 
 # ========================================================================

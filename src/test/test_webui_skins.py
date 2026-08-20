@@ -180,3 +180,18 @@ def test_unknown_skin_raises_keyerror(installed_home):
     msg = str(e.value)
     assert "my_light" in msg
     assert "my_dark" in msg
+
+
+# ── Default skin saved in ~/.sustech_survival/config.json ─────────────────
+
+def test_configured_default_skin_used(installed_home, monkeypatch, tmp_path):
+    """create_app() with no explicit skin uses webui.skin from config.json."""
+    from sustech_survival import _cache
+    cfg_dir = tmp_path / "cfg"
+    cfg_dir.mkdir()
+    monkeypatch.setattr(_cache, "config_file", lambda root=None: cfg_dir / "config.json")
+    _cache.update_config(webui={"skin": "my_dark"})
+    app = create_app()                      # no explicit skin
+    assert app.config["SKIN"] == "my_dark"
+    app2 = create_app(skin="my_light")      # explicit wins
+    assert app2.config["SKIN"] == "my_light"

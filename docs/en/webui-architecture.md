@@ -8,9 +8,10 @@
 
 | Path | Role |
 |---|---|
-| `src/sustech_survival/webui/templates/tis.html` | Page markup, inline CSS, button labels |
-| `src/sustech_survival/webui/static/tis/tis.js` | 4171-line IIFE: state, render, cascade, persistence |
+| `src/sustech_survival/webui/skins/<name>/tis.html` | Per-skin page markup + inline CSS (each skin owns its own self-contained page; there is NO package-level template) |
+| `src/sustech_survival/webui/static/tis/tis.js` | 4171-line IIFE: state, render, cascade, persistence (shared engine) |
 | `src/sustech_survival/webui/blueprints/tis.py` | HTTP routes (13 endpoints) |
+| `tools/gen_skins.py` | Regenerates the themed skins' `tis.html`/transit into `~/.sustech_survival/skins/` |
 
 ## Sections of `tis.js`
 

@@ -123,6 +123,22 @@ def load_config(root: Optional[Path] = None) -> dict:
     return load_json(config_file(root=root)) or {}
 
 
+def update_config(**changes) -> dict:
+    """Merge ``changes`` into ``config.json`` and save atomically.
+
+    Nested dicts are shallow-merged (e.g. ``update_config(webui={"skin": "x"})``
+    keeps other ``webui`` keys). Returns the new full config.
+    """
+    cfg = load_config()
+    for k, v in changes.items():
+        if isinstance(v, dict) and isinstance(cfg.get(k), dict):
+            cfg[k] = {**cfg[k], **v}
+        else:
+            cfg[k] = v
+    save_json(config_file(), cfg)
+    return cfg
+
+
 def tmp_root(root: Optional[Path] = None) -> Path:
     """The active cache root.
 

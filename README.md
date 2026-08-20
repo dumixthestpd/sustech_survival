@@ -174,7 +174,11 @@ sustech webui install --path /path/to/my-head
 #    implementation detail and is not shown)
 sustech webui skins
 
-# 4. Serve a specific installed head
+# 3b. Persist the default skin — saved to ~/.sustech_survival/config.json
+#     (webui.skin) and used by `sustech webui serve` when no --skin is given
+sustech webui set-skin my-head
+
+# 4. Serve a specific installed head (or the configured default)
 sustech webui serve --skin my-head
 
 # 4b. OR serve a head straight from its directory — no install/copy
@@ -218,9 +222,13 @@ user dot-directory, `~/.sustech_survival/` (managed by
   there is no separate scratch/tmp dir.
 - **`config.json`** is read with `_cache.load_config()`. Example:
   ```json
-  { "downloads_dir": "D:/bb-downloads" }
+  {
+    "downloads_dir": "D:/bb-downloads",
+    "webui": { "skin": "sustech_neon" }
+  }
   ```
-  BB downloads default to `downloads_dir` from `config.json` (or
+  `webui.skin` is the default web-ui skin (set with `sustech webui set-skin`);
+  `downloads_dir` (or `bb.downloads_dir`) is the BB download output (else
   `~/.sustech_survival/downloads/BB-content|BB-submissions`), never the OS
   Downloads folder. Explicit `--output` / `out_dir` paths still win.
 

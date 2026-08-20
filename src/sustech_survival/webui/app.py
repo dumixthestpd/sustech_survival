@@ -69,9 +69,10 @@ def create_app(*, transit_data_dir: Optional[str] = None,
         return send_from_directory(str(RESOURCES), "logo.svg")
 
     # -- Active skin -----------------------------------------------------
-    # Resolution order: explicit skin_path -> explicit skin name -> first
-    # installed -> shipped default. create_app still works with ZERO installed
-    # skins (the user just gets the in-package default head).
+    # Resolution order: explicit skin_path -> explicit skin name -> the
+    # default skin saved in ~/.sustech_survival/config.json (webui.skin) ->
+    # first installed -> shipped default. create_app still works with ZERO
+    # installed skins (the user just gets the in-package default head).
     if skin_path is not None:
         try:
             _skin = loader.skin_from_path(skin_path)
@@ -83,8 +84,17 @@ def create_app(*, transit_data_dir: Optional[str] = None,
         _is_default = (_skin.name == "default")
     else:
         _skins = loader.installed_skins()
+        configured = None
         if _skins:
-            _skin = _skins[0]
+            from sustech_survival import _cache
+            configured = (_cache.load_config().get("webui") or {}).get("skin")
+            if configured:
+                try:
+                    _skin = loader.find_skin(configured)
+                except KeyError:
+                    _skin = _skins[0]
+            else:
+                _skin = _skins[0]
             _is_default = (_skin.name == "default")
         else:
             from .loader import Skin
