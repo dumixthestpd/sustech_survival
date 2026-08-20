@@ -22,6 +22,7 @@ content_discovery.json
 # versions, plus the legacy package-local tmp/ during migration.
 __sustech_cache__/
 src/sustech_survival/tmp/
+_ptmp/
 
 # Cookies — personal auth tokens (never commit)
 cookies/
