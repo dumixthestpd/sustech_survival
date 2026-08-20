@@ -21,6 +21,7 @@ from sustech_survival.cli.main import (
     webui_skins,
     webui_install,
     webui_serve,
+    webui_set_skin,
 )
 
 # The only skin shipped inside the package (fallback). Other skins are
@@ -173,6 +174,26 @@ def test_webui_serve_skin_path_unknown_skin_path_not_a_dir(isolated, runner):
                       ["--skin-path", str(isolated.parent / "does-not-exist")])
     assert r.exit_code == 1
     assert "cannot serve --skin-path" in r.output
+
+
+# ── webui set-skin (persist default skin in config.json) ───────────────────
+
+def test_webui_set_skin_persists(isolated, runner, monkeypatch, tmp_path):
+    """`sustech webui set-skin <name>` writes webui.skin into config.json."""
+    from sustech_survival import _cache
+    cfg_dir = tmp_path / "cfg"
+    cfg_dir.mkdir()
+    monkeypatch.setattr(_cache, "config_file", lambda root=None: cfg_dir / "config.json")
+    r = runner.invoke(webui_set_skin, ["default"])
+    assert r.exit_code == 0
+    assert _cache.load_config().get("webui", {}).get("skin") == "default"
+
+
+def test_webui_set_skin_unknown_exits(isolated, runner):
+    """Unknown skin name exits 1 with the available list."""
+    r = runner.invoke(webui_set_skin, ["does-not-exist"])
+    assert r.exit_code == 1
+    assert "does-not-exist" in r.output
 
 
 # ── `sustech webui` alone must NOT serve (help only) ───────────────────────
