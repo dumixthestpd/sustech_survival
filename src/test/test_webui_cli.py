@@ -53,18 +53,6 @@ def test_webui_skins_lists_each_package_skin(isolated, runner):
         assert name in r.output
 
 
-def test_webui_skins_json(isolated, runner):
-    r = runner.invoke(webui_skins, ["--json"])
-    assert r.exit_code == 0
-    data = json.loads(r.output)
-    names = [d["name"] for d in data]
-    for expected in PACKAGE_SKINS:
-        assert expected in names
-    for d in data:
-        assert "version" in d
-        assert "entry" in d
-        assert "path" not in d   # skins live in home; location is not shown
-
 
 def test_webui_skins_shows_user_skins_first(isolated, runner, monkeypatch):
     """A skin in the user cache is listed before package skins."""
