@@ -758,19 +758,21 @@ def webui_skins(as_json: bool) -> None:
     one saved in config.json (webui.skin), else the first installed.
     """
     from ..webui import loader
-    from sustech_survival import _cache
     skins = loader.installed_skins()
-    configured = (_cache.load_config().get("webui") or {}).get("skin")
     if as_json:
+        # Plain skin catalog -- the configured active skin is already shown
+        # in the text header (`active = <name>@<ver>`); no need to repeat
+        # that boolean on every row of every format.
         click.echo(_json.dumps([
-            {"name": s.name, "version": s.version, "entry": s.entry,
-             "active": s.name == configured}
+            {"name": s.name, "version": s.version, "entry": s.entry}
             for s in skins
         ], ensure_ascii=False, indent=2))
         return
     if not skins:
         click.echo("(no skins installed — `sustech webui install default` to set one up)")
         return
+    from sustech_survival import _cache
+    configured = (_cache.load_config().get("webui") or {}).get("skin")
     active = next((s for s in skins if s.name == configured), skins[0])
     click.secho(f"{len(skins)} skin(s); active = {active.name}@{active.version}", bold=True)
     click.echo("\t".join(("name", "version")))
