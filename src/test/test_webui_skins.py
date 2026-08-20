@@ -42,10 +42,15 @@ def _make_skin(base, name, *, landing_tokens, tis_tokens, transit_tokens):
         f"<style>:root{{{landing_tokens}}}</style><h1>{name}</h1>",
         encoding="utf-8")
     (d / "tis.html").write_text(
-        f"<style>:root{{{tis_tokens}}}</style>", encoding="utf-8")
+        f"<style>:root{{{tis_tokens}}}</style>"
+        f'<script src="/static/tis/tis.js"></script>', encoding="utf-8")
     (d / "transit" / "index.html").write_text("<h1>transit</h1>", encoding="utf-8")
     (d / "transit" / "static" / "style.css").write_text(
         transit_tokens, encoding="utf-8")
+    # Each skin ships and serves its OWN front-end JS (no shared package JS).
+    (d / "static" / "tis").mkdir(parents=True)
+    (d / "static" / "tis" / "tis.js").write_text(
+        f"/* tis.js owned by skin {name} */", encoding="utf-8")
     return d
 
 
@@ -150,21 +155,43 @@ def test_installed_skin_transit_style_themed(installed_home):
     assert "--bg: #f5f6fa" in body
 
 
-# ── Shared static handler (route-conflict regression) ──────────────────────
+# ── Each skin serves its OWN front-end JS (no shared package JS) ──────────
 
-def test_shared_tis_js_served_for_installed_skin(installed_home):
-    """Regression: /static/tis/tis.js must resolve for installed (custom)
-    skins even though the transit blueprint no longer owns a competing
-    /static route."""
+def test_installed_skin_serves_its_own_js(installed_home):
+    """/static/tis/tis.js resolves to the ACTIVE skin's own file, not some
+    shared package copy — so a skin is fully independent."""
     app = create_app(skin="my_light")
     r = _get(app, "/static/tis/tis.js")
     assert r.status_code == 200
-    assert r.data[:2] == b"/*"       # the shared JS, not a 404 page
+    body = r.data.decode("utf-8", "replace")
+    assert "owned by skin my_light" in body      # the skin's own marker
+    # a different skin serves a DIFFERENT js file
+    app2 = create_app(skin="my_dark")
+    r2 = _get(app2, "/static/tis/tis.js")
+    assert "owned by skin my_dark" in r2.data.decode("utf-8", "replace")
 
 
-def test_shared_tis_js_served_for_default(package_only):
+def test_default_serves_its_own_engine(package_only):
+    """The default skin ships its own /static/tis/tis.js engine."""
     app = create_app(skin="default")
-    assert _get(app, "/static/tis/tis.js").status_code == 200
+    r = _get(app, "/static/tis/tis.js")
+    assert r.status_code == 200
+
+
+def test_installed_skin_without_own_js_404s(monkeypatch, tmp_path):
+    """No shared fallback: an installed skin that ships no own js 404s."""
+    from sustech_survival.cli import main as cli_main  # noqa
+    usr = tmp_path / "user-skins"
+    _make_skin(usr, "slim",
+               landing_tokens="--org:#abc",
+               tis_tokens="--accent:#abc",
+               transit_tokens=":root{--primary: #abc}")
+    # strip the js the _make_skin helper adds, to simulate a skin without one
+    import shutil
+    shutil.rmtree(usr / "slim" / "static")
+    monkeypatch.setattr(loader, "_USER_SKINS", usr)
+    app = create_app(skin="slim")
+    assert _get(app, "/static/tis/tis.js").status_code == 404
 
 
 def test_missing_static_404s(installed_home):

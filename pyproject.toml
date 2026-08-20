@@ -130,7 +130,6 @@ include = [
     "src/sustech_survival/context/templates/**/*",
     # Web UI: skin-loader head + shipped default skin assets.
     "src/sustech_survival/webui/templates/**/*.html",
-    "src/sustech_survival/webui/static/**/*",
     "src/sustech_survival/webui/skins/**/*",
     # Legacy transit frontend (kept for backward-compat with transit/web).
     "src/sustech_survival/transit/web/**/*",

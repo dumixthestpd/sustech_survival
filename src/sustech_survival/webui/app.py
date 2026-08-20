@@ -26,9 +26,6 @@ from sustech_survival.webui import loader
 DEFAULT_PORT = 20129  # SUSTech founding: September 2012 (2012-09)
 HERE = Path(__file__).resolve().parent
 TEMPLATES = HERE / "templates"
-# Shared legacy webui static assets (e.g. webui/static/tis/tis.js) served at
-# /static/<path>. Kept out of any skin so skins can reuse packaged JS.
-WEBUI_STATIC = HERE / "static"
 # Brand assets live in the package's resources/ dir (shipped in the wheel).
 RESOURCES = Path(__file__).resolve().parent.parent / "resources"
 
@@ -119,9 +116,10 @@ def create_app(*, transit_data_dir: Optional[str] = None,
 
     # A single /static/<path> handler owns ALL static assets. Resolving
     # transit's assets here (instead of a competing route in the transit
-    # blueprint) keeps Route match unambiguous — a second /static/<path>
-    # rule would shadow this one (Flask picks the last-registered rule)
-    # and break shared assets like /static/tis/tis.js on custom skins.
+    # blueprint) keeps Route match unambiguous. Skins are FULLY INDEPENDENT:
+    # each serves ONLY the assets it ships under <skin_root>/static/ (e.g.
+    # <skin>/static/tis/tis.js). There is NO shared package JS any skin can
+    # silently fall back to.
     @app.route("/static/<path:filename>")
     def _skin_static(filename):
         from flask import abort
@@ -129,12 +127,7 @@ def create_app(*, transit_data_dir: Optional[str] = None,
         p = _skin_root / "static" / filename
         if p.is_file():
             return send_from_directory(_skin_root / "static", filename)
-        # 2) Legacy shared webui static (e.g. /static/tis/tis.js) — served
-        #    regardless of skin so any skin can reuse the packaged JS.
-        legacy = WEBUI_STATIC / filename
-        if legacy.is_file():
-            return send_from_directory(WEBUI_STATIC, filename)
-        # 3) Transit assets, resolved through the same transit-root logic
+        # 2) Transit assets, resolved through the same transit-root logic
         #    the /transit page uses: a custom skin's <skin>/transit/static,
         #    or the packaged transit/web/static for the default head.
         from .blueprints.transit import _transit_root
