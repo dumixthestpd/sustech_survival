@@ -129,14 +129,27 @@ def _int_or_none(v):
 def page():
     xn, xq = _parse_sem(request.args)
     # The active head owns its /tis page: the skin's root tis.html is served
-    # if present; a head that ships no tis.html has dropped the feature (404).
-    # There is NO package-level fallback template — skins are self-contained.
-    from flask import current_app, abort, send_from_directory
+    # if present (or tis.zh.html for Chinese when the skin ships it); a head
+    # that ships no tis.html has dropped the feature (404). There is NO
+    # package-level fallback template — skins are self-contained.
+    from flask import current_app, Response, abort, send_from_directory
     from pathlib import Path as _Path
+    from ..app import _localized, _locale
     sr = current_app.config.get("SKIN_ROOT")
     _skin_root = _Path(sr) if sr else None
-    if _skin_root and (_skin_root / "tis.html").is_file():
-        return send_from_directory(_skin_root, "tis.html")
+    if _skin_root:
+        lang = _locale()
+        entry = _localized(_skin_root, "tis", lang)
+        if entry is not None:
+            return send_from_directory(entry.parent, entry.name)
+        # A skin may not ship a separate tis.zh.html yet. If it has the
+        # shared English tis.html plus client-side i18n, serve that file with
+        # the correct lang attribute so :lang(zh) CSS and the i18n script work.
+        plain = _skin_root / "tis.html"
+        if plain.is_file() and lang != "en":
+            html = plain.read_text(encoding="utf-8").replace(
+                '<html lang="en">', f'<html lang="{lang}">', 1)
+            return Response(html, mimetype="text/html")
     abort(404)
 
 

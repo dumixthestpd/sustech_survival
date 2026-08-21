@@ -43,8 +43,15 @@ def _parse_deadline(s) -> Optional[datetime]:
     if not s:
         return None
     # Try ISO 8601 first (handles both naive and tz-aware)
+    # Normalize compact offsets from Windows strftime ("+0800") to the
+    # colon form accepted by Python's fromisoformat on all supported versions.
+    iso = re.sub(
+        r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?)([+-]\d{2})(\d{2})$",
+        r"\1\2:\3",
+        s,
+    )
     try:
-        return datetime.fromisoformat(s)
+        return datetime.fromisoformat(iso)
     except (ValueError, TypeError):
         pass
     # Chinese full: "2026年5月12日 23:59" or "2026年5月12日23:59"

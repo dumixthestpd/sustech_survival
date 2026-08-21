@@ -29,7 +29,13 @@ Layout of a skin::
       manifest.json      # {"name", "version", "entry", "requires", ...}
       index.html         # served at / when the skin is active
       static/            # served at /static/<path> (skin-static)
+        index.zh.html     # optional localized entry page (?lang=zh / --lang zh)
+        tis.html           # optional TIS page (tis.zh.html for Chinese)
+
       api-note.md        # (optional) which /api/* this skin uses
+        index.zh.html     # optional localized entry page (?lang=zh / --lang zh)
+        tis.html           # optional TIS page (tis.zh.html for Chinese)
+
 
 ``manifest.json`` fields:
   - ``name``   required            — the skin's unique name

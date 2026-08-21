@@ -56,14 +56,25 @@ CLI（`click`）已包含在核心依赖中 —— `pip install sustech_survival
 - `papers` — cloudscraper（绕过出版商网站的 requests 拦截）
 - `all` — 以上全部
 
+本项目**没有发布到 PyPI**，请直接从 GitHub 安装：
+
 ```bash
 # 任选其一：
-pip install "sustech_survival"               # API + CLI
-pip install "sustech_survival[webui]"        # + Web 界面
-pip install "sustech_survival[all]"          # 全部
+pip install "sustech_survival @ git+https://github.com/dumixthestpd/sustech_survival.git"               # API + CLI
+pip install "sustech_survival[webui] @ git+https://github.com/dumixthestpd/sustech_survival.git"        # + Web 界面
+pip install "sustech_survival[all] @ git+https://github.com/dumixthestpd/sustech_survival.git"          # 全部
 ```
 
-### 2. 身份认证
+### 2. （可选）设置 $SUSTECH_HOME 环境变量
+
+`SUSTECH_HOME` 用来指定模块的“家目录”。运行 `sustech_survival` 时，模块会在 `$SUSTECH_HOME/.sustech_survival/` 下存放凭据、Web UI 皮肤、`config.json`、缓存等内容。
+
+```bash
+set SUSTECH_HOME=path/to/sustech/home
+```
+
+
+### 3. 身份认证
 
 统一 CAS 认证底座位于 `sustech_survival/sso/authorizer.py`。
 每个系统（BB、TIS、图书馆、外事、PMS、NCES、场地预约等）的登录都只是一个 `Authorizer` 子类 —— 选一个并调用 `ensure()`：
@@ -83,11 +94,13 @@ def my_function(auth=None):
     r = auth.session.get(...)
 ```
 
-凭据按三级优先级解析（越靠后越优先）：
+凭据按以下优先级解析：
 
 1. `sustech_survival.sso.cred_set(sid=..., pwd=...)` —— 内存中设置，最高优先级
-2. `./credentials.txt` —— 当前工作目录
-3. `SUSTECH_CREDENTIALS` 环境变量 —— 凭据文件的完整路径
+2. `SUSTECH_CREDENTIALS` 环境变量 —— 凭据文件的完整路径
+3. `~/.sustech_survival/credentials.txt` —— 项目默认的家目录凭据文件
+
+不再自动读取当前工作目录下的 `./credentials.txt`，家目录是唯一的磁盘默认位置。
 
 格式：`学号:密码`。会话仅保存在**内存中** —— 不写 `session.json` 到磁盘。
 
@@ -96,7 +109,7 @@ from sustech_survival import sso
 sso.cred_set(sid="12410000", pwd="your-password-here")   # 内存中，优先级最高
 ```
 
-**普通 `pip install` 之后，包内并不会自带凭据文件** —— 运行时不会打包 `credentials.txt`。一条命令即可配置（写入当前工作目录的 `./credentials.txt`，权限 600）：
+**从 GitHub 安装后，包内并不会自带凭据文件** —— 运行时不会打包 `credentials.txt`。一条命令即可配置（默认写入 `~/.sustech_survival/credentials.txt`；如果设置了 `SUSTECH_CREDENTIALS`，则写到该路径，权限 600）：
 
 ```bash
 sustech sso creds set --sid 12410000 --pass 'your-password-here'
@@ -113,7 +126,7 @@ sustech bb --help                      # 列出 bb 子命令
 
 > 说明：目前**没有** `sustech <服务> session login|check|refresh` 这类子命令（README 早先写的不存在）。请在 Python 里用 `ensure()` / `auth.check()`，或用上面各模块的只读命令。
 
-### 3. 示例用法
+### 4. 示例用法
 
 设置完成后的两个常用工作流：
 
@@ -132,11 +145,29 @@ print(ctx.to_str())
 **Web 界面（最常用）：**
 
 ```bash
-python -m sustech_survival.webui
+sustech webui serve
 ```
 
 浏览器打开 `http://localhost:20129` —— TIS 选课界面（含冲突求解）、
 校园巴士地图（实时 GPS）、每个课程的 NCES 悬浮卡片。
+
+```bash
+# 查看已安装皮肤
+sustech webui skins
+
+# 安装皮肤（默认皮肤可先复制到用户目录再修改）
+sustech webui install default
+sustech webui install --path /path/to/my-skin
+
+# 设置默认皮肤 / 删除用户安装的皮肤
+sustech webui skin set my-skin
+sustech webui skin delete my-skin
+
+# 切换界面语言
+sustech webui serve --lang zh
+sustech webui set-lang zh
+# 也可以按请求临时切换：/any/page?lang=zh
+```
 
 ---
 
@@ -202,16 +233,27 @@ pip install -e ".[all]"
 # 单元测试（mocked，快速）
 python -m pytest src/test/ -v
 
+# 清理本地缓存（不会动凭据、皮肤和 config.json）
+sustech cache clear
+# 或者只清理某个模块的缓存
+sustech cache clear --module tis
+
 # 现场测试（需要真实的 BB/TIS 凭据，详见 tests/）
 python -m pytest src/test/ -v --live
 ```
+
+
+## 开发
+
+- [皮肤开发指南](docs/dev-instructions/skin-development.md)
+- [文档结构说明](docs/README.md)
 
 ---
 
 ## 待办
 
 - [x] 统一的 `sustech.sso.Authorizer().ensure()` —— 把各系统的认证合并为一次 CAS 调用。✅ 已完成
-- [ ] 更好的本地化（清晰区分中英文）
+- [x] 更好的本地化（Web UI 支持中英文切换）
 - [ ] 校园食堂每日菜单通知
 - [ ] NCES 评论摘要（配置 API key 时可用；也可通过 skill 文档实现）
 

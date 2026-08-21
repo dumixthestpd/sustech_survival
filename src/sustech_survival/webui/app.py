@@ -19,20 +19,49 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from flask import Flask, render_template, send_from_directory
+from flask import Flask, Response, send_from_directory
 
 from sustech_survival.webui import loader
 
 DEFAULT_PORT = 20129  # SUSTech founding: September 2012 (2012-09)
 HERE = Path(__file__).resolve().parent
-TEMPLATES = HERE / "templates"
 # Brand assets live in the package's resources/ dir (shipped in the wheel).
 RESOURCES = Path(__file__).resolve().parent.parent / "resources"
+
+# Languages understood by the built-in skin loader. Skins are free to ship
+# only a subset; the loader falls back to the un-suffixed English file.
+SUPPORTED_LOCALES = ("en", "zh")
+
+
+def _locale() -> str:
+    """Resolve the active UI locale for this request.
+
+    Order: ``?lang=`` query > app-level ``LANG`` config > English.
+    """
+    from flask import current_app, request
+    raw = request.args.get("lang") or current_app.config.get("LANG") or "en"
+    lang = raw.split("_")[0].split("-")[0].lower()
+    return lang if lang in SUPPORTED_LOCALES else "en"
+
+
+def _localized(skin_root, base: str, lang: str) -> Path | None:
+    """Return ``<skin_root>/<base>.<lang>.html`` if present, else the
+    un-suffixed ``<skin_root>/<base>.html``. Returns ``None`` when neither
+    exists, so the caller can decide whether to fall back or 404."""
+    root = Path(skin_root)
+    if lang != "en":
+        for name in (f"{base}.{lang}.html", f"{base}_{lang}.html"):
+            candidate = root / name
+            if candidate.is_file():
+                return candidate
+    plain = root / f"{base}.html"
+    return plain if plain.is_file() else None
 
 
 def create_app(*, transit_data_dir: Optional[str] = None,
                skin: Optional[str] = None,
-               skin_path: Optional[str] = None) -> Flask:
+               skin_path: Optional[str] = None,
+               lang: Optional[str] = None) -> Flask:
     """Build the skin-loader Flask app.
 
     ``transit_data_dir``: optional exported transit GeoJSON dir.
@@ -42,13 +71,35 @@ def create_app(*, transit_data_dir: Optional[str] = None,
       list (callers should surface it with an actionable message).
     ``skin_path``: serve a skin directly from a directory path (no install).
       Mutually exclusive with ``skin``; wins over any installed/name lookup.
+    ``lang``: default UI locale for skins that ship localized pages. When
+      omitted it is read from ``config.json`` (``webui.lang``) and falls back
+      to English. The per-request ``?lang=`` query parameter overrides this.
+      Built-in locales are ``en`` and ``zh``; skins may support only a subset
+      and the loader falls back to the un-suffixed English page.
     """
     app = Flask(
         __name__,
-        template_folder=str(TEMPLATES),
+        template_folder=None, # no shared package templates; skins own pages
         static_folder=None,   # skin static served explicitly below
     )
     app.config["TRANSIT_DATA_DIR"] = transit_data_dir
+    if lang:
+        lang = lang.split("_")[0].split("-")[0].lower()
+        if lang not in SUPPORTED_LOCALES:
+            raise ValueError(
+                f"unsupported webui language {lang!r}; choose from "
+                f"{', '.join(SUPPORTED_LOCALES)}"
+            )
+    else:
+        from sustech_survival import _cache
+        configured_lang = (_cache.load_config().get("webui") or {}).get("lang")
+        if configured_lang:
+            lang = str(configured_lang).split("_")[0].split("-")[0].lower()
+            if lang not in SUPPORTED_LOCALES:
+                lang = "en"
+        else:
+            lang = "en"
+    app.config["LANG"] = lang
 
     # -- Brand assets (logo / favicon) -----------------------------------
     # Icon (favicon + page logo mark) = the square torch-only lockup.
@@ -110,8 +161,8 @@ def create_app(*, transit_data_dir: Optional[str] = None,
         print(f"⚠️  {_req_warn}")
     # A custom (non-default) head is AUTHORITATIVE: the app serves only the
     # pages/assets the skin ships, and `/api/*` (the sustech_survival.api
-    # contract) is the data surface. The shipped default head additionally
-    # falls back to the package templates/transit it owns.
+    # contract) is the data surface. The shipped default head is just another
+    # skin: it owns its landing, TIS, transit, and static assets too.
     app.config["SKIN_IS_DEFAULT"] = bool(_is_default)
 
     # A single /static/<path> handler owns ALL static assets. Resolving
@@ -128,8 +179,8 @@ def create_app(*, transit_data_dir: Optional[str] = None,
         if p.is_file():
             return send_from_directory(_skin_root / "static", filename)
         # 2) Transit assets, resolved through the same transit-root logic
-        #    the /transit page uses: a custom skin's <skin>/transit/static,
-        #    or the packaged transit/web/static for the default head.
+        #    the /transit page uses: the active skin's <skin>/transit/static
+        #    or <skin>/static/transit/static. No shared package fallback.
         from .blueprints.transit import _transit_root
         troot = _transit_root()
         if troot is not None:
@@ -138,15 +189,20 @@ def create_app(*, transit_data_dir: Optional[str] = None,
                 return send_from_directory(troot / "static", filename)
         abort(404)
 
-    # -- Landing page: the active skin's entry (authoritative for custom
-    #    heads); the shipped default head falls back to the package landing.
+    # -- Landing page: the active skin's entry is authoritative. Each skin
+    #    owns its localized pages (``index.html`` / ``index.zh.html``); there
+    #    is no package-level template fallback.
     @app.route("/")
     def index():
-        entry = _skin_root / "index.html"
-        if entry.is_file():
-            return send_from_directory(_skin_root, "index.html")
-        if app.config.get("SKIN_IS_DEFAULT", False):
-            return render_template("landing.html", port=app.config.get("PORT", DEFAULT_PORT))
+        lang = _locale()
+        entry = _localized(_skin_root, "index", lang)
+        if entry is not None:
+            return send_from_directory(entry.parent, entry.name)
+        plain = _skin_root / "index.html"
+        if plain.is_file() and lang != "en":
+            html = plain.read_text(encoding="utf-8").replace(
+                '<html lang="en">', f'<html lang="{lang}">', 1)
+            return Response(html, mimetype="text/html")
         from flask import abort
         abort(404)
 
@@ -171,14 +227,15 @@ def run(*, port: int = DEFAULT_PORT, host: str = "0.0.0.0",
         transit_data_dir: Optional[str] = None,
         skin: Optional[str] = None,
         skin_path: Optional[str] = None,
+        lang: Optional[str] = None,
         debug: bool = False) -> int:
     """Create the app and serve it forever. Returns 0 on clean exit."""
     app = create_app(transit_data_dir=transit_data_dir, skin=skin,
-                     skin_path=skin_path)
+                     skin_path=skin_path, lang=lang)
     app.config["PORT"] = port
     skin_name = app.config.get("SKIN") or skin or (skin_path or "default")
     print(f"✅ SUSTech web UI serving at http://localhost:{port}")
-    print(f"   Skin: {skin_name}")
+    print(f"   Skin: {skin_name}  Language: {app.config.get('LANG', 'en')}")
     print("   Ctrl-C to stop")
     try:
         app.run(host=host, port=port, debug=debug, use_reloader=False)

@@ -11,6 +11,13 @@ Unified Flask SPA — TIS course selector, campus transit map, NCES eval cards, 
 ```bash
 sustech webui serve                    # start on default port 20129
 sustech webui serve -p 8080 -H 0.0.0.0 # custom port/host
+sustech webui serve --lang zh             # default UI language: Chinese
+sustech webui set-lang zh               # persist Chinese as the default
+sustech webui skin set my-skin           # persist the default skin
+sustech webui skin delete my-skin        # delete a user-installed skin
+
+
+
 sustech webui open                     # open in default browser
 ```
 

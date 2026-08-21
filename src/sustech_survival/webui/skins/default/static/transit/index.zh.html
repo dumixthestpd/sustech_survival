@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <title>南科大校园交通 — 地图与校巴</title>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1>🚌 南科大校园交通</h1>
+    <div class="subtitle">校园地图与实时校巴位置</div>
+    <div class="header-actions">
+      <a href="/transit?lang=en" style="color:#fff;margin-right:.6rem">English</a>
+      <button id="refresh-btn" title="重新加载实时数据">↻ 刷新</button>
+      <span id="last-update"></span>
+    </div>
+  </header>
+
+  <main>
+    <aside id="sidebar">
+      <section class="panel">
+        <h2>🕐 校巴时刻表</h2>
+        <div class="day-toggle">
+          <button data-day="workday" class="active">工作日</button>
+          <button data-day="holiday">周末/节假日</button>
+        </div>
+        <div id="schedule-content">加载中…</div>
+      </section>
+
+      <section class="panel">
+        <h2>📍 实时校巴</h2>
+        <div id="live-content">加载中…</div>
+      </section>
+
+      <section class="panel" id="hover-info" style="display:none">
+        <h2>📌 悬停圆点查看</h2>
+        <div id="hover-content"></div>
+      </section>
+    </aside>
+
+    <div id="map"></div>
+  </main>
+
+  <!-- MapLibre GL JS + Protomaps pmtiles (handles HTTP-range reads of the 130GB PMTiles file) -->
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/pmtiles@3.2.0/dist/pmtiles.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

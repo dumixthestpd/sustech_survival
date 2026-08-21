@@ -57,7 +57,7 @@ auth.username   # your SUSTech student ID
 auth.password   # CAS password
 ```
 
-Reads credentials via `auth.username` / `auth.password` properties, which call `_read_creds()` internally. Resolution order: `cred_set()` in memory → `./credentials.txt` (cwd, if it exists) → `SUSTECH_CREDENTIALS` env var → `~/.sustech_survival/credentials.txt` (the project's home default; relocated with `$SUSTECH_HOME`). Format: `sid:password`
+Reads credentials via `auth.username` / `auth.password` properties, which call `_read_creds()` internally. Resolution order: `cred_set()` in memory → `SUSTECH_CREDENTIALS` env var → `~/.sustech_survival/credentials.txt` (the project's home default; relocated with `$SUSTECH_HOME`). Format: `sid:password`
 
 ## Setting Up Credentials
 
@@ -72,8 +72,7 @@ Pick any of these locations (first match wins):
 | # | Location | When to use |
 |---|----------|-------------|
 | 1 | `$SUSTECH_CREDENTIALS` env var (path to file) | CI, containers, agents |
-| 2 | `./credentials.txt` (current working directory, if present) | Quick local dev / legacy |
-| 3 | `~/.sustech_survival/credentials.txt` (default; `$SUSTECH_HOME` relocates) | Shared across projects (recommended) |
+| 2 | `~/.sustech_survival/credentials.txt` (default; `$SUSTECH_HOME` relocates) | Shared across projects (recommended) |
 
 A template is provided as `credentials.example.txt` in the repo root:
 

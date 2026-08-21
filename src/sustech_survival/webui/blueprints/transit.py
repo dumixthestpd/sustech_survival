@@ -1,24 +1,21 @@
 """
-Transit blueprint — mounts the existing campus-map frontend into the
+Transit blueprint — mounts the active skin's campus-map frontend into the
 unified app.
 
-Transit's frontend (``transit/web/``) uses root-absolute asset paths
-(``/static/``, ``/data/``, ``/pmtiles-proxy/``). To integrate without
-touching the working files, this blueprint:
+The transit frontend uses root-absolute asset paths (``/static/``,
+``/data/``, ``/pmtiles-proxy/``). This blueprint:
 
-  * serves ``/transit``  → transit/web/index.html
-  * serves ``/static/<path>``  → transit/web/static  (root, no prefix)
+  * serves ``/transit``  → <skin>/transit/index.html (or <skin>/static/transit)
+  * serves ``/static/<path>``  → the active skin's transit static assets
   * serves ``/data/<path>``     → the exported GeoJSON dir (root)
   * proxies ``/pmtiles-proxy/<path>`` → SUSTech PMTiles mirror (root)
-  * runs the 30s live-bus refresh thread in the background
 
-The webui's own landing/tis pages inline their CSS/JS, so there is no
-``/static/`` collision.
+Every transit page/asset is owned by the active skin; there is no shared
+package-level transit web fallback.
 """
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 from typing import Optional
 
@@ -27,14 +24,13 @@ from flask import (Blueprint, Response, abort, current_app, jsonify,
 
 bp = Blueprint("transit", __name__)
 
-_TRANSIT_WEB = (Path(__file__).resolve().parents[2]
-                / "transit" / "web")
-
-
 def _active_skin_transit():
-    """Path to the active skin's transit dir (``<skin>/transit``) if present,
-    else ``None`` — a custom head that ships no transit dir has dropped the
-    feature. The shipped default head falls back to the package ``transit/web``.
+    """Path to the active skin's transit dir if present.
+
+    A skin may ship transit as ``<skin>/transit`` (the documented layout) or
+    as ``<skin>/static/transit`` (the layout the shipped default skin uses).
+    ``None`` means the active head has dropped the transit feature; there is
+    no package-level transit fallback anymore.
     """
     from flask import current_app
     from pathlib import Path as _Path
@@ -43,20 +39,15 @@ def _active_skin_transit():
         p = _Path(root) / "transit"
         if p.is_dir():
             return p
+        p = _Path(root) / "static" / "transit"
+        if p.is_dir():
+            return p
     return None
 
 
 def _transit_root():
-    """Resolve the transit web root for the active head."""
-    from flask import current_app
-    skin_t = _active_skin_transit()
-    if skin_t is not None:
-        return skin_t
-    # Custom (non-default) skins get no transit fallback. The default head
-    # uses the package transit/web.
-    if current_app.config.get("SKIN_IS_DEFAULT", False):
-        return _TRANSIT_WEB
-    return None
+    """Resolve the transit web root for the active skin."""
+    return _active_skin_transit()
 
 
 def _data_dir() -> Optional[Path]:
@@ -82,12 +73,19 @@ def page():
     _root = _transit_root()
     if not _root:
         abort(404)  # active head dropped the transit feature
-    idx = _root / "index.html"
-    if not idx.exists():
+    from ..app import _localized, _locale
+    lang = _locale()
+    idx = _localized(_root, "index", lang)
+    if idx is None:
+        plain = _root / "index.html"
+        if plain.is_file() and lang != "en":
+            html = plain.read_text(encoding="utf-8").replace(
+                '<html lang="en">', f'<html lang="{lang}">', 1)
+            return Response(html, mimetype="text/html")
         return Response(
             "<h1>Transit web files not found</h1>"
-            "<p>Expected transit/index.html in the active skin (or transit/web in the package).</p>", 500)
-    return send_from_directory(idx.parent, "index.html")
+            "<p>Expected transit/index.html in the active skin.</p>", 500)
+    return send_from_directory(idx.parent, idx.name)
 
 
 # NOTE: transit's /static/<path> assets are served by the app-level

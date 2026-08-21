@@ -24,7 +24,7 @@ By connecting the services at the code level, we simplify the campus systems, of
 - **Blackboard Learn** (`bb`)
 - **Teaching Information System (TIS)** (`tis`)
 - **SUSTech Library** (`lib`)
-- **Single Sign-On (SSO)** (`sso`) — shared auth backbone
+- **Single Sign-On (SSO)** (`sso`)
 - **Campus Printing System** (`pms`)
 - **SUSTech Global** (`ws`)
 - **E-Hall** (`booking`)
@@ -32,22 +32,28 @@ By connecting the services at the code level, we simplify the campus systems, of
 
 ### We built
 
-- **selectcourse** — TIS course selection: browse offerings, add/drop, and manage the cart.
-- **faculty** — Faculty directory: list by department, full-text search, and profile lookup.
-- **transit** — Campus bus and walking navigation: schedules, live GPS, and route planning.
-- **calendar** — SUSTech academic calendar with date intelligence: load JSON from the GitHub-hosted `sustech-calendar` repo, resolve (week, weekday) → dates, apply compensatory-day transfer. Online is the canonical source; local override available for in-progress edits.
-- **ical** — `.ics` export of an enrolled semester. Lives in `selectcourse.ical` and is wired through the webui at `GET /api/tis/ical`.
-- **webui** — Flask SPA combining the TIS course selector, transit map, NCES hover cards, and iCal export. Start with `python -m sustech_survival.webui serve`.
-- **context** — Daily-use snapshot for AI agents: date, week, next deadlines, exams, class-now, weather, AQI.
-- **papers** — Academic paper search and fetch across CrossRef, CNKI, WoS, and RSC.
+- **selectcourse**
+  - TIS course selection: browse offerings, add/drop, and manage the cart.
+- **faculty**
+  - Faculty directory: list by department, full-text search, and profile lookup.
+- **transit**
+  - Campus bus and walking navigation: schedules, live GPS, and route planning.
+- **calendar**
+  - SUSTech academic calendar with date intelligence: load JSON from the GitHub-hosted `sustech-calendar` repo, resolve (week, weekday) → dates, apply compensatory-day transfer. Online is the canonical source; local override available for in-progress edits.
+- **ical**
+  - `.ics` export of an enrolled semester. Lives in `selectcourse.ical` and is wired through the webui at `GET /api/tis/ical`.
+- **webui**
+  - Flask SPA combining the TIS course selector, transit map, NCES hover cards, and iCal export. Start with `python -m sustech_survival.webui serve`.
+- **context**
+  - Daily-use snapshot for AI agents: date, week, next deadlines, exams, class-now, weather, AQI.
+- **papers**
+  - Academic paper search and fetch across CrossRef, CNKI, WoS, and RSC.
 
 ---
 
 ## Quick start
 
 ### 1. Install
-
-The CLI (`click`) is in core deps — `pip install git+https://github.com/dumixthestpd/sustech_survival.git` gives you both the Python API and the `sustech` command.
 
 Extras add heavier optional capabilities:
 
@@ -56,6 +62,8 @@ Extras add heavier optional capabilities:
 - `papers` — cloudscraper for publisher sites that block plain requests
 - `playwright` — browser-backed BB download / submit (for UIs that only render in JS)
 - `all` — Everything above
+
+This project is **not published to PyPI**. Install directly from GitHub:
 
 ```bash
 pip install "sustech_survival @ git+https://github.com/dumixthestpd/sustech_survival.git"               # API + CLI only
@@ -73,47 +81,44 @@ sustech --version
 
 to see if it is added to PATH.
 
-### 2. Authentication
+### 2. (Optional) Set $SUSTECH_HOME Environmental Variable
 
-Shared CAS auth backbone lives in `sustech_survival/sso/authorizer.py`.
-Every per-system login (BB, TIS, Library, WS, PMS, NCES, Booking, ...) is
-just an `Authorizer` subclass — the abstract base defines how to check a
-session, refresh when expired, and detect a stale response, while each
-subclass only sets a few parameters (`BASE_URL`, `SERVICE_URL`) to point at
-a specific system. Pick one and call `ensure()`:
+`SUSTECH_HOME` holds the value to the home of the module. During the run of the `sustech_survival`, the module creates directory `$SUSTECH_HOME/.sustech_survival/` to hold credentials, webui skins, `config.json`, cache, etc.
 
-```python
-from sustech_survival.sso import TISAuth      # any auth subclass works
-
-auth = TISAuth()                       # singleton-per-class
-ok, reason = auth.ensure()             # check session, auto-refresh if expired
-auth.session.get("/xszykb/querydangqianxnxq")   # use the authenticated session
-
-# Or with a decorator:
-from sustech_survival.sso import require_auth
-
-@require_auth(TISAuth)
-def my_function(auth=None):
-    r = auth.session.get(...)
+```bash
+set SUSTECH_HOME=path/to/sustech/home
 ```
 
-The module accepts credentials in three ways:
+### 3. Authentication
+
+```bash
+sustech sso creds set --sid 12410000 --password your-password-here
+```
+
+
+
+The module accepts credentials in this order:
 
 1. `sustech_survival.sso.cred_set(sid=..., pwd=...)` — a temporary override at
    the root level; the auth instances use these in-memory credentials from that
    line onward.
-2. `./credentials.txt` in the current working directory — the reference used in
-   the absence of an override. Format: `sid:password`.
-3. `SUSTECH_CREDENTIALS` environmental variable — the path to a `sid:password`
+2. `SUSTECH_CREDENTIALS` environmental variable — the path to a `sid:password`
    file.
+3. `~/.sustech_survival/credentials.txt` — the project’s home dot-directory
+   default. Format: `sid:password`.
+
+There is **no** automatic `./credentials.txt` lookup in the current working
+directory anymore; the home dot-directory is the single on-disk default.
 
 
 ```python
 from sustech_survival import sso
-sso.cred_set(sid="12410000", pwd="your-password-here")   # in-memory, wins
+sso.cred_set(sid="12410000", pwd="your-password-here")   # in-memory
 ```
 
-The following command writes `./credentials.txt` in the working directory:
+The following command writes the default credentials file
+(`~/.sustech_survival/credentials.txt`, or the `SUSTECH_CREDENTIALS` path if
+that environment variable is set):
 
 ```bash
 sustech sso creds set --sid 12410000 --pass 'your-password-here'
@@ -126,12 +131,14 @@ Already installed and want to confirm the creds work before a real call:
 sustech sso check                        # validate against CAS
 ```
 
-### 3. Example use
+### 4. Example use
 
 Two common workflows after setup:
 
-**Daily snapshot for AI agents:**
+#### Python Example
 
+**Daily snapshot for AI agents:**
+,
 ```python
 from sustech_survival.context import Context
 
@@ -142,95 +149,46 @@ print(ctx.to_str())
 # → Next TIS exam: [...final...]
 ```
 
-**Web UI (most common workflow):**
+#### CLI Example
+
+**Web UI for human use:**
 
 ```bash
 sustech webui serve
 ```
 
-Starts the web UI on its default head at port `20129`. (`sustech webui`
-alone just prints help — the server only starts with an explicit `serve`.)
-Use `sustech webui serve --skin <name>` to pick a different installed head
-(see [Installing Different webui Heads](#installing-different-webui-heads)).
+Starts the web UI on its default head at port `20129`.
 
----
+Use `sustech webui serve --skin <name>` to pick a different installed head.
 
 
-## Installing Different webui Heads
+**Installing Different webui Heads:**
 
-The web UI is a *head* — a self-contained skin folder (with a `manifest.json`)
-that the `webui` serves. The module ships only the `default` fallback head;
-every other head is **installed into `~/.sustech_survival/skins/`** and served
-from there — that home dot-directory is the real skin store.
+Web UI heads, or skins, are installed into `~/.sustech_survival/skins/`.
 
 ```bash
-# 1. Copy the built-in head into your home skins dir so you can edit/skin it
+# Copy the built-in head into your home skins dir so you can edit/skin it
 sustech webui install default
 
-# 2. Install your own head (a directory that has a manifest.json)
+# Install your own head (a directory that has a manifest.json)
 sustech webui install --path /path/to/my-head
 
-# 3. See what's installed (name + version; the on-disk location is an
-#    implementation detail and is not shown)
+# See what's installed
 sustech webui skins
 
-# 3b. Persist the default skin — saved to ~/.sustech_survival/config.json
-#     (webui.skin) and used by `sustech webui serve` when no --skin is given
-sustech webui set-skin my-head
+# Persist the default skin to my-head in config.json
+sustech webui skin set my-head
 
-# 4. Serve a specific installed head (or the configured default)
+# Delete a user-installed skin (not the packaged default)
+sustech webui skin delete my-head
+
+# Serve a specific installed head by skin name
 sustech webui serve --skin my-head
 
-# 4b. OR serve a head straight from its directory — no install/copy
+# OR serve a head straight from its directory
 sustech webui serve --skin-path /path/to/my-head
 ```
 
-Installed heads are copied into `~/.sustech_survival/skins/` (override the
-whole tree with `$SUSTECH_HOME`). `--skin-path <dir>` serves a head directly
-from its own directory without copying (e.g. one under version control).
-
-The `sustech_survival.api` Flask-free JSON contract is what a custom head
-consumes — see [Web UI](docs/en/webui.md) and the loader
-(`src/sustech_survival/webui/loader.py`).
-
----
-
-## On-disk storage (one home dot-directory)
-
-Everything `sustech_survival` persists outside the package lives in ONE
-user dot-directory, `~/.sustech_survival/` (managed by
-`sustech_survival._cache`):
-
-```
-~/.sustech_survival/
-├── cache/<module>/      # disposable caches + per-module working files
-│                        #   (calendar, bb, classroom, selectcourse, ...)
-├── skins/               # user-installed webui heads
-├── credentials.txt      # default shared credentials (sid:password)
-└── config.json          # the one user-editable settings file
-```
-
-- **Changeable home root**: set `$SUSTECH_HOME` to relocate the whole tree
-  (e.g. `SUSTECH_HOME=D:/data` → everything under `D:/data/.sustech_survival/`).
-  `$SUSTECH_CONFIG_DIR` overrides the dot-directory directly;
-  `$SUSTECH_CACHE_DIR` relocates only the cache.
-- **Module caches** are uniformly created via
-  `sustech_survival._cache.cache_path("<module>", ...)` and land under
-  `cache/<module>/` — no module hand-rolls its own location. Per-module
-  working files (e.g. BB upload staging) live in the same tree, so
-  `_cache.clear_cache("<module>")` clears exactly that module's cache —
-  there is no separate scratch/tmp dir.
-- **`config.json`** is read with `_cache.load_config()`. Example:
-  ```json
-  {
-    "downloads_dir": "D:/bb-downloads",
-    "webui": { "skin": "sustech_neon" }
-  }
-  ```
-  `webui.skin` is the default web-ui skin (set with `sustech webui set-skin`);
-  `downloads_dir` (or `bb.downloads_dir`) is the BB download output (else
-  `~/.sustech_survival/downloads/BB-content|BB-submissions`), never the OS
-  Downloads folder. Explicit `--output` / `out_dir` paths still win.
 
 ## Related projects
 
@@ -282,16 +240,26 @@ pip install -e ".[all]"
 # Unit tests (mocked, fast)
 python -m pytest src/test/ -v
 
+# Clear the local on-disk cache (keeps credentials, skins, and config)
+sustech cache clear
+# or clear one module's cache
+sustech cache clear --module tis
+
 # Live tests (require real BB/TIS auth — see tests/ for setup)
 python -m pytest src/test/ -v --live
 ```
+
+## Dev
+
+- [Skin development instructions](docs/dev-instructions/skin-development.md)
+- [Documentation layout](docs/README.md)
 
 ---
 
 ## Todo
 
 - [x] Unified `sustech.sso.Authorizer().ensure()` — collapsed per-system auth into one CAS call.
-- [ ] Better localization (cleanly differentiate EN vs CN)
+- [x] Better localization (Web UI supports EN/CN switching)
 - [ ] Campus canteen daily food notice
 - [ ] NCES comment summarization (when an API key is configured; also achievable via a skill doc)
 
