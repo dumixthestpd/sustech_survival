@@ -157,7 +157,7 @@ def sso_creds_set(sid: Optional[str], password: Optional[str]) -> None:
         password = click.prompt("SUSTech password", hide_input=True,
                                 confirmation_prompt=True)
     try:
-        target = write_credentials(sid, password)  # default: ./credentials.txt (cwd)
+        target = write_credentials(sid, password)  # default: ~/.sustech_survival/credentials.txt
     except Exception as e:  # noqa: BLE001 — surface a clean message
         click.secho(f"Failed to write credentials: {e}", fg="red")
         raise SystemExit(1)
@@ -168,8 +168,8 @@ def sso_creds_set(sid: Optional[str], password: Optional[str]) -> None:
 def sso_creds_status() -> None:
     """Print the resolved creds source and whether the file exists.
 
-    Precedence: cred_set() (in-memory) > ./credentials.txt (cwd) >
-    SUSTECH_CREDENTIALS env var. Never prints the password.
+    Precedence: cred_set() (in-memory) > SUSTECH_CREDENTIALS env var >
+    ~/.sustech_survival/credentials.txt (home default). Never prints the password.
     """
     from ..sso.authorizer import resolve_creds_path, _IN_MEMORY_CREDS
     if _IN_MEMORY_CREDS is not None:
@@ -606,6 +606,40 @@ def papers_search(query: str, max_results: int, min_year: int | None) -> None:
             click.echo(f"    DOI: {p.doi}")
 
 
+
+# ========================================================================
+# cache — local on-disk cache management
+# ========================================================================
+
+@click.group(name="cache", help="Manage local on-disk caches.")
+def cache_cmd() -> None:
+    """Cache commands: clear cached module data (never touches config/skins)."""
+
+
+@cache_cmd.command(name="clear", help="Clear local cache data.")
+@click.option("--module", "module", default=None,
+              help="Clear only one module cache (e.g. bb, tis, calendar).")
+def cache_clear(module: Optional[str]) -> None:
+    """Remove disposable cached files under the active cache root.
+
+    Without ``--module``, clears the whole cache tree while leaving
+    credentials, skins, and config.json untouched.
+    """
+    import shutil
+    from sustech_survival import _cache
+    if module:
+        n = _cache.clear_cache(module)
+        click.secho(f"✅ cleared {n} cached file(s) for module {module!r}", fg="green")
+        return
+    root = _cache.tmp_root()
+    if not root.exists():
+        click.echo("Cache is already empty.")
+        return
+    count = sum(1 for _ in root.rglob("*") if _.is_file())
+    shutil.rmtree(root, ignore_errors=True)
+    click.secho(f"✅ cleared all {count} cached file(s) from {root}", fg="green")
+
+
 # ========================================================================
 # webui — the Flask app is mounted here as subcommands
 # ========================================================================
@@ -627,10 +661,17 @@ def webui_cmd() -> None:
 
 def _webui_serve_impl(port: Optional[int], host: str, skin: Optional[str],
                       skin_path: Optional[str], transit_data_dir: Optional[str],
+                      lang: Optional[str],
                       debug: bool) -> None:
     """Shared implementation of `sustech webui serve`."""
-    from ..webui.app import run, DEFAULT_PORT
+    from ..webui.app import run, DEFAULT_PORT, SUPPORTED_LOCALES
     from ..webui import loader
+    if lang:
+        lang = lang.split("_")[0].split("-")[0].lower()
+        if lang not in SUPPORTED_LOCALES:
+            click.secho(f"unsupported language {lang!r}; choose from "
+                        f"{', '.join(SUPPORTED_LOCALES)}", fg="red")
+            raise SystemExit(1)
     if skin_path:
         try:
             loader.skin_from_path(skin_path)     # validate up front
@@ -654,6 +695,7 @@ def _webui_serve_impl(port: Optional[int], host: str, skin: Optional[str],
                    "on-disk skin cache so you can skin/mod it.")
     run(host=host, port=port or DEFAULT_PORT,
         transit_data_dir=transit_data_dir, skin=skin, skin_path=skin_path,
+        lang=lang,
         debug=debug)
 
 
@@ -668,9 +710,12 @@ def _webui_serve_impl(port: Optional[int], host: str, skin: Optional[str],
 @click.option("--skin-path", "skin_path", default=None,
               help="Serve a skin directly from a directory path (no install). "
                    "Wins over --skin / any installed skin.")
+@click.option("--lang", "lang", default=None,
+              help="Default UI language (en or zh). Overridable per request with ?lang=.")
 @click.option("--debug/--no-debug", default=False)
 def webui_serve(port: Optional[int], host: str,
                 transit_data_dir: Optional[str], skin: Optional[str],
+                 lang: Optional[str],
                 skin_path: Optional[str], debug: bool) -> None:
     """Start the web UI.
 
@@ -685,7 +730,8 @@ def webui_serve(port: Optional[int], host: str,
     editing.
     """
     _webui_serve_impl(port=port, host=host, skin=skin, skin_path=skin_path,
-                      transit_data_dir=transit_data_dir, debug=debug)
+                      transit_data_dir=transit_data_dir, lang=lang,
+                        debug=debug)
 
 
 @webui_cmd.command(name="open", help="Open UI in default browser.")
@@ -770,6 +816,52 @@ def webui_skins() -> None:
         click.echo("\t".join((s.name, f"v{s.version}")))
 
 
+@webui_cmd.group(name="skin", help="Manage installed web-UI skins.")
+def webui_skin_cmd() -> None:
+    """Manage installed web-UI skins: set the default or delete a skin."""
+
+
+@webui_skin_cmd.command(name="set", help="Persist the default skin in config.json.")
+@click.argument("name")
+def webui_skin_set(name: str) -> None:
+    """Save ``name`` as the default web-ui skin in ~/.sustech_survival/config.json
+    (webui.skin). `sustech webui serve` (with no --skin) uses it."""
+    from ..webui import loader
+    from sustech_survival import _cache
+    try:
+        loader.find_skin(name)
+    except KeyError as e:
+        click.secho(f"cannot set skin: {e}", fg="red")
+        raise SystemExit(1)
+    _cache.update_config(webui={"skin": name})
+    click.secho(f"✅ default skin set to {name!r} (config.json → webui.skin)", fg="green")
+
+
+@webui_skin_cmd.command(name="delete", help="Delete an installed skin from the user cache.")
+@click.argument("name")
+def webui_skin_delete(name: str) -> None:
+    """Delete a user-installed skin directory.
+
+    Package-shipped skins (for example the built-in ``default``) cannot be
+    deleted from the installed package; this only removes a copy from
+    ``~/.sustech_survival/skins/``.
+    """
+    import shutil
+    from ..webui import loader
+    from sustech_survival import _cache
+    target = loader._USER_SKINS / name
+    if not target.is_dir():
+        click.secho(f"skin {name!r} is not installed in the user skin directory", fg="red")
+        raise SystemExit(1)
+    shutil.rmtree(target)
+    cfg = _cache.load_config()
+    if (cfg.get("webui") or {}).get("skin") == name:
+        _cache.update_config(webui={"skin": None})
+        click.echo("  note: deleted skin was the configured default; webui.skin cleared.")
+    click.secho(f"✅ deleted skin {name!r} from {target.parent}", fg="green")
+
+
+
 @webui_cmd.command(name="set-skin", help="Persist the default skin in config.json.")
 @click.argument("name")
 def webui_set_skin(name: str) -> None:
@@ -786,6 +878,18 @@ def webui_set_skin(name: str) -> None:
     click.secho(f"✅ default skin set to {name!r} (config.json → webui.skin)", fg="green")
 
 
+@webui_cmd.command(name="set-lang", help="Persist the default webui language in config.json.")
+@click.argument("lang", type=click.Choice(["en", "zh"]))
+def webui_set_lang(lang: str) -> None:
+    """Save ``lang`` as the default web-ui language in
+    ~/.sustech_survival/config.json (webui.lang). `sustech webui serve`
+    (with no --lang) uses it."""
+    from sustech_survival import _cache
+    _cache.update_config(webui={"lang": lang})
+    click.secho(f"✅ default webui language set to {lang!r} (config.json → webui.lang)", fg="green")
+
+
+
 # ========================================================================
 # context — daily-use snapshot (inline, no module cli.py)
 # ========================================================================
@@ -795,7 +899,7 @@ def webui_set_skin(name: str) -> None:
               default="terse", show_default=True)
 @click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
 def context_cmd(level: str, as_json: bool) -> None:
-    from .context import Context
+    from ..context import Context
     ctx = Context()
     if as_json:
         click.echo(_json.dumps(ctx.to_dict(level=level),
@@ -1272,6 +1376,7 @@ def build_cli() -> click.Group:
     cli.add_command(tis_cmd)
     cli.add_command(ws_cmd)
     cli.add_command(sso_cmd)
+    cli.add_command(cache_cmd)
     cli.add_command(transit_cmd)
     cli.add_command(context_cmd)
     cli.add_command(profile_cmd)

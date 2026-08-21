@@ -16,7 +16,8 @@ import sys
 from sustech_survival.webui.app import DEFAULT_PORT, run
 
 _USAGE = ("usage: python -m sustech_survival.webui serve [--port N] [--host H] "
-          "[--transit-data DIR] [--skin NAME] [--skin-path DIR] [--debug]")
+          "[--transit-data DIR] [--skin NAME] [--skin-path DIR] [--lang LANG] "
+          "[--debug]")
 
 
 def main() -> int:
@@ -27,6 +28,7 @@ def main() -> int:
     transit_data = None
     skin = None
     skin_path = None
+    lang = None
 
     if not argv:
         print(_USAGE)
@@ -53,6 +55,8 @@ def main() -> int:
             skin = argv[i + 1]; i += 2; continue
         if a == "--skin-path" and i + 1 < len(argv):
             skin_path = argv[i + 1]; i += 2; continue
+        if a == "--lang" and i + 1 < len(argv):
+            lang = argv[i + 1]; i += 2; continue
         if a in ("--debug", "-d"):
             i += 1; continue
         if a in ("--help", "-h"):
@@ -62,7 +66,7 @@ def main() -> int:
 
     return run(port=port or DEFAULT_PORT, host=host,
                transit_data_dir=transit_data, skin=skin, skin_path=skin_path,
-               debug=debug)
+               lang=lang, debug=debug)
 
 
 if __name__ == "__main__":

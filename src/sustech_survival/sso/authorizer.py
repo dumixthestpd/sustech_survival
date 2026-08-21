@@ -69,18 +69,18 @@ class AuthorizerError(Exception):
 # ── Credential-file helpers (shared by the CLI and Authorizer) ───────────────
 
 # In-memory credentials set via sustech_survival.sso.cred_set(); highest
-# precedence — it overrides both the SUSTECH_CREDENTIALS env var and a
-# credentials.txt in the working directory. Nothing is ever written to disk
-# for this path (no user-profile writes).
+# precedence — it overrides the SUSTECH_CREDENTIALS env var and the home
+# dot-directory credentials file. Nothing is ever written to disk for this
+# path (no user-profile writes).
 _IN_MEMORY_CREDS: Optional[tuple[str, str]] = None
 
 
 def cred_set(sid: str, pwd: str = "", *, password: Optional[str] = None) -> None:
     """Programmatically set credentials in memory (highest precedence).
 
-    Overrides both the ``SUSTECH_CREDENTIALS`` env var and a
-    ``credentials.txt`` in the working directory for this process.
-    Nothing is written to disk — no files, no user-profile writes.
+    Overrides both the ``SUSTECH_CREDENTIALS`` env var and the home
+    dot-directory ``credentials.txt`` for this process. Nothing is written
+    to disk — no files, no user-profile writes.
 
     Usage::
 
@@ -105,11 +105,10 @@ def cred_clear() -> None:
 
 
 def resolve_creds_path() -> Path:
-    """Resolve the credentials.txt path (first match wins for *files*).
+    """Resolve the credentials.txt path.
 
-    Precedence (later listed wins — matches ``cred_set`` > cwd file > env > home):
+    Precedence:
       - ``cred_set()`` in memory (highest, no disk)
-      - ``./credentials.txt`` — current working directory (legacy)
       - ``SUSTECH_CREDENTIALS`` env var — explicit path
       - ``~/.sustech_survival/credentials.txt`` — the project's home default
 
@@ -119,10 +118,6 @@ def resolve_creds_path() -> Path:
     :func:`read_credentials` for the full precedence chain.
     """
     import os
-
-    cwd_creds = Path.cwd() / "credentials.txt"
-    if cwd_creds.exists():
-        return cwd_creds
 
     env_path = os.environ.get("SUSTECH_CREDENTIALS")
     if env_path:
@@ -135,10 +130,10 @@ def resolve_creds_path() -> Path:
 def write_credentials(sid: str, password: str, path: Optional[Path] = None) -> Path:
     """Write a credentials.txt value ``sid:password`` with restrictive perms.
 
-    Default target is the active credentials location: ``./credentials.txt``
-    in the working directory (or the ``SUSTECH_CREDENTIALS`` env path if the
-    cwd file does not exist yet). Never writes into the user profile or the
-    source tree. Creates parent dirs and chmods to 0600 (owner read/write only).
+    Default target is the active credentials location: the
+    ``SUSTECH_CREDENTIALS`` env path if set, otherwise
+    ``~/.sustech_survival/credentials.txt``. Creates parent dirs and chmods
+    to 0600 (owner read/write only).
     """
     target = path or resolve_creds_path()
     if ":" in sid or "\n" in sid or "\n" in password:
@@ -156,11 +151,11 @@ def write_credentials(sid: str, password: str, path: Optional[Path] = None) -> P
 
 
 def read_credentials(path: Optional[Path] = None) -> tuple[str, str]:
-    """Return ``(sid, password)`` with the full three-way precedence:
+    """Return ``(sid, password)`` with the full precedence:
 
     1. :func:`cred_set` — in-memory override (highest)
-    2. ``./credentials.txt`` — current working directory
-    3. ``SUSTECH_CREDENTIALS`` env var — explicit file path
+    2. ``SUSTECH_CREDENTIALS`` env var — explicit file path
+    3. ``~/.sustech_survival/credentials.txt`` — home default
 
     Raises :class:`AuthorizerError` if no source yields credentials.
     """
@@ -189,10 +184,10 @@ class Authorizer(ABC):
         BASE_URL    — the service's root URL (e.g. "https://tis.sustech.edu.cn")
         SERVICE_URL — where the IdP/SSO redirects after auth
 
-    Credentials: read with three-way precedence (later wins):
+    Credentials: read with the following precedence:
     1. ``sustech_survival.sso.cred_set(sid, pwd)`` — in-memory, highest
-    2. ``./credentials.txt`` — current working directory
-    3. ``SUSTECH_CREDENTIALS`` env var — explicit file path
+    2. ``SUSTECH_CREDENTIALS`` env var — explicit file path
+    3. ``~/.sustech_survival/credentials.txt`` — home default
     Access via auth.username / auth.password.
 
     Usage::

@@ -9,6 +9,8 @@
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
        background:#0f1216;color:#e7e9ee;min-height:100vh;display:flex;flex-direction:column}
+    html:lang(zh) body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.65;letter-spacing:.01em}
+
   header{padding:2rem 2.5rem;border-bottom:1px solid #1f2530}
   header h1{font-size:1.6rem;font-weight:600;letter-spacing:.3px}
   header h1 span{color:#5b9dff}
@@ -34,6 +36,7 @@
       <h1>SUSTech <span>Survival</span> — Web UI</h1>
       <p>One port, one entry point. Pick a submodule to continue.</p>
     </div>
+      <span style="margin-left:auto"><a href="/?lang=zh">中文</a></span>
   </div>
 </header>
 <main>
@@ -50,6 +53,6 @@
     <span class="tag">/transit</span>
   </a>
 </main>
-<footer>Sustech Survival · unified web UI on :{{ port }} · <a href="/api/tis/info">TIS API</a></footer>
+<footer>Sustech Survival · unified web UI · <a href="/api/tis/info">TIS API</a></footer>
 </body>
 </html>

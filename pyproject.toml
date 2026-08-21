@@ -109,13 +109,6 @@ Changelog = "https://github.com/dumixthestpd/sustech_survival/releases"
 # Each <sub> mounts the existing `sustech_survival.<sub>.cli:cli` Click group.
 sustech = "sustech_survival.cli:cli"
 
-# Legacy flat entry points (kept for backward compat).
-# Each points at the Click group `cli` in the submodule (not `main`,
-# which doesn't exist on these modules).
-sustech-bb = "sustech_survival.bb.cli:cli"
-sustech-tis = "sustech_survival.tis.cli:cli"
-sustech-ws = "sustech_survival.ws.cli:cli"
-
 [tool.hatch.version]
 path = "src/sustech_survival/_version.py"
 
@@ -129,10 +122,7 @@ include = [
     # context profile template.
     "src/sustech_survival/context/templates/**/*",
     # Web UI: skin-loader head + shipped default skin assets.
-    "src/sustech_survival/webui/templates/**/*.html",
     "src/sustech_survival/webui/skins/**/*",
-    # Legacy transit frontend (kept for backward-compat with transit/web).
-    "src/sustech_survival/transit/web/**/*",
 ]
 exclude = [
     "src/sustech_survival/**/__pycache__",
@@ -166,6 +156,7 @@ exclude = [
     "**/cache",
     "**/credentials.txt",
     "**/session.json",
+    "docs/classified-doctype",
 ]
 
 # ── Pytest (used by `pip install -e .[all]` + dev workflow) ──────────────

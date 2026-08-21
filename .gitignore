@@ -37,6 +37,10 @@ personal.md
 .hermes/
 .DS_Store
 
+# Lock files — libraries don't ship lock files.
+# Apps depending on this lib should generate their own.
+uv.lock
+
 # Legacy UI verification artifacts (dev-only)
 docs/ui-verification/
 

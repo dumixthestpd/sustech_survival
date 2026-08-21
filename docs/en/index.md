@@ -31,3 +31,17 @@
 
 ## Reference
 - [Resources](resources.md) — campus resource links
+
+## Module Indexes
+
+- [TIS](../tis/README.md) · [BB](../bb/README.md) · [Web UI](../webui/README.md) · [Transit](../transit/README.md)
+- [Selectcourse](../selectcourse/README.md) · [SSO](../sso/README.md) · [Context](../context/README.md) · [NCES](../nces/README.md)
+- [Papers](../papers/README.md) · [Faculty](../faculty/README.md) · [PMS](../pms/README.md) · [WS](../ws/README.md)
+- [Booking](../booking/README.md) · [Library](../lib/README.md) · [Calendar](../calendar/README.md) · [Resources](../resources/README.md)
+- [External Databases](../external-databases/README.md)
+
+## Developer
+
+- [Skin development instructions](../dev-instructions/skin-development.md) — how to build a web UI skin
+- [Documentation layout](../README.md) — how module docs are organized
+

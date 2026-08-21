@@ -9,6 +9,8 @@
 :root{--bg:#0f1216;--panel:#161b22;--panel2:#1a212b;--border:#262d3a;--txt:#e7e9ee;--mut:#8a93a3;--fg:#e7e9ee;--accent:var(--accent);--accent2:#7fb0ff;--accent-dark:#4a83d6;--accent-rgb:91 157 255;--ok:#3fb950;--warn:#e3b341;--bad:#f85149;--row-tint-odd:var(--chip-bg);--row-tint-even:rgba(255,255,255,.04);--chip-bg:var(--chip-bg)}
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--txt);font-size:14px;overflow:hidden}
+html:lang(zh) body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.5;letter-spacing:.01em}
+
 a{color:var(--accent);text-decoration:none}
 header{display:flex;align-items:center;gap:1rem;padding:.9rem 1.4rem;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg);z-index:20;flex-shrink:0}
 header h1{font-size:1.1rem;font-weight:600}
@@ -782,6 +784,7 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
   <a href="/">← Home</a>
   <h1>Course Selector</h1>
   <div class="crumb" id="crumb">loading…</div>
+    <a href="/tis?lang=zh" style="color:var(--mut);font-size:.85rem">中文</a>
   <div class="sem">
     <select id="sem-select"></select>
     <button class="ghost" id="btn-info" title="Load catalog info">⟳ Load</button>
@@ -1021,5 +1024,84 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
     <div id="nces-sheet-content"></div>
   </div>
 </div>
+
+<script>
+/* Per-skin lightweight localization for the default TIS page.
+   Kept intentionally small: translates the static shell; dynamic messages
+   from tis.js remain English until the shared engine grows a full i18n API. */
+(function () {
+  'use strict';
+  var params = new URLSearchParams(window.location.search);
+  var lang = params.get('lang') || localStorage.getItem('webui-lang') || 'en';
+  if (lang !== 'zh') return;
+  document.documentElement.lang = 'zh';
+  document.title = 'TIS 选课系统 · 南科大生存指南';
+
+  function setText(selector, text) {
+    var el = document.querySelector(selector);
+    if (el) el.textContent = text;
+  }
+  function setPlaceholder(selector, text) {
+    var el = document.querySelector(selector);
+    if (el) el.placeholder = text;
+  }
+  function setAll(selector, text) {
+    document.querySelectorAll(selector).forEach(function (el) { el.textContent = text; });
+  }
+
+  setText('header a[href="/"]', '← 首页');
+  setText('header h1', '选课系统');
+  setText('#mode-h2', '我要选课');
+  setText('.mode-btn[data-mode="personal"]', '🎯 我要选课');
+  setText('.mode-btn[data-mode="campus"]', '📋 全校课表');
+  setText('#stat', '就绪。');
+  setPlaceholder('#kw', '课程代码 / 名称 / 教师');
+  // The filter <select> elements are populated by tis.js; don't overwrite them.
+  // Keep the select placeholders ("All") in English to avoid clobbering options.
+  // Translate the known static filter labels below; leave others untouched.
+  var labels = {
+    '#search-col .row:nth-of-type(3) .lbl': '开课院系',
+    '#search-col .row:nth-of-type(4) .lbl': '任务类型',
+    '#search-col .row:nth-of-type(5) .lbl': '课程类别',
+    '#search-col .row:nth-of-type(6) .lbl': '校区',
+    '#search-col .row:nth-of-type(7) .lbl': '授课语言',
+    '#search-col .row:nth-of-type(8) .lbl': '培养层次',
+    '#search-col .row:nth-of-type(9) .lbl': '教师',
+    '#search-col .personal-only .row:nth-of-type(1) .lbl': '选课方式',
+  };
+  Object.keys(labels).forEach(function (sel) { setText(sel, labels[sel]); });
+  setPlaceholder('#f-teacher', '教师姓名');
+  setAll('.step-label', '');
+  var steps = ['选课', '标记不可用', '生成方案', '对比方案', '积分与同步'];
+  document.querySelectorAll('.step-label').forEach(function (el, i) {
+    if (steps[i]) el.textContent = steps[i];
+  });
+  setText('#step-toggle-text', '课表');
+  setText('.step-pane[data-step-pane="1"] .step-hint', '← 在左侧选择课程。勾选后右侧周课表会实时更新。');
+  setText('.step-pane[data-step-pane="2"] .step-hint', '点击格子标记该时段不可用；拖动可连续标记；右键可切换单/双周。');
+  setText('.step-pane[data-step-pane="3"] .step-hint', '根据已选课程代码生成不冲突的组合。没有冲突时即为无冲突方案。');
+  setText('.step-pane[data-step-pane="4"] .step-hint', '在第三步加入候选方案，或加载 JSON 文件后对比并应用。');
+  setText('.step-pane[data-step-pane="5"] .step-hint', '为已选课程设置积分。点击积分框编辑，拖拽可调整。');
+  setAll('.grid-week-h', '');
+  var weeks = document.querySelectorAll('.grid-week-h');
+  if (weeks[0]) weeks[0].textContent = '单周';
+  if (weeks[1]) weeks[1].textContent = '双周';
+  setAll('table.grid thead th:first-child', '节次');
+  var days = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+  document.querySelectorAll('table.grid thead th:not(:first-child)').forEach(function (th, i) {
+    if (days[i]) th.textContent = days[i];
+  });
+  setText('#btn-solve', '生成不冲突组合');
+  setText('#btn-load-candidates', '📂 加载 JSON');
+  setText('#btn-clear-candidates', '🗑 清空全部');
+  setText('#btn-export-candidates-zip', '📦 全部导出为 .zip');
+  setText('#btn-export-ics', '📅 导出 ICS');
+  setText('#btn-sync-tis', '📤 同步到 TIS');
+  setText('#pick-stat', '0 门课 · 0 学分');
+  setText('#btn-search', '搜索');
+  setText('#btn-info', '⟳ 加载');
+})();
+</script>
+
 </body>
 </html>

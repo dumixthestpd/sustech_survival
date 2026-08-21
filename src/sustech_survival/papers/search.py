@@ -6,7 +6,7 @@ from .models import Paper
 from .openaccess import resolve_oa_pdf
 
 CROSSREF_BASE = "https://api.crossref.org/works"
-HEADERS = {"User-Agent": "sustech-research/1.0 (mailto:dumix@local)"}
+HEADERS = {"User-Agent": "sustech-research/1.0 (+https://github.com/dumixthestpd/sustech_survival/issues)"}
 
 # CrossRef article types we WANT (exclude reviews, book chapters, etc.)
 WANTED_TYPES = {"journal-article", "proceedings-article", "posted-content"}

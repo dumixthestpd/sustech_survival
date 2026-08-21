@@ -80,17 +80,12 @@ def test_resolve_creds_path_home_override(monkeypatch, tmp_path):
     assert resolve_creds_path() == tmp_path / "anchor" / ".sustech_survival" / "credentials.txt"
 
 
-def test_resolve_creds_path_cwd_file_wins_over_env(monkeypatch, tmp_path):
-    """The cwd credentials.txt takes precedence over the env var path."""
-    cwd_creds = tmp_path / "credentials.txt"
-    cwd_creds.write_text("12410000:from-cwd", encoding="utf-8")
+def test_resolve_creds_path_env_wins_over_home(monkeypatch, tmp_path):
+    """SUSTECH_CREDENTIALS points at an explicit file, even when a home
+    dot-directory default would also exist."""
     monkeypatch.setenv("SUSTECH_CREDENTIALS", str(tmp_path / "env.txt"))
-    old = os.getcwd()
-    os.chdir(tmp_path)
-    try:
-        assert resolve_creds_path() == cwd_creds
-    finally:
-        os.chdir(old)
+    monkeypatch.setattr(authorizer._cache, "user_home", lambda: tmp_path)
+    assert resolve_creds_path() == tmp_path / "env.txt"
 
 
 # ── cred_set / cred_clear in-memory override ────────────────────────────────
@@ -118,11 +113,9 @@ def test_cred_set_in_memory_override(monkeypatch, tmp_path):
 
 def test_cred_set_cleared_then_file_used(monkeypatch, tmp_path):
     import sustech_survival.sso.authorizer as A
-    cwd_creds = tmp_path / "credentials.txt"
-    cwd_creds.write_text("12410000:from-file", encoding="utf-8")
-    monkeypatch.delenv("SUSTECH_CREDENTIALS", raising=False)
-    old = os.getcwd()
-    os.chdir(tmp_path)
+    env_creds = tmp_path / "env-creds.txt"
+    env_creds.write_text("12410000:from-file", encoding="utf-8")
+    monkeypatch.setenv("SUSTECH_CREDENTIALS", str(env_creds))
     try:
         A.cred_set("1", "mem")
         A.cred_clear()
@@ -130,7 +123,6 @@ def test_cred_set_cleared_then_file_used(monkeypatch, tmp_path):
         assert (sid, pw) == ("12410000", "from-file")
     finally:
         A.cred_clear()
-        os.chdir(old)
 
 
 def test_cred_set_rejects_bad_values():

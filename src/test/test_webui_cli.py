@@ -22,7 +22,10 @@ from sustech_survival.cli.main import (
     webui_install,
     webui_serve,
     webui_set_skin,
+    webui_skin_cmd,
 )
+from sustech_survival import _cache
+
 
 # The only skin shipped inside the package (fallback). Other skins are
 # installed to ~/.sustech_survival/skins/ and found via the user cache,
@@ -212,3 +215,51 @@ def test_webui_module_no_args_prints_usage(monkeypatch, capsys):
     rc = m.main()
     assert rc == 2
     assert "usage:" in capsys.readouterr().out
+
+
+# ── `sustech webui skin set/delete` ─────────────────────────────────────────
+
+def test_webui_skin_set_and_delete(isolated, runner, monkeypatch, tmp_path):
+    """The new skin group can set the default and delete a user skin."""
+    from sustech_survival import _cache as cache
+    cfg_dir = tmp_path / "cfg"
+    cfg_dir.mkdir()
+    monkeypatch.setattr(cache, "config_file", lambda root=None: cfg_dir / "config.json")
+
+    src = isolated.parent / "alpha-skin"
+    (src / "static").mkdir(parents=True)
+    (src / "manifest.json").write_text(
+        json.dumps({"name": "alpha", "version": "1.0.0", "entry": "index.html"}),
+        encoding="utf-8")
+    (src / "index.html").write_text("<h1>alpha</h1>", encoding="utf-8")
+    loader.install_skin(src)
+
+    r = runner.invoke(webui_skin_cmd, ["set", "alpha"])
+    assert r.exit_code == 0
+    assert cache.load_config()["webui"]["skin"] == "alpha"
+
+    r = runner.invoke(webui_skin_cmd, ["delete", "alpha"])
+    assert r.exit_code == 0
+    assert not (isolated / "alpha").exists()
+
+
+def test_context_command_uses_correct_module(monkeypatch):
+    """`sustech context` must import sustech_survival.context, not cli.context."""
+    from sustech_survival import context as context_mod
+    from sustech_survival.cli.main import context_cmd
+
+    class FakeContext:
+        def __init__(self):
+            self.ok = True
+        def to_dict(self, level):
+            return {"ok": True}
+        def to_str(self, level):
+            return "ok"
+
+    monkeypatch.setattr(context_mod, "Context", FakeContext)
+    runner = CliRunner()
+    r = runner.invoke(context_cmd, [])
+    assert r.exit_code == 0
+    assert r.output.strip() == "ok"
+
+
