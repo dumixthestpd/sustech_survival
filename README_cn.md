@@ -21,14 +21,14 @@
 
 ### 校园系统
 
-- **毕博平台 Blackboard Learn** (`bb`)
-- **教学信息服务 TIS** (`tis`)
+- **Blackboard Learn** (`bb`)
+- **教学管理与服务平台 TIS** (`tis`)
 - **图书馆 SUSTech Library** (`lib`)
 - **统一身份认证 SSO** (`sso`) — 共享认证底座
 - **联创打印 PMS** (`pms`)
-- **外事 SUSTech Global** (`ws`)
-- **网上办事大厅 E-Hall** (`booking`)
-- **牛哇课程评价 NCES** (`nces`)
+- **外事信息系统 SUSTech Global** (`ws`)
+- **网上服务大厅 E-Hall** (`booking`)
+- **牛娃课程评价 NCES** (`nces`)
 
 ### 自建模块
 
@@ -183,15 +183,15 @@ sustech webui set-lang zh
 # 第一行 —— 官方系统（南科大提供；我们去对接）
 sustech_survival/
 ├── sso/      ← 统一 SSO 底座（CAS / Shibboleth；authorizer 层）
-├── bb/       ← Blackboard Learn (毕博)
-├── tis/      ← TIS 教学信息服务
+├── bb/       ← Blackboard Learn
+├── tis/      ← 教学管理与服务平台 (TIS)
 │   └── classroom/  ← TIS 教室查询 + 场地借用 (cdjy)
 ├── lib/      ← 图书馆 (Primo)
 │   └── booking/   ← IC 图书馆预约（研讨室）
-├── pms/      ← 联创打印
-├── ws/       ← SUSTech Global 外事
-├── booking/  ← E-Hall 网上办事大厅
-├── nces/     ← 牛哇课程评价
+├── pms/      ← 联创打印管理系统
+├── ws/       ← SUSTech Global 外事信息系统
+├── booking/  ← E-Hall 网上服务大厅
+├── nces/     ← 牛娃课程评价
 └── transit/  ← 校巴时刻 + 实时 GPS + 校园地图 官方数据
 
 # 第二行 —— 我们自建（在官方系统之上自己做的模块）
@@ -209,7 +209,7 @@ sustech_survival/
 Authorizer                      （抽象基类：ensure/check/refresh，内存会话，过期自检）
  ├── CASAuthorizer              （CAS 3.0 握手：取 execution token → POST 凭据 → 换票据）
  │     ├── TISAuth              BASE_URL + SERVICE_URL = TIS
- │     ├── BBAuth               BASE_URL + SERVICE_URL = 毕博
+ │     ├── BBAuth               BASE_URL + SERVICE_URL = Blackboard Learn
  │     ├── LibAuth              BASE_URL + SERVICE_URL = 图书馆 Primo
  │     ├── WiFiAuth             BASE_URL + SERVICE_URL = 校园 Wi-Fi 网关
  │     └── NCESAuth             CAS 经 Keycloak OIDC + cas-proxy（非普通票据）
@@ -261,7 +261,7 @@ python -m pytest src/test/ -v --live
 
 ## 关于开发者
 
-本模块由 **dumixthestpd**（南科大非计算机专业本科生）开发，他仅负责宏观设计。本模块 99% 的代码由 AI 助手编写，我们清楚地意识到由此带来的代码质量问题。我们欢迎更多同学加入开发 —— 在 GitHub Issues 发起讨论即可。也欢迎直接提 PR。
+本模块由 **dumixthestpd**（南科大非计算机专业本科生）开发，他仅负责宏观设计。本模块 99% 的代码由 AI 助手编写，我们清楚地意识到由此带来的代码质量问题。我们欢迎更多同学加入开发 —— 在 GitHub Issues 发起讨论即可。也欢迎直接提 PR。如果想加入我们，欢迎加入 QQ 讨论群 **980133038**。
 
 ---
 
