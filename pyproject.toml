@@ -94,6 +94,10 @@ all = [
     "anubis-solver>=0.1",
     "cloudscraper>=1.2",
     "pycryptodome>=3.15",
+    # Pytest is only needed at test time, but lives here so a single
+    # `pip install -e ".[all]"` is enough to run the suite — matches the
+    # [tool.pytest.ini_options] section below and the test-suite workflow.
+    "pytest>=7.0",
     # Note: [docs] is intentionally NOT in [all] — it's a doc-author-only
     # extra. Library users don't need MkDocs.
 ]
