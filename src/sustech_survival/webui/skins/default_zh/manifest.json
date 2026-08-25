@@ -1,0 +1,12 @@
+{
+  "name": "default_zh",
+  "version": "0.2.0",
+  "requires": "2026.8.25",
+  "entry": "index.html",
+  "api": [
+    "tis",
+    "transit",
+    "nces"
+  ],
+  "author": "sustech-survival"
+}

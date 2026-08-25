@@ -21,7 +21,7 @@
 - [Library Booking](lib-booking.md) — IC library research rooms
 - [Library (Primo)](lib.md) — library book search via Primo
 - [Calendar](calendar.md) — academic calendar: semesters, holidays, compensatory days
-- [Web UI](webui.md) — Flask SPA: course selector, transit map, eval cards
+- [Web UI](webui.md) — skin-based UI: default/default_zh skins with the full TIS course selector + transit map
 
 ## External Databases
 

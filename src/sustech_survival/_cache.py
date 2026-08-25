@@ -25,14 +25,16 @@ scratch dir — staging and working files live under ``cache/<module>/`` like
 everything else, so ``clear_cache`` means exactly "clear the cache".
 
 Overrides:
-  - ``$SUSTECH_HOME`` — relocate the WHOLE tree. Defaults to the user's home
-    so the dir is ``~/.sustech_survival``; e.g. ``SUSTECH_HOME=D:/data`` puts
-    everything under ``D:/data/.sustech_survival/``.
-  - ``$SUSTECH_CONFIG_DIR`` — direct override of the dot-directory itself.
-  - ``$SUSTECH_CACHE_DIR`` — relocate ONLY the cache root elsewhere (e.g.
-    tests point this at ``tmp_path``). When unset the cache lives at
-    ``config_root() / "cache"``.
-  - ``root=`` kwarg to :func:`cache_path` / :func:`tmp_root` still wins.
+  - ``$SUSTECH_HOME`` — relocate the WHOLE tree (the one env var we honour).
+    Defaults to the user's home so the dir is ``~/.sustech_survival``; e.g.
+    ``SUSTECH_HOME=D:/data`` puts everything under ``D:/data/.sustech_survival/``.
+  - ``config.json`` key ``paths.cache`` — relocate ONLY the cache root
+    (read by :func:`tmp_root`). When unset the cache lives at
+    ``config_root() / "cache"``. Path overrides live in user-edited
+    config.json rather than env vars so the layout is reproducible per-host
+    and a single config file can be version-controlled / synced.
+  - ``root=`` kwarg to :func:`cache_path` / :func:`tmp_root` still wins
+    (escape hatch for tests and one-shot scripts; no env-var backdoor).
 The single user settings file is :func:`config_file`/`load_config`
 (``config.json``); other than that — env vars and kwargs only.
 """
@@ -51,7 +53,7 @@ from typing import Any, Optional, Tuple
 _PACKAGE_ROOT: Path = Path(__file__).resolve().parent
 # Back-compat constant: the old default root next to the package. New code
 # must call tmp_root() — the active cache root defaults to
-# ~/.sustech_survival/cache and honours $SUSTECH_CACHE_DIR.
+# ~/.sustech_survival/cache and honours ``config.json`` ``paths.cache``.
 TMP_ROOT: Path = _PACKAGE_ROOT / "tmp"
 
 # The single home dot-directory that holds all user-owned sustech_survival
@@ -60,7 +62,7 @@ TMP_ROOT: Path = _PACKAGE_ROOT / "tmp"
 # can be relocated with $SUSTECH_HOME.
 DEFAULT_CONFIG_DIR = ".sustech_survival"
 # Disposable cache root name inside the config dir. May be relocated entirely
-# via the SUSTECH_CACHE_DIR env var or an explicit root= kwarg.
+# via ``config.json`` ``paths.cache`` or an explicit ``root=`` kwarg.
 CACHE_SUBDIR = "cache"
 
 
@@ -97,15 +99,11 @@ def home_root(root: Optional[Path] = None) -> Path:
 def config_root(root: Optional[Path] = None) -> Path:
     """The home dot-directory holding user data: ``~/.sustech_survival``.
 
-    Precedence: ``$SUSTECH_CONFIG_DIR`` env var (direct dotdir override) >
-    ``home_root() / ".sustech_survival"`` (i.e. ``$SUSTECH_HOME/.sustech_survival``
-    or the default ``~/.sustech_survival``). An explicit ``root`` kwarg wins.
-    The directory is NOT created; callers create paths as needed.
+    Resolves to ``home_root() / ".sustech_survival"`` (i.e.
+    ``$SUSTECH_HOME/.sustech_survival`` or the default ``~/.sustech_survival``).
+    An explicit ``root`` kwarg wins. The directory is NOT created; callers
+    create paths as needed.
     """
-    direct = os.environ.get("SUSTECH_CONFIG_DIR")
-    if direct:
-        p = Path(direct).expanduser()
-        return p if p.is_absolute() else user_home() / p
     return home_root(root) / DEFAULT_CONFIG_DIR
 
 
@@ -142,23 +140,27 @@ def update_config(**changes) -> dict:
 def tmp_root(root: Optional[Path] = None) -> Path:
     """The active cache root.
 
-    Precedence: explicit ``root`` kwarg > ``$SUSTECH_CACHE_DIR`` env var >
+    Precedence: explicit ``root`` kwarg > ``config.json`` ``paths.cache``
+    (read each call, so live edits take effect immediately) >
     ``config_root() / "cache"`` (i.e. ``~/.sustech_survival/cache`` by
-    default). An explicit ``$SUSTECH_CACHE_DIR`` is absolute or resolves
-    against the working directory at call time. Reading this (not the bare
-    ``TMP_ROOT`` constant) is the correct way to locate the cache.
+    default). Relative values resolve against the working directory at call
+    time. Reading this (not the bare ``TMP_ROOT`` constant) is the correct
+    way to locate the cache.
     """
-    raw = root or os.environ.get("SUSTECH_CACHE_DIR")
-    if raw:
-        p = Path(raw).expanduser()
+    if root is not None:
+        p = Path(root).expanduser()
+        return p if p.is_absolute() else Path.cwd() / p
+    cfg_cache = (load_config().get("paths") or {}).get("cache")
+    if cfg_cache:
+        p = Path(cfg_cache).expanduser()
         return p if p.is_absolute() else Path.cwd() / p
     return config_root() / CACHE_SUBDIR
 
 
 def cache_path(module: str, *parts: str, root: Optional[Path] = None) -> Path:
     """Return ``<root>/<module>/<parts...>`` where ``<root>`` is the active
-    cache root (:func:`tmp_root` — kwarg ``root``, env ``SUSTECH_CACHE_DIR``,
-    or the default ``~/.sustech_survival/cache``).
+    cache root (:func:`tmp_root` — kwarg ``root``, ``config.json``
+    ``paths.cache``, or the default ``~/.sustech_survival/cache``).
 
     The directory is NOT created — call :func:`ensure_cachedir` before
     writing. This split lets read-only probes (e.g. "does this cache file
@@ -182,11 +184,11 @@ def clear_cache(module: str, root: Optional[Path] = None) -> int:
     """Delete every cached file under ``<root>/<module>/``.
 
     ``root`` defaults to the active cache root (:func:`tmp_root` — kwarg,
-    env, or default unified dir). Returns the number of files removed.
-    No-op (returns 0) if the module has no cache yet. Granular cleanup (e.g.
-    "only year 2026 of the calendar cache") is the responsibility of the
-    module that owns the cache layout — this helper wipes everything for a
-    module in one shot.
+    ``paths.cache`` config, or default unified dir). Returns the number of
+    files removed. No-op (returns 0) if the module has no cache yet.
+    Granular cleanup (e.g. "only year 2026 of the calendar cache") is the
+    responsibility of the module that owns the cache layout — this helper
+    wipes everything for a module in one shot.
     """
     import shutil
     if not module or "/" in module or "\\" in module or module in (".", ".."):

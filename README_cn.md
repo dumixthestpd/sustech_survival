@@ -37,7 +37,7 @@
 - **transit** — 校园巴士与步行导航：时刻表、实时 GPS、路线规划。
 - **calendar** — 南科大校历与日期智能：从 GitHub 上的 `sustech-calendar` 仓库加载 JSON，解析 (周次, 星期) → 日期，处理补课日调换。在线数据为权威源；本地覆盖用于编辑中的数据。
 - **ical** — 已选课程的 `.ics` 导出。位于 `selectcourse.ical`，通过 webui 的 `GET /api/tis/ical` 接入。
-- **webui** — Flask 单页应用，整合 TIS 选课界面、公交地图、NCES 悬浮卡片、iCal 导出。启动：`python -m sustech_survival.webui serve`。
+- **webui** — 皮肤式 Flask Web UI。包内自带两个皮肤 —— `default`（英文）与 `default_zh`（中文），都包含完整的 TIS 选课流程（搜索 → 选课 → 无冲突课表 → 方案对比 → 积分与同步）、公交地图与 NCES 评价。皮肤完全自包含且单语言（无语言切换）。启动：`python -m sustech_survival.webui serve`。
 - **context** — 为 AI 助手设计的每日快照：日期、周次、最近作业/考试/上课时间、天气、AQI。
 - **papers** — 学术论文搜索与下载，覆盖 CrossRef、CNKI、WoS、RSC。
 
@@ -51,7 +51,7 @@ CLI（`click`）已包含在核心依赖中 —— `pip install sustech_survival
 
 可选扩展按需安装：
 
-- `webui` — Flask SPA：TIS 选课界面 + 公交地图 + NCES 悬浮卡片
+- `webui` — Flask 皮肤式 Web 界面：`default`/`default_zh` 皮肤，含完整 TIS 选课流程 + 公交地图 + NCES 评价
 - `nces` — Anubis PoW 求解器（NCES 列表抓取用）
 - `papers` — cloudscraper（绕过出版商网站的 requests 拦截）
 - `all` — 以上全部
@@ -202,7 +202,7 @@ sustech_survival/
 ├── context/        ← 每日快照（日期、截止、当前课程、天气、AQI）
 ├── calendar.py     ← 校历与日期智能
 ├── papers/         ← 学术检索 / 抓取（CrossRef、CNKI、WoS、RSC）
-├── webui/          ← Flask 单页应用（TIS + transit + NCES + iCal）
+├── webui/          ← 皮肤加载器 —— default/default_zh 皮肤，含完整选课引擎
 └── api/            ← 无 Flask 的 JSON 契约，供 webui / 自定义 skin 使用
 
 # sso / authorizer —— 简化继承关系
@@ -253,7 +253,6 @@ python -m pytest src/test/ -v --live
 ## 待办
 
 - [x] 统一的 `sustech.sso.Authorizer().ensure()` —— 把各系统的认证合并为一次 CAS 调用。✅ 已完成
-- [x] 更好的本地化（Web UI 支持中英文切换）
 - [ ] 校园食堂每日菜单通知
 - [ ] NCES 评论摘要（配置 API key 时可用；也可通过 skill 文档实现）
 

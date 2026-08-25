@@ -1,17 +1,12 @@
 {
   "name": "default",
-  "version": "0.1.0",
-  "requires": "2026.8.0",
+  "version": "0.2.0",
+  "requires": "2026.8.25",
   "entry": "index.html",
   "api": [
-    "/api/tis/info",
-    "/api/tis/courses",
-    "/api/tis/enrolled",
-    "/api/tis/course-types",
-    "/api/tis/round",
-    "/api/tis/bids",
-    "/api/transit/live",
-    "/api/nces/status"
+    "tis",
+    "transit",
+    "nces"
   ],
   "author": "sustech-survival"
 }

@@ -13,7 +13,8 @@ instead of going through the web UI.
 
 Skins are self-contained folders under ``webui/skins/`` (shipped default) or
 the user's home dot-directory (user-installed — ``~/.sustech_survival/skins/``,
-override ``$SUSTECH_CONFIG_DIR``; see :mod:`sustech_survival._cache`). Each
+override the dotdir anchor with ``$SUSTECH_HOME``; see
+:mod:`sustech_survival._cache`). Each
 skin has a ``manifest.json`` describing its name, entry page, which ``/api/*``
 endpoints it needs, and the minimum ``sustech_survival`` module version it
 requires (``requires``).
@@ -26,16 +27,15 @@ the CLI).
 Layout of a skin::
 
     my-skin/
-      manifest.json      # {"name", "version", "entry", "requires", ...}
-      index.html         # served at / when the skin is active
+      manifest.json      # {"name", "version", "entry", "requires", "api", ...}
+      index.html         # served at / when the skin is active (manifest entry)
       static/            # served at /static/<path> (skin-static)
-        index.zh.html     # optional localized entry page (?lang=zh / --lang zh)
-        tis.html           # optional TIS page (tis.zh.html for Chinese)
+      tis.html           # optional TIS page (painted from /api/tis/*)
+      transit/           # optional transit frontend (or static/transit)
 
-      api-note.md        # (optional) which /api/* this skin uses
-        index.zh.html     # optional localized entry page (?lang=zh / --lang zh)
-        tis.html           # optional TIS page (tis.zh.html for Chinese)
-
+A skin is single-language: it picks one language and ships its pages in it
+(e.g. ``default`` = English, ``default_zh`` = Chinese). There is no per-request
+language machinery — language is the skin's choice, not the head's business.
 
 ``manifest.json`` fields:
   - ``name``   required            — the skin's unique name
@@ -60,7 +60,7 @@ from .._version import __version__
 # Shipped default skin lives in this package under skins/default.
 _PKG_SKINS = Path(__file__).resolve().parent / "skins"
 # User-installed skins live in the user's home dot-directory
-# (`~/.sustech_survival/skins`, or $SUSTECH_CONFIG_DIR/skins) — OWNED user
+# (`~/.sustech_survival/skins`, relocated via $SUSTECH_HOME) — OWNED user
 # data, so it sits beside (not inside) the disposable cache. Consistent with
 # the project's unified on-disk store (see sustech_survival._cache).
 _USER_SKINS = config_root() / "skins"
@@ -203,6 +203,12 @@ def install_skin(src: Path | str, *, default: bool = False) -> Path:
             f"not a valid skin (missing manifest.json or entry page): {src}")
     mf = _read_manifest(src)
     name = mf.get("name") or src.name
+    # A skin's ``name`` becomes a directory under the user cache — reject
+    # anything that could escape it (``../..``, separators, ``.``/``..``).
+    if (not isinstance(name, str) or not name
+            or name in (".", "..") or Path(name).name != name):
+        raise ValueError(f"invalid skin name {name!r} (must be a plain "
+                         f"directory name, no path separators)")
     dst = _USER_SKINS / name
     dst.mkdir(parents=True, exist_ok=True)
     shutil.copytree(src, dst, dirs_exist_ok=True)

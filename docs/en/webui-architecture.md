@@ -1,133 +1,85 @@
-# TIS Page
+# Web UI Architecture
 
-> The TIS (Teaching Information System) course-selector SPA at `/tis`.
-> Pure facts: what the code is, what it does, where each piece lives.
-> No workflow. No "how to use this". No priority lists.
+> How the skin-loader head is put together. Pure facts — what the code is,
+> what it does, where each piece lives.
+
+## The model
+
+One Flask app, one port (`:20129`). The active **skin** is a self-contained
+directory that owns every page and static asset the app serves. The shipped
+skins carry the full TIS course-selector engine (the 5-step workflow:
+search → pick → conflict-free schedule → compare → bid & sync) plus the
+transit map frontend. The head itself stays thin: it picks the skin, serves
+its files, and mounts the `/api/*` endpoints the skin's manifest declares.
+
+```
+browser ──> skin pages (HTML/CSS/JS — the course-selector engine, transit map)
+      \        |
+       \       v
+        └──> /api/*  (JSON contract, mounted per module)
+                  |
+                  v
+         sustech_survival.api (Flask-free data functions)
+                  |
+                  v
+         clients (SelectCourseClient, TransitClient, NCES…)
+```
+
+The browser never talks to SUSTech directly: every `/api/*` route calls the
+existing Python clients server-side, so credentials never leave the process.
 
 ## Files
 
 | Path | Role |
 |---|---|
-| `src/sustech_survival/webui/skins/<name>/tis.html` | Per-skin page markup + inline CSS (each skin owns its own self-contained page; there is NO package-level template) |
-| `src/sustech_survival/webui/skins/<name>/static/tis/tis.js` | Per-skin IIFE: state, render, cascade, persistence |
-| `src/sustech_survival/webui/blueprints/tis.py` | HTTP routes (13 endpoints) |
+| `webui/loader.py` | Skin discovery/validation: `installed_skins()`, `find_skin()`, `install_skin()`, manifest parsing |
+| `webui/app.py` | `create_app()` — resolves the active skin, serves its pages + static, mounts its declared APIs |
+| `webui/api_registry.py` | The skin-driven API exposure: each module's `api.py` declares endpoints; the skin's `manifest.api` picks which get mounted |
+| `webui/skins/<name>/` | One skin: `manifest.json`, entry page, own pages + static |
+| `webui/skins/default/` | English skin: landing + full course-selector engine (`tis.html` + `static/tis/tis.js`) + transit |
+| `webui/skins/default_zh/` | Chinese skin — same engine, Chinese page shells |
 | `docs/dev-instructions/skin-development.md` | How to author and install skins |
 
-## Sections of `tis.js`
+## Skin resolution
 
-The `// --` headers are the index. Each header marks a region of the
-file. The regions are:
+Explicit `--skin-path` > explicit `--skin` name > `webui.skin` saved in
+`config.json` > first installed skin > shipped `default`. `create_app()`
+works with zero installed skins (in-package default head). A user-installed
+skin of the same name shadows the shipped one (that's how
+`sustech webui install default` gives you a moddable copy).
 
-```
-DOM refs · State · Loading bar · HTTP helpers · Semester helpers ·
-Color/time helpers · Catalog loaders · Results render · NCES brief ·
-NCES eval page · Picked list + mutators · ICS export · Flash/utils ·
-Drag-to-reorder picked · Solve tab · Weekly grid · Tabs · Bid panel ·
-DOMContentLoaded
-```
+## Pages and language
 
-## State
+Each skin ships its pages in **one language** — `default` is English,
+`default_zh` is Chinese. There is no locale machinery in the loader: no
+`?lang=`, no `--lang`, no `.zh.html` lookup. The Chinese skin's `tis.html`
+hardcodes its Chinese page shell (the engine's dynamic messages stay
+English; see the localization note at the bottom of `default_zh/tis.html`).
 
-The single source of truth. All declared in `tis.js` lines 62-82.
+- `/` — the skin's manifest `entry` (default `index.html`).
+- `/static/<path>` — the skin's own `static/`, then the skin's transit
+  assets. No cross-skin fallback; path traversal is rejected (safe-joined
+  to the skin root).
+- `/<page>` — a catch-all serves `<skin>/<page>.html` or
+  `<skin>/<page>/index.html`, so a skin can ship new pages without the head
+  knowing about them.
+- `/tis`, `/transit` — module routes (`selectcourse/api.py`,
+  `transit/api.py`) resolve the *skin's* `tis.html` / transit `index.html`
+  and 404 when the skin drops the feature.
 
-| Var | Type | Role |
-|---|---|---|
-| `PICKED` | `{rwh: courseDict}` | The user's chosen sections. Canonical. |
-| `PICKED_BIDS` | `{rwh: int}` | Bid value per pick. Mirrors `PICKED`. |
-| `PICKED_CONFLICTS` | `{rwh: bool}` | Per-pick conflict flag. |
-| `ENROLLED_RWH` | `Set<rwh>` | What's on TIS right now. |
-| `EXISTING_BIDS` | `{rwh: int}` | Server-side bids for enrolled/cart. |
-| `BLOCKED` | `{"day:period": true}` | User's unavailable slots. |
-| `CAT` / `ALL_CAT` | `Course[]` | Cached catalog. |
-| `EVAL_CACHE` | `{code: evalResponse}` | NCES cache. |
-| `COLORS_CACHE` | `{code: hex}` | Stable color per code. |
-| `ROUND_INFO` | object | Bid-round metadata. |
-| `MODE` | `'personal' \| 'campus'` | Search mode (Selection vs Catalog). |
+## API exposure
 
-## Cascade contract
+Each submodule that wants web endpoints declares them in its own `api.py`
+(no central route table to drift). The active skin's `manifest.api` lists
+what it needs — a bare `"tis"` pulls in every `tis.*` endpoint, a dotted
+`"tis.info"` pulls exactly one. Endpoints the skin didn't ask for are not
+mounted. A manifest name no module provides logs a startup warning instead
+of a runtime 404.
 
-`PICKED` is mutated by exactly three functions:
+## The course-selector engine
 
-1. `addPicked(course)` — `tis.js` line 1678
-2. `removePicked(rwh)` — `tis.js` line 1698
-3. `applyPicksFromData(data)` — used by localStorage restore + file Load
-
-All three MUST call, in order:
-
-```
-savePicks()              ← localStorage auto-save
-renderPicked()           ← #pick-list + action buttons
-updateResultsHeader()    ← select-all + count in search results
-renderGrid()             ← weekly grid (clear #grid-legend if empty)
-renderBidPanel()         ← bid boxes + bar + totals
-updateBidStat()          ← right-column "Bids: X/150 pts" summary
-updateSolveCodes()       ← solver "Codes to solve:" chip
-```
-
-This contract is also written at the top of `tis.js` (lines 15-25).
-Both locations describe the same contract; the code is authoritative.
-
-## HTTP routes (in `tis.py`)
-
-| Method | Path | Purpose |
-|---|---|---|
-| GET | `/api/tis/info` | Semester + filter options |
-| GET | `/api/tis/courses?mode=personal\|campus` | Catalog or personal search |
-| POST | `/api/tis/refresh` | Force re-fetch from TIS |
-| GET | `/api/tis/course/<rwh>` | One section |
-| GET | `/api/tis/enrolled` | What's on file |
-| POST | `/api/tis/solve` | Conflict-free combinations |
-| POST | `/api/tis/add` | Add (dry-run by default) |
-| POST | `/api/tis/drop` | Drop (dry-run by default) |
-| POST | `/api/tis/add-to-cart` | Cart add |
-| POST | `/api/tis/remove-from-cart` | Cart remove |
-| GET | `/api/tis/round` | Bid-round info + 剩余积分 |
-| POST | `/api/tis/bids` | Submit bid values |
-| GET | `/api/tis/course-types` | xkfsdm tab options (personal mode) |
-
-## Page layout
-
-Three-column CSS grid (`grid-template-columns: 380px 1fr 300px`).
-
-```
-+--------------------+--------------------------+------------------------+
-| LEFT  (380px)      | CENTER (1fr)             | RIGHT (300px)          |
-|--------------------|--------------------------|------------------------|
-| Mode toggle        | Tabs: grid · solve ·     | pick-stat header       |
-| Selection/Catalog  |       eval · bids        | bid-stat link          |
-| Search + filters   |  TAB CONTENT             | #pick-list             |
-| #filter-pills      |                          | "Safe" actions:        |
-| #results-header    |                          |  Export ICS · Save ·   |
-|   ◻ select all     |                          |  Load                  |
-| #results (cards)   |                          | -- "Real actions" --   |
-|                    |                          |  Sync to TIS · Drop    |
-|                    |                          | Enrollment status      |
-+--------------------+--------------------------+------------------------+
-```
-
-## Tabs
-
-| Tab | DOM id | Default | Purpose |
-|---|---|---|---|
-| grid | `#tab-grid` | yes | Weekly grid (odd + even), legend, 🎯 Solve |
-| solve | `#tab-solve` | | Conflict-free scheduler + blocked-time editor |
-| eval | `#tab-eval` | | NCES community eval browse + detail + brief |
-| bids | `#tab-bids` | | Bid management (积分选课) + sync to TIS |
-
-Tab switching: `switchTab(name)` at `tis.js` line 2946.
-
-## Persistence
-
-| Layer | Key / format | Restored at |
-|---|---|---|
-| localStorage | key `tis-picks-v1`, shape `{version:1, picks:[...], savedAt:ISO}` | `DOMContentLoaded` via `loadPicksFromStorage()` |
-| File export | `tis-picks-YYYY-MM-DD_HH-MM-SS.json`, same shape | user-triggered Load |
-| TIS server | `EXISTING_BIDS` from `/api/tis/enrolled` | `loadEnrolled()` |
-
-## Errors and flash messages
-
-`flash(msg, kind)` at `tis.js` line 1773 surfaces all errors as a
-fixed-position banner. `kind` ∈ `'ok' \| 'warn' \| 'err'`. `getJSON`
-and `postJSON` (lines 118, 126) have no timeout — TIS over VPN is
-slow, and a timeout was a footgun. Callers own error handling via
-`.catch()`.
+The engine (`default/static/tis/tis.js`, ~6k lines) is an IIFE that owns
+state (`PICKED`, catalog caches, NCES eval cache, bid values), renders the
+5-step workflow, and talks to `/api/tis/*` + `/api/nces/*`. Each skin ships
+its own copy of the engine under `static/tis/tis.js` — there is no shared
+package JS fallback.

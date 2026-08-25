@@ -744,6 +744,14 @@ table.grid th{background:var(--panel2);color:var(--mut);border-radius:4px 4px 0 
 table.grid td{height:38px}
 .blk{border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.18)}
 .blk:hover{outline:2px solid var(--ring)}
+/* Spanning course blocks read as one continuous band, not slices: the
+   separated grid gives every cell its own 1px border, and the block div
+   overflows the start cell across rows — each lower row's borders would
+   paint thin lines across the block. Cells that continue a spanning block
+   (marked .blk-mid by tis.js) drop their top/bottom borders — the block
+   itself covers those lines — and the block height is extended by
+   GRID_GAP per internal boundary (see tis.js) to bridge the 1px cell gaps. */
+table.grid td.blk-mid{border-top:none;border-bottom:none}
 .persistent-grid,.block-section{border-radius:var(--radius);box-shadow:var(--shadow-1)}
 .grid-legend-h .grid-legend{padding:.2rem 0}
 /* compare / eval / bid surfaces */
@@ -784,7 +792,6 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
   <a href="/">← Home</a>
   <h1>Course Selector</h1>
   <div class="crumb" id="crumb">loading…</div>
-    <a href="/tis?lang=zh" style="color:var(--mut);font-size:.85rem">中文</a>
   <div class="sem">
     <select id="sem-select"></select>
     <button class="ghost" id="btn-info" title="Load catalog info">⟳ Load</button>

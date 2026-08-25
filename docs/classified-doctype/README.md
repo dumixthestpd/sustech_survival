@@ -28,7 +28,7 @@ files land in the right place.
 | Doc | Classification |
 |---|---|
 | `docs/en/webui.md` | User guide — run/serve the web UI |
-| `docs/en/webui-architecture.md` | Internal — TIS page/JS architecture |
+| `docs/en/webui-architecture.md` | Internal — skin-loader architecture |
 | `docs/en/transit.md` | User guide — transit data and CLI |
 | `docs/en/tis.md`, `courses.md`, `grades.md` | User guides — TIS workflows |
 | `docs/en/sso.md` | User guide + internal auth notes |

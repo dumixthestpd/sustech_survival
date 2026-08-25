@@ -43,7 +43,7 @@ By connecting the services at the code level, we simplify the campus systems, of
 - **ical**
   - `.ics` export of an enrolled semester. Lives in `selectcourse.ical` and is wired through the webui at `GET /api/tis/ical`.
 - **webui**
-  - Flask SPA combining the TIS course selector, transit map, NCES hover cards, and iCal export. Start with `python -m sustech_survival.webui serve`.
+  - Skin-based Flask web UI. Two skins ship with the package — `default` (English) and `default_zh` (Chinese) — each with the full TIS course selector (search → pick → conflict-free schedule → compare → bid & sync), the transit map, and NCES evals. Skins are self-contained and single-language (no language switching). Start with `python -m sustech_survival.webui serve`.
 - **context**
   - Daily-use snapshot for AI agents: date, week, next deadlines, exams, class-now, weather, AQI.
 - **papers**
@@ -57,7 +57,7 @@ By connecting the services at the code level, we simplify the campus systems, of
 
 Extras add heavier optional capabilities:
 
-- `webui` — Flask SPA: TIS course selector + transit map + NCES hover cards
+- `webui` — Flask web UI: `default`/`default_zh` skins with the full TIS course selector + transit map + NCES evals
 - `nces` — Anubis PoW solver for NCES listing scrape
 - `papers` — cloudscraper for publisher sites that block plain requests
 - `playwright` — browser-backed BB download / submit (for UIs that only render in JS)
@@ -218,7 +218,7 @@ sustech_survival/
 ├── context/      We built: daily-use snapshot (date, deadlines, class-now, weather, AQI)
 ├── calendar.py   We built: academic calendar + date intelligence
 ├── papers/       We built: scholarly search / fetch (CrossRef, CNKI, WoS, RSC)
-├── webui/        We built: Flask SPA (TIS + transit + NCES + iCal)
+├── webui/        We built: skin loader — default/default_zh skins with the full course-selector engine
 └── api/          We built: Flask-free JSON contract the webui / a custom skin consumes
 ```
 
@@ -259,7 +259,6 @@ python -m pytest src/test/ -v --live
 ## Todo
 
 - [x] Unified `sustech.sso.Authorizer().ensure()` — collapsed per-system auth into one CAS call.
-- [x] Better localization (Web UI supports EN/CN switching)
 - [ ] Campus canteen daily food notice
 - [ ] NCES comment summarization (when an API key is configured; also achievable via a skill doc)
 

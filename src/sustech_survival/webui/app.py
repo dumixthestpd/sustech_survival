@@ -7,7 +7,8 @@ in ``webui/skins/default``) and serves it, plus the ``/api/*`` JSON contract.
 The JSON contract is available two ways:
   * Flask-free data functions in ``sustech_survival.api`` — the stable contract
     any head (web UI, native app, CLI dashboard) can call directly.
-  * The HTTP ``/api/*`` routes below, served by the built-in blueprints.
+  * The HTTP ``/api/*`` routes, mounted per-module from each submodule's
+    ``api.py`` via :mod:`sustech_survival.webui.api_registry`.
 
 A skin is a folder with a ``manifest.json`` + static assets; whoever builds a
 new head either imports ``sustech_survival.api``, or mounts these ``/api``
@@ -16,10 +17,12 @@ module — dropping ``webui/`` leaves the whole API working.
 """
 from __future__ import annotations
 
+import socket
+import sys
 from pathlib import Path
 from typing import Optional
 
-from flask import Flask, Response, send_from_directory
+from flask import Flask, send_from_directory
 
 from sustech_survival.webui import loader
 
@@ -28,40 +31,10 @@ HERE = Path(__file__).resolve().parent
 # Brand assets live in the package's resources/ dir (shipped in the wheel).
 RESOURCES = Path(__file__).resolve().parent.parent / "resources"
 
-# Languages understood by the built-in skin loader. Skins are free to ship
-# only a subset; the loader falls back to the un-suffixed English file.
-SUPPORTED_LOCALES = ("en", "zh")
-
-
-def _locale() -> str:
-    """Resolve the active UI locale for this request.
-
-    Order: ``?lang=`` query > app-level ``LANG`` config > English.
-    """
-    from flask import current_app, request
-    raw = request.args.get("lang") or current_app.config.get("LANG") or "en"
-    lang = raw.split("_")[0].split("-")[0].lower()
-    return lang if lang in SUPPORTED_LOCALES else "en"
-
-
-def _localized(skin_root, base: str, lang: str) -> Path | None:
-    """Return ``<skin_root>/<base>.<lang>.html`` if present, else the
-    un-suffixed ``<skin_root>/<base>.html``. Returns ``None`` when neither
-    exists, so the caller can decide whether to fall back or 404."""
-    root = Path(skin_root)
-    if lang != "en":
-        for name in (f"{base}.{lang}.html", f"{base}_{lang}.html"):
-            candidate = root / name
-            if candidate.is_file():
-                return candidate
-    plain = root / f"{base}.html"
-    return plain if plain.is_file() else None
-
 
 def create_app(*, transit_data_dir: Optional[str] = None,
                skin: Optional[str] = None,
-               skin_path: Optional[str] = None,
-               lang: Optional[str] = None) -> Flask:
+               skin_path: Optional[str] = None) -> Flask:
     """Build the skin-loader Flask app.
 
     ``transit_data_dir``: optional exported transit GeoJSON dir.
@@ -71,11 +44,10 @@ def create_app(*, transit_data_dir: Optional[str] = None,
       list (callers should surface it with an actionable message).
     ``skin_path``: serve a skin directly from a directory path (no install).
       Mutually exclusive with ``skin``; wins over any installed/name lookup.
-    ``lang``: default UI locale for skins that ship localized pages. When
-      omitted it is read from ``config.json`` (``webui.lang``) and falls back
-      to English. The per-request ``?lang=`` query parameter overrides this.
-      Built-in locales are ``en`` and ``zh``; skins may support only a subset
-      and the loader falls back to the un-suffixed English page.
+
+    Skins are single-language: the loader has no locale machinery. A skin
+    ships its pages in one language (``default`` = English, ``default_zh`` =
+    Chinese) and is fully self-contained.
     """
     app = Flask(
         __name__,
@@ -83,23 +55,6 @@ def create_app(*, transit_data_dir: Optional[str] = None,
         static_folder=None,   # skin static served explicitly below
     )
     app.config["TRANSIT_DATA_DIR"] = transit_data_dir
-    if lang:
-        lang = lang.split("_")[0].split("-")[0].lower()
-        if lang not in SUPPORTED_LOCALES:
-            raise ValueError(
-                f"unsupported webui language {lang!r}; choose from "
-                f"{', '.join(SUPPORTED_LOCALES)}"
-            )
-    else:
-        from sustech_survival import _cache
-        configured_lang = (_cache.load_config().get("webui") or {}).get("lang")
-        if configured_lang:
-            lang = str(configured_lang).split("_")[0].split("-")[0].lower()
-            if lang not in SUPPORTED_LOCALES:
-                lang = "en"
-        else:
-            lang = "en"
-    app.config["LANG"] = lang
 
     # -- Brand assets (logo / favicon) -----------------------------------
     # Icon (favicon + page logo mark) = the square torch-only lockup.
@@ -149,6 +104,7 @@ def create_app(*, transit_data_dir: Optional[str] = None,
             _skin = Skin(name="default", version="0", root=loader.default_skin())
             _is_default = True
     _skin_root = _skin.root
+    _skin_manifest = loader._read_manifest(_skin_root)
     app.config["SKIN"] = _skin.name
     app.config["SKIN_VERSION"] = _skin.version
     app.config["SKIN_ROOT"] = str(_skin_root)
@@ -158,7 +114,7 @@ def create_app(*, transit_data_dir: Optional[str] = None,
     _req_warn = getattr(_skin, "check_requires", lambda: None)()
     if _req_warn:
         app.logger.warning(_req_warn)
-        print(f"⚠️  {_req_warn}")
+        print(f"[!] {_req_warn}")
     # A custom (non-default) head is AUTHORITATIVE: the app serves only the
     # pages/assets the skin ships, and `/api/*` (the sustech_survival.api
     # contract) is the data surface. The shipped default head is just another
@@ -167,10 +123,10 @@ def create_app(*, transit_data_dir: Optional[str] = None,
 
     # A single /static/<path> handler owns ALL static assets. Resolving
     # transit's assets here (instead of a competing route in the transit
-    # blueprint) keeps Route match unambiguous. Skins are FULLY INDEPENDENT:
+    # api.py) keeps route matching unambiguous. Skins are FULLY INDEPENDENT:
     # each serves ONLY the assets it ships under <skin_root>/static/ (e.g.
-    # <skin>/static/tis/tis.js). There is NO shared package JS any skin can
-    # silently fall back to.
+    # <skin>/static/transit/app.js). There is NO shared package JS any skin
+    # can silently fall back to.
     @app.route("/static/<path:filename>")
     def _skin_static(filename):
         from flask import abort
@@ -181,7 +137,7 @@ def create_app(*, transit_data_dir: Optional[str] = None,
         # 2) Transit assets, resolved through the same transit-root logic
         #    the /transit page uses: the active skin's <skin>/transit/static
         #    or <skin>/static/transit/static. No shared package fallback.
-        from .blueprints.transit import _transit_root
+        from sustech_survival.transit.api import _transit_root
         troot = _transit_root()
         if troot is not None:
             tf = troot / "static" / filename
@@ -189,56 +145,129 @@ def create_app(*, transit_data_dir: Optional[str] = None,
                 return send_from_directory(troot / "static", filename)
         abort(404)
 
-    # -- Landing page: the active skin's entry is authoritative. Each skin
-    #    owns its localized pages (``index.html`` / ``index.zh.html``); there
-    #    is no package-level template fallback.
+    # -- Landing page: the active skin's entry is authoritative. The entry
+    #    file comes from the manifest (``entry``, default ``index.html``);
+    #    there is no package-level template fallback.
     @app.route("/")
     def index():
-        lang = _locale()
-        entry = _localized(_skin_root, "index", lang)
-        if entry is not None:
-            return send_from_directory(entry.parent, entry.name)
-        plain = _skin_root / "index.html"
-        if plain.is_file() and lang != "en":
-            html = plain.read_text(encoding="utf-8").replace(
-                '<html lang="en">', f'<html lang="{lang}">', 1)
-            return Response(html, mimetype="text/html")
         from flask import abort
+        entry = _skin.index
+        if entry.is_file():
+            return send_from_directory(entry.parent, entry.name)
         abort(404)
 
-    # -- Submodule blueprints: serve the full /api/* + pages ------------
-    # These wrap the same data as ``sustech_survival.api`` but also carry the
-    # complex routes (enrolled/solve/bids/ical) via HTTP. They are the default
-    # head's backend; a custom head calls ``sustech_survival.api`` instead.
-    from .blueprints.tis import bp as tis_bp
-    app.register_blueprint(tis_bp)
-    from .blueprints.transit import bp as transit_bp
-    app.register_blueprint(transit_bp, transit_data_dir=transit_data_dir)
-    try:
-        from .blueprints.nces import bp as nces_bp
-        app.register_blueprint(nces_bp)
-    except ImportError as e:
-        app.logger.info(f"NCES blueprint not registered: {e}")
+    # -- Skin-driven API exposure ----------------------------------------
+    # The active skin's ``manifest.api`` declares which endpoints it needs.
+    # The head discovers every submodule's ``api.py`` and mounts ONLY the
+    # requested ones — anything else stays cold. This is the inverse of
+    # the old blanket "register every blueprint" model: each module owns
+    # its surface, the skin picks what to expose.
+    from .api_registry import discover_module_apis, mount_skin_apis
+    discovered = discover_module_apis()
+    skin_api = (_skin_manifest.get("api") or []) if _skin_manifest else []
+    mounted, missing = mount_skin_apis(app, skin_api, discovered,
+                                       logger=app.logger)
+
+    # -- Skin-owned pages ------------------------------------------------
+    # Each skin ships its own pages (e.g. ``<skin>/tis.html`` for ``/tis``,
+    # ``<skin>/transit/index.html`` for ``/transit``). A catch-all route
+    # serves them so the head never hardcodes the page list — a new skin
+    # can ship new pages without touching this file. API / static / brand
+    # namespaces are explicitly skipped (their literal routes win in Werkzeug
+    # routing anyway; this is defence in depth).
+    @app.route("/<path:page>", methods=["GET"])
+    def _skin_page(page):
+        from flask import abort
+        from werkzeug.security import safe_join
+        if page.startswith(("api/", "static/", "_")):
+            abort(404)
+        # Resolve strictly inside the skin root: ``safe_join`` rejects any
+        # ``..`` segment, so a request can never escape the skin directory.
+        for rel in (f"{page}.html", f"{page}/index.html"):
+            joined = safe_join(str(_skin_root), rel)
+            if joined is None:
+                continue
+            candidate = Path(joined)
+            if candidate.is_file():
+                return send_from_directory(_skin_root, rel)
+        abort(404)
 
     return app
+
+
+def _port_in_use(host: str, port: int) -> bool:
+    """Probe whether ``(host, port)`` is already bound by another process.
+
+    Without this check the dev server's own bind attempt raises a raw
+    ``OSError`` (WinError 10048 / EADDRINUSE) that surfaces as a confusing
+    traceback. Probing first lets :func:`run` fail with a clear message
+    instead.
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind((host, port))
+        return False
+    except OSError:
+        return True
+    finally:
+        s.close()
+
+
+def _port_owner(host: str, port: int) -> str:
+    """Best-effort description of the process holding ``(host, port)``.
+
+    Returns ``""`` when the lookup fails or no listener matches — the
+    caller treats it as decoration, never a hard error.
+    """
+    import re
+    import subprocess
+    try:
+        if sys.platform == "win32":
+            out = subprocess.run(["netstat", "-ano"], capture_output=True,
+                                 text=True, timeout=5).stdout
+            for line in out.splitlines():
+                parts = line.split()
+                if len(parts) >= 5 and parts[3] == "LISTENING" \
+                        and parts[1].rsplit(":", 1)[-1] == str(port):
+                    pid = parts[-1]
+                    if pid.isdigit():
+                        return f" (PID {pid})"
+        else:
+            out = subprocess.run(["ss", "-ltnp"], capture_output=True,
+                                 text=True, timeout=5).stdout
+            m = re.search(rf":{port}\b.*?pid=(\d+)", out, re.S)
+            if m:
+                return f" (PID {m.group(1)})"
+    except Exception:
+        pass
+    return ""
 
 
 def run(*, port: int = DEFAULT_PORT, host: str = "0.0.0.0",
         transit_data_dir: Optional[str] = None,
         skin: Optional[str] = None,
         skin_path: Optional[str] = None,
-        lang: Optional[str] = None,
         debug: bool = False) -> int:
-    """Create the app and serve it forever. Returns 0 on clean exit."""
+    """Create the app and serve it forever. Returns 0 on clean exit.
+
+    Returns 1 (without starting the server) when ``(host, port)`` is already
+    in use — the usual cause is another ``sustech webui serve`` still running.
+    """
+    if _port_in_use(host, port):
+        owner = _port_owner(host, port)
+        print(f"[!] port {port} is already in use{owner} - is another "
+              f"`sustech webui serve` running? stop it first, or pick a "
+              f"different port with --port.")
+        return 1
     app = create_app(transit_data_dir=transit_data_dir, skin=skin,
-                     skin_path=skin_path, lang=lang)
+                     skin_path=skin_path)
     app.config["PORT"] = port
     skin_name = app.config.get("SKIN") or skin or (skin_path or "default")
-    print(f"✅ SUSTech web UI serving at http://localhost:{port}")
-    print(f"   Skin: {skin_name}  Language: {app.config.get('LANG', 'en')}")
+    print(f"[OK] SUSTech web UI serving at http://localhost:{port}")
+    print(f"   Skin: {skin_name}")
     print("   Ctrl-C to stop")
     try:
         app.run(host=host, port=port, debug=debug, use_reloader=False)
     except KeyboardInterrupt:
-        print("\n👋 Stopped.")
+        print("\nStopped.")
     return 0

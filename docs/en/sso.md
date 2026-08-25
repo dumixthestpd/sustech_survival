@@ -74,10 +74,9 @@ Pick any of these locations (first match wins):
 | 1 | `$SUSTECH_CREDENTIALS` env var (path to file) | CI, containers, agents |
 | 2 | `~/.sustech_survival/credentials.txt` (default; `$SUSTECH_HOME` relocates) | Shared across projects (recommended) |
 
-A template is provided as `credentials.example.txt` in the repo root:
+Create `credentials.txt` in the repo root:
 
 ```bash
-cp credentials.example.txt credentials.txt
 # Edit credentials.txt — replace YOUR_PASSWORD with your CAS password
 ```
 

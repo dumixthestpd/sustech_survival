@@ -661,17 +661,10 @@ def webui_cmd() -> None:
 
 def _webui_serve_impl(port: Optional[int], host: str, skin: Optional[str],
                       skin_path: Optional[str], transit_data_dir: Optional[str],
-                      lang: Optional[str],
                       debug: bool) -> None:
     """Shared implementation of `sustech webui serve`."""
-    from ..webui.app import run, DEFAULT_PORT, SUPPORTED_LOCALES
+    from ..webui.app import run, DEFAULT_PORT
     from ..webui import loader
-    if lang:
-        lang = lang.split("_")[0].split("-")[0].lower()
-        if lang not in SUPPORTED_LOCALES:
-            click.secho(f"unsupported language {lang!r}; choose from "
-                        f"{', '.join(SUPPORTED_LOCALES)}", fg="red")
-            raise SystemExit(1)
     if skin_path:
         try:
             loader.skin_from_path(skin_path)     # validate up front
@@ -693,10 +686,9 @@ def _webui_serve_impl(port: Optional[int], host: str, skin: Optional[str],
                     fg="yellow")
         click.echo("  tip: `sustech webui install default` copies it into your "
                    "on-disk skin cache so you can skin/mod it.")
-    run(host=host, port=port or DEFAULT_PORT,
-        transit_data_dir=transit_data_dir, skin=skin, skin_path=skin_path,
-        lang=lang,
-        debug=debug)
+    raise SystemExit(run(host=host, port=port or DEFAULT_PORT,
+                         transit_data_dir=transit_data_dir, skin=skin,
+                         skin_path=skin_path, debug=debug))
 
 
 @webui_cmd.command(name="serve", help="Start the web UI.")
@@ -710,12 +702,9 @@ def _webui_serve_impl(port: Optional[int], host: str, skin: Optional[str],
 @click.option("--skin-path", "skin_path", default=None,
               help="Serve a skin directly from a directory path (no install). "
                    "Wins over --skin / any installed skin.")
-@click.option("--lang", "lang", default=None,
-              help="Default UI language (en or zh). Overridable per request with ?lang=.")
 @click.option("--debug/--no-debug", default=False)
 def webui_serve(port: Optional[int], host: str,
                 transit_data_dir: Optional[str], skin: Optional[str],
-                 lang: Optional[str],
                 skin_path: Optional[str], debug: bool) -> None:
     """Start the web UI.
 
@@ -730,8 +719,7 @@ def webui_serve(port: Optional[int], host: str,
     editing.
     """
     _webui_serve_impl(port=port, host=host, skin=skin, skin_path=skin_path,
-                      transit_data_dir=transit_data_dir, lang=lang,
-                        debug=debug)
+                      transit_data_dir=transit_data_dir, debug=debug)
 
 
 @webui_cmd.command(name="open", help="Open UI in default browser.")
@@ -876,17 +864,6 @@ def webui_set_skin(name: str) -> None:
         raise SystemExit(1)
     _cache.update_config(webui={"skin": name})
     click.secho(f"✅ default skin set to {name!r} (config.json → webui.skin)", fg="green")
-
-
-@webui_cmd.command(name="set-lang", help="Persist the default webui language in config.json.")
-@click.argument("lang", type=click.Choice(["en", "zh"]))
-def webui_set_lang(lang: str) -> None:
-    """Save ``lang`` as the default web-ui language in
-    ~/.sustech_survival/config.json (webui.lang). `sustech webui serve`
-    (with no --lang) uses it."""
-    from sustech_survival import _cache
-    _cache.update_config(webui={"lang": lang})
-    click.secho(f"✅ default webui language set to {lang!r} (config.json → webui.lang)", fg="green")
 
 
 

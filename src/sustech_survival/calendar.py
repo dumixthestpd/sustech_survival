@@ -705,9 +705,10 @@ class AcademicCalendar:
         ``cached``:  (only when ``online=True``) consult and update the
                      on-disk cache under the unified cache root
                      (``~/.sustech_survival/cache/calendar/{year}/`` —
-                     override via ``SUSTECH_CACHE_DIR`` or ``cache_root=``).
-                     Set ``cached=False`` for one-shot loads that should
-                     never touch the disk (e.g. tests).
+                     override via ``config.json`` ``paths.cache`` or the
+                     ``cache_root=`` kwarg). Set ``cached=False`` for
+                     one-shot loads that should never touch the disk (e.g.
+                     tests).
         ``refresh``: (only when ``online=True``) ignore any cached ETag and
                      always re-download, overwriting the cache. Use this
                      after upstream publishes a fix you want immediately,

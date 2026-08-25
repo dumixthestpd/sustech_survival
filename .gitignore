@@ -87,6 +87,9 @@ bili_temp/
 .DS_Store
 Thumbs.db
 
+# pyenv / version managers
+.python-version
+
 # IDE
 .vscode/
 *.sublime-*
