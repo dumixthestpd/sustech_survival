@@ -794,7 +794,7 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
   <div class="crumb" id="crumb">loading…</div>
   <div class="sem">
     <select id="sem-select"></select>
-    <button class="ghost" id="btn-info" title="Load catalog info">⟳ Load</button>
+    <button class="ghost" id="btn-info" title="加载课程目录信息">⟳ 加载</button>
   </div>
 </header>
 
@@ -802,35 +802,35 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
   <!-- LEFT: search & filters -->
   <div class="col" id="search-col">
     <div class="sub">
-      <h2 id="mode-h2">Selection</h2>
+      <h2 id="mode-h2">选课</h2>
       <div style="display:flex;gap:.3rem;margin-bottom:.4rem">
-        <button class="ghost mode-btn active" data-mode="personal" style="flex:1;font-size:.78rem;text-align:center;padding:.25rem;border-radius:6px;border:1px solid var(--accent);background:rgba(var(--accent-rgb),.1)">🎯 Selection</button>
-        <button class="ghost mode-btn" data-mode="campus" style="flex:1;font-size:.78rem;text-align:center;padding:.25rem;border-radius:6px">📋 Catalog</button>
+        <button class="ghost mode-btn active" data-mode="personal" style="flex:1;font-size:.78rem;text-align:center;padding:.25rem;border-radius:6px;border:1px solid var(--accent);background:rgba(var(--accent-rgb),.1)">🎯 我要选课</button>
+        <button class="ghost mode-btn" data-mode="campus" style="flex:1;font-size:.78rem;text-align:center;padding:.25rem;border-radius:6px">📋 全校课表</button>
       </div>
-      <div class="stat" id="stat">Ready.</div>
-      <div class="row"><input type="text" id="kw" placeholder="code / name / teacher"/></div>
-      <div class="row"><span class="lbl">College/Dept</span><select class="filter" id="f-college"><option value="">All</option></select></div>
-      <div class="row"><span class="lbl">Task Type</span><select class="filter" id="f-tasktype"><option value="">All</option></select></div>
-      <div class="row"><span class="lbl">Category</span><select class="filter" id="f-cat"><option value="">All</option></select></div>
-      <div class="row"><span class="lbl">Campus</span><select class="filter" id="f-campus"><option value="">All</option></select></div>
-      <div class="row"><span class="lbl">Language</span><select class="filter" id="f-lang"><option value="">All</option></select></div>
-      <div class="row"><span class="lbl">Level</span><select class="filter" id="f-cult"><option value="">All</option><option value="本科">Undergrad</option><option value="研究生">Graduate</option></select></div>
-      <div class="row"><span class="lbl">Teacher</span><input type="text" id="f-teacher" placeholder="teacher name"/></div>
+      <div class="stat" id="stat">就绪。</div>
+      <div class="row"><input type="text" id="kw" placeholder="课程代码 / 名称 / 教师"/></div>
+      <div class="row"><span class="lbl">开课院系</span><select class="filter" id="f-college"><option value="">全部</option></select></div>
+      <div class="row"><span class="lbl">任务类型</span><select class="filter" id="f-tasktype"><option value="">全部</option></select></div>
+      <div class="row"><span class="lbl">课程类别</span><select class="filter" id="f-cat"><option value="">全部</option></select></div>
+      <div class="row"><span class="lbl">校区</span><select class="filter" id="f-campus"><option value="">全部</option></select></div>
+      <div class="row"><span class="lbl">授课语言</span><select class="filter" id="f-lang"><option value="">全部</option></select></div>
+      <div class="row"><span class="lbl">培养层次</span><select class="filter" id="f-cult"><option value="">全部</option><option value="本科">本科</option><option value="研究生">研究生</option></select></div>
+      <div class="row"><span class="lbl">教师</span><input type="text" id="f-teacher" placeholder="教师姓名"/></div>
       <!-- personal-mode filters (hidden in campus mode) -->
       <div class="personal-only" style="display:none">
-        <div class="row"><span class="lbl">Type</span><select class="filter" id="f-xkfsdm"><option value="">Type</option></select></div>
-        <div class="row"><label style="font-size:.76rem;color:var(--mut);display:flex;align-items:center;gap:.3rem"><input type="checkbox" id="f-ign-conf"/> Ignore conflicts</label><label style="font-size:.76rem;color:var(--mut);display:flex;align-items:center;gap:.3rem;margin-left:.6rem"><input type="checkbox" id="f-ign-zero"/> Ignore zero cap</label></div>
-        <div class="row" style="gap:.6rem"><span class="lbl" style="min-width:auto">Free Day</span><input type="text" id="f-wday" placeholder="1-7" style="width:45px;font-size:.78rem;text-align:center"/><span class="lbl" style="min-width:auto">Per.</span><input type="text" id="f-ps" placeholder="start" style="width:55px;font-size:.78rem;text-align:center"/><span style="color:var(--mut);font-size:.78rem">–</span><input type="text" id="f-pe" placeholder="end" style="width:45px;font-size:.78rem;text-align:center"/></div>
+        <div class="row"><span class="lbl">选课方式</span><select class="filter" id="f-xkfsdm"><option value="">方式</option></select></div>
+        <div class="row"><label style="font-size:.76rem;color:var(--mut);display:flex;align-items:center;gap:.3rem"><input type="checkbox" id="f-ign-conf"/> 忽略冲突</label><label style="font-size:.76rem;color:var(--mut);display:flex;align-items:center;gap:.3rem;margin-left:.6rem"><input type="checkbox" id="f-ign-zero"/> 忽略容量为0</label></div>
+        <div class="row" style="gap:.6rem"><span class="lbl" style="min-width:auto">空闲日</span><input type="text" id="f-wday" placeholder="1-7" style="width:45px;font-size:.78rem;text-align:center"/><span class="lbl" style="min-width:auto">节</span><input type="text" id="f-ps" placeholder="起始" style="width:55px;font-size:.78rem;text-align:center"/><span style="color:var(--mut);font-size:.78rem">–</span><input type="text" id="f-pe" placeholder="结束" style="width:45px;font-size:.78rem;text-align:center"/></div>
       </div>
-      <div class="row"><label style="font-size:.76rem;color:var(--mut);display:flex;align-items:center;gap:.3rem"><input type="checkbox" id="f-sched"/> Only with schedule</label></div>
-      <div class="row"><button class="primary" id="btn-search">Search</button><button class="ghost" id="btn-refresh-all" title="Force re-fetch from TIS — both the catalog (course list) and the live 'currently selected' counts that populate the [N] / [M] badges">🔄 Refresh catalog & load</button></div>
+      <div class="row"><label style="font-size:.76rem;color:var(--mut);display:flex;align-items:center;gap:.3rem"><input type="checkbox" id="f-sched"/> 仅显示有上课时间的课程</label></div>
+      <div class="row"><button class="primary" id="btn-search">搜索</button><button class="ghost" id="btn-refresh-all" title="强制重新从 TIS 拉取课程目录和实时选课人数">🔄 刷新目录并加载</button></div>
     </div>
     <div id="filter-pills"></div>
     <div class="results-header" id="results-header" style="display:none">
-      <label title="Tick every section visible in the current results"><input type="checkbox" id="select-all-check" /> <span>Select all</span></label>
+      <label title="勾选当前搜索结果中的所有课程节次"><input type="checkbox" id="select-all-check" /> <span>全选</span></label>
       <span class="count" id="results-count"></span>
     </div>
-    <div class="results" id="results"><div class="loading">Loading course catalog…</div></div>
+    <div class="results" id="results"><div class="loading">正在加载课程目录…</div></div>
   </div>
 
   <!-- CENTER: 4-step workflow stepper + persistent weekly grid -->
@@ -838,31 +838,31 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
     <div class="stepper" id="stepper">
       <button class="step-chip active" data-step="1">
         <span class="step-num">1</span>
-        <span class="step-label">Pick</span>
+        <span class="step-label">选课</span>
       </button>
       <span class="step-connector"></span>
       <button class="step-chip" data-step="2">
         <span class="step-num">2</span>
-        <span class="step-label">Mark unavailable</span>
+        <span class="step-label">标记不可用</span>
       </button>
       <span class="step-connector"></span>
       <button class="step-chip" data-step="3">
         <span class="step-num">3</span>
-        <span class="step-label">Schedule</span>
+        <span class="step-label">生成方案</span>
       </button>
       <span class="step-connector"></span>
       <button class="step-chip" data-step="4">
         <span class="step-num">4</span>
-        <span class="step-label">Compare</span>
+        <span class="step-label">对比方案</span>
       </button>
       <span class="step-connector"></span>
       <button class="step-chip" data-step="5">
         <span class="step-num">5</span>
-        <span class="step-label">Bid &amp; sync</span>
+        <span class="step-label">积分与同步</span>
       </button>
-      <span class="step-toggle-grid" id="step-toggle-grid" title="Show/hide the weekly grid">
+      <span class="step-toggle-grid" id="step-toggle-grid" title="显示/隐藏周课表">
         <span class="step-toggle-dot" id="step-toggle-dot">●</span>
-        <span class="step-toggle-text">Grid</span>
+        <span class="step-toggle-text">课表</span>
       </span>
     </div>
 
@@ -958,12 +958,12 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
            to push into step 5 (Bid & sync). -->
       <div class="step-pane" data-step-pane="4" style="display:none">
         <div class="step-pane-body">
-          <p class="step-hint">Candidates you've added from step 3 + JSON files you've loaded. Pick one and apply it — that overwrites your current picks and jumps to Bid &amp; sync.</p>
+          <p class="step-hint">从第3步加入的候选方案 + 通过 JSON 文件加载的课表。选择一个并应用——会覆盖当前已选并跳转到积分与同步。</p>
           <div class="cmp-toolbar" style="display:flex;gap:.4rem;align-items:center;margin-bottom:.6rem;flex-wrap:wrap">
-            <button class="ghost" id="btn-load-candidates" style="font-size:.75rem;padding:.3rem .6rem" title="Load one or more .json files (single schedule or multi-schedule)">📂 Load JSONs</button>
-            <button class="ghost" id="btn-clear-candidates" style="font-size:.75rem;padding:.3rem .6rem" title="Remove all candidates from this session (does not affect localStorage copies)">🗑 Clear all</button>
+            <button class="ghost" id="btn-load-candidates" style="font-size:.75rem;padding:.3rem .6rem" title="加载一个或多个 JSON 文件（单个或多个课表）">📂 加载 JSON</button>
+            <button class="ghost" id="btn-clear-candidates" style="font-size:.75rem;padding:.3rem .6rem" title="清除此会话中的所有候选方案（不影响 localStorage 副本）">🗑 清空全部</button>
             <span style="flex:1"></span>
-            <button class="ghost" id="btn-export-candidates-zip" style="font-size:.75rem;padding:.3rem .6rem" title="Download all candidates as a single .zip (one JSON per candidate)">📦 Export all as .zip</button>
+            <button class="ghost" id="btn-export-candidates-zip" style="font-size:.75rem;padding:.3rem .6rem" title="将所有候选方案下载为一个 .zip 文件（每个方案一个 JSON）">📦 全部导出为 .zip</button>
           </div>
           <input type="file" id="candidates-file-input" accept=".json" multiple style="display:none">
           <div id="solve-compare" style="margin-top:.4rem"></div>
@@ -974,11 +974,11 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
            (Export ICS, Sync to TIS). -->
       <div class="step-pane" data-step-pane="5" style="display:none">
         <div class="step-pane-body bid-step">
-          <p class="step-hint">Set bid amounts for your picked sections. Click a bid to edit, drag between boxes to transfer. <b>积分选课</b> — use higher bids for competitive sections.</p>
+          <p class="step-hint">为已选课程节次设置积分。点击积分框可编辑，拖拽可在框之间转移。<b>积分选课</b>——竞争激烈的课程节次请设置更高积分。</p>
           <div class="bid-panel bid-panel-relaxed">
             <div class="bp-h">
-              <span class="bp-t" style="font-size:1rem;font-weight:600;color:var(--accent)">🎯 Bids</span>
-              <button class="ghost" id="btn-bid-fill-unbidded" style="font-size:.68rem;padding:.15rem .5rem;margin-left:.4rem" title="Set bid = 1 on every picked rwh that currently has 0 (or no bid)">+1 to all unbidded</button>
+              <span class="bp-t" style="font-size:1rem;font-weight:600;color:var(--accent)">🎯 积分</span>
+              <button class="ghost" id="btn-bid-fill-unbidded" style="font-size:.68rem;padding:.15rem .5rem;margin-left:.4rem" title="为所有当前积分为 0 的已选课程节次设置积分为 1">+1 全部未积分</button>
               <span class="bp-meta" id="bp-meta" style="font-size:.72rem;color:var(--mut)"></span>
               <span class="bp-jffs" id="bp-jffs" style="margin-left:auto;font-size:.9rem;color:var(--accent);font-weight:600">— pts</span>
             </div>
@@ -991,8 +991,8 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
             <div class="step-terminal-actions">
               <div class="step-terminal-h">Terminal actions</div>
               <div class="step-terminal-row">
-                <button class="ghost ics-export-btn" id="btn-export-ics" title="Download schedule as .ics (requires conflict-free schedule)">📅 Export ICS</button>
-                <button class="primary sync-tis-btn" id="btn-sync-tis" title="Push your picked sections + bids to TIS">📤 Sync to TIS</button>
+                <button class="ghost ics-export-btn" id="btn-export-ics" title="将课表导出为 .ics 文件（需要无冲突课表）">📅 导出 ICS</button>
+                <button class="primary sync-tis-btn" id="btn-sync-tis" title="将已选课程节次和积分同步到 TIS">📤 同步到 TIS</button>
               </div>
             </div>
           </div>
@@ -1005,11 +1005,11 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
 
   <!-- RIGHT: picked sections / My Selection -->
   <div class="col picked" id="picked-col" style="overflow-y:auto">
-    <div class="stat" id="pick-stat">0 sections · 0 Credits</div>
+    <div class="stat" id="pick-stat">0 门课 · 0 学分</div>
     <div class="stat" id="bid-stat" style="display:none;font-size:.72rem;padding:.15rem .7rem .25rem;color:var(--mut);border-bottom:1px solid var(--border);cursor:pointer" onclick="switchTab('bids');return false;">
       <span id="bid-stat-text"></span>
     </div>
-    <div id="pick-list"><div class="loading" style="padding:1rem .7rem;line-height:1.5"><div style="font-size:.85rem;color:var(--txt);margin-bottom:.3rem">No picks loaded</div><div style="font-size:.72rem;color:var(--mut)">Click <b>📂 Load file</b> above, or drag a <code>.json</code> onto the page.</div></div></div>
+    <div id="pick-list"><div class="loading" style="padding:1rem .7rem;line-height:1.5"><div style="font-size:.85rem;color:var(--txt);margin-bottom:.3rem">未加载任何课表</div><div style="font-size:.72rem;color:var(--mut)">点击上方的 <b>📂 加载文件</b>，或将 JSON 文件拖入页面。</div></div></div>
     <!-- Enrollment status UI was removed (user wanted only the
          Ignore TIS enrolled tickbox to manage enrollment). The JS
          still populates ENROLLED_DATA + ENROLLED_RWH state and renders
@@ -1063,21 +1063,33 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
   setText('.mode-btn[data-mode="campus"]', '📋 全校课表');
   setText('#stat', '就绪。');
   setPlaceholder('#kw', '课程代码 / 名称 / 教师');
-  // The filter <select> elements are populated by tis.js; don't overwrite them.
-  // Keep the select placeholders ("All") in English to avoid clobbering options.
-  // Translate the known static filter labels below; leave others untouched.
+  // Filter labels: target each .lbl via its preceding-sibling select's id.
+  // HTML already has correct Chinese text; use robust selectors to avoid any mismatch.
   var labels = {
-    '#search-col .row:nth-of-type(3) .lbl': '开课院系',
-    '#search-col .row:nth-of-type(4) .lbl': '任务类型',
-    '#search-col .row:nth-of-type(5) .lbl': '课程类别',
-    '#search-col .row:nth-of-type(6) .lbl': '校区',
-    '#search-col .row:nth-of-type(7) .lbl': '授课语言',
-    '#search-col .row:nth-of-type(8) .lbl': '培养层次',
-    '#search-col .row:nth-of-type(9) .lbl': '教师',
-    '#search-col .personal-only .row:nth-of-type(1) .lbl': '选课方式',
+    '#f-college .lbl': '开课院系',
+    '#f-tasktype .lbl': '任务类型',
+    '#f-cat .lbl': '课程类别',
+    '#f-campus .lbl': '校区',
+    '#f-lang .lbl': '授课语言',
+    '#f-cult .lbl': '培养层次',
+    '#f-teacher .lbl': '教师',
+    '#f-xkfsdm .lbl': '选课方式',
   };
   Object.keys(labels).forEach(function (sel) { setText(sel, labels[sel]); });
   setPlaceholder('#f-teacher', '教师姓名');
+
+  // Translate <option> text inside <select> elements (setText only touches the label span, not options).
+  var optionTextMap = {
+    '#f-cult': { '': '全部', '本科': '本科', '研究生': '研究生' },
+  };
+  Object.keys(optionTextMap).forEach(function (sel) {
+    var select = document.querySelector(sel);
+    if (!select) return;
+    select.querySelectorAll('option').forEach(function (opt) {
+      var mapped = optionTextMap[sel][opt.value];
+      if (mapped !== undefined) opt.textContent = mapped;
+    });
+  });
   setAll('.step-label', '');
   var steps = ['选课', '标记不可用', '生成方案', '对比方案', '积分与同步'];
   document.querySelectorAll('.step-label').forEach(function (el, i) {

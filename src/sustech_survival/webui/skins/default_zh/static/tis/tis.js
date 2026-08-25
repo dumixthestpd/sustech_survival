@@ -73,7 +73,7 @@ var EVAL_OUT = document.getElementById('eval-out');
 var BRIEF_CARD = document.createElement('div');
 BRIEF_CARD.className = 'brief-card';
 BRIEF_CARD.id = 'brief-card';
-BRIEF_CARD.innerHTML = '<div class="bc-loading" id="bc-body">Loading NCES</div>';
+BRIEF_CARD.innerHTML = '<div class="bc-loading" id="bc-body">加载NCES中…</div>';
 document.body.appendChild(BRIEF_CARD);
 var BRIEF_BODY = document.getElementById('bc-body');
 var BRIEF_OPEN = null;  // set when populated
@@ -244,7 +244,7 @@ window.addEventListener('beforeunload', function(e) {
   if (SYNC_IN_FLIGHT > 0) {
     e.preventDefault();
     // Modern browsers ignore the return value but still show the dialog.
-    e.returnValue = 'A sync to TIS is in progress. Leaving now may leave partial changes.';
+    e.returnValue = '正在同步到TIS。现在离开可能导致部分更改未保存。';
     return e.returnValue;
   }
 });
@@ -509,10 +509,10 @@ buildSemesterOptions();
 
 function loadInfo() {
   var qs = sem();
-  CRUMB.textContent = 'loading…';
+  CRUMB.textContent = '加载中…';
   return getJSON('/api/tis/info' + qs).then(function(d) {
     if (d.error) {
-      CRUMB.textContent = 'Error: ' + d.error;
+      CRUMB.textContent = '错误：' + d.error;
       return;
     }
     SEMESTER_INFO = d;
@@ -541,7 +541,7 @@ function loadInfo() {
     // the code annotation.
     {
       var catVal = F_CAT.value;
-      var html = '<option value="">All</option>';
+      var html = '<option value="">全部</option>';
       d.categories.forEach(function(n) {
         var code = CATEGORY_MAP[n];
         var label = code ? n + ' (' + code + ')' : n;
@@ -554,18 +554,18 @@ function loadInfo() {
     }
     populateSelect(F_CAM, d.campuses);
     populateSelect(F_LANG, d.languages);
-    STAT.textContent = d.count + ' courses available.';
+    STAT.textContent = '共 ' + d.count + ' 门课程可选';
     // Auto-load all courses after loading info
     return loadCourses(true);
   })['catch'](function(e) {
-    CRUMB.textContent = 'Network error';
-    STAT.textContent = 'Error loading info: ' + e.message;
+    CRUMB.textContent = '网络错误';
+    STAT.textContent = '加载失败：' + e.message;
   });
 }
 
 function populateSelect(sel, items) {
   var val = sel.value;
-  var html = '<option value="">All</option>';
+  var html = '<option value="">全部</option>';
   for (var i = 0; i < items.length; i++) {
     var v = items[i];
     var e = v.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -654,13 +654,13 @@ function loadCourses(isInitialLoad) {
   }
 
   if (!isInitialLoad) {
-    RESULTS.innerHTML = '<div class="loading">Searching…</div>';
+    RESULTS.innerHTML = '<div class="loading">搜索中…</div>';
   }
 
   return getJSON('/api/tis/courses' + qs).then(function(d) {
     if (loadId !== _modeLoadId) return;  // stale — a newer loadForMode call
     if (d.error) {
-      RESULTS.innerHTML = '<div class="flash err">' + escapeHtml(d.error) + '</div><div class="empty">Check TIS credentials or try refreshing the catalog.</div>';
+      RESULTS.innerHTML = '<div class="flash err">' + escapeHtml(d.error) + '</div><div class="empty">请检查TIS凭证，或尝试刷新目录。</div>';
       CAT = [];
       return;
     }
@@ -701,7 +701,7 @@ function loadCourses(isInitialLoad) {
       var msg = d.message || '';
       if (!d.ok) {
         STAT.textContent = 'Selection: ' + (msg || 'unavailable');
-        RESULTS.innerHTML = '<div class="empty">' + escapeHtml(msg || 'Course selection system not available (period may be closed).') + '</div>';
+        RESULTS.innerHTML = '<div class="empty">' + escapeHtml(msg || '选课系统暂不可用（选课阶段可能已结束）。') + '</div>';
         renderBidPanel();
         return;
       }
@@ -720,7 +720,7 @@ function loadCourses(isInitialLoad) {
     renderFilterPills();
   })['catch'](function(e) {
     if (loadId !== _modeLoadId) return;  // stale
-    RESULTS.innerHTML = '<div class="flash err">Network error: ' + escapeHtml(e.message) + '</div>';
+    RESULTS.innerHTML = '<div class="flash err">网络错误：' + escapeHtml(e.message) + '</div>';
     CAT = [];
   });
 }
@@ -933,7 +933,7 @@ function renderCard(c) {
 
   var schedStr = c.schedule || formatSchedule(c.slots);
   var schedHTML = c.slots && c.slots.length ? formatScheduleHTML(c.slots) : '';
-  var teachers = c.teachers && c.teachers.length ? c.teachers.join(', ') : 'TBD';
+  var teachers = c.teachers && c.teachers.length ? c.teachers.join(', ') : '待定';
   var hasRealTeacher = c.teachers && c.teachers.length > 0;
 
   card.innerHTML =
@@ -957,7 +957,7 @@ function renderCard(c) {
       // and the hydrate pass target just this card.
       '<span class="mini-card" data-mini-code="' + escapeHtml(c.code) + '" ' +
         'data-mini-teacher="' + escapeHtml((c.teachers || []).join(',')) + '">' +
-        '<span class="mc-rating" title="NCES rating (hover to load)">⭐<span class="mc-val">—</span></span>' +
+        '<span class="mc-rating" title="NCES评分（悬停加载）">⭐<span class="mc-val">—</span></span>' +
         '<span class="mc-load" title="TIS enrollment — current / capacity">' +
           (renderLoadBadge(c) || '<span class="mc-val mc-muted">Load?</span>') +
         '</span>' +
@@ -967,14 +967,14 @@ function renderCard(c) {
       ? '<div class="sect">' + escapeHtml(c.section_name) + (c.section_name_en ? ' <span class="sect-en">' + escapeHtml(c.section_name_en) + '</span>' : '') + '</div>'
       : '') +
     '<div class="meta">' +
-      (hasRealTeacher ? '<b>Teacher</b> ' + escapeHtml(teachers) : '<span style="color:var(--mut)"><b>Teacher</b> TBD</span>') +
-      (c.credits ? ' · <b>Credits</b> ' + c.credits : '') +
+      (hasRealTeacher ? '<b>教师</b> ' + escapeHtml(teachers) : '<span style="color:var(--mut)"><b>教师</b> 待定</span>') +
+      (c.credits ? ' · <b>学分</b> ' + c.credits : '') +
       // TIS load is now in the title-row mini-card (.mc-load) so it sits
       // next to the NCES rating where the user can scan both at once.
     '</div>' +
-    (schedHTML ? '<div class="sched"><span class="sched-lbl">Schedule</span>' + schedHTML + '</div>' : '') +
+    (schedHTML ? '<div class="sched"><span class="sched-lbl">上课时间</span>' + schedHTML + '</div>' : '') +
     (c.code ? '<div class="nces-link">' +
-      '<a href="https://ncesnext.com/search?q=' + encodeURIComponent(c.code) + '" target="_blank" rel="noopener">Compare in NCES ↗</a>' +
+      '<a href="https://ncesnext.com/search?q=' + encodeURIComponent(c.code) + '" target="_blank" rel="noopener">在NCES中比较 ↗</a>' +
       // Direct course page (e.g. /course/123/) — opens the specific section
       // the card represents, not the multi-section search. Falls back to
       // the search URL until the brief cache hydrates with the nces_id.
@@ -984,7 +984,7 @@ function renderCard(c) {
       '<a class="view-course-link" data-view-code="' + escapeHtml(c.code) + '" ' +
         'data-view-teacher="' + escapeHtml((c.teachers || []).join(',')) + '" ' +
         'href="https://ncesnext.com/search?q=' + encodeURIComponent(c.code) + '" ' +
-        'target="_blank" rel="noopener" title="Open the NCES detail page for this section">View course page ↗</a>' +
+        'target="_blank" rel="noopener" title="打开该课程的NCES详情页">查看课程详情 ↗</a>' +
     '</div>' : '');
 
   card.addEventListener('click', function(e) {
@@ -1031,14 +1031,14 @@ function renderFilterPills() {
 
   addPill('keyword', KW.value.trim());
   var fNames = {
-    'f-college': 'College',
-    'f-tasktype': 'Type',
-    'f-cat': 'Category',
-    'f-campus': 'Campus',
-    'f-lang': 'Language',
-    'f-cult': 'Level',
-    'f-teacher': 'Teacher',
-    'f-xkfsdm': 'Course Type',
+    'f-college': '院系',
+    'f-tasktype': '任务类型',
+    'f-cat': '课程类别',
+    'f-campus': '校区',
+    'f-lang': '授课语言',
+    'f-cult': '培养层次',
+    'f-teacher': '教师',
+    'f-xkfsdm': '选课方式',
   };
   for (var id in fNames) {
     var el = document.getElementById(id);
@@ -1050,15 +1050,15 @@ function renderFilterPills() {
   }
   // Checkboxes
   if (document.getElementById('f-sched') && document.getElementById('f-sched').checked) {
-    pills.push('<span class="filter-pill" data-filter="scheduled">Only with schedule<span class="fp-x">✕</span></span>');
+    pills.push('<span class="filter-pill" data-filter="scheduled">仅显示有上课时间<span class="fp-x">✕</span></span>');
   }
   if (MODE === 'personal') {
     var ignConf = document.getElementById('f-ign-conf');
-    if (ignConf && ignConf.checked) pills.push('<span class="filter-pill" data-filter="ign-conf">Ignore conflicts<span class="fp-x">✕</span></span>');
+    if (ignConf && ignConf.checked) pills.push('<span class="filter-pill" data-filter="ign-conf">忽略冲突<span class="fp-x">✕</span></span>');
     var ignZero = document.getElementById('f-ign-zero');
-    if (ignZero && ignZero.checked) pills.push('<span class="filter-pill" data-filter="ign-zero">Ignore zero cap<span class="fp-x">✕</span></span>');
+    if (ignZero && ignZero.checked) pills.push('<span class="filter-pill" data-filter="ign-zero">忽略容量为0<span class="fp-x">✕</span></span>');
     var wday = document.getElementById('f-wday');
-    if (wday && wday.value) pills.push('<span class="filter-pill" data-filter="wday">Day: ' + escapeHtml(wday.value) + '<span class="fp-x">✕</span></span>');
+    if (wday && wday.value) pills.push('<span class="filter-pill" data-filter="wday">空闲日：' + escapeHtml(wday.value) + '<span class="fp-x">✕</span></span>');
   }
 
   var container = document.getElementById('filter-pills');
@@ -1098,15 +1098,15 @@ function renderFilterPills() {
 // -- Hover brief card (NCES structured) -------------------------------------
 function briefRender(d) {
   if (!d.available) {
-    var reason = escapeHtml(d.reason || 'not in NCES index');
+    var reason = escapeHtml(d.reason || '不在NCES索引中');
     var searchUrl = d.search_url || ('https://ncesnext.com/search?q=' +
                                      encodeURIComponent(d.code || ''));
     return '<div class="bc-empty">' +
-             '<div>No NCES data yet</div>' +
+             '<div>暂无NCES数据</div>' +
              '<div class="bce-detail">' + reason + '</div>' +
              '<div class="bce-detail" style="margin-top:.6rem">' +
                '<a href="' + escapeHtml(searchUrl) + '" target="_blank" rel="noopener" ' +
-                  'style="color:var(--accent);text-decoration:none">Search NCES ↗</a>' +
+                  'style="color:var(--accent);text-decoration:none">搜索NCES ↗</a>' +
              '</div>' +
            '</div>';
   }
@@ -1116,14 +1116,14 @@ function briefRender(d) {
   var warnHtml = '';
   if (d.teacher_mismatch && d.tis_teacher) {
     warnHtml = '<div class="bc-warn">' +
-      '⚠ Different teacher — ' + escapeHtml(d.tis_teacher) +
-      ' not in NCES; showing ' + escapeHtml(d.teacher || '?') +
-      ' (best available)' +
+      '⚠ 教师不一致 — ' + escapeHtml(d.tis_teacher) +
+      ' 不在NCES中；显示 ' + escapeHtml(d.teacher || '?') +
+      '（最佳匹配）' +
     '</div>';
   } else if ((d.review_count || 0) === 0) {
     warnHtml = '<div class="bc-warn">' +
-      '⚠ No evaluations yet — NCES has no reviews for ' +
-      escapeHtml(d.code) + (d.teacher ? ' by ' + escapeHtml(d.teacher) : '') +
+      '⚠ 暂无评价 — NCES 上该课程还没有评价 ' +
+      escapeHtml(d.code) + (d.teacher ? '（教师：' + escapeHtml(d.teacher) + '）' : '') +
     '</div>';
   }
   // Display priority: name (top, large) > teacher+class > code (small, muted)
@@ -1139,7 +1139,7 @@ function briefRender(d) {
   '<div class="bc-rating">' +
     '<span class="bc-score">' + (d.rating || 0).toFixed(1) + '</span>' +
     '<span class="bc-out">/ 10</span>' +
-    '<span class="bc-rev">' + (d.review_count || 0) + ' reviews</span>' +
+    '<span class="bc-rev">' + (d.review_count || 0) + ' 条评价</span>' +
   '</div>' +
   '<div class="bc-dims">';
   var dims = [
@@ -1167,8 +1167,7 @@ function briefRender(d) {
   var otherHtml = '';
   if ((d.teacher_mismatch || (d.review_count || 0) === 0) &&
       d.teacher_other && d.teacher_other.length) {
-    otherHtml = '<div class="bc-other-h">' + escapeHtml(d.tis_teacher || d.teacher) +
-                ' teaches elsewhere:</div>' +
+    otherHtml = '<div class="bc-other-h">该教师在其他班级授课：</div>' +
       '<div class="bc-other">' +
         d.teacher_other.map(function(c) {
           return '<div class="bc-other-chip">' +
@@ -1376,9 +1375,9 @@ function routeEvalResponse(d) {
 function renderEvalNotFound(d) {
   EVAL_OUT.dataset.mode = 'notfound';
   EVAL_OUT.innerHTML = '<div class="empty" style="padding:1.5rem">' +
-    escapeHtml(d.reason || 'NCES evaluation not available for this course.') + '</div>' +
+    escapeHtml(d.reason || '该课程在NCES上暂无评价。') + '</div>' +
     (d.search_url ? '<div style="margin:.6rem 1.5rem"><a href="' + escapeHtml(d.search_url) +
-      '" target="_blank" rel="noopener">Search NCES ↗</a></div>' : '');
+      '" target="_blank" rel="noopener">搜索NCES ↗</a></div>' : '');
 }
 
 // -- Browse list (default view) -------------------------------------------
@@ -1419,10 +1418,7 @@ function renderEvalBrowse() {
       // The raw backend error string is kept as a tooltip for debugging.
       html += '<div class="empty" style="padding:1.5rem;text-align:center;color:var(--warn)">' +
         '<div style="font-size:.9rem;margin-bottom:.4rem">⚠ NCES browse is temporarily unavailable.</div>' +
-        '<div style="font-size:.74rem;color:var(--mut)">The community eval database is not responding right now. ' +
-        'Course search and picking still work — to read reviews for a specific course, ' +
-        'click the "Compare in NCES ↗" link on any course card, or open the course detail ' +
-        'in a new tab.</div>' +
+        '<div style="font-size:.74rem;color:var(--mut)">社区评价数据库目前无响应。课程搜索和选择功能仍然正常——如需查看特定课程的评价，可点击任意课程卡片上的"在NCES中比较"链接，或在新标签页打开课程详情。</div>' +
         '<div style="font-size:.65rem;color:var(--mut);margin-top:.5rem" title="' + escapeHtml(d.error) + '">Backend: ' + escapeHtml(d.error) + '</div>' +
         '</div>';
     } else if (!items.length) {
@@ -1459,9 +1455,9 @@ function renderEvalBrowseCard(c) {
       '<span class="ev-code">' + escapeHtml(c.course_code || '') + '</span>' +
       '<span class="ev-name">' + escapeHtml(c.name || '') + '</span>' +
       '<span class="ev-rating">' + rating + '<span class="ev-out">/10</span></span>' +
-      '<span class="ev-reviews">' + reviews + ' reviews</span>' +
+      '<span class="ev-reviews">' + reviews + ' 条评价</span>' +
     '</div>' +
-    (teachers ? '<div class="ev-meta"><b>Teacher</b> ' + escapeHtml(teachers) + '</div>' : '') +
+    (teachers ? '<div class="ev-meta"><b>教师</b> ' + escapeHtml(teachers) + '</div>' : '') +
     (terms ? '<div class="ev-meta"><b>Terms</b> ' + escapeHtml(terms) + '</div>' : '<div class="ev-empty">no term data</div>') +
   '</div>';
 }
@@ -1533,7 +1529,7 @@ function renderEvalDetailCard(d) {
   var reviews = d.reviews || [];
   var reviewsHtml = '';
   if (reviews.length) {
-    reviewsHtml = '<div class="eval-reviews-h">All Reviews (' + reviews.length + ')</div>';
+    reviewsHtml = '<div class="eval-reviews-h">全部评价（' + reviews.length + '）</div>';
     for (var j = 0; j < reviews.length; j++) {
       var r = reviews[j];
       var d_html = '';
@@ -1550,7 +1546,7 @@ function renderEvalDetailCard(d) {
         rate.toFixed(1) + '<span class="ei-rate-out">/10</span></span>';
       reviewsHtml += '<div class="eval-item">' +
         '<div class="ei-t">' + rateHtml +
-          '<span class="ei-author">' + escapeHtml(r.username || 'Anonymous') + '</span>' +
+          '<span class="ei-author">' + escapeHtml(r.username || '匿名用户') + '</span>' +
           (r.semester ? ' · <span class="ei-sem">' + escapeHtml(r.semester) + '</span>' : '') +
           (r.likes ? ' · 👍' + r.likes : '') +
         '</div>' +
@@ -1562,25 +1558,25 @@ function renderEvalDetailCard(d) {
     // No reviews at all — surface it as a warning so the user knows this
     // section exists in NCES but the community hasn't reviewed it.
     reviewsHtml = '<div class="eval-reviews-h reviews-mismatch-hdr">' +
-      '⚠ Exact course match found, but no evaluations yet — ' +
+      '⚠ 找到精确课程匹配，但暂无评价 — ' +
       escapeHtml(d.name || d.code) +
-      (d.teacher ? ' by ' + escapeHtml(d.teacher) : '') + ':' +
+      (d.teacher ? '（教师：' + escapeHtml(d.teacher) + '）' : '') + '：' +
     '</div>' +
-    '<div class="ncn">No written reviews for this course.</div>';
+    '<div class="ncn">该课程暂无文字评价。</div>';
   }
 
   return '<div class="eval-detail">' +
-    '<button class="ghost ed-back" id="eval-back">← Back to browse</button>' +
+    '<button class="ghost ed-back" id="eval-back">← 返回浏览</button>' +
     '<div class="ed-head">' +
       '<span class="ed-name">' + escapeHtml(d.name || '') + '</span>' +
       '<span class="ed-rating">' + rating + '<span class="ed-out">/10</span></span>' +
-      '<span class="ed-reviews">' + (d.review_count || 0) + ' reviews</span>' +
+      '<span class="ed-reviews">' + (d.review_count || 0) + ' 条评价</span>' +
     '</div>' +
     '<div class="ed-meta">' +
-      '<span><b>Code</b> ' + escapeHtml(d.code || '') + '</span>' +
-      (d.teacher ? '<span><b>Teacher</b> ' + escapeHtml(d.teacher) + '</span>' : '') +
-      (d.department ? '<span><b>Dept</b> ' + escapeHtml(d.department) + '</span>' : '') +
-      '<span><b>Terms</b> ' + escapeHtml(semesters) + '</span>' +
+      '<span><b>课程代码</b> ' + escapeHtml(d.code || '') + '</span>' +
+      (d.teacher ? '<span><b>教师</b> ' + escapeHtml(d.teacher) + '</span>' : '') +
+      (d.department ? '<span><b>院系</b> ' + escapeHtml(d.department) + '</span>' : '') +
+      '<span><b>学期</b> ' + escapeHtml(semesters) + '</span>' +
     '</div>' +
     dimHtml +
     reviewsHtml +
@@ -1607,25 +1603,23 @@ function renderEvalPick(d, reason) {
   var hasAny = sameTeacher.length > 0 || sameCourse.length > 0;
 
   var headerTitle = reason === 'mismatch'
-    ? '⚠ No exact course match in NCES'
-    : '⚠ No evaluations yet for this section';
+    ? '⚠ NCES中找不到精确匹配'
+    : '⚠ 该课程暂无评价';
   var headerBody = reason === 'mismatch'
-    ? 'NCES has no reviews for your teacher <b>' + escapeHtml(d.tis_teacher) +
-      '</b> in <b>' + escapeHtml(d.code) + '</b>. Pick which course you want to see:'
-    : 'NCES has no reviews for <b>' + escapeHtml(d.code) +
-      '</b> by <b>' + escapeHtml(d.tis_teacher) +
-      '</b> yet. Pick which course you want to see:';
+    ? 'NCES上没有您教师 <b>' + escapeHtml(d.tis_teacher) +
+      '</b> 的评价。请选择想查看的课程：'
+    : 'NCES上没有课程 <b>' + escapeHtml(d.code) +
+      '</b>（教师 <b>' + escapeHtml(d.tis_teacher) +
+      '</b>）的评价。请选择想查看的课程：';
 
   // Empty state: nothing to pick. Just show a search-NCES link.
   if (!hasAny) {
     EVAL_OUT.innerHTML = '<div class="eval-detail">' +
       '<button class="ghost ed-back" id="eval-back">← Back to browse</button>' +
       '<div class="eval-detail-body" style="padding:1.2rem">' +
-        '<div class="ed-head"><span class="ed-name">No NCES data</span></div>' +
+        '<div class="ed-head"><span class="ed-name">暂无NCES数据</span></div>' +
         '<div class="ncn" style="margin-top:.6rem">' +
-          'NCES has no reviews for your teacher in this course, and no ' +
-          'other courses by your teacher have been reviewed either. ' +
-          'You can try searching NCES manually.' +
+          'NCES上没有您教师在该课程的评价，也暂无其他课程评价。您可以尝试手动搜索NCES。' +
         '</div>' +
         '<div style="margin-top:1rem"><a href="' +
           escapeHtml(d.search_url || 'https://ncesnext.com/search?q=' +
@@ -1679,12 +1673,11 @@ function renderEvalPick(d, reason) {
 
   var sameTeacherHtml = sameTeacher.length
     ? '<div class="pick-section">' +
-        '<div class="pick-section-h">Same teacher on different course ' +
-          '<span class="pick-section-meta">' + sameTeacher.length + ' option' +
-          (sameTeacher.length === 1 ? '' : 's') + '</span></div>' +
+        '<div class="pick-section-h">同一教师不同课程 ' +
+          '<span class="pick-section-meta">' + sameTeacher.length + ' 个选项' +
+          '</span></div>' +
         '<div class="pick-section-b">' +
-          'Useful for gauging what <b>' + escapeHtml(d.tis_teacher) +
-          '</b> is like as a teacher based on their other courses.' +
+          '可通过该教师的其他课程评估 <b>' + escapeHtml(d.tis_teacher) + '</b> 的教学风格。' +
         '</div>' +
         '<div class="pick-grid">' + sameTeacher.map(cardHtml).join('') + '</div>' +
       '</div>'
@@ -1692,12 +1685,11 @@ function renderEvalPick(d, reason) {
 
   var sameCourseHtml = sameCourse.length
     ? '<div class="pick-section">' +
-        '<div class="pick-section-h">Different teacher on same course ' +
-          '<span class="pick-section-meta">' + sameCourse.length + ' option' +
-          (sameCourse.length === 1 ? '' : 's') + '</span></div>' +
+        '<div class="pick-section-h">同一课程不同教师 ' +
+          '<span class="pick-section-meta">' + sameCourse.length + ' 个选项' +
+          '</span></div>' +
         '<div class="pick-section-b">' +
-          'Useful for gauging <b>' + escapeHtml(d.code) + '</b> as a course ' +
-          'by looking at how other teachers teach it.' +
+          '可通过其他教师的授课情况评估 <b>' + escapeHtml(d.code) + '</b> 这门课程。' +
         '</div>' +
         '<div class="pick-grid">' + sameCourse.map(function(a) {
           return cardHtml({
@@ -1741,9 +1733,9 @@ function renderEvalBrief(d) {
   EVAL_OUT.dataset.mode = 'brief';
   if (!d.available) {
     EVAL_OUT.innerHTML = '<div class="empty" style="padding:1.5rem">' +
-      escapeHtml(d.reason || 'NCES evaluation not available for this course.') + '</div>' +
+      escapeHtml(d.reason || '该课程在NCES上暂无评价。') + '</div>' +
       (d.search_url ? '<div style="margin:.6rem 1.5rem"><a href="' + escapeHtml(d.search_url) +
-        '" target="_blank" rel="noopener">Search NCES ↗</a></div>' : '');
+        '" target="_blank" rel="noopener">搜索NCES ↗</a></div>' : '');
     return;
   }
   var rating = (d.rating || 0).toFixed(1);
@@ -1773,15 +1765,15 @@ function renderEvalBrief(d) {
   var reviewsHdr = '';
   if (d.teacher_mismatch && d.tis_teacher) {
     reviewsHdr = '<div class="eval-reviews-h reviews-mismatch-hdr">' +
-      '⚠ Valid exact course match not found in NCES — ' +
+      '⚠ NCES中找不到该课程的精确匹配 — ' +
       escapeHtml(d.name || d.code) +
-      ' by other teacher (' + escapeHtml(d.teacher || '?') + '):' +
+      '（其他教师 ' + escapeHtml(d.teacher || '?') + '）：' +
     '</div>';
   } else if ((d.review_count || 0) === 0 && d.available) {
     reviewsHdr = '<div class="eval-reviews-h reviews-mismatch-hdr">' +
-      '⚠ Exact course match found, but no evaluations yet — ' +
+      '⚠ 找到精确课程匹配，但暂无评价 — ' +
       escapeHtml(d.name || d.code) +
-      (d.teacher ? ' by ' + escapeHtml(d.teacher) : '') + ':' +
+      (d.teacher ? '（教师：' + escapeHtml(d.teacher) + '）' : '') + '：' +
     '</div>';
   }
   var exHtml = excerpts.length
@@ -1791,7 +1783,7 @@ function renderEvalBrief(d) {
           rate.toFixed(1) + '<span class="ei-rate-out">/10</span></span>';
         return '<div class="eval-item">' +
           '<div class="ei-t">' + rateHtml +
-            '<span class="ei-author">' + escapeHtml(r.username || 'Anonymous') + '</span>' +
+            '<span class="ei-author">' + escapeHtml(r.username || '匿名用户') + '</span>' +
             (r.semester ? ' · <span class="ei-sem">' + escapeHtml(r.semester) + '</span>' : '') +
             (r.likes ? ' · 👍' + r.likes : '') +
           '</div>' +
@@ -1799,7 +1791,7 @@ function renderEvalBrief(d) {
             (r.excerpt.length >= 200 ? '…' : '') + '</div>' : '') +
         '</div>';
       }).join('')
-    : reviewsHdr + '<div class="ncn">No written reviews for this course.</div>';
+    : reviewsHdr + '<div class="ncn">该课程暂无文字评价。</div>';
 
   // Teacher-mismatch banner: when the user clicked a TIS card whose
   // teacher isn't represented in NCES, surface that clearly. Without
@@ -1817,7 +1809,7 @@ function renderEvalBrief(d) {
     var otherHtml = other.length
       ? '<div class="tm-section">' +
           '<div class="tm-section-h">What ' + escapeHtml(d.tis_teacher) +
-            ' teaches elsewhere</div>' +
+            '在其他班级授课</div>' +
           '<div class="tm-other">' +
             other.map(function(c) {
               var d1 = dimPair(c, 'difficulty');
@@ -1831,7 +1823,7 @@ function renderEvalBrief(d) {
                 '</div>' +
                 '<div class="to-meta">' +
                   '<span class="to-rating">' + (c.rating || 0).toFixed(1) + '/10</span>' +
-                  '<span class="to-reviews">' + (c.review_count || 0) + ' reviews</span>' +
+                  '<span class="to-reviews">' + (c.review_count || 0) + ' 条评价</span>' +
                 '</div>' +
                 '<div class="to-dims">' +
                   '<span>Difficulty ' + Math.round(d1[1] || 0) + '%</span>' +
@@ -1867,11 +1859,8 @@ function renderEvalBrief(d) {
       ? '⚠ Different teacher'
       : '⚠ No evaluations for this section';
     var bannerBody = d.teacher_mismatch
-      ? 'NCES has no reviews for your teacher <b>' + escapeHtml(d.tis_teacher) +
-        '</b> in <b>' + escapeHtml(d.code) + '</b>. Showing the highest-rated section instead.'
-      : 'NCES has no reviews for <b>' + escapeHtml(d.code) +
-        '</b> by <b>' + escapeHtml(d.tis_teacher) +
-        '</b> yet. See what they teach elsewhere:';
+      ? 'NCES上没有您教师 <b>' + escapeHtml(d.tis_teacher) + '</b> 在 <b>' + escapeHtml(d.code) + '</b> 的评价。显示评分最高的班级。'
+      : 'NCES上没有 <b>' + escapeHtml(d.code) + '</b>（教师 <b>' + escapeHtml(d.tis_teacher) + '</b>）的评价。查看该教师的其他授课：';
 
     mismatchHtml =
       '<div class="teacher-mismatch">' +
@@ -1882,17 +1871,17 @@ function renderEvalBrief(d) {
   }
 
   EVAL_OUT.innerHTML = '<div class="eval-detail">' +
-    '<button class="ghost ed-back" id="eval-back">← Back to browse</button>' +
+    '<button class="ghost ed-back" id="eval-back">← 返回浏览</button>' +
     mismatchHtml +
     '<div class="ed-head">' +
       '<span class="ed-name">' + escapeHtml(d.name || '') + '</span>' +
       '<span class="ed-rating">' + rating + '<span class="ed-out">/10</span></span>' +
-      '<span class="ed-reviews">' + (d.review_count || 0) + ' reviews</span>' +
+      '<span class="ed-reviews">' + (d.review_count || 0) + ' 条评价</span>' +
     '</div>' +
     '<div class="ed-meta">' +
-      '<span><b>Code</b> ' + escapeHtml(d.code || '') + '</span>' +
-      (d.teacher ? '<span><b>Teacher</b> ' + escapeHtml(d.teacher) + '</span>' : '') +
-      (d.semester ? '<span><b>Term</b> ' + escapeHtml(d.semester) + '</span>' : '') +
+      '<span><b>课程代码</b> ' + escapeHtml(d.code || '') + '</span>' +
+      (d.teacher ? '<span><b>教师</b> ' + escapeHtml(d.teacher) + '</span>' : '') +
+      (d.semester ? '<span><b>学期</b> ' + escapeHtml(d.semester) + '</span>' : '') +
     '</div>' +
     '<div class="eval-dims">' + dimHtml + '</div>' +
     exHtml +
@@ -2008,8 +1997,8 @@ function renderPicked() {
     // Page is blank until the user loads a file. Make the empty state
     // useful — show a hint pointing at the Load button + drag-drop.
     PICK_LIST.innerHTML = '<div class="loading" style="padding:1rem .7rem;line-height:1.5">' +
-      '<div style="font-size:.85rem;color:var(--txt);margin-bottom:.3rem">No picks loaded</div>' +
-      '<div style="font-size:.72rem;color:var(--mut)">Click <b>📂 Load file</b> above, or drag a <code>.json</code> onto the page.</div>' +
+      '<div style="font-size:.85rem;color:var(--txt);margin-bottom:.3rem">未加载任何课表</div>' +
+      '<div style="font-size:.72rem;color:var(--mut)">点击上方的 <b>📂 加载文件</b>，或将 JSON 文件拖入页面。</div>' +
       '</div>';
     return;
   }
@@ -2033,7 +2022,7 @@ function renderPickItem(c) {
 
   var enrolled = ENROLLED_RWH.has(c.rwh);
   var schedHTML = c.slots && c.slots.length ? formatScheduleHTML(c.slots) : '';
-  var teachers = c.teachers && c.teachers.length ? escapeHtml(c.teachers.join(', ')) : '<span style="color:var(--mut)">TBD</span>';
+  var teachers = c.teachers && c.teachers.length ? escapeHtml(c.teachers.join(', ')) : '<span style="color:var(--mut)">待定</span>';
 
   // Check if this picked course conflicts with any other picked course.
   // When TIS-enrolled is "unquestionable" (IGNORE_TIS_ENROLLED off), an
@@ -2048,26 +2037,26 @@ function renderPickItem(c) {
     if (!IGNORE_TIS_ENROLLED && ENROLLED_RWH.has(keys[pi])) continue;  // the other side is enrolled — we still conflict, not it
     var slotsB = PICKED[keys[pi]].slots || [];
     if (sectionsConflict(slotsA, slotsB)) {
-      conflictMsg = ' ⚠ conflicts with ' + escapeHtml(PICKED[keys[pi]].code);
+      conflictMsg = ' ⚠ 与 ' + escapeHtml(PICKED[keys[pi]].code) + ' 冲突';
       break;
     }
   }
 
   div.innerHTML =
-    '<label class="picked-check-wrap" title="Tick to mark for bulk remove">' +
+    '<label class="picked-check-wrap" title="勾选以标记批量移除">' +
       '<input type="checkbox" class="picked-check" data-rwh="' + escapeHtml(c.rwh) + '"' +
         (PICKED_CHECKED[c.rwh] ? ' checked' : '') + '>' +
     '</label>' +
     '<div class="pick-body">' +
       '<div class="pn">' + escapeHtml(c.name || c.name_en || '') +
-        (enrolled ? '<span class="pick-enrolled">enrolled</span>' : '') +
-        (conflictMsg ? '<span style="float:right;color:var(--bad);font-size:.65rem">⚠ conflicted</span>' : '') +
+        (enrolled ? '<span class="pick-enrolled">已选</span>' : '') +
+        (conflictMsg ? '<span style="float:right;color:var(--bad);font-size:.65rem">⚠ 冲突</span>' : '') +
       '</div>' +
       (c.section_name && c.section_name !== c.name
         ? '<div class="pm" style="margin-top:.15rem">' + escapeHtml(c.section_name) + '</div>'
         : '') +
       '<div class="pm">' +
-        '<b>Teacher</b> ' + teachers +
+        '<b>教师</b> ' + teachers +
         ' · <b>' + escapeHtml(c.code) + '</b>' +
         (c.class_group ? ' · ' + escapeHtml(c.class_group) : '') +
         (schedHTML ? ' · ' + schedHTML : '') +
@@ -3339,9 +3328,9 @@ function solve() {
           oneCodeHtml +
           dropHtml +
           '<div class="sc-apply" style="margin-top:.5rem;display:flex;gap:.5rem">' +
-            '<button class="primary" id="solve-apply" style="flex:1;padding:.4rem">Apply This Schedule</button>' +
-            '<button class="ghost" id="solve-add" style="flex:1;padding:.4rem" title="Add this solution to the candidates list in step 4 (Compare) without touching your current picks">➕ Add to candidates</button>' +
-            '<button class="ghost" id="solve-export" style="flex:1;padding:.4rem" title="Download this solution as a .json file (one schedule per file)">💾 Export as JSON</button>' +
+            '<button class="primary" id="solve-apply" style="flex:1;padding:.4rem">应用此方案</button>' +
+            '<button class="ghost" id="solve-add" style="flex:1;padding:.4rem" title="将此方案添加到第4步的候选列表，不影响当前已选">+ 加入候选</button>' +
+            '<button class="ghost" id="solve-export" style="flex:1;padding:.4rem" title="将此方案下载为 .json 文件（每个方案一个文件）">💾 导出为 JSON</button>' +
           '</div>' +
           (SAVED_SCHEDULES.length
             ? '<div class="sc-compare-link" style="margin-top:.4rem;font-size:.72rem;color:var(--accent);text-align:center">' +
@@ -3912,15 +3901,15 @@ function renderComparePane() {
   if (!SAVED_SCHEDULES.length) {
     pane.innerHTML = '<div class="cmp-empty" style="text-align:center;padding:2.5rem 1rem;color:var(--mut);font-size:.85rem;line-height:1.6">' +
       '<div style="font-size:1.6rem;margin-bottom:.3rem;opacity:.4">📂</div>' +
-      '<div>No candidates yet.</div>' +
-      '<div style="margin-top:.5rem;font-size:.75rem">Go to step 3 (Schedule) and click <b>➕ Add to candidates</b> on a solution you like, or click <b>📂 Load JSONs</b> above to bring in a file you exported earlier.</div>' +
+      '<div>暂无候选方案。</div>' +
+      '<div style="margin-top:.5rem;font-size:.75rem">前往第3步（生成方案），点击喜欢的方案上的 <b>+ 加入候选</b>，或点击上方的 <b>📂 加载 JSON</b> 导入之前导出的文件。</div>' +
       '</div>';
     return;
   }
 
   var h = '<div class="sc-compare-h" style="font-size:.85rem;font-weight:600;color:var(--accent);margin-bottom:.5rem;display:flex;align-items:center;gap:.6rem">' +
-    '📂 Candidates <span class="sg-cnt" style="font-size:.7rem">' + SAVED_SCHEDULES.length + '</span>' +
-    '<span style="font-size:.65rem;color:var(--mut);font-weight:400;margin-left:auto">Click a card to focus · ←/→ to cycle · click again to unfocus</span>' +
+    '📂 候选方案 <span class="sg-cnt" style="font-size:.7rem">' + SAVED_SCHEDULES.length + '</span>' +
+    '<span style="font-size:.65rem;color:var(--mut);font-weight:400;margin-left:auto">点击卡片可聚焦 · ←/→ 切换 · 再次点击取消聚焦</span>' +
     '</div>';
 
   for (var i = 0; i < SAVED_SCHEDULES.length; i++) {
@@ -5488,14 +5477,14 @@ function initPickedActions() {
         '<input type="checkbox" id="picked-select-all">' +
         '<span>All</span>' +
       '</label>' +
-      '<span class="picked-selected-count" id="picked-selected-count">0 / 0 selected</span>' +
-      '<button class="picked-remove-selected-btn" id="btn-remove-selected" title="Remove all ticked picks (confirm for many)">✕ Remove</button>' +
+      '<span class="picked-selected-count" id="picked-selected-count">0 / 0 已选</span>' +
+      '<button class="picked-remove-selected-btn" id="btn-remove-selected" title="移除所有已勾选的课程（数量多时会要求确认）">✕ 移除</button>' +
     '</div>' +
     '<div class="picked-bulk-row2">' +
-      '<button class="save-file-btn" id="btn-save-picks" title="Save your selection to a JSON file (works any time, even with conflicts)">💾 Save <span id="save-count">0 picks</span></button>' +
-      '<button class="load-file-btn" id="btn-load-picks" title="Load picks from a JSON file (will replace your current selection)">📂 Load file</button>' +
+      '<button class="save-file-btn" id="btn-save-picks" title="将已选课程保存为 JSON 文件（任意时刻均可，包括有冲突的情况）">💾 保存已选 <span id="save-count">0 门课</span></button>' +
+      '<button class="load-file-btn" id="btn-load-picks" title="从 JSON 文件加载已选（会覆盖当前已选）">📂 加载文件</button>' +
     '</div>' +
-    '<div class="picked-file-info" id="picked-file-info" title="Local file you last saved/loaded"></div>';
+    '<div class="picked-file-info" id="picked-file-info" title="上次保存或加载的本地文件"></div>';
 
   // Drop all enrolled: server-side op on ENROLLED_RWH (different state
   // from PICKED). Different intent from "sync my picks" — kept here
@@ -5613,7 +5602,7 @@ function updatePickedActionsState() {
   var total = Object.keys(PICKED).length;
   var checked = Object.keys(PICKED_CHECKED).length;
   var countEl = document.getElementById('picked-selected-count');
-  if (countEl) countEl.textContent = checked + ' / ' + total + ' selected';
+  if (countEl) countEl.textContent = checked + ' / ' + total + ' 已选';
   var selectAllCb = document.getElementById('picked-select-all');
   if (selectAllCb) {
     selectAllCb.checked = total > 0 && checked === total;
@@ -5655,7 +5644,7 @@ function updatePickedActionsState() {
         '</span><span class="fi-name" title="' + escapeHtml(CURRENT_FILE.name) + '">' +
         escapeHtml(CURRENT_FILE.name) + '</span>';
     } else {
-      fileInfo.innerHTML = '<span class="fi-label">📄 No file loaded — pick a file or drag a JSON onto the page</span>';
+      fileInfo.innerHTML = '<span class="fi-label">📄 尚未加载文件——选择一个文件或把 JSON 拖入页面</span>';
     }
   }
 }
