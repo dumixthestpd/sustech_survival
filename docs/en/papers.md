@@ -1,34 +1,42 @@
 # Papers
 
-Academic paper search and fetch across CrossRef, CNKI, WoS, and RSC.
-
-**Auth:** Database-specific (Shibboleth/CARSI for CNKI/WoS/RSC). CrossRef is public.
-
-**Extras:** `[papers]` extra installs `cloudscraper` for publisher sites that block plain requests.
+SUSTech paper search and off-campus access.
 
 ---
 
-## CLI
+## Q&A
 
-```bash
-sustech papers search "electrochromic polymer" --max 10
-sustech papers search "electrochromic polymer" --min-year 2020
-```
+### Can `sustech.papers` fetch subscribed full-text papers via API off-campus?
 
----
+No. `sustech.papers` only supports off-campus login for the
+databases that federate via Shibboleth — **WoS, RSC, CNKI** — by
+going through CARSI → SUSTech CAS. Most publisher sites have strict
+bot protection: ACS / RSC / Wiley / IEEE are behind Cloudflare;
+SciVal / Scopus / Springer are similar. Direct programmatic access
+to those is not viable.
 
-## Python API
+For the databases that *do* work off-campus, a real browser
+(Playwright) handles the Shibboleth WAYF + IdP consent flow and
+lands you on the publisher landing page; the actual full-text
+download still happens at human reading speed in that session.
+There is no headless / agent-level mass-fetch path for subscribed
+content.
 
-```python
-from sustech_survival.papers.search import crossref_search, search_multi
+I'm not adding scraping to `sustech.papers`. Instead, there is a
+separate browser plugin — **`sustech_quickread`** — for off-campus
+use. It automates the Shibboleth WAYF / CAS / IdP consent dance
+and stores the session cookies, so you click once instead of going
+through six redirects each visit.
 
-papers = crossref_search("electrochromic polymer", max_results=10, min_year=2020)
-papers = search_multi(["electrochromic", "conjugated polymer"], max_per_query=10)
-```
+**Library ToS reminder.** SUSTech Library's
+[《电子资源使用规定》](https://lib.sustech.edu.cn/dzzysygd/list.htm)
+explicitly prohibits:
 
-```python
-from sustech_survival.papers import search_and_fetch
+- Using network tools to batch-download library e-resources.
+- Downloading faster than normal reading speed across multiple papers.
+- Downloading whole journal issues or volumes.
+- Setting up private proxies or VPNs to share off-campus access.
 
-# Search + download PDFs (requires [papers] extra)
-results = search_and_fetch(queries=["electrochromic polymer"], dest_dir="./papers")
-```
+So: using the API to fetch paper data off-campus is not a good idea.
+For Open Access content there are plenty of "Vibe Research" Skills
+on Clawhub that can pull OA articles directly.
