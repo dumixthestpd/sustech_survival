@@ -1,0 +1,16 @@
+# .mailmap — unify author identities for git log, git blame, and the
+# GitHub contributors graph (https://github.com/dumixthestpd/sustech_survival/graphs/contributors).
+#
+# Format:  canonical-name <canonical-email>  <commit-name> <commit-email>
+# If only email is provided, the most common name is used.
+# If only name is provided, the most common email is used.
+#
+# Use the GitHub noreply form as canonical so the contributors graph
+# links to the contributor's GitHub profile (noreply is auto-verified;
+# the QQ email below is not, so without this mapping the QQ commit would
+# appear as a ghost and the two commits would look like two different
+# people).
+
+# Xiao-La (PR #7) — Joyslog / xCipHanD fork: same person, two emails.
+xiao-la <47178126+Xiao-La@users.noreply.github.com> Joyslog <47178126+Xiao-La@users.noreply.github.com>
+xiao-la <47178126+Xiao-La@users.noreply.github.com> xiao-la <836772730@qq.com>
