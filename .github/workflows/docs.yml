@@ -1,7 +1,8 @@
 name: Docs
 
-# Builds the MkDocs site and deploys to GitHub Pages.
-# Triggered on push to main (auto-deploy) and manual dispatch.
+# Builds the MkDocs site and deploys to GitHub Pages
+# (https://dumixthestpd.github.io/sustech_survival/).
+# Triggered on push to main and manual dispatch.
 
 on:
   push:
@@ -35,5 +36,19 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[docs]"
 
-      - name: Build + deploy to gh-pages branch
-        run: mkdocs gh-deploy --force
+      - name: Build site
+        run: mkdocs build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
