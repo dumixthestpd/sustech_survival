@@ -197,34 +197,6 @@ sustech webui serve --skin-path /path/to/my-head
 
 - **[sustech-cli](https://github.com/wormforce/sustech-cli)** — TypeScript rewrite of this module's behavioral surface (TIS / Blackboard / WS / PMS / library-booking / eHall booking / papers / NCES). Our repo remains the Python behavioral reference; their `docs/MIGRATION.md` tracks the port.
 
-### `sustech_survival` vs `sustech-cli` — surface differences
-
-**What `sustech-cli` has, we don't:**
-
-- TypeScript single-binary CLI (`npm i -g`, no Python runtime)
-- Native OS keychain (macOS Keychain / Windows Credential Manager / Linux Secret Service via `secret-tool`)
-- Versioned JSON contracts (`schemaVersion: "1"`) + streaming JSONL output + typed exit codes (0–5)
-- Machine-discoverable `sustech capabilities` registry (local/read/plan/mutation × auth × network × confirmation)
-- `ServiceAdapter` pattern — transport-agnostic, reusable by tests and future Web UI packages
-- Blackboard assignment submission flow (`bb submit preview/apply`, Classic only) — hash-bound, fixture-tested
-- TIS `tis enroll apply` mutation with confirmation gate
-- PMS direct auth flow (RSA + transient tokens + in-memory OSESSIONID)
-- NCES refresh/import (mutation)
-- Blackboard Learn REST v2 endpoints (grade columns, attempts) + v1 temp uploads + v1 attempt files
-- `--password-stdin` for non-interactive login (no shell history leak)
-- PolyForm-Noncommercial-1.0.0 license
-
-**What we have, `sustech-cli` doesn't:**
-
-- **Web UI module** — skin system (`default` en + `default_zh` zh, self-contained, single-language), `webui/api_registry.py` manifest-driven route mounting, `sustech webui serve [--skin NAME | --skin-path DIR]`, built-in selectcourse engine with cart UI. Their `MIGRATION.md` lists Web UI as P4 (separate package later).
-- **CNKI / RSC / WoS off-campus publisher modules** — Shibboleth + CARSI federation for off-campus paid-publisher access (their `library-catalog: unavailable`, URL builder only).
-- **[sustech_quickread](https://github.com/dumixthestpd/sustech_quickread)** — companion Tampermonkey userscript for off-campus WoS / RSC / CNKI quick-login (separate repo).
-- **Bilingual docs site** — MkDocs Material (en + zh) at <https://dumixthestpd.github.io/sustech_survival/>.
-- **AGPL-3.0** license.
-- **Python ecosystem** — httpx + rich + pydantic + click; directly scriptable from other Python tools.
-- **Cross-platform CI** — GitHub Actions on macOS + Ubuntu.
-- **PyPI-installable** — `pip install git+https://github.com/dumixthestpd/sustech_survival`.
-
 ---
 
 ## Architecture

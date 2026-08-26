@@ -178,34 +178,6 @@ sustech webui set-lang zh
 
 - **[sustech-cli](https://github.com/wormforce/sustech-cli)** — 本仓库行为面的 TypeScript 重写（TIS / Blackboard / WS / PMS / 图书馆预约 / 场地预约 / papers / NCES）。本仓库保留为 Python 行为参考；其 `docs/MIGRATION.md` 跟踪移植进度。
 
-### `sustech_survival` 与 `sustech-cli` —— 覆盖面差异
-
-**`sustech-cli` 有，本仓库没有：**
-
-- TypeScript 单二进制 CLI（`npm i -g`，无需 Python 运行时）
-- 原生操作系统钥匙串（macOS Keychain / Windows Credential Manager / Linux Secret Service 通过 `secret-tool`）
-- 带版本号的 JSON 契约（`schemaVersion: "1"`）+ 流式 JSONL 输出 + 类型化退出码（0–5）
-- 机器可发现的 `sustech capabilities` 注册表（local/read/plan/mutation × auth × network × confirmation）
-- `ServiceAdapter` 模式 —— 与传输解耦，可被测试和未来的 Web UI 包复用
-- Blackboard 作业提交流程（`bb submit preview/apply`，仅 Classic）—— 哈希绑定，fixture 测试
-- TIS `tis enroll apply` 变更操作（带确认门控）
-- PMS 直接认证流程（RSA + 临时 token + 内存中的 OSESSIONID）
-- NCES refresh/import（变更操作）
-- Blackboard Learn REST v2 接口（grade columns、attempts）+ v1 临时上传 + v1 attempt files
-- `--password-stdin` 非交互登录（不写入 shell 历史）
-- PolyForm-Noncommercial-1.0.0 许可证
-
-**本仓库有，`sustech-cli` 没有：**
-
-- **Web UI 模块** —— 皮肤系统（`default` en + `default_zh` zh，自包含、单一语言）、`webui/api_registry.py` 清单驱动的路由挂载、`sustech webui serve [--skin NAME | --skin-path DIR]`、内置选课引擎（含购物车 UI）。其 `MIGRATION.md` 将 Web UI 列为 P4（独立包，后续）。
-- **CNKI / RSC / WoS 校外出版商模块** —— Shibboleth + CARSI 联邦，用于校外付费出版商访问（其 `library-catalog: unavailable`，仅 URL 构建器）。
-- **[sustech_quickread](https://github.com/dumixthestpd/sustech_quickread)** —— 配套 Tampermonkey 用户脚本，用于校外 WoS / RSC / CNKI 快速登录（独立仓库）。
-- **双语文档站** —— MkDocs Material（en + zh），访问 <https://dumixthestpd.github.io/sustech_survival/>。
-- **AGPL-3.0** 许可证。
-- **Python 生态** —— httpx + rich + pydantic + click；可直接被其他 Python 工具脚本化。
-- **跨平台 CI** —— GitHub Actions 在 macOS + Ubuntu 上。
-- **可 pip 安装** —— `pip install git+https://github.com/dumixthestpd/sustech_survival`。
-
 ---
 
 ## 架构
