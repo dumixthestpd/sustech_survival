@@ -34,9 +34,9 @@
 
 ## Module Indexes
 
-- [TIS](../tis/README.md) · [BB](../bb/README.md) · [Web UI](../webui/README.md) · [Transit](../transit/README.md)
+- [TIS](../tis/README.md) · [Web UI](../webui/README.md) · [Transit](../transit/README.md)
 - [Selectcourse](../selectcourse/README.md) · [SSO](../sso/README.md) · [Context](../context/README.md) · [NCES](../nces/README.md)
-- [Papers](../papers/README.md) · [Faculty](../faculty/README.md) · [PMS](../pms/README.md) · [WS](../ws/README.md)
+- [Papers](../papers/README.md) · [Faculty](../faculty/README.md) · [PMS](../pms/README.md)
 - [Booking](../booking/README.md) · [Library](../lib/README.md) · [Calendar](../calendar/README.md) · [Resources](../resources/README.md)
 - [External Databases](../external-databases/README.md)
 
