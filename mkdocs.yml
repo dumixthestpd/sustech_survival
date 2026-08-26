@@ -5,11 +5,11 @@ repo_url: https://github.com/dumixthestpd/sustech_survival
 edit_uri: edit/main/docs/
 docs_dir: docs
 site_dir: site
+exclude_docs: missing-translation.md
 
 theme:
   name: material
   features:
-    - navigation.instant
     - navigation.tracking
     - navigation.tabs
     - navigation.top
@@ -69,6 +69,8 @@ plugins:
             "Library (Primo)": 图书馆（Primo）
             Calendar: 校历
             Web UI: Web 界面
+            Web UI Architecture: Web UI 架构
+            Docs Layout: 文档结构
             CNKI: CNKI
             RSC: RSC
             WoS: WoS
@@ -113,11 +115,13 @@ nav:
       - Library (Primo): lib.md
       - Calendar: calendar.md
       - Web UI: webui.md
+      - Web UI Architecture: webui-architecture.md
   - External Databases:
       - CNKI: cnki.md
       - RSC: rsc.md
       - WoS: wos.md
   - Reference:
+      - Docs Layout: docs-layout.md
       - Resources: resources.md
   - Module Indexes:
         - Classified Documentation: classified-doctype/README.md

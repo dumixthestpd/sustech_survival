@@ -43,5 +43,5 @@
 ## Developer
 
 - [Skin development instructions](../dev-instructions/skin-development.md) — how to build a web UI skin
-- [Documentation layout](../README.md) — how module docs are organized
+- [Documentation layout](docs-layout.md) — how module docs are organized
 
