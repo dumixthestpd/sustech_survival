@@ -11,7 +11,8 @@ Campus bus and walking navigation — schedules, live GPS, route planning.
 ```bash
 sustech transit facilities       # list all known buildings + gates
 sustech transit find "图书馆"     # fuzzy name search
-sustech transit stops            # list bus stops
+sustech transit stops                         # Line 1, clockwise by default
+sustech transit stops --line XYBS2 --direction ccw
 sustech transit live             # poll live bus positions
 sustech transit route "一教" "图书馆"  # shortest path between facilities
 ```
@@ -21,11 +22,14 @@ sustech transit route "一教" "图书馆"  # shortest path between facilities
 ## Python API
 
 ```python
-from sustech_survival.transit import transit
+from sustech_survival.transit import DIR_CW, transit
 
-facs = transit.list_facilities()
-hits = transit.find_facility("图书馆")[:5]
-stops = transit.get_bus_stops()
-buses = transit.get_live_positions()
-route = transit.shortest_path("一教", "图书馆")
+client = transit()
+facs = client.list_facilities()
+hits = client.find_facility("图书馆")[:5]
+stops = client.get_bus_stops("XYBS1", DIR_CW)
+buses = client.get_live_positions()
+origin = client.find_facility("一教")[0]
+destination = client.find_facility("图书馆")[0]
+route = client.shortest_path(origin.facility_id, destination.facility_id)
 ```

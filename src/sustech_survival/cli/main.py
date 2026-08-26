@@ -25,6 +25,7 @@ from __future__ import annotations
 import json as _json
 import sys
 import webbrowser
+from dataclasses import asdict, is_dataclass
 from datetime import date
 from typing import Optional
 
@@ -90,7 +91,17 @@ def _mount_into(parent: click.Group, child_name: str, module: str) -> click.Grou
 def _pp(obj, *, as_json: bool, key: str | None = None) -> None:
     """Print ``obj`` as JSON (when ``as_json``) or its ``__str__``."""
     if as_json:
-        click.echo(_json.dumps(obj, ensure_ascii=False, indent=2))
+        def _default(value):
+            if is_dataclass(value):
+                return asdict(value)
+            to_dict = getattr(value, "to_dict", None)
+            if callable(to_dict):
+                return to_dict()
+            raise TypeError(
+                f"Object of type {type(value).__name__} is not JSON serializable"
+            )
+
+        click.echo(_json.dumps(obj, ensure_ascii=False, indent=2, default=_default))
     else:
         click.echo(str(obj[key] if key else obj))
 
@@ -250,7 +261,8 @@ def transit_cmd() -> None:
 @transit_cmd.command(name="facilities", help="List all known buildings + gates.")
 @click.option("--json", "as_json", is_flag=True)
 def transit_facilities(as_json: bool) -> None:
-    from .transit import transit as _t
+    from ..transit import transit
+    _t = transit()
     facs = _t.list_facilities()
     if as_json:
         click.echo(_json.dumps([f.to_dict() for f in facs], ensure_ascii=False, indent=2))
@@ -264,24 +276,34 @@ def transit_facilities(as_json: bool) -> None:
 @click.option("--limit", type=int, default=10)
 @click.option("--json", "as_json", is_flag=True)
 def transit_find(query: str, limit: int, as_json: bool) -> None:
-    from .transit import transit as _t
+    from ..transit import transit
+    _t = transit()
     hits = _t.find_facility(query)[:limit]
     _pp(hits, as_json=as_json)
 
 
 @transit_cmd.command(name="stops", help="List bus stops.")
+@click.option("--line", "line_code", default="XYBS1", show_default=True)
+@click.option(
+    "--direction",
+    type=click.Choice(["cw", "ccw"]),
+    default="cw",
+    show_default=True,
+)
 @click.option("--json", "as_json", is_flag=True)
-def transit_stops(as_json: bool) -> None:
-    from .transit import transit as _t
-    from .transit.schema import BusLine
-    stops = _t.get_bus_stops()
+def transit_stops(line_code: str, direction: str, as_json: bool) -> None:
+    from ..transit import DIR_CCW, DIR_CW, transit
+    _t = transit()
+    direction_code = DIR_CW if direction == "cw" else DIR_CCW
+    stops = _t.get_bus_stops(line_code, direction_code)
     _pp(stops, as_json=as_json)
 
 
 @transit_cmd.command(name="live", help="Poll live bus positions.")
 @click.option("--json", "as_json", is_flag=True)
 def transit_live(as_json: bool) -> None:
-    from .transit import transit as _t
+    from ..transit import transit
+    _t = transit()
     buses = _t.get_live_positions()
     _pp(buses, as_json=as_json)
 
@@ -291,8 +313,18 @@ def transit_live(as_json: bool) -> None:
 @click.argument("to_", metavar="TO")
 @click.option("--json", "as_json", is_flag=True)
 def transit_route(from_: str, to_: str, as_json: bool) -> None:
-    from .transit import transit as _t
-    r = _t.shortest_path(from_, to_)
+    from ..transit import transit
+    _t = transit()
+
+    def _resolve(value: str) -> str:
+        if ":" in value:
+            return value
+        matches = _t.find_facility(value)
+        if not matches:
+            raise click.ClickException(f"No facility matched {value!r}")
+        return matches[0].facility_id
+
+    r = _t.shortest_path(_resolve(from_), _resolve(to_))
     _pp(r.to_markdown() if hasattr(r, "to_markdown") else r, as_json=as_json)
 
 
@@ -307,7 +339,7 @@ def faculty_cmd() -> None:
 
 @faculty_cmd.command(name="depts", help="List 50+ department names.")
 def faculty_depts() -> None:
-    from .faculty import faculty as _fc
+    from ..faculty import faculty as _fc
     click.echo(f"# {len(_fc.departments)} known departments")
     for d in _fc.departments:
         click.echo(f"  {d}")
@@ -318,7 +350,7 @@ def faculty_depts() -> None:
 @click.option("--full", is_flag=True, help="Fetch all profiles (~30-70s).")
 @click.option("--limit", type=int, default=None)
 def faculty_list(dept: str, full: bool, limit: int | None) -> None:
-    from .faculty import faculty as _fc
+    from ..faculty import faculty as _fc
     rows = _fc.list(dept, full=full, limit=limit)
     mode = "full profiles" if full else "lightweight"
     click.echo(f"# {dept}  ({len(rows)} faculty — {mode})")
@@ -330,7 +362,7 @@ def faculty_list(dept: str, full: bool, limit: int | None) -> None:
 @click.argument("slug")
 @click.option("--json", "as_json", is_flag=True)
 def faculty_get(slug: str, as_json: bool) -> None:
-    from .faculty import faculty as _fc
+    from ..faculty import faculty as _fc
     f = _fc.get(slug)
     _pp(f.to_dict() if as_json else f.to_markdown(), as_json=as_json)
 
@@ -340,7 +372,7 @@ def faculty_get(slug: str, as_json: bool) -> None:
 @click.option("--dept", default=None, help="Restrict to one department.")
 @click.option("--limit", type=int, default=10)
 def faculty_search(query: str, dept: str | None, limit: int) -> None:
-    from .faculty import faculty as _fc
+    from ..faculty import faculty as _fc
     hits = _fc.search(query, dept=dept, limit=limit)
     scope = dept or "ALL"
     click.echo(f"# search: {query!r}  scope={scope}  → {len(hits)} hits")
@@ -351,7 +383,7 @@ def faculty_search(query: str, dept: str | None, limit: int) -> None:
 @faculty_cmd.command(name="render", help="AI-readable Markdown for one profile.")
 @click.argument("slug")
 def faculty_render(slug: str) -> None:
-    from .faculty import faculty as _fc
+    from ..faculty import faculty as _fc
     click.echo(_fc.render(slug))
 
 
@@ -367,7 +399,7 @@ def booking_cmd() -> None:
 @booking_cmd.command(name="whoami", help="Print current user profile.")
 @click.option("--json", "as_json", is_flag=True)
 def booking_whoami(as_json: bool) -> None:
-    from .booking import booking as _client
+    from ..booking import booking as _client
     c = _client()
     u = c.whoami()
     _pp(u, as_json=as_json)
@@ -378,7 +410,7 @@ def booking_whoami(as_json: bool) -> None:
 @click.option("--available", is_flag=True, help="Only show available rooms.")
 @click.option("--json", "as_json", is_flag=True)
 def booking_rooms(keyword: str, available: bool, as_json: bool) -> None:
-    from .booking import booking as _client
+    from ..booking import booking as _client
     c = _client()
     rooms = c.rooms(keyword=keyword)
     if available:
@@ -389,7 +421,7 @@ def booking_rooms(keyword: str, available: bool, as_json: bool) -> None:
 @booking_cmd.command(name="my-meetings", help="List my current bookings.")
 @click.option("--json", "as_json", is_flag=True)
 def booking_my_meetings(as_json: bool) -> None:
-    from .booking import booking as _client
+    from ..booking import booking as _client
     c = _client()
     meetings = c.my_meetings()
     _pp(meetings, as_json=as_json)
@@ -413,27 +445,19 @@ def pms_check() -> None:
 
 
 @pms_cmd.command(name="stations", help="List campus printers.")
-@click.argument("group", required=False, default=None)
+@click.argument("group", required=False, type=int, default=None)
 @click.option("--json", "as_json", is_flag=True)
-def pms_stations(group: str | None, as_json: bool) -> None:
-    from .pms import PMSClient
-    from sustech_survival.sso.authlib.pms import PMSAuth
-    auth = PMSAuth()
-    auth.ensure()
-    c = PMSClient(auth.session)
-    stations = c.list_stations()
+def pms_stations(group: int | None, as_json: bool) -> None:
+    from ..pms import pms
+    stations = pms().list_stations(group_sn=group)
     _pp([s.to_dict() if as_json else s.name for s in stations], as_json=as_json)
 
 
 @pms_cmd.command(name="jobs", help="List uploaded-but-not-printed jobs.")
 @click.option("--json", "as_json", is_flag=True)
 def pms_jobs(as_json: bool) -> None:
-    from .pms import PMSClient
-    from sustech_survival.sso.authlib.pms import PMSAuth
-    auth = PMSAuth()
-    auth.ensure()
-    c = PMSClient(auth.session)
-    jobs = c.list_print_jobs()
+    from ..pms import pms
+    jobs = pms().list_print_jobs()
     _pp([j.to_dict() if as_json else f"[{j.dw_job_id}] {j.file_name}" for j in jobs],
         as_json=as_json)
 
@@ -450,7 +474,7 @@ def lib_booking_cmd() -> None:
 @lib_booking_cmd.command(name="whoami", help="Show current user info.")
 @click.option("--json", "as_json", is_flag=True)
 def lib_booking_whoami(as_json: bool) -> None:
-    from .lib.booking import lib_booking
+    from ..lib.booking import lib_booking
     c = lib_booking()
     u = c.whoami()
     _pp(u.name if hasattr(u, 'name') else str(u), as_json=as_json)
@@ -459,7 +483,7 @@ def lib_booking_whoami(as_json: bool) -> None:
 @lib_booking_cmd.command(name="home-summary", help="Idle room summary (homepage).")
 @click.option("--json", "as_json", is_flag=True)
 def lib_booking_home_summary(as_json: bool) -> None:
-    from .lib.booking import lib_booking
+    from ..lib.booking import lib_booking
     c = lib_booking()
     summary = c.home_summary()
     _pp(summary, as_json=as_json)
@@ -467,9 +491,7 @@ def lib_booking_home_summary(as_json: bool) -> None:
 
 @lib_booking_cmd.command(name="policy", help="Print the library booking policy.")
 def lib_booking_policy() -> None:
-    from .lib.booking import lib_booking
-    c = lib_booking()
-    from .lib.booking.schema import POLICY_TEXT
+    from ..lib.booking.policy import POLICY_TEXT
     click.echo(POLICY_TEXT)
 
 
@@ -597,7 +619,7 @@ def papers_cmd() -> None:
 @click.option("--max", "max_results", type=int, default=10)
 @click.option("--min-year", type=int, default=None)
 def papers_search(query: str, max_results: int, min_year: int | None) -> None:
-    from .papers.search import crossref_search
+    from ..papers.search import crossref_search
     papers = crossref_search(query, max_results=max_results, min_year=min_year)
     for i, p in enumerate(papers, 1):
         click.echo(f"[{i}] {p.title}")
