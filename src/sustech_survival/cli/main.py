@@ -489,7 +489,7 @@ def selectcourse_cmd() -> None:
 @click.option("--json", "as_json", is_flag=True)
 def selectcourse_list(keyword: str, xn: str | None, xq: str | None,
                       as_json: bool) -> None:
-    from .selectcourse import SelectCourseClient
+    from ..selectcourse import SelectCourseClient
     sc = SelectCourseClient(xn=xn, xq=xq)
     courses = sc.list_courses(keyword=keyword)
     _pp([{"code": c.code, "name": c.name, "class_group": c.class_group,
@@ -502,7 +502,7 @@ def selectcourse_list(keyword: str, xn: str | None, xq: str | None,
 @selectcourse_cmd.command(name="enrolled", help="Your enrolled courses.")
 @click.option("--json", "as_json", is_flag=True)
 def selectcourse_enrolled(as_json: bool) -> None:
-    from .selectcourse import SelectCourseClient
+    from ..selectcourse import SelectCourseClient
     sc = SelectCourseClient()  # defaults to the live academic term
     enrolled = sc.my_courses()
     _pp(enrolled, as_json=as_json)
