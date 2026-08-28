@@ -34,11 +34,13 @@
 
 ## Module Indexes
 
-- [TIS](../tis/README.md) · [Web UI](../webui/README.md) · [Transit](../transit/README.md)
-- [Selectcourse](../selectcourse/README.md) · [SSO](../sso/README.md) · [Context](../context/README.md) · [NCES](../nces/README.md)
-- [Papers](../papers/README.md) · [Faculty](../faculty/README.md) · [PMS](../pms/README.md)
-- [Booking](../booking/README.md) · [Library](../lib/README.md) · [Calendar](../calendar/README.md) · [Resources](../resources/README.md)
-- [External Databases](../external-databases/README.md)
+- [BB](../modules/bb.md) · [TIS](../modules/tis.md) · [Web UI](../modules/webui.md)
+- [Transit](../modules/transit.md) · [Selectcourse](../modules/selectcourse.md) · [SSO](../modules/sso.md)
+- [Context](../modules/context.md) · [NCES](../modules/nces.md) · [Papers](../modules/papers.md)
+- [Faculty](../modules/faculty.md) · [PMS](../modules/pms.md) · [Booking](../modules/booking.md)
+- [Library](../modules/lib.md) · [Calendar](../modules/calendar.md) · [Resources](../modules/resources.md)
+- [External Databases](../modules/external-databases.md)
+- [Classified Documentation](../modules/classified-doctype.md)
 
 ## Developer
 
