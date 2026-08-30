@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+  <title>sustech_survival</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header>
+    <h1>sustech_survival</h1>
+    <div class="status" id="status">starting…</div>
+  </header>
+
+  <main>
+    <section id="vault-panel">
+      <h2>Credentials</h2>
+      <p class="hint">Stored in your OS keychain (macOS Keychain / Windows DPAPI / Linux libsecret).
+         Never written to disk in plaintext.</p>
+      <label>SID <input id="sid" autocomplete="off"></label>
+      <label>Password <input id="password" type="password" autocomplete="off"></label>
+      <div class="actions">
+        <button id="save">Save</button>
+        <button id="load">Load saved</button>
+        <button id="clear">Clear</button>
+      </div>
+    </section>
+
+    <section id="settings-panel">
+      <h2>Settings</h2>
+      <label>Skin
+        <select id="skin">
+          <option value="default">default (en)</option>
+          <option value="default_zh">default_zh (zh)</option>
+        </select>
+      </label>
+    </section>
+
+    <section id="update-panel">
+      <h2>Updates</h2>
+      <p class="hint" id="update-status">idle</p>
+      <div class="actions">
+        <button id="check-update">Check for app update</button>
+        <button id="upgrade-python">Upgrade Python module</button>
+        <button id="open-logs">Open logs</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
