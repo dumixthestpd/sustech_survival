@@ -356,7 +356,13 @@ class Course:
             # name varies by year/round; try the common ones defensively.
             enrolled=_int(
                 raw.get("bkrs") or raw.get("yxrs") or raw.get("xkrs")
-                or raw.get("kchsrl") or raw.get("bkylrs") or raw.get("yxzrs")
+                or raw.get("kchsrl") or raw.get("bkylrs")
+                # Current TIS personal-selection rows use yxzrs for the
+                # total selected count (and bksyxrs for undergraduates).
+                or raw.get("yxzrs") or raw.get("bksyxrs")
+                # Some queryKxrw responses expose the count under the
+                # "已选容量人数" keys instead of yxzrs.
+                or raw.get("yxzrlrs") or raw.get("bksyxrlrs")
             ),
             # TIS write-key: the 32-char hex UUID used as `p_id` on every
             # write endpoint (addXuanke/tuike/updXkxsByyx/...). Catalog

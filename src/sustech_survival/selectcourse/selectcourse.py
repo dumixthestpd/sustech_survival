@@ -350,14 +350,18 @@ class SelectCourseClient:
             "p_pylx": "1",
             "p_sfgldjr": "",
             "p_sfredis": "",
-            "p_sfsyxkgwc": "1",          # 是否使用选课购物车
+            # Match the student-facing TIS page.  `1` restricts the result
+            # set to the shopping-cart view and omits many otherwise
+            # selectable sections (including their live seat counts).
+            "p_sfsyxkgwc": "0",
             "p_xktjz": None,
             "p_chaxunxh": "",
+            "p_chaxunxkfsdm": round_code or "",
             "p_gjz": keyword or "",
             "p_skjs": teacher or "",
             "p_xn": self._sem.xn,
             "p_xq": self._sem.xq,
-            "p_xnxq": "",
+            "p_xnxq": f"{self._sem.xn}{self._sem.xq}",
             "p_dqxn": dq.get("p_dqxn", ""),
             "p_dqxq": dq.get("p_dqxq", ""),
             "p_dqxnxq": dq.get("p_dqxnxq", ""),
@@ -378,7 +382,7 @@ class SelectCourseClient:
             "p_kcdm_js": "",
             "p_kcdm_cxrw": "",
             "p_kcdm_cxrw_zckc": "",
-            "p_kc_gjz": "",
+            "p_kc_gjz": keyword or "",
             "p_xzcxtjz_nj": "",
             "p_xzcxtjz_yx": "",
             "p_xzcxtjz_zy": "",
