@@ -142,6 +142,12 @@ def test_real_write_ops_are_tagged_consequence_rich():
         "selectcourse.writes should tag its write functions consequence-rich")
 
 
+def test_single_bid_update_is_tagged_consequence_rich():
+    from sustech_survival.selectcourse.writes import update_bid
+
+    assert is_consequence_rich(update_bid)
+
+
 def test_require_confirmation_is_importable_anywhere():
     # The gate is the same object referenced by CLI modules.
     from sustech_survival.consequence import require_confirmation as g

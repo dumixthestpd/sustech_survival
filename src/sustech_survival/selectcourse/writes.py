@@ -216,6 +216,14 @@ def remove_from_cart(self, rwh: str, *, dry_run: bool = True,
 
 # -- Bid (积分 / 选课系数) ----------------------------------------------
 
+@consequence_rich(Consequence(
+    name="selectcourse.update_bid",
+    severity=Severity.MEDIUM,
+    irreversible=False,
+    what_changes="Updates the bid value for one selected course on TIS.",
+    risk="A bid change can affect selection priority and the remaining bid budget.",
+    verify_url="https://tis.sustech.edu.cn/#/xsxk?rwh={rwh}",
+))
 def update_bid(self, rwh: str, bid: int, *,
                where: str = "enrolled",
                pylx: Optional[str] = None,
