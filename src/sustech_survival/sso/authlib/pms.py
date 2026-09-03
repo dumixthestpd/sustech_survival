@@ -1,28 +1,29 @@
-# =============================================================================
-# PMS (联创打印管理系统) — Unifound cloud print authorizer
+﻿# =============================================================================
+# PMS (鑱斿垱鎵撳嵃绠＄悊绯荤粺) 鈥?Unifound cloud print authorizer
 # =============================================================================
 # PMS does NOT use SUSTech CAS directly. Its login flow is custom:
 #
-#   1. POST /api/client/Auth/GetAuthToken     → { szToken }
-#   2. GET  /api/client/Auth/PublicKey         → { publicKey, nonceStr }
+#   1. POST /api/client/Auth/GetAuthToken     鈫?{ szToken }
+#   2. GET  /api/client/Auth/PublicKey         鈫?{ publicKey, nonceStr }
 #   3. Encrypt `password + ";" + nonceStr` with the RSA public key (PKCS#1 v1.5)
 #   4. POST /api/client/Auth/Login            { szLogonName, szPassword, szToken }
-#      → sets `OSESSIONID` cookie on the pms.sustech.edu.cn domain
+#      鈫?sets `OSESSIONID` cookie on the pms.sustech.edu.cn domain
 #
 # However, the page is also CAS-fronted: visiting any PMS URL while unauth'd
 # redirects through https://cas.sustech.edu.cn/cas/login and the back-end
 # links your CAS identity to your print account at first login (creates
 # the account if needed). If the print account doesn't exist, /Auth/Check
-# returns the message "云打印系统内没有您的账号信息，请联系图书馆技术部处理".
+# returns the message "浜戞墦鍗扮郴缁熷唴娌℃湁鎮ㄧ殑璐﹀彿淇℃伅锛岃鑱旂郴鍥句功棣嗘妧鏈儴澶勭悊".
 #
 # This authorizer handles BOTH paths:
-#   - login_password()      — direct username/password (requires print account)
-#   - login_via_cas()       — full CAS SSO flow; lets PMS auto-link account
+#   - login_password()      鈥?direct username/password (requires print account)
+#   - login_via_cas()       鈥?full CAS SSO flow; lets PMS auto-link account
 #
 # After either path, call `auth.check()` to confirm the session is alive
 # before doing anything else.
 # =============================================================================
 
+from sustech_survival import _net
 import json
 from pathlib import Path
 from typing import Optional, Tuple
@@ -41,9 +42,9 @@ PMS_API = f"{PMS_BASE}/api"
 
 
 class PMSAuth(Authorizer):
-    """Headless login for the SUSTech 联创 PMS cloud print system.
+    """Headless login for the SUSTech 鑱斿垱 PMS cloud print system.
 
-    Subclass of Authorizer — does NOT inherit from CASAuthorizer.
+    Subclass of Authorizer 鈥?does NOT inherit from CASAuthorizer.
     PMS uses its own RSA-encrypted login API rather than standard CAS.
 
     Storage: in-memory only (session_cache). Use refresh() to re-populate.
@@ -63,7 +64,7 @@ class PMSAuth(Authorizer):
         sess = self._api_session()
         r = sess.post(
             f"{PMS_API}/client/Auth/Check",
-            timeout=10,
+            timeout=_net.timeouts().service_timeout("pms"),
         )
         if _looks_off_campus(r):
             return False, OFF_CAMPUS_HINT
@@ -105,7 +106,7 @@ class PMSAuth(Authorizer):
         sess.headers.update({"User-Agent": UA, "Referer": PMS_SERVICE})
 
         # Step 1: get auth token
-        r = sess.post(f"{PMS_API}/client/Auth/GetAuthToken", timeout=10)
+        r = sess.post(f"{PMS_API}/client/Auth/GetAuthToken", timeout=_net.timeouts().service_timeout("pms"))
         if _looks_off_campus(r):
             raise AuthorizerError(OFF_CAMPUS_HINT)
         tok = r.json()
@@ -114,7 +115,7 @@ class PMSAuth(Authorizer):
         sz_token = tok["szToken"]
 
         # Step 2: get public key + nonce
-        r = sess.get(f"{PMS_API}/client/Auth/PublicKey", timeout=10)
+        r = sess.get(f"{PMS_API}/client/Auth/PublicKey", timeout=_net.timeouts().service_timeout("pms"))
         if _looks_off_campus(r):
             raise AuthorizerError(OFF_CAMPUS_HINT)
         pk = r.json()
@@ -136,7 +137,7 @@ class PMSAuth(Authorizer):
             f"{PMS_API}/client/Auth/Login",
             data=json.dumps(payload),
             headers={"Content-Type": "application/json"},
-            timeout=10,
+            timeout=_net.timeouts().service_timeout("pms"),
         )
         if _looks_off_campus(r):
             raise AuthorizerError(OFF_CAMPUS_HINT)
@@ -158,7 +159,7 @@ class PMSAuth(Authorizer):
 
     def login_via_cas(self, headless: bool = False) -> str:
         """Full CAS SSO flow via Playwright. Use when print account doesn't exist
-        yet — the PMS back-end will auto-link the CAS identity on first login.
+        yet 鈥?the PMS back-end will auto-link the CAS identity on first login.
         """
         from playwright.sync_api import sync_playwright
 
@@ -181,9 +182,9 @@ class PMSAuth(Authorizer):
             if "cas.sustech.edu.cn" in page.url:
                 page.fill('input[type="text"], input[name="username"]', username)
                 page.fill('input[type="password"], input[name="password"]', password)
-                btn = page.get_by_role("button", name="登录")
+                btn = page.get_by_role("button", name="鐧诲綍")
                 if not btn.count():
-                    btn = page.locator("button:has-text('登录')").first
+                    btn = page.locator("button:has-text('鐧诲綍')").first
                 btn.click()
                 page.wait_for_load_state("networkidle", timeout=20000)
 
@@ -227,7 +228,7 @@ class PMSAuth(Authorizer):
 def _rsa_encrypt(public_key_pem: str, plaintext: str) -> str:
     """Encrypt `plaintext` with RSA public key, return base64-encoded ciphertext.
 
-    Matches JSEncrypt.encrypt() — PKCS#1 v1.5 padding, base64 output.
+    Matches JSEncrypt.encrypt() 鈥?PKCS#1 v1.5 padding, base64 output.
     PMS uses 1024-bit keys; output is ~172 base64 chars.
 
     The server returns the key as raw base64 (no PEM headers). We accept
@@ -258,3 +259,4 @@ def _to_pem(key: str) -> str:
 # -- Module-level singleton ---------------------------------------------------
 
 _auth = PMSAuth()  # resolves skill_root by walking up looking for credentials.txt
+

@@ -70,9 +70,11 @@ nces = [
     "anubis-solver>=0.1",
 ]
 papers = [
-    # Academic paper fetch — cloudscraper for publisher sites that block
-    # plain requests. NOTE: cloudscraper's latest release is 1.2.x — there is
-    # no 1.3, so the floor must stay below it or the extra can never resolve.
+    # The papers MODULE is deprecated (2026-09) and slated for removal, but
+    # this extra STAYS: cloudscraper is what the SSO publisher providers need
+    # (sso/authlib — ACS / IEEE / JSTOR / Springer / Wiley / Scopus).
+    # NOTE: cloudscraper's latest release is 1.2.x — there is no 1.3, so the
+    # floor must stay below it or the extra can never resolve.
     "cloudscraper>=1.2",
 ]
 pms = [

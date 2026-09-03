@@ -15,6 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
 from sustech_survival.sso import TISAuth
+from sustech_survival.exceptions import APIError
 
 # Singleton auth instance to avoid repeated re-auth on every call
 _auth_instance = None
@@ -31,17 +32,78 @@ def session():
 
 
 def current_semester() -> dict:
-    """Return current semester info:XN, XQ, XNXQ, XNXQ_EN."""
+    """Return current semester info:XN, XQ, XNXQ, XNXQ_EN.
+
+    Raises:
+        APIError: TIS returned an empty body (server unreachable /
+            session gone) or an error-page JSON without XN/XQ (stale
+            session — run ``sustech tis session refresh``).
+    """
     sess = session()
-    return sess.post('https://tis.sustech.edu.cn/component/querydangqianxnxq',
-                     data={}).json()
+    r = sess.post('https://tis.sustech.edu.cn/component/querydangqianxnxq',
+                  data={})
+    body = (r.text or '').strip()
+    if not body:
+        raise APIError('TIS reported no current semester (empty response). '
+                       'The server may be unreachable or the session expired — '
+                       'run again and check the login step.')
+    try:
+        sem = r.json()
+    except ValueError:
+        raise APIError('TIS returned a non-JSON response for the current '
+                       'semester: %r' % body[:160])
+    if not isinstance(sem, dict) or 'XN' not in sem or 'XQ' not in sem:
+        # A stale session makes TIS answer with an auth-error JSON page
+        # (e.g. {"content": "...请用户重新登录页面"}) instead of semester
+        # info. Surface that clearly instead of a raw KeyError downstream.
+        snippet = body[:200] if body else '(empty body)'
+        raise APIError('TIS did not report the current semester (server '
+                       'said: %s). The session may have expired — run '
+                       '`sustech tis session refresh` and retry.' % snippet)
+    return sem
 
 
 def current_week() -> int:
-    """Return current week number (1-18)."""
+    """Return current week number (1-18).
+
+    TIS answers with a bare number string (e.g. ``'5'``) only while a
+    semester is active. Before the term starts the endpoint returns an
+    EMPTY body — every schedule row is still marked 待生效 (pending
+    activation) and there is no "current week" yet. A stale session can
+    also answer with a JSON error page. None of those are integers, so a
+    bare ``int(...)`` explodes with an unhelpful ValueError — parse
+    defensively and raise a clear error instead.
+
+    Raises:
+        APIError: TIS did not report a current week (term not started, or
+            an error page / empty body came back).
+    """
     sess = session()
-    return int(sess.post('https://tis.sustech.edu.cn/component/querydangqianzc',
-                          data={}).text)
+    r = sess.post('https://tis.sustech.edu.cn/component/querydangqianzc',
+                  data={})
+    body = (r.text or '').strip()
+    if body.isdigit():
+        return int(body)
+    # Stale-session case: TIS answers with a JSON error page telling the
+    # user to log in again (verified live). Detect it so the hint says
+    # "refresh the session", not "term not started".
+    low = body.lower()
+    if '登录' in body or 'login' in low or '认证' in body or 'authentication' in low:
+        snippet = body[:160] if body else '(empty body)'
+        raise APIError(
+            'TIS session is not accepted for the schedule query (server '
+            'said: %s). Run `sustech tis session refresh` and retry.' % snippet
+        )
+    # Empty body = term not started (every schedule row still 待生效 and
+    # there is no "current week" yet). Point at the escape hatches that
+    # still work.
+    snippet = body[:160] if body else '(empty body)'
+    raise APIError(
+        'TIS did not report a current week (server said: %s). '
+        'The term may not have started yet — schedule rows show 待生效 '
+        '(pending activation). Fetch a specific week with --zc N or the '
+        'whole term with --all.' % snippet
+    )
 
 
 def week_schedule(zc: int, xn: str | None = None, xq: str | None = None) -> list[dict]:

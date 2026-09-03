@@ -14,7 +14,8 @@
 - [Transit](transit.md) — campus bus, navigation, live GPS
 - [Selectcourse](selectcourse.md) — TIS course selection: browse, add/drop, cart, iCal export
 - [Context](context.md) — daily-use snapshot: date, deadlines, exams, weather, AQI
-- [Papers](papers.md) — academic paper search and fetch (CrossRef, CNKI, WoS, RSC)
+- [Agents](agents.md) — AI agent integration: in-process API, HTTP `/api/*`, CLI (no MCP clone)
+- [Papers](papers.md) — academic paper search (CrossRef) — **deprecated**, slated for removal
 - [NCES](nces.md) — community course evaluation scraper
 - [WS (SUSTech Global)](ws.md) — student exchange program search
 - [E-Hall Booking](booking.md) — facility booking (场地预约)
@@ -36,7 +37,7 @@
 
 - [BB](../modules/bb.md) · [TIS](../modules/tis.md) · [Web UI](../modules/webui.md)
 - [Transit](../modules/transit.md) · [Selectcourse](../modules/selectcourse.md) · [SSO](../modules/sso.md)
-- [Context](../modules/context.md) · [NCES](../modules/nces.md) · [Papers](../modules/papers.md)
+- [Agents](../modules/agents.md) · [Context](../modules/context.md) · [NCES](../modules/nces.md) · [Papers (deprecated)](../modules/papers.md)
 - [Faculty](../modules/faculty.md) · [PMS](../modules/pms.md) · [Booking](../modules/booking.md)
 - [Library](../modules/lib.md) · [Calendar](../modules/calendar.md) · [Resources](../modules/resources.md)
 - [External Databases](../modules/external-databases.md)

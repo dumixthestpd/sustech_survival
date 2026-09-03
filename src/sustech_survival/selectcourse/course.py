@@ -207,6 +207,11 @@ class Course:
                                    # catalog (queryRwxxcxList) which is read-only.
                                    # Write endpoints (addXuanke/tuike/updXkxsByyx/...)
                                    # take `p_id=<this hex>`, NOT the rwh.
+    grading: str = ""              # jfzlbmc — 计分方式: "十三级制" / "二级制" (problem list #9)
+    conflicts: str = ""            # ctkcxx — 冲突课程 (comma/HTML text, e.g. "材料学综合实验I(排课)。")
+    requirement: str = ""          # xkyq — 选课要求 (e.g. "每次实验课都计入期末成绩…"); also
+                                   # parsed from kcxx "选课要求:…" suffix when xkyq is empty
+    note: str = ""                 # bz — 备注
 
     @property
     def has_schedule(self) -> bool:
@@ -329,6 +334,17 @@ class Course:
                 return int(v) if v not in (None, "") else None
             except (ValueError, TypeError):
                 return None
+
+        # 选课要求 note: prefer the structured `xkyq` field; when empty,
+        # pull the "选课要求:…" suffix out of the kcxx HTML (verified in
+        # the official TIS payload 2026-08-30 — e.g. "选课要求:课程即将停
+        # 开，请同学们尽快退课").
+        requirement = (raw.get("xkyq") or "").strip()
+        if not requirement and kcxx:
+            import re as _re
+            m = _re.search(r"选课要求\s*[:：]\s*([^<]+)", kcxx)
+            if m:
+                requirement = m.group(1).strip()
         return cls(
             code=raw.get("kcdm") or "",
             name=name,
@@ -372,4 +388,8 @@ class Course:
             college_code=raw.get("kkyx") or "",
             section_name=section_name,
             section_name_en=section_name_en,
+            grading=raw.get("jfzlbmc") or raw.get("jfzlbmc_en") or "",
+            conflicts=raw.get("ctkcxx") or raw.get("ctkcxx_en") or "",
+            requirement=requirement,
+            note=(raw.get("bz") or "").strip(),
         )

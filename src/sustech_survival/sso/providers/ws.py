@@ -1,26 +1,27 @@
+﻿# =============================================================================
+# WSProvider 鈥?SUSTech Student Exchange System (ws.sustech.edu.cn)
 # =============================================================================
-# WSProvider — SUSTech Student Exchange System (ws.sustech.edu.cn)
-# =============================================================================
-# CAS login + session for the 外事工作服务系统 (Student Exchange/Abroad Portal).
+# CAS login + session for the 澶栦簨宸ヤ綔鏈嶅姟绯荤粺 (Student Exchange/Abroad Portal).
 #
 # Auth flow (3-step CAS ticket exchange):
 #   GET  /cas/login?service=ws.sustech.edu.cn/SUSTechHome.aspx
 #   POST /cas/login  (execution + credentials + _eventId=submit)
-#   GET  /SUSTechHome.aspx?ticket=...  ← JSESSIONID+ASP.NET_SessionId set here
+#   GET  /SUSTechHome.aspx?ticket=...  鈫?JSESSIONID+ASP.NET_SessionId set here
 #
 # After login the session has cookies:
-#   TGC               — CAS ticket-granting cookie
-#   ASP.NET_SessionId — WS application session
-#   SUserCode         — user ID (e.g. <sid>)
-#   SUserRole         — role ID (e.g. 1007)
+#   TGC               鈥?CAS ticket-granting cookie
+#   ASP.NET_SessionId 鈥?WS application session
+#   SUserCode         鈥?user ID (e.g. <sid>)
+#   SUserRole         鈥?role ID (e.g. 1007)
 #
 # Key API (cookies only, no auth header):
-#   GET /Main/GetSmartLeftMenuTData.do                    ← JSON menu
-#   GET /StudentExchange_2247/GetShortProjectListForStudent.do  ← program list
-#   GET /StudentExchange_2247/GetShortProjectListCountForStudent.do ← count
-#   GET /StudentExchange_2247/ProjectDetail2247.do?ID=&Code=&token=  ← HTML detail
+#   GET /Main/GetSmartLeftMenuTData.do                    鈫?JSON menu
+#   GET /StudentExchange_2247/GetShortProjectListForStudent.do  鈫?program list
+#   GET /StudentExchange_2247/GetShortProjectListCountForStudent.do 鈫?count
+#   GET /StudentExchange_2247/ProjectDetail2247.do?ID=&Code=&token=  鈫?HTML detail
 # =============================================================================
 from __future__ import annotations
+from sustech_survival import _net
 
 import re
 import ssl
@@ -87,8 +88,8 @@ class WSProvider(Authorizer):
         sess = make_ws_session()
         sess.headers["User-Agent"] = UA
 
-        # Step 1 — fetch CAS login page → extract execution token
-        resp = sess.get(self.cas_url, timeout=10)
+        # Step 1 鈥?fetch CAS login page 鈫?extract execution token
+        resp = sess.get(self.cas_url, timeout=_net.timeouts().service_timeout("ws"))
         if resp.status_code == 200 and "execution" in resp.text:
             m = re.search(r'name="execution"\s+value="([^"]+)"', resp.text)
             execution = m.group(1) if m else None
@@ -99,7 +100,7 @@ class WSProvider(Authorizer):
         else:
             raise AuthorizerError("Unexpected CAS login page response")
 
-        # Step 2 — POST credentials → receive ticket
+        # Step 2 鈥?POST credentials 鈫?receive ticket
         resp2 = sess.post(
             self.cas_url,
             data={
@@ -109,7 +110,7 @@ class WSProvider(Authorizer):
                 "_eventId": "submit",
             },
             allow_redirects=False,
-            timeout=10,
+            timeout=_net.timeouts().service_timeout("ws"),
         )
 
         ticket = None
@@ -123,11 +124,11 @@ class WSProvider(Authorizer):
             body = resp2.text[:500] if resp2.text else "(empty)"
             raise AuthorizerError(f"No ticket ({resp2.status_code}): {body}")
 
-        # Step 3 — exchange ticket at WS service URL
+        # Step 3 鈥?exchange ticket at WS service URL
         sess.get(
             f"{self.SERVICE_URL}?ticket={ticket}",
             headers={"Accept": "text/html"},
-            timeout=10,
+            timeout=_net.timeouts().service_timeout("ws"),
             allow_redirects=True,
         )
 
@@ -137,7 +138,7 @@ class WSProvider(Authorizer):
             sess.get(
                 f"{self.BASE_URL}/SUSTechHome.aspx",
                 headers={"Accept": "text/html"},
-                timeout=10,
+                timeout=_net.timeouts().service_timeout("ws"),
                 allow_redirects=True,
             )
             for c in sess.cookies:
@@ -197,10 +198,11 @@ class WSProvider(Authorizer):
         try:
             r = self.session.get(
                 f"{self.BASE_URL}/Main/GetSmartLeftMenuTData.do",
-                timeout=10,
+                timeout=_net.timeouts().service_timeout("ws"),
             )
             if r.status_code == 200 and r.text.startswith("["):
                 return True, ""
             return False, f"Menu API returned {r.status_code}"
         except Exception as e:
             return False, f"Could not reach WS: {e}"
+

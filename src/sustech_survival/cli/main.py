@@ -609,9 +609,14 @@ def selectcourse_export_table(
 # papers — academic paper search
 # ========================================================================
 
-@click.group(name="papers", help="Academic paper search (CrossRef).")
+@click.group(name="papers",
+             help="[DEPRECATED] Academic paper search (CrossRef) — will be "
+                  "removed in a future release.")
 def papers_cmd() -> None:
-    pass
+    click.echo(click.style(
+        "⚠ 'sustech papers' is deprecated (2026-09) and will be removed in "
+        "a future release; prefer maintained CrossRef/OpenAlex tooling.",
+        fg="yellow"), err=True)
 
 
 @papers_cmd.command(name="search", help="Search CrossRef for papers.")

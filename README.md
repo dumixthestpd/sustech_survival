@@ -47,8 +47,8 @@ By connecting the services at the code level, we simplify the campus systems, of
   - Skin-based Flask web UI. Two skins ship with the package — `default` (English) and `default_zh` (Chinese) — each with the full TIS course selector (search → pick → conflict-free schedule → compare → bid & sync), the transit map, and NCES evals. Skins are self-contained and single-language (no language switching). Start with `python -m sustech_survival.webui serve`.
 - **context**
   - Daily-use snapshot for AI agents: date, week, next deadlines, exams, class-now, weather, AQI.
-- **papers**
-  - Academic paper search and fetch across CrossRef, CNKI, WoS, and RSC.
+- **papers** *(deprecated)*
+  - Academic paper search and fetch (CrossRef). **Deprecated 2026-09 — unmaintained and slated for removal**; not used by the webui or the Electron app.
 
 ---
 
@@ -60,7 +60,7 @@ Extras add heavier optional capabilities:
 
 - `webui` — Flask web UI: `default`/`default_zh` skins with the full TIS course selector + transit map + NCES evals
 - `nces` — Anubis PoW solver for NCES listing scrape
-- `papers` — cloudscraper for publisher sites that block plain requests
+- `papers` — cloudscraper for the SSO publisher providers (ACS / IEEE / JSTOR / Springer / Wiley / Scopus); the papers module itself is deprecated
 - `playwright` — browser-backed BB download / submit (for UIs that only render in JS)
 - `all` — Everything above
 
@@ -81,6 +81,18 @@ sustech --version
 ```
 
 to see if it is added to PATH.
+
+> **Command-name collision:** the TypeScript port
+> [`wormforce/sustech-cli`](https://github.com/wormforce/sustech-cli) also
+> installs a `sustech` command. If both are on the same machine, PATH order
+> decides which one `sustech` runs — check with `where sustech` and call the
+> full path to disambiguate; avoid installing both into the same environment.
+>
+> **For AI agents,** use the `sustech` command directly (`sustech context
+> --json`). If both this CLI and the TypeScript port are installed, `where
+> sustech` shows which one wins — invoke by full path to disambiguate. Full
+> agent integration guide: [`docs/en/agents.md`](docs/en/agents.md)
+> (in-process API, HTTP `/api/*`, CLI — deliberately no MCP server clone).
 
 ### 2. (Optional) Set $SUSTECH_HOME Environmental Variable
 
@@ -220,7 +232,7 @@ sustech_survival/
 ├── faculty/      We built: faculty directory (list / search / profile)
 ├── context/      We built: daily-use snapshot (date, deadlines, class-now, weather, AQI)
 ├── calendar.py   We built: academic calendar + date intelligence
-├── papers/       We built: scholarly search / fetch (CrossRef, CNKI, WoS, RSC)
+├── papers/       We built: scholarly search / fetch (CrossRef) — DEPRECATED, slated for removal
 ├── webui/        We built: skin loader — default/default_zh skins with the full course-selector engine
 └── api/          We built: Flask-free JSON contract the webui / a custom skin consumes
 ```

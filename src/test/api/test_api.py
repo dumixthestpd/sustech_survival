@@ -51,6 +51,7 @@ def _fake_course():
         enrolled=45, id="12345", rooms=["YJ-101"], teachers=["张老师"],
         schedule_str="周一3-4节", slots_raw=[], has_schedule=True,
         task_type="auto", language="中文", college_code="01",
+        grading="十三级制", conflicts="", requirement="", note="",
     )
 
 
@@ -68,6 +69,45 @@ def test_course_to_dict_shape():
                 "rooms", "teachers", "schedule", "slots", "task_type",
                 "language"]:
         assert key in d
+
+
+# ── enrolled/cart row parsing (_member_row) ─────────────────────────────────
+
+def test_member_row_parses_enrolled_row():
+    raw = {
+        "rwh": "2026-2027-1-GE331-029", "id": "HEX123", "kcdm": "GE331",
+        "kcmc": "体育Ⅴ", "xf": "0.5", "xkxs": "2", "dgjsmc": "张三",
+        "zrl": "40", "jfzlbmc": "二级制",
+    }
+    d = api_tis._member_row(raw, tis_enrolled=True)
+    assert d["code"] == "GE331"
+    assert d["name"] == "体育Ⅴ"
+    assert d["rwh"] == "2026-2027-1-GE331-029"
+    assert d["bid"] == "2"
+    assert d["xkxs"] == "2"          # back-compat: older skins read xkxs
+    assert d["tis_enrolled"] is True
+    assert d["teachers"] == ["张三"]
+    assert d["capacity"] == 40
+    assert d["grading"] == "二级制"
+    assert isinstance(d["slots"], list)
+
+
+def test_member_row_cart_marker_and_missing_bid():
+    raw = {"rwh": "R", "kcdm": "C", "kcmc": "N"}
+    d = api_tis._member_row(raw, in_cart=True)
+    assert d["in_cart"] is True
+    assert d["xkxs"] is None and d["bid"] is None
+
+
+def test_member_row_falls_back_to_raw_on_parse_failure():
+    # xf="abc" makes Course.from_api raise (float("abc")) → the row must
+    # degrade to the raw dict (plus bid/markers), not 500.
+    raw = {"rwh": "X", "xkxs": "3", "xf": "abc"}
+    d = api_tis._member_row(raw, tis_enrolled=True)
+    assert d["rwh"] == "X"
+    assert d["bid"] == "3"
+    assert d["tis_enrolled"] is True
+    assert d["xf"] == "abc"
 
 
 # ── int helper ─────────────────────────────────────────────────────────────

@@ -72,6 +72,14 @@ dist/
 build/
 *.egg-info/
 *.egg
+# ...except the Electron app icons under electron/build/ — package.json
+# (build.icon / win.icon / nsis.*Icon) and main.js reference them, so they
+# must be tracked for a fresh clone to build electron without regeneration.
+!electron/build/
+!electron/build/icon.png
+!electron/build/icon.ico
+!electron/build/icon-256.png
+!electron/build/icon-1024.png
 
 # MkDocs build output
 site/
@@ -138,3 +146,6 @@ pytest-cache-files-*/
 # the first published release (2026-08).
 CHANGELOG.md
 
+
+# Real-network verification tests (need credentials + TIS reachability)
+live_tests/

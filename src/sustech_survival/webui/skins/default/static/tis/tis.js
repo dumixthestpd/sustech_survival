@@ -51,6 +51,10 @@ var F_LANG = document.getElementById('f-lang');
 var F_CULT = document.getElementById('f-cult');
 var F_SCH = document.getElementById('f-sched');
 var F_TEACHER = document.getElementById('f-teacher');
+// Grading scheme filter (二级制/十三级制). TIS queryKxrw has no grading
+// parameter, so BOTH modes apply this client-side (filterResultsClientSide
+// for catalog, post-filter in loadCourses for personal results).
+var F_GRADING = document.getElementById('f-grading');
 var STAT = document.getElementById('stat');
 var RESULTS = document.getElementById('results');
 var GRID_ODD = document.getElementById('grid-body-odd');
@@ -69,6 +73,10 @@ var ENROLLED_OUT = document.getElementById('enrolled-out');
 var CRUMB = document.getElementById('crumb');
 var SOLVE_OUT = document.getElementById('solve-out');
 var SOLVE_CODES = document.getElementById('solve-codes');
+var MUST_PANEL_WRAP = document.getElementById('must-panel-wrap');
+var MUST_CODES_EL = document.getElementById('must-codes');
+var MUST_CODES = {};      // { code: true } — MUST-take courses by code
+var SOLVER_MUST = null;   // { feasible, impossible, required } from last solve()
 var EVAL_OUT = document.getElementById('eval-out');
 var BRIEF_CARD = document.createElement('div');
 BRIEF_CARD.className = 'brief-card';
@@ -80,6 +88,15 @@ var BRIEF_OPEN = null;  // set when populated
 var BRIEF_HINT = null;
 var BRIEF_ACTIVE_CODE = null;
 var BRIEF_CACHE = {};   // code → response (avoid re-fetching on rapid hover)
+// Mini ratings from the batch /api/nces/ratings endpoint (eager card
+// badges). Kept SEPARATE from BRIEF_CACHE so the deep-brief consumers
+// (hover card, NCES sheet) never see the lightweight shape — they keep
+// fetching the full brief on demand. Key format is identical:
+// "<code>::<teachers-comma-joined>".
+var MINI_CACHE = {};
+// In-flight guard for the eager batch: key → true while a batch request
+// covers it. Prevents duplicate fetches when a search re-fires quickly.
+var NCES_EAGER_INFLIGHT = {};
 var BRIEF_INFLIGHT = null;  // current fetch XHR
 var BRIEF_HOVER_TIMER = null;
 var GRID_LEGEND = document.getElementById('grid-legend');
@@ -113,6 +130,16 @@ var ROUND_INFO = { jffs: 0, ksrq: '', jsrq: '', lcmc: '', xkfsdm: '', xkms: '', 
 var BID_DRAG = null;         // { sourceRwh, sourceBox, arrowEl, targetRwh, lastX, lastY }
 var BID_EDIT = null;         // { rwh, originalBid, inputEl }
 var EXISTING_BIDS = {};      // { rwh: bid_int } — bids already set on TIS for enrolled/cart items
+// TIS_BID_BASELINE: the bid values TIS HELDS right now (enrolled xkxs /
+// cart xkxs), snapshotted at ingest and NEVER mutated by edits. The
+// bid-box stores (PICKED_BIDS / EXISTING_BIDS) change as the user edits;
+// this map is the immutable reference for (a) the semester budget model
+// and (b) sync baselines. Verified live 2026-08-31: TIS reports the
+// REMAINING points via xkgzszOne.jfxs (ROUND_INFO.jffs — e.g. 26), the
+// round LIST carries the total (155), and committed enrolled bids
+// (129) are NOT part of the remaining. Semester budget = committed +
+// jffs; only bids ABOVE the baseline consume the remaining points.
+var TIS_BID_BASELINE = {};
                               // (read from d.enrolled[]/d.cart[] in search_personal response)
 
 
@@ -141,6 +168,9 @@ var CATEGORY_MAP = {};      // category-name → kclbdm code (e.g. 美育类→0
                             // Populated from /api/tis/info.category_codes on first load.
 var LOAD_BY_RWH = {};       // { rwh: enrolled_int } — live "currently selected" count
                             // from TIS. Populated on demand by the "Refresh load"
+var LOAD_AUTO_LOCK = 0;     // last auto-fetch ts (rate limit guard)
+var LOAD_AUTO_BUSY = false; // an auto-fetch is in flight
+var UG_MAX_CREDITS = 25;    // undergrad semester credit cap
                             // button; cached in localStorage 10 min so cards keep
                             // showing the count across search/filter/page changes.
 var LOAD_FETCHED_AT = 0;    // Date.now() of the last successful refresh-load.
@@ -659,6 +689,11 @@ function loadCourses(isInitialLoad) {
 
   return getJSON('/api/tis/courses' + qs).then(function(d) {
     if (loadId !== _modeLoadId) return;  // stale — a newer loadForMode call
+    // Pills re-render on EVERY exit path — a failed/empty search with
+    // cleared inputs must not leave stale pills on screen (verified
+    // 2026-08-31: the Clear-all flow used to keep dead pills because
+    // only the success path re-rendered them).
+    renderFilterPills();
     if (d.error) {
       RESULTS.innerHTML = '<div class="flash err">' + escapeHtml(d.error) + '</div><div class="empty">Check TIS credentials or try refreshing the catalog.</div>';
       CAT = [];
@@ -667,6 +702,13 @@ function loadCourses(isInitialLoad) {
     if (d.mode === 'personal') {
       CAT = d.courses || [];
       ALL_CAT = CAT.slice();
+      // Grading filter (#4) is client-side — TIS queryKxrw has no
+      // grading parameter. Applied to the fresh result set here so the
+      // personal mode behaves like the catalog mode's client filter.
+      var gval = F_GRADING ? F_GRADING.value : '';
+      if (gval) {
+        CAT = CAT.filter(function(c) { return c.grading === gval; });
+      }
       // Populate type dropdown from API response if course_types available
       if (d.course_types && d.course_types.length) {
         populateCourseTypes(d.course_types, d.current_type);
@@ -685,19 +727,46 @@ function loadCourses(isInitialLoad) {
           message: d.message || '',
         };
       }
-      // Existing bids from TIS (so addPicked() can default to them for
-      // already-enrolled/cart picks instead of starting from 1). TIS puts
-      // the bid on the `xkxs` field of each yxkcList/xkgwcList item.
+      // Enrolled + cart rows arrive PARSED (same shape as courses, plus
+      // bid/xkxs). Ingest the bids AND the enrolled set itself — a
+      // personal search is authoritative for who's enrolled this term,
+      // so the picked list, Drop-all, and the bid panel all work without
+      // a separate /api/tis/enrolled round-trip. TIS_BID_BASELINE is the
+      // immutable snapshot the budget model + sync baselines read.
       EXISTING_BIDS = {};
-      var _ingestBidItems = function(items) {
+      TIS_BID_BASELINE = {};
+      var _freshEnrolled = new Set();
+      var _ingestBidRows = function(items, isEnrolled) {
         for (var i = 0; i < items.length; i++) {
-          if (items[i] && items[i].rwh && items[i].xkxs != null) {
-            EXISTING_BIDS[items[i].rwh] = Number(items[i].xkxs) || 1;
+          var it = items[i];
+          if (!it || !it.rwh) continue;
+          var rawBid = (it.bid != null) ? it.bid : it.xkxs;
+          if (rawBid != null) {
+            var _b = Number(rawBid) || 0;
+            EXISTING_BIDS[it.rwh] = _b || 1;
+            TIS_BID_BASELINE[it.rwh] = _b;
+          }
+          if (isEnrolled) {
+            _freshEnrolled.add(it.rwh);
+            ENROLLED_DATA[it.rwh] = it;   // rich row: code/name/slots/teachers/…
           }
         }
       };
-      _ingestBidItems(d.enrolled || []);
-      _ingestBidItems(d.cart || []);
+      _ingestBidRows(d.enrolled || [], true);
+      _ingestBidRows(d.cart || [], false);
+      if (_freshEnrolled.size || (d.enrolled && d.enrolled.length === 0 && d.ok)) {
+        // Swap in the fresh enrolled set and prune stale data rows
+        // (a course dropped on TIS since the last search disappears).
+        ENROLLED_RWH = _freshEnrolled;
+        for (var _ek in ENROLLED_DATA) {
+          if (ENROLLED_DATA.hasOwnProperty(_ek) && !ENROLLED_RWH.has(_ek)) {
+            delete ENROLLED_DATA[_ek];
+          }
+        }
+      }
+      // The search just changed the enrolled set → the picked list
+      // (which renders enrolled rows alongside picks) must re-render.
+      renderPicked();
       var msg = d.message || '';
       if (!d.ok) {
         STAT.textContent = 'Selection: ' + (msg || 'unavailable');
@@ -705,7 +774,10 @@ function loadCourses(isInitialLoad) {
         renderBidPanel();
         return;
       }
-      STAT.textContent = 'Selection: ' + d.total + ' course(s) available' + (msg ? ' · ' + msg : '');
+      STAT.textContent = 'Selection: ' +
+        (gval ? CAT.length + ' of ' + d.total + ' course(s) match grading ' + gval
+              : d.total + ' course(s) available') +
+        (msg ? ' · ' + msg : '');
       renderBidPanel();
     } else {
       CAT = d.courses || [];
@@ -717,9 +789,16 @@ function loadCourses(isInitialLoad) {
       return;
     }
     renderResults(CAT);
-    renderFilterPills();
+    // Pills already re-rendered at the top of this .then (every exit
+    // path keeps them in sync with the inputs).
+    // NCES eager load — ONE batch request for the freshly-rendered
+    // result page. This is the ONLY trigger (client-side re-renders
+    // and pick toggles never re-fire it); a new search naturally
+    // covers whatever new (code, teacher) pairs it produced.
+    ncesEagerLoad(CAT);
   })['catch'](function(e) {
     if (loadId !== _modeLoadId) return;  // stale
+    renderFilterPills();  // keep pills in sync with the inputs on failure too
     RESULTS.innerHTML = '<div class="flash err">Network error: ' + escapeHtml(e.message) + '</div>';
     CAT = [];
   });
@@ -735,6 +814,7 @@ function filterResultsClientSide() {
   var cult = F_CULT.value;
   var teacher = F_TEACHER.value.trim().toLowerCase();
   var onlySched = F_SCH.checked;
+  var grading = F_GRADING ? F_GRADING.value : '';
 
   var filtered = ALL_CAT.filter(function(c) {
     if (college && c.college !== college) return false;
@@ -743,6 +823,7 @@ function filterResultsClientSide() {
     if (campus && c.campus !== campus) return false;
     if (language && c.language !== language) return false;
     if (cult && c.cultivation !== cult) return false;
+    if (grading && c.grading !== grading) return false;
     if (onlySched && (!c.slots || !c.slots.length)) return false;
     if (teacher) {
       var t = (c.teachers || []).join(' ').toLowerCase();
@@ -761,24 +842,33 @@ function filterResultsClientSide() {
 
   CAT = filtered;
   STAT.textContent = 'Catalog: ' + ALL_CAT.length + ' course(s)' + (filtered.length < ALL_CAT.length ? ' (showing ' + filtered.length + ')' : '');
+  // Pills reflect the INPUT values — a campus client-side filter run is
+  // the campus-mode "search", so refresh them here too (same contract
+  // as loadCourses: every exit path re-renders the pills).
+  renderFilterPills();
   if (!CAT.length) {
     RESULTS.innerHTML = '<div class="empty">No courses match the current filters.</div>';
     return;
   }
   renderResults(CAT);
+  // Campus-mode "search" IS this client-side filter (the Search button
+  // routes here), so the NCES eager batch belongs on this path too.
+  // Cached pairs are skipped — a re-filter only fetches newly-visible
+  // courses, never re-triggers what's already loaded.
+  ncesEagerLoad(CAT);
 }
 
 // Hydrate every "View course page" link on the page with the nces_id
-// from BRIEF_CACHE if a matching (code, teacher) entry exists. Called
-// after renderResults() so users see upgraded URLs even before hovering
-// (the BRIEF_CACHE survives within a session — it persists across
-// filter changes, picked toggles, and any other re-render).
+// from BRIEF_CACHE / MINI_CACHE if a matching (code, teacher) entry
+// exists. Called after renderResults() so users see upgraded URLs even
+// before hovering (both caches survive within a session — they persist
+// across filter changes, picked toggles, and any other re-render).
 function hydrateViewCourseLinks() {
   document.querySelectorAll('.view-course-link').forEach(function(a) {
     if (a.dataset.viewCode === undefined) return;
     var teacher = a.dataset.viewTeacher || '';
     var cacheKey = a.dataset.viewCode + '::' + teacher;
-    var cached = BRIEF_CACHE[cacheKey];
+    var cached = MINI_CACHE[cacheKey] || BRIEF_CACHE[cacheKey];
     if (cached && cached.available && cached.nces_id) {
       a.href = 'https://ncesnext.com/course/' + cached.nces_id + '/';
       a.title = 'Open NCES page for ' + a.dataset.viewCode + ' (id ' + cached.nces_id + ')';
@@ -786,17 +876,18 @@ function hydrateViewCourseLinks() {
   });
 }
 
-// Hydrate every mini-card's NCES rating from BRIEF_CACHE. Same rationale
-// as hydrateViewCourseLinks — re-renders (filter, pick toggle, etc.)
-// should restore the rating immediately if the user already hovered over
-// that card in this session. Load is already live (renderLoadBadge reads
-// LOAD_BY_RWH every render), so we only need to fill the rating here.
+// Hydrate every mini-card's NCES rating from MINI_CACHE / BRIEF_CACHE.
+// Same rationale as hydrateViewCourseLinks — re-renders (filter, pick
+// toggle, etc.) must restore the rating immediately, never re-fetch.
+// MINI_CACHE (eager batch) is checked first; BRIEF_CACHE entries (from
+// an earlier hover) work too. Load is already live (renderLoadBadge
+// reads LOAD_BY_RWH every render), so we only need the rating here.
 function hydrateMiniCards() {
   document.querySelectorAll('.mini-card').forEach(function(m) {
     if (m.dataset.miniCode === undefined) return;
     var teacher = m.dataset.miniTeacher || '';
     var cacheKey = m.dataset.miniCode + '::' + teacher;
-    var cached = BRIEF_CACHE[cacheKey];
+    var cached = MINI_CACHE[cacheKey] || BRIEF_CACHE[cacheKey];
     if (cached && cached.available && (cached.rating || cached.rating === 0)) {
       var valEl = m.querySelector('.mc-rating .mc-val');
       if (valEl) {
@@ -809,7 +900,93 @@ function hydrateMiniCards() {
   });
 }
 
+// -- NCES eager load (batch ratings after a search) -------------------------
+// Product demands (2026-08-31):
+//   1. NCES scores visible IMMEDIATELY on the cards (no hover needed).
+//   2. The load resets ONLY when a search runs again — filter changes,
+//      pick toggles, and other re-renders must never re-trigger it.
+// Strategy: loadCourses() (the only "a search happened" path) calls this
+// after rendering results. We POST the result page's (code, teacher)
+// pairs to /api/nces/ratings — ONE request; the server does one cached
+// NCES search per unique code. Pairs already in MINI_CACHE/BRIEF_CACHE
+// are skipped (instant placeholders stay), pairs in flight are skipped
+// (no duplicates). Re-renders never call this — they only rehydrate
+// from the caches via hydrateMiniCards/hydrateViewCourseLinks above.
+// Hover keeps its deep per-card brief (dimensions, reviews, fallbacks).
+function ncesEagerLoad(courses) {
+  if (!courses || !courses.length) return;
+  var items = [];
+  var keys = [];
+  var seen = {};
+  for (var i = 0; i < courses.length && items.length < 60; i++) {
+    var c = courses[i];
+    if (!c || !c.code) continue;
+    var teacher = (c.teachers || []).join(',');
+    var key = c.code + '::' + teacher;
+    if (seen[key]) continue;
+    seen[key] = true;
+    // Skip anything we already have (mini batch, earlier hover) or that
+    // another in-flight batch already covers.
+    if (MINI_CACHE[key] || BRIEF_CACHE[key] || NCES_EAGER_INFLIGHT[key]) continue;
+    items.push({ code: c.code, teacher: teacher });
+    keys.push(key);
+  }
+  if (!items.length) return;
+  for (var k = 0; k < keys.length; k++) NCES_EAGER_INFLIGHT[keys[k]] = true;
+  // Visible progress: swap the dash placeholder for an ellipsis on the
+  // mini-cards this batch covers (reset on completion either way).
+  document.querySelectorAll('.mini-card').forEach(function(m) {
+    var mk = (m.dataset.miniCode || '') + '::' + (m.dataset.miniTeacher || '');
+    if (!NCES_EAGER_INFLIGHT[mk]) return;
+    var v = m.querySelector('.mc-rating .mc-val');
+    if (v && v.textContent === '—') v.textContent = '…';
+  });
+  postJSON('/api/nces/ratings', {
+    items: items,
+    xn: currentXn(),
+    xq: currentXq(),
+  }).then(function(d) {
+    var res = (d && d.results) || {};
+    for (var kj in res) {
+      if (!res.hasOwnProperty(kj)) continue;
+      MINI_CACHE[kj] = res[kj];
+    }
+    // Release the whole batch's guard (covers keys the response omitted
+    // via the server-side cap too).
+    for (var rj = 0; rj < keys.length; rj++) delete NCES_EAGER_INFLIGHT[keys[rj]];
+    hydrateMiniCards();
+    hydrateViewCourseLinks();
+    // Leftover ellipses = no data for that card (not indexed, teacher
+    // mismatch, or capped out). Back to the dash with an honest title.
+    document.querySelectorAll('.mini-card').forEach(function(m) {
+      var v = m.querySelector('.mc-rating .mc-val');
+      if (!v || v.textContent !== '…') return;
+      var mk = (m.dataset.miniCode || '') + '::' + (m.dataset.miniTeacher || '');
+      var rr = MINI_CACHE[mk];
+      v.textContent = '—';
+      var mcRating = m.querySelector('.mc-rating');
+      if (mcRating) {
+        mcRating.title = (rr && rr.available === false)
+          ? 'No NCES rating for this exact section — hover the name for the full lookup'
+          : 'NCES rating';
+      }
+    });
+  })['catch'](function() {
+    // Silent failure: badges fall back to "—" and hover still works.
+    // Release the guard so a later search can retry these keys.
+    for (var cj = 0; cj < keys.length; cj++) delete NCES_EAGER_INFLIGHT[keys[cj]];
+    document.querySelectorAll('.mini-card').forEach(function(m) {
+      var v = m.querySelector('.mc-rating .mc-val');
+      if (v && v.textContent === '…') v.textContent = '—';
+    });
+  });
+}
+
 function renderResults(courses) {
+  // ONE trigger for live-load auto-fetch: this function runs after every
+  // search AND every pick change, so a single debounced fetch fills both
+  // the search cards and the picked rows from the same source.
+  ensureLiveLoads();
   RESULTS.innerHTML = '';
   // Sticky results header — shows "Select all" + count, plus a small
   // "N / M picked" indicator so the user knows what's selected without
@@ -898,6 +1075,54 @@ function rerenderAllWithLoad() {
   }
 }
 
+// Auto-fetch live "currently selected" counts for every visible course
+// that lacks one (catalog-mode rows, file-loaded picks, solver-applied
+// sections). The load should appear WITHOUT the user hitting the manual
+// 🔄 button. Counts only exist in TIS's personal search, so this pings
+// refresh-load with the missing rwhs (its keyword backfill does one
+// search per code); if the selection round is closed TIS returns none
+// and the badge keeps its explanatory tooltip. Debounced + rate-limited
+// so the many renderPicked() calls collapse into one quiet fetch.
+var _autoLoadTimer = null;
+function ensureLiveLoads() {
+  if (_autoLoadTimer || LOAD_AUTO_BUSY) return;
+  _autoLoadTimer = setTimeout(function() {
+    _autoLoadTimer = null;
+    if (LOAD_AUTO_BUSY) return;
+    if (Date.now() - LOAD_AUTO_LOCK < 15000) return;  // TIS rate-limit guard
+    var missing = {};
+    Object.keys(PICKED).forEach(function(r) {
+      var c = PICKED[r];
+      if (!LOAD_BY_RWH[r] && (!c || typeof c.enrolled !== 'number')) missing[r] = true;
+    });
+    CAT.forEach(function(c) {
+      if (c && c.rwh && !LOAD_BY_RWH[c.rwh] && typeof c.enrolled !== 'number') missing[c.rwh] = true;
+    });
+    var list = Object.keys(missing);
+    if (!list.length) return;
+    LOAD_AUTO_BUSY = true;
+    postJSON('/api/tis/refresh-load' + sem() + '&mode=personal&page_size=1&rwhs=' +
+             encodeURIComponent(list.join(',')), {})
+      .then(function(d) {
+        LOAD_AUTO_BUSY = false;
+        LOAD_AUTO_LOCK = Date.now();
+        if (d && d.ok && d.loads) {
+          var keys = Object.keys(d.loads);
+          for (var i = 0; i < keys.length; i++) LOAD_BY_RWH[keys[i]] = d.loads[keys[i]];
+          try {
+            localStorage.setItem('tis-load-cache', JSON.stringify({
+              ts: LOAD_AUTO_LOCK, loads: LOAD_BY_RWH,
+            }));
+          } catch (e) {}
+          rerenderAllWithLoad();
+        }
+      })['catch'](function() {
+        LOAD_AUTO_BUSY = false;
+        LOAD_AUTO_LOCK = Date.now();
+      });
+  }, 400);
+}
+
 // renderLoadBadge: build the "[N] / [M]" load badge for a course card.
 //   c = course dict (must have rwh; capacity is optional)
 //   N (current load) is looked up from LOAD_BY_RWH (set by Refresh load button)
@@ -916,11 +1141,13 @@ function renderLoadBadge(c) {
   if (!hasN && !hasM) return '';
   var nHtml = hasN
     ? '<b style="color:var(--accent);font-weight:600">' + n + '</b>'
-    : '<span style="color:var(--mut)" title="Click 🔄 Refresh load to fetch live count">?</span>';
+    : '<span style="color:var(--mut)" title="Live count unavailable — auto-fetching; TIS only reports it during the selection round">?</span>';
   var mHtml = hasM
     ? '<b style="color:#3a7ad9;font-weight:600">' + cap + '</b>'
     : '<span style="color:var(--mut)">?</span>';
-  return '<span class="load-badge" title="Selected / Capacity (live)">' +
+  var over = (n != null && cap != null && cap > 0 && n > cap);
+  return '<span class="load-badge' + (over ? ' over-cap' : '') +
+    '" title="Selected / Capacity (live)' + (over ? ' — OVER CAPACITY' : '') + '">' +
     nHtml + ' / ' + mHtml +
     '</span>';
 }
@@ -945,21 +1172,24 @@ function renderCard(c) {
         '<input type="checkbox" class="pick-check" data-rwh="' + escapeHtml(c.rwh) + '"' +
         (PICKED[c.rwh] ? ' checked' : '') + ' />' +
       '</label>' +
-      '<span class="code">' + escapeHtml(c.code) + '</span>' +
-      '<span class="nm">' + escapeHtml(c.name || c.name_en || '') + '</span>' +
-      (c.class_group ? '<span class="grp">' + escapeHtml(c.class_group) + '</span>' : '') +
-      // Small mini-card pinned to the right of the title row. Shows:
-      //   - NCES rating (⭐ X.X/10) — placeholder dash before briefFetch
-      //     populates BRIEF_CACHE; hydrated from cache on re-render.
-      //   - TIS load ([N]/[M]) — current/capacity, always live.
-      // Kept compact so it doesn't push the schedule/meta down on long
-      // course lists. data-nces-code + data-nces-teacher let briefFetch
-      // and the hydrate pass target just this card.
-      '<span class="mini-card" data-mini-code="' + escapeHtml(c.code) + '" ' +
-        'data-mini-teacher="' + escapeHtml((c.teachers || []).join(',')) + '">' +
-        '<span class="mc-rating" title="NCES rating (hover to load)">⭐<span class="mc-val">—</span></span>' +
-        '<span class="mc-load" title="TIS enrollment — current / capacity">' +
-          (renderLoadBadge(c) || '<span class="mc-val mc-muted">Load?</span>') +
+      '<button class="must-btn' + (MUST_CODES[c.code] ? ' on' : '') + '" data-must-code="' + escapeHtml(c.code) + '" title="' + (MUST_CODES[c.code] ? 'Remove MUST-take mark' : 'Mark as MUST-take — the solver must keep this course') + '">★</button>' +
+      // Full course name on its OWN line — never compressed/ellipsized.
+      // Checkbox + ★ share the first row; code/class + mini-card badges
+      // (NCES rating, TIS load) go to the row AFTER the name so long
+      // names get all the horizontal space.
+      '<span class="nm-line">' +
+        '<span class="nm">' + escapeHtml(c.name || c.name_en || '') + '</span>' +
+        (MUST_CODES[c.code] ? '<span class="must-badge">MUST</span>' : '') +
+      '</span>' +
+      '<span class="top-sub">' +
+        '<span class="code">' + escapeHtml(c.code) + '</span>' +
+        (c.class_group ? '<span class="grp">' + escapeHtml(c.class_group) + '</span>' : '') +
+        '<span class="mini-card" data-mini-code="' + escapeHtml(c.code) + '" ' +
+          'data-mini-teacher="' + escapeHtml((c.teachers || []).join(',')) + '">' +
+          '<span class="mc-rating" title="NCES rating — loads with the search results; hover the name for the full card">⭐<span class="mc-val">—</span></span>' +
+          '<span class="mc-load" title="TIS enrollment — current / capacity">' +
+            (renderLoadBadge(c) || '<span class="mc-val mc-muted">Load?</span>') +
+          '</span>' +
         '</span>' +
       '</span>' +
     '</div>' +
@@ -969,10 +1199,21 @@ function renderCard(c) {
     '<div class="meta">' +
       (hasRealTeacher ? '<b>Teacher</b> ' + escapeHtml(teachers) : '<span style="color:var(--mut)"><b>Teacher</b> TBD</span>') +
       (c.credits ? ' · <b>Credits</b> ' + c.credits : '') +
+      // Grading scheme (计分方式: 二级制/十三级制) + conflicting courses
+      // (冲突课程) — #8/#9 of the webui problems list. Plain text on the
+      // existing meta line (no chips, no coloured fills).
+      (c.grading ? ' · <b>Grading</b> ' + escapeHtml(c.grading) : '') +
+      (c.conflicts ? ' · <b>Conflicts</b> ' + escapeHtml(c.conflicts) : '') +
       // TIS load is now in the title-row mini-card (.mc-load) so it sits
       // next to the NCES rating where the user can scan both at once.
     '</div>' +
     (schedHTML ? '<div class="sched"><span class="sched-lbl">Schedule</span>' + schedHTML + '</div>' : '') +
+    // 选课要求 (requirement) + 备注 (note) — #10. Requirement is often a
+    // real warning ("课程即将停开，请同学们尽快退课") so it gets the bad-
+    // colour TEXT (no background fills per the styling rules); note is
+    // muted. Plain text lines, existing font sizes.
+    (c.requirement ? '<div style="color:var(--bad);font-size:.72rem;margin-top:.15rem">⚠ <b>Requirement</b> ' + escapeHtml(c.requirement) + '</div>' : '') +
+    (c.note ? '<div style="color:var(--mut);font-size:.72rem;margin-top:.15rem"><b>Note</b> ' + escapeHtml(c.note) + '</div>' : '') +
     (c.code ? '<div class="nces-link">' +
       '<a href="https://ncesnext.com/search?q=' + encodeURIComponent(c.code) + '" target="_blank" rel="noopener">Compare in NCES ↗</a>' +
       // Direct course page (e.g. /course/123/) — opens the specific section
@@ -990,10 +1231,14 @@ function renderCard(c) {
   card.addEventListener('click', function(e) {
     if (e.target.closest('a')) return;  // NCES link
     if (e.target.closest('.pick-check')) return;  // checkbox handles itself
+    if (e.target.closest('.must-btn')) return;    // MUST toggle handles itself
     // Bare-card click → open the NCES detail modal for this course.
     // Unpick via the checkbox on the card.
     openCourseNcesModal(c.rwh);
   });
+
+  var mbtn = card.querySelector('.must-btn');
+  if (mbtn) mbtn.addEventListener('click', function(e) { e.stopPropagation(); toggleMust(c.code); });
 
   var check = card.querySelector('.pick-check');
   if (check) {
@@ -1037,12 +1282,18 @@ function renderFilterPills() {
     'f-campus': 'Campus',
     'f-lang': 'Language',
     'f-cult': 'Level',
+    'f-grading': 'Grading',
     'f-teacher': 'Teacher',
     'f-xkfsdm': 'Course Type',
   };
   for (var id in fNames) {
     var el = document.getElementById(id);
     if (el && el.value && el.value !== '') {
+      // Any visible pill means filters are active — set clearAll so the
+      // pill row (and its Clear-all action) actually renders. Without
+      // this, a select-ONLY filter (e.g. just College, or just the Type
+      // tab preserved by Clear-all) rendered no pills at all.
+      clearAll = true;
       pills.push('<span class="filter-pill" data-filter="' + fNames[id] + '">' +
                  escapeHtml(fNames[id]) + ': ' + escapeHtml(el.value) +
                  '<span class="fp-x">✕</span></span>');
@@ -1068,13 +1319,41 @@ function renderFilterPills() {
     return;
   }
   container.innerHTML = pills.join('') +
+    // One-click "clear every filter and search again" (#2 of the problems
+    // list). Reuses the .filter-pill class; the bad-colour TEXT (no
+    // background fill, per the styling rules) marks it as the destructive
+    // reset action. Same click handler below.
+    '<span class="filter-pill" data-filter="__clear_all" title="Reset every filter and search again" ' +
+      'style="color:var(--bad);border-color:var(--bad)">✕ Clear all</span>' +
     '<span class="filter-pill fp-empty" style="visibility:hidden"></span>';
 
   // Click handler: clicking ✕ clears that filter and re-searches
   container.querySelectorAll('.filter-pill').forEach(function(pill) {
     pill.addEventListener('click', function(e) {
-      if (e.target.closest('.fp-x')) {
+      if (e.target.closest('.fp-x') || pill.dataset.filter === '__clear_all') {
         var filter = pill.dataset.filter;
+        if (filter === '__clear_all') {
+          // Reset every FILTER control in one go, then re-search (#2).
+          // f-xkfsdm (Type) is deliberately PRESERVED — it's the selection
+          // round TAB, not a search filter (same semantics as the official
+          // TIS page: clearing the search never jumps you off the tab),
+          // and personal searches with an empty xkfsdm fail outright.
+          KW.value = '';
+          F_COL.value = ''; F_TASK.value = ''; F_CAT.value = '';
+          F_CAM.value = ''; F_LANG.value = ''; F_CULT.value = '';
+          F_TEACHER.value = '';
+          if (F_GRADING) F_GRADING.value = '';
+          F_SCH.checked = false;
+          var _ids = ['f-ign-conf', 'f-ign-zero', 'f-wday', 'f-ps', 'f-pe'];
+          for (var ci = 0; ci < _ids.length; ci++) {
+            var cel = document.getElementById(_ids[ci]);
+            if (!cel) continue;
+            if (cel.type === 'checkbox') cel.checked = false;
+            else cel.value = '';
+          }
+          loadCourses();
+          return;
+        }
         // Clear the corresponding input
         if (filter === 'keyword') { KW.value = ''; }
         else if (filter === 'College') { F_COL.value = ''; }
@@ -1083,6 +1362,7 @@ function renderFilterPills() {
         else if (filter === 'Campus') { F_CAM.value = ''; }
         else if (filter === 'Language') { F_LANG.value = ''; }
         else if (filter === 'Level') { F_CULT.value = ''; }
+        else if (filter === 'Grading') { if (F_GRADING) F_GRADING.value = ''; }
         else if (filter === 'Teacher') { F_TEACHER.value = ''; }
         else if (filter === 'Course Type') { var ctEl = document.getElementById('f-xkfsdm'); if (ctEl) ctEl.value = ''; }
         else if (filter === 'scheduled') { F_SCH.checked = false; }
@@ -1307,6 +1587,7 @@ BRIEF_CARD.addEventListener('mouseleave', function() { briefHide(); });
 var EVAL_PAGE = 1;
 var EVAL_PER_PAGE = 30;
 var EVAL_SORT = 'rating';        // 'rating' | 'reviews' | 'name'
+var EVAL_MIN_RATING = 0;         // client-side "rating ≥ X" filter (eval sheet)
 var EVAL_SEARCH = '';            // current search query
 var EVAL_TOTAL_PAGES = 1;
 var EVAL_TOTAL = 0;
@@ -1428,8 +1709,18 @@ function renderEvalBrowse() {
     } else if (!items.length) {
       html += '<div class="empty" style="padding:1.5rem;text-align:center">No courses found.</div>';
     } else {
+      var shown = 0;
       for (var i = 0; i < items.length; i++) {
-        html += renderEvalBrowseCard(items[i]);
+        var it = items[i];
+        // Client-side "lowest acceptable rating" filter (eval sheet).
+        if (EVAL_MIN_RATING > 0 && it.rate_average != null &&
+            it.rate_average < EVAL_MIN_RATING) continue;
+        html += renderEvalBrowseCard(it);
+        shown++;
+      }
+      if (!shown && EVAL_MIN_RATING > 0) {
+        html += '<div class="empty" style="padding:1.5rem;text-align:center">' +
+          'No courses rated ≥ ' + EVAL_MIN_RATING + '.</div>';
       }
     }
     html += '</div>';
@@ -1995,16 +2286,53 @@ function renderPicked() {
       totalCredits += codeCredits[code];
     }
   }
+  // Locked mode (#5): when TIS-enrolled courses are "unquestionable"
+  // (IGNORE_TIS_ENROLLED off) they're part of the schedule, so their
+  // credits count toward the total even though they're not in PICKED.
+  // Unique-code rule applies the same way — an enrolled course the user
+  // ALSO picked isn't double-counted. ENROLLED_RWH is a Set: iterate via
+  // Array.from (Object.keys on a Set returns []).
+  var enrolledCr = 0;
+  var enrolledCourses = 0;
+  if (!IGNORE_TIS_ENROLLED && ENROLLED_RWH && ENROLLED_RWH.size) {
+    Array.from(ENROLLED_RWH).forEach(function(rwh) {
+      if (PICKED[rwh]) return;
+      var ec = ENROLLED_DATA[rwh];
+      if (!ec || !ec.code || (ec.code in codeCredits)) return;
+      codeCredits[ec.code] = parseFloat(ec.credits) || 0;
+      enrolledCr += codeCredits[ec.code];
+      enrolledCourses++;
+    });
+    totalCredits += enrolledCr;
+  }
   PICK_STAT.textContent = keys.length + ' sections · ' +
     Object.keys(codeCredits).length + ' courses · ' +
-    totalCredits.toFixed(1) + ' Credits';
+    totalCredits.toFixed(1) + ' Credits' +
+    (totalCredits > UG_MAX_CREDITS ? ' · ⚠ OVER ' + UG_MAX_CREDITS + '-credit UG cap' : '') +
+    (enrolledCourses ? ' (incl. ' + enrolledCourses + ' enrolled)' : '');
   // The action buttons (Save, Load, Drop-all, Remove-selected, Select-all)
   // are built once by initPickedActions() in DOMContentLoaded. Per-render
   // updates: the Save button label + the Select-all header count need to
   // stay in sync with the current PICKED size.
   updatePickedActionsState();
 
-  if (!keys.length) {
+  // TIS-enrolled courses render like picks — full details, not just a
+  // count (user request 2026-08-31: "show the current enrolled like if
+  // you selected them in the ui"). Enrolled courses the user ALSO picked
+  // are already covered by the pick rows above.
+  var enrolledRows = [];
+  if (ENROLLED_RWH && ENROLLED_RWH.size) {
+    Array.from(ENROLLED_RWH).forEach(function(rwh) {
+      if (PICKED[rwh]) return;
+      var ec = ENROLLED_DATA[rwh];
+      if (ec && ec.rwh) enrolledRows.push(ec);
+    });
+    enrolledRows.sort(function(a, b) {
+      return (a.code || '').localeCompare(b.code || '');
+    });
+  }
+
+  if (!keys.length && !enrolledRows.length) {
     // Page is blank until the user loads a file. Make the empty state
     // useful — show a hint pointing at the Load button + drag-drop.
     PICK_LIST.innerHTML = '<div class="loading" style="padding:1rem .7rem;line-height:1.5">' +
@@ -2018,18 +2346,30 @@ function renderPicked() {
   for (var j = 0; j < keys.length; j++) {
     PICK_LIST.appendChild(renderPickItem(PICKED[keys[j]]));
   }
+  for (var ej = 0; ej < enrolledRows.length; ej++) {
+    PICK_LIST.appendChild(renderPickItem(enrolledRows[ej], true));
+  }
   updateSolveCodes();
 }
 
-function renderPickItem(c) {
+function renderPickItem(c, enrolledRow) {
   var div = document.createElement('div');
   div.className = 'pick';
   div.dataset.rwh = c.rwh;
   // Drag-to-reorder support. The picked list doubles as the priority
   // list for the solver, so reordering items = reprioritising courses
-  // (like SUSTech_AutoScheduler). The drag handle is the whole item,
-  // but right-click is reserved for the un-pick badge.
-  div.draggable = true;
+  // (like SUSTech_AutoScheduler). Only the small grip handle (⋮⋮) is
+  // draggable — the rest of the row stays text-selectable (drag on a
+  // whole draggable row would otherwise block selecting/copying text).
+  // Right-click is reserved for the un-pick badge.
+  // Enrolled-not-picked rows are NOT draggable — they're not in PICKED,
+  // so they have no priority to reorder.
+  div.draggable = false;
+  if (enrolledRow) {
+    div.title = IGNORE_TIS_ENROLLED
+      ? 'Already enrolled on TIS (informational in this mode — Drop-all can remove it)'
+      : 'Already enrolled on TIS — locked in this mode (unquestionable)';
+  }
 
   var enrolled = ENROLLED_RWH.has(c.rwh);
   var schedHTML = c.slots && c.slots.length ? formatScheduleHTML(c.slots) : '';
@@ -2053,14 +2393,13 @@ function renderPickItem(c) {
     }
   }
 
+  div.classList.toggle('must-row', !!MUST_CODES[c.code]);
   div.innerHTML =
-    '<label class="picked-check-wrap" title="Tick to mark for bulk remove">' +
-      '<input type="checkbox" class="picked-check" data-rwh="' + escapeHtml(c.rwh) + '"' +
-        (PICKED_CHECKED[c.rwh] ? ' checked' : '') + '>' +
-    '</label>' +
+    (!enrolledRow ? '<span class="pick-grip" draggable="true" title="Drag to reorder priority (the row itself stays text-selectable)"></span>' : '') +
     '<div class="pick-body">' +
       '<div class="pn">' + escapeHtml(c.name || c.name_en || '') +
-        (enrolled ? '<span class="pick-enrolled">enrolled</span>' : '') +
+        (enrolled ? '<span class="pick-enrolled">' +
+          (IGNORE_TIS_ENROLLED ? 'enrolled' : '🔒 enrolled') + '</span>' : '') +
         (conflictMsg ? '<span style="float:right;color:var(--bad);font-size:.65rem">⚠ conflicted</span>' : '') +
       '</div>' +
       (c.section_name && c.section_name !== c.name
@@ -2070,11 +2409,20 @@ function renderPickItem(c) {
         '<b>Teacher</b> ' + teachers +
         ' · <b>' + escapeHtml(c.code) + '</b>' +
         (c.class_group ? ' · ' + escapeHtml(c.class_group) : '') +
-        (schedHTML ? ' · ' + schedHTML : '') +
-        (renderLoadBadge(c) ? ' · ' + renderLoadBadge(c) : '') +
-        (conflictMsg ? '<br><span style="color:var(--bad);font-size:.68rem">' + conflictMsg + '</span>' : '') +
+        (c.grading ? ' · ' + escapeHtml(c.grading) : '') +
       '</div>' +
-    '</div>';
+      (schedHTML ? '<div class="pm" style="margin-top:.15rem"><b>Location</b> ' + schedHTML + '</div>' : '') +
+      (renderLoadBadge(c) ? '<div class="pm" style="margin-top:.15rem"><b>Capacity</b> ' + renderLoadBadge(c) + '</div>' : '') +
+      (conflictMsg ? '<div class="pm" style="margin-top:.15rem;color:var(--bad);font-size:.68rem">' + conflictMsg + '</div>' : '') +
+    '</div>' +
+    '<button class="must-btn' + (MUST_CODES[c.code] ? ' on' : '') + '" data-must-code="' + escapeHtml(c.code) + '" title="' + (MUST_CODES[c.code] ? 'Remove MUST-take mark' : 'Mark as MUST-take — the solver must keep this course') + '">★</button>' +
+    '<label class="picked-check-wrap" title="' +
+      (enrolledRow ? 'TIS-enrolled — not a pick, nothing to bulk-remove'
+                   : 'Tick to mark for bulk remove') + '">' +
+      '<input type="checkbox" class="picked-check" data-rwh="' + escapeHtml(c.rwh) + '"' +
+        (PICKED_CHECKED[c.rwh] ? ' checked' : '') +
+        (enrolledRow ? ' disabled' : '') + '>' +
+    '</label>';
 
   // Per-card checkbox — toggles the PICKED_CHECKED set. The label wrapper
   // captures the click; the checkbox state itself drives the visual.
@@ -2088,6 +2436,9 @@ function renderPickItem(c) {
   // the whole card; the checkbox must not initiate it).
   cb.addEventListener('mousedown', function(e) { e.stopPropagation(); });
   cb.addEventListener('dragstart', function(e) { e.preventDefault(); });
+
+  var mbtn2 = div.querySelector('.must-btn');
+  if (mbtn2) mbtn2.addEventListener('click', function(e) { e.stopPropagation(); toggleMust(c.code); });
 
   return div;
 }
@@ -2129,6 +2480,12 @@ function attachPickedDragHandlers() {
     var above = (e.clientY - rect.top) < rect.height / 2;
     item.classList.toggle('drag-over-above', above);
     item.classList.toggle('drag-over-below', !above);
+    // Auto-scroll the picked list while dragging near its edges, so a long
+    // priority list can be reordered without letting go mid-way.
+    var pr = PICK_LIST.getBoundingClientRect();
+    var edge = 48;
+    if (e.clientY < pr.top + edge) PICK_LIST.scrollTop -= 10;
+    else if (e.clientY > pr.bottom - edge) PICK_LIST.scrollTop += 10;
   });
   PICK_LIST.addEventListener('dragleave', function(e) {
     var item = e.target.closest('.pick');
@@ -2185,6 +2542,52 @@ function updateSolveCodes() {
   }
   var codeList = Object.keys(codes);
   SOLVE_CODES.textContent = codeList.length ? codeList.join(', ') : 'none';
+}
+
+// -- MUST-take courses (by code, any teacher/class) ----------------------
+// Code → full-name lookup for display ("human don't read code").
+function buildCodeToName() {
+  var m = {};
+  Object.keys(PICKED).forEach(function(rwh) {
+    var p = PICKED[rwh];
+    if (p.code && p.name && !m[p.code]) m[p.code] = p.name;
+  });
+  CAT.forEach(function(c) {
+    if (c.code && c.name && !m[c.code]) m[c.code] = c.name;
+  });
+  return m;
+}
+
+function toggleMust(code) {
+  if (!code) return;
+  if (MUST_CODES[code]) delete MUST_CODES[code];
+  else MUST_CODES[code] = true;
+  updateMustCodes();
+  renderResults(CAT);   // re-render cards so MUST badges update
+  renderPicked();
+}
+
+function updateMustCodes() {
+  if (!MUST_CODES_EL) return;
+  var codes = Object.keys(MUST_CODES);
+  if (!codes.length) {
+    MUST_CODES_EL.innerHTML = 'none';
+    return;
+  }
+  var names = buildCodeToName();
+  var chips = codes.map(function(c) {
+    return '<span class="must-chip" data-code="' + escapeHtml(c) + '">' +
+      '<b style="color:#e8c547">★</b> <b>' + escapeHtml(c) + '</b> ' +
+      escapeHtml(names[c] || '') +
+      ' <span class="must-chip-x" title="Remove MUST mark">✕</span></span>';
+  }).join(' ');
+  MUST_CODES_EL.innerHTML = chips;
+  MUST_CODES_EL.querySelectorAll('.must-chip-x').forEach(function(x) {
+    x.addEventListener('click', function() {
+      var chip = x.closest('.must-chip');
+      if (chip) toggleMust(chip.dataset.code);
+    });
+  });
 }
 
 // -- Weekly Grid (merged multi-period blocks, per-cell column packing) --
@@ -2288,6 +2691,19 @@ function sectionsToBlocks(sections) {
     }
   }
   return allBlocks;
+}
+
+// Full display identity for a course section. The section name (rwmc) is
+// authoritative when it is more specific than the generic course name —
+// e.g. PE "体育V-中文-水域运动1班" (carries the activity) vs name "体育V".
+// Fall back to name + class_group + language fragments otherwise.
+function sectionDisplayName(co) {
+  if (!co) return '';
+  var sec = co.section_name || co.section_name_en || '';
+  if (sec && sec !== (co.name || '')) return sec;
+  return (co.name || '') +
+    (co.class_group ? '·' + co.class_group : '') +
+    (co.language ? '-' + co.language : '');
 }
 
 function detectConflicts(allBlocks) {
@@ -2407,10 +2823,10 @@ function renderGridTable(tbody, items) {
               'height:' + spanH + 'px;top:0;' +
               'z-index:' + z + ';' +
               '" ' +
-              'title="' + escapeHtml(b.code + ' ' + (b.course.class_group || '') + (b.course.teachers && b.course.teachers[0] ? ' · ' + b.course.teachers.join(', ') : '') + ' · ' + dayName(b.day) + ' ' + b.periodStart + '-' + b.periodEnd + (b.conflict ? ' ⚠ CONFLICT' : '')) + '" ' +
+              'title="' + escapeHtml(b.code + ' ' + sectionDisplayName(b.course) + (b.course.teachers && b.course.teachers[0] ? ' · ' + b.course.teachers.join(', ') : '') + ' · ' + dayName(b.day) + ' ' + b.periodStart + '-' + b.periodEnd + (b.conflict ? ' ⚠ CONFLICT' : '')) + '" ' +
               'data-rwh="' + b.rwh + '">' +
               '<span class="t">' + escapeHtml(b.code) + '</span>' +
-              '<span style="font-size:.6rem;opacity:.8;display:block">' + escapeHtml(b.course.name || '') + (b.course.class_group ? ' <span style="opacity:.7">·' + escapeHtml(b.course.class_group) + '</span>' : '') + '</span>' +
+              '<span style="font-size:.6rem;opacity:.8;display:block">' + escapeHtml(sectionDisplayName(b.course)) + '</span>' +
               (b.course.teachers && b.course.teachers[0]
                 ? '<span style="font-size:.58rem;opacity:.65;display:block;font-style:italic">' + escapeHtml(b.course.teachers.join(', ')) + '</span>'
                 : '') +
@@ -2503,7 +2919,7 @@ function renderBlockGrid() {
     h += '</tr>';
   }
   BLOCK_BODY.innerHTML = h;
-  applyBlockedVisual(BLOCK_BODY);
+  applyBlockedVisual(BLOCK_BODY, null);
   attachGridBlockingHandlers(BLOCK_BODY);
   attachGridContextMenu(BLOCK_BODY);
 }
@@ -2530,8 +2946,8 @@ function renderGrid() {
   // the cell already has a course drawn). Blocking is now edited in the
   // scheduler tab's single grid, but we still mirror the state here so the
   // user can SEE which slots are off-limits.
-  applyBlockedVisual(GRID_ODD);
-  applyBlockedVisual(GRID_EVEN);
+  applyBlockedVisual(GRID_ODD, 'odd');
+  applyBlockedVisual(GRID_EVEN, 'even');
   // Right-click on a course block → action menu (NCES page / remove).
   attachBlockContextMenu(GRID_ODD);
   attachBlockContextMenu(GRID_EVEN);
@@ -2619,8 +3035,8 @@ function renderGrid3() {
   }
   _tagEnrolled(GRID_ODD_3);
   _tagEnrolled(GRID_EVEN_3);
-  applyBlockedVisual(GRID_ODD_3);
-  applyBlockedVisual(GRID_EVEN_3);
+  applyBlockedVisual(GRID_ODD_3, 'odd');
+  applyBlockedVisual(GRID_EVEN_3, 'even');
   // Right-click on a course block → action menu (NCES page / remove).
   // Picks show both options; enrolled blocks show only the NCES link
   // (you can't remove enrolled from the app — it's driven by TIS).
@@ -2871,17 +3287,31 @@ function hideBlockActionMenu() {
 
 // Apply .blocked class + data-mode attribute to cells matching BLOCKED state.
 // Used after renderGridBlocks() (which overwrites innerHTML).
-function applyBlockedVisual(tbody) {
+// `parity` is 'odd' | 'even' | null:
+//   - For the split odd/even grids, a block restricted to one parity (mode
+//     'odd'/'even') is shown ONLY in the grid of that parity — and rendered
+//     as a full-square wash (.blocked-parity) instead of a triangle in both
+//     grids (the triangle is only meaningful in the single editing grid).
+//   - null (the single block-editor grid) shows every mode.
+function applyBlockedVisual(tbody, parity) {
   if (!tbody) return;
   var cells = tbody.querySelectorAll('td[data-day][data-period]');
   cells.forEach(function(td) {
     var key = td.getAttribute('data-day') + ':' + td.getAttribute('data-period');
     if (BLOCKED[key]) {
-      td.classList.add('blocked');
       var mode = _blockMode(key);
+      // Parity-restricted block: only the matching lane shows it.
+      if (parity && mode !== 'all' && mode !== parity) {
+        td.classList.remove('blocked', 'blocked-parity');
+        td.removeAttribute('data-mode');
+        return;
+      }
+      td.classList.add('blocked');
+      if (parity && mode !== 'all') td.classList.add('blocked-parity');
+      else td.classList.remove('blocked-parity');
       td.setAttribute('data-mode', mode);
     } else {
-      td.classList.remove('blocked');
+      td.classList.remove('blocked', 'blocked-parity');
       td.removeAttribute('data-mode');
     }
   });
@@ -2919,9 +3349,9 @@ function attachGridBlockingHandlers(tbody) {
     }
   }
   function refresh() {
-    applyBlockedVisual(GRID_ODD);
-    applyBlockedVisual(GRID_EVEN);
-    if (BLOCK_BODY) applyBlockedVisual(BLOCK_BODY);
+    applyBlockedVisual(GRID_ODD, 'odd');
+    applyBlockedVisual(GRID_EVEN, 'even');
+    if (BLOCK_BODY) applyBlockedVisual(BLOCK_BODY, null);
     syncBlockedInput();
   }
 
@@ -3015,6 +3445,13 @@ function loadEnrolled() {
   // A small #enrolled-status line under the toggle gives the user
   // immediate feedback that the refresh actually ran (and surfaces
   // TIS-side failures instead of failing silently in the console).
+  //
+  // Returns the fetch promise (callers like dropAllEnrolled lazy-load
+  // through it). Data MERGES with what the personal search already
+  // ingested: the endpoint's fields win on conflict, but rich fields
+  // only the search carries (bid, grading, teachers, credits, …)
+  // survive. The endpoint's boolean `enrolled` marker is dropped so it
+  // can't clobber the seat-count `enrolled` number the load badge reads.
   var statusEl = document.getElementById('enrolled-status');
   function setStatus(html, cls) {
     if (!statusEl) return;
@@ -3022,9 +3459,7 @@ function loadEnrolled() {
     statusEl.innerHTML = html;
   }
   setStatus('⏳ Loading TIS enrolled…', 'loading');
-  getJSON('/api/tis/enrolled' + sem()).then(function(d) {
-    ENROLLED_RWH = new Set();
-    ENROLLED_DATA = {};
+  var p = getJSON('/api/tis/enrolled' + sem()).then(function(d) {
     if (d.error) {
       console.warn('enrolled load failed:', d.error);
       setStatus('⚠️ Enrolled load failed: ' + escapeHtml(d.error), 'err');
@@ -3035,13 +3470,20 @@ function loadEnrolled() {
       return;
     }
     var list = d.enrolled || [];
+    var fresh = new Set();
+    var freshData = {};
     for (var i = 0; i < list.length; i++) {
       var item = list[i];
       var rwh = item.rwh || '';
-      ENROLLED_RWH.add(rwh);
-      ENROLLED_DATA[rwh] = item;  // cache full data for renderGrid3()
+      if (!rwh) continue;
+      fresh.add(rwh);
+      var clean = Object.assign({}, item);
+      delete clean.enrolled;   // boolean marker — keep the numeric seat count
+      freshData[rwh] = Object.assign({}, ENROLLED_DATA[rwh] || {}, clean);
     }
-    renderPicked();           // 🔒 badges on already-loaded picks
+    ENROLLED_RWH = fresh;
+    ENROLLED_DATA = freshData;
+    renderPicked();           // 🔒 badges on already-loaded picks (+ enrolled rows)
     renderGrid3();            // step-3 weekly grid re-renders with locks
     renderBidPanel();         // locked-enrolled boxes appear in step 5
     if (ENROLLED_RWH.size === 0) {
@@ -3051,10 +3493,21 @@ function loadEnrolled() {
         ? ENROLLED_RWH.size + ' TIS-enrolled (ignored)'
         : '🔒 ' + ENROLLED_RWH.size + ' TIS-enrolled (locked)', 'ok');
     }
+    // If no successful personal search has run yet (rate-limited cold
+    // start, campus mode), ROUND_INFO.jffs is 0 and the bid panel is
+    // blind. Fill the budget numbers from /api/tis/round — same
+    // xkgzszOne source, one cheap TIS call, only when missing.
+    if (!ROUND_INFO.jffs) {
+      loadRound().then(function() {
+        renderBidPanel();
+        updateBidStat();
+      });
+    }
   })['catch'](function(e) {
     console.warn('enrolled load error:', e.message);
     setStatus('⚠️ Enrolled load error: ' + escapeHtml(e.message), 'err');
   });
+  return p;
 }
 
 // -- Solver (priority-based course dropping) ------------------------------
@@ -3091,9 +3544,27 @@ function solve() {
     // those rwhs in every solution (drop other picked courses first).
     // When the flag is on (default), the solver is free to drop them.
     locked_rwhs: IGNORE_TIS_ENROLLED ? [] : Array.from(ENROLLED_RWH),
+    // MUST-take courses: codes the solver must keep in every solution
+    // (any section/teacher of the code is acceptable).
+    required_codes: Object.keys(MUST_CODES),
     max: 30
   }).then(function(d) {
+    // Empty catalog ≠ impossible — say so plainly (off-campus/VPN or an
+    // expired session make the solver blind, not the picks conflicting).
+    if (d && d.catalog_empty) {
+      SOLVE_OUT.innerHTML = '<div class="flash err" style="margin:.4rem 0">' +
+        '⚠ ' + escapeHtml(d.message || 'Course catalog is empty — cannot solve. Check network/VPN/auth.') +
+        '</div>';
+      return;
+    }
     var solutions = d.solutions || [];
+
+    // MUST-take report from the server (feasibility + impossible codes).
+    SOLVER_MUST = {
+      feasible: d.must_feasible !== false,
+      impossible: Array.isArray(d.must_impossible) ? d.must_impossible : [],
+      required: Object.keys(MUST_CODES),
+    };
 
     if (!solutions.length) {
       SOLVE_OUT.innerHTML = '<div class="ncn">No valid non-conflicting combinations found. ' +
@@ -3219,6 +3690,7 @@ function solve() {
         var schedStr = sec.schedule || formatSchedule(sec.slots);
         totalCredits += parseFloat(sec.credits) || 0;
         secHtml += '<div class="sc-sec">' +
+          (SOLVER_MUST && SOLVER_MUST.required.indexOf(sec.code) >= 0 ? '<span style="color:#e8c547" title="MUST-take">★ </span>' : '') +
           codeAndName(sec.code) +
           (sec.class_group ? ' <span style="color:var(--mut)">cls ' + escapeHtml(sec.class_group) + '</span>' : '') +
           (sec.teachers && sec.teachers[0] ? ' · ' + escapeHtml(sec.teachers.join(', ')) : '') +
@@ -3239,7 +3711,12 @@ function solve() {
           var reasonText = reason && reason[0]
             ? '↔ conflict with <b>' + codeAndName(reason[0].code) + '</b>'
             : '↔ no non-conflicting section exists';
-          dropHtml += '<div class="sc-drop-row">' +
+          // MUST-take course that got dropped — the loudest possible
+          // signal ("what got removed in must-takes").
+          var isMustDrop = SOLVER_MUST && SOLVER_MUST.required.indexOf(code) >= 0 &&
+                           (sol.must_dropped || []).indexOf(code) >= 0;
+          dropHtml += '<div class="sc-drop-row' + (isMustDrop ? ' sc-must-drop' : '') + '">' +
+            (isMustDrop ? '<span style="color:#e8c547;font-weight:700">★ MUST ✗ </span>' : '') +
             codeAndName(code) + ': <span style="color:var(--bad)">dropped</span>. ' +
             reasonText +
           '</div>';
@@ -3322,7 +3799,20 @@ function solve() {
       }
       groupHtml += '</div>';
 
+      var mustBanner = '';
+      if (SOLVER_MUST && SOLVER_MUST.required.length && !SOLVER_MUST.feasible) {
+        mustBanner = '<div class="flash err" style="margin-bottom:.6rem">' +
+          '<b>⚠ MUST-take courses cannot all be placed together.</b> ' +
+          (SOLVER_MUST.impossible.length
+            ? 'Impossible: ' + SOLVER_MUST.impossible.map(codeAndName).join(', ') + '. '
+            : 'Some required courses conflict with each other or with your blocked slots. ') +
+          'The solutions below drop the least-important must-courses to keep the rest. ' +
+          'Every teacher/class of a marked course was considered — if one still can\'t fit, ' +
+          'it conflicts with your blocked slots or with another must-course.</div>';
+      }
+
       var h =
+        mustBanner +
         groupHtml +
         '<div class="solve-nav">' +
           '<button class="nav-btn" id="solve-prev"' + (idx === 0 ? ' disabled' : '') + '>◀</button>' +
@@ -3445,6 +3935,15 @@ function saveCurrentSolverSchedule(sol) {
   // the user hadn't blocked any slots when they saved.
   var blockedStr = blockedToInput();
   var blockedCount = blockedStr ? blockedToInput().split('/').filter(function(s) { return s.trim(); }).length : 0;
+  // Bid strategy snapshot (#7): the current bid distribution is part of
+  // the plan's expected outcome, so it saves WITH the schedule and Apply
+  // restores both together. Reads through the shared _bidRead helper so
+  // locked-enrolled bids (EXISTING_BIDS) round-trip too.
+  var bids = {};
+  for (var bi = 0; bi < sol.sections.length; bi++) {
+    var brwh = sol.sections[bi].rwh;
+    if (brwh) bids[brwh] = _bidRead(brwh);
+  }
   var entry = {
     label: label,
     sections: JSON.parse(JSON.stringify(sol.sections)),
@@ -3454,6 +3953,10 @@ function saveCurrentSolverSchedule(sol) {
     // New: blocked + priority snapshot for round-trip reproducibility
     blocked: blockedStr || null,
     priority: SOLVER_codeOrder ? SOLVER_codeOrder.slice() : null,
+    // New: bid-point distribution snapshot (#7)
+    bids: bids,
+    // New: MUST-take course codes (#4)
+    mustCodes: Object.keys(MUST_CODES),
   };
   SAVED_SCHEDULES.push(entry);
   try { localStorage.setItem('tis-saved-schedules', JSON.stringify(SAVED_SCHEDULES)); } catch (e) {}
@@ -3474,6 +3977,14 @@ function exportSolverScheduleAsJson(sol) {
   }
   var idx = SOLVER_IDX + 1;
   var blockedStr = blockedToInput() || null;
+  // Bid strategy snapshot (#7) — same rationale as
+  // saveCurrentSolverSchedule: the exported solution carries its
+  // expected bid distribution so loading it restores the full plan.
+  var bids = {};
+  for (var bi = 0; bi < sol.sections.length; bi++) {
+    var brwh = sol.sections[bi].rwh;
+    if (brwh) bids[brwh] = _bidRead(brwh);
+  }
   var envelope = {
     version: 2,
     type: 'tis-candidate',
@@ -3485,6 +3996,8 @@ function exportSolverScheduleAsJson(sol) {
       totalCredits: totalCredits,
       blocked: blockedStr,
       priority: SOLVER_codeOrder ? SOLVER_codeOrder.slice() : null,
+      bids: bids,
+      mustCodes: Object.keys(MUST_CODES),
     }
   };
   var filename = 'tis-solution-' + idx + '.json';
@@ -3549,6 +4062,33 @@ function applySavedSchedule(i) {
     renderBlockGrid();
     renderGrid();  // also reflect the blocked state in the main grid
     flash('Restored ' + parsed.length + ' blocked slot' + (parsed.length === 1 ? '' : 's') + ' from ' + saved.label, 'ok');
+  }
+  // Restore the saved bid distribution (#7). The sections were just
+  // applied to PICKED, so write each saved bid through the shared
+  // _bidWrite helper (routes locked-enrolled rwhs to EXISTING_BIDS —
+  // after Apply the sections live in PICKED, so they land in
+  // PICKED_BIDS, which is exactly where the bid panel reads them).
+  if (saved.bids) {
+    var restoredBids = 0;
+    for (var sbid in saved.bids) {
+      if (!saved.bids.hasOwnProperty(sbid)) continue;
+      if (!PICKED[sbid]) continue;   // not part of the applied set — skip
+      _bidWrite(sbid, Number(saved.bids[sbid]) || 0);
+      restoredBids++;
+    }
+    if (restoredBids) {
+      renderBidPanel();
+      updateBidStat();
+      flash('Restored ' + restoredBids + ' bid value(s) from ' + saved.label, 'ok');
+    }
+  }
+  // Restore the MUST-take marks saved with the candidate (#4).
+  if (Array.isArray(saved.mustCodes)) {
+    MUST_CODES = {};
+    saved.mustCodes.forEach(function(c) { if (c) MUST_CODES[c] = true; });
+    updateMustCodes();
+    renderResults(CAT);
+    renderPicked();
   }
   // Jump to the Bid & sync step (was step 4; now step 5 in the 5-step
   // flow) so the user can review the applied schedule and assign bids.
@@ -3774,6 +4314,13 @@ function loadCandidatesFromFiles(fileList) {
 // schedule entries (candidates). Returns [] on any shape mismatch.
 function normalizeCandidateFile(data, fileName) {
   if (!data || typeof data !== 'object') throw new Error('not an object');
+  // v2 picks files (identifiers-only) must be caught BEFORE the legacy
+  // `sections` check below — their sections are rwh STRINGS, not
+  // schedule objects. The candidates loader has no content-fetch
+  // pipeline, so point the user at the picks loader.
+  if (data.version === 2 && data.type === 'tis-picks' && Array.isArray(data.sections)) {
+    throw new Error("v2 picks file — load it via the picks 'Load file' button, not the candidates loader");
+  }
   // Multi-schedule: {version, schedules: [...]}
   if (Array.isArray(data.schedules)) {
     var out = [];
@@ -3812,6 +4359,11 @@ function scheduleEntryFromObject(obj, fileName) {
     totalCredits: obj.totalCredits || credSum,
     blocked: obj.blocked || null,
     priority: Array.isArray(obj.priority) ? obj.priority.slice() : null,
+    // Bid snapshot (#7) — carried through when present so Apply can
+    // restore the expected bid distribution with the schedule.
+    bids: obj.bids || null,
+    // MUST-take codes (#4) — carried through with the schedule.
+    mustCodes: Array.isArray(obj.mustCodes) ? obj.mustCodes.slice() : null,
   };
 }
 
@@ -3830,6 +4382,11 @@ function picksToCandidateEntry(data, fileName) {
     totalCredits: credSum,
     blocked: null,
     priority: null,
+    // Picks files may carry a saved bid distribution (#7) — pass it
+    // through so the candidate round-trips it on Apply.
+    bids: data.bids || null,
+    // MUST-take codes (#4) — same round-trip.
+    mustCodes: Array.isArray(data.mustCodes) ? data.mustCodes.slice() : null,
   };
 }
 
@@ -4151,11 +4708,38 @@ function openNcesSheet() {
   content.innerHTML = '<div class="eval-toolbar">' +
     '<input type="text" id="sheet-eval-search" placeholder="Search by code…" style="flex:1;min-width:120px"/>' +
     '<select id="sheet-eval-sort"><option value="rating">Top rated</option><option value="reviews">Most reviewed</option><option value="name">A–Z</option></select>' +
+    '<input type="number" id="sheet-eval-min" min="0" max="10" step="0.1" placeholder="≥ rating" style="width:5.5rem" title="Only show courses rated at least this"/>' +
     '</div><div id="sheet-eval-out"></div>';
   // Re-use the existing browse renderer, but in the sheet container
   var oldEvalOut = EVAL_OUT;
   EVAL_OUT = document.getElementById('sheet-eval-out');
   renderEvalBrowse();
+  // Wire the sheet toolbar. The controls were previously inert — every
+  // change re-renders the browse view (search debounced like the tab).
+  var sheetSearch = document.getElementById('sheet-eval-search');
+  var sheetSort = document.getElementById('sheet-eval-sort');
+  var sheetMin = document.getElementById('sheet-eval-min');
+  var _sheetTimer = null;
+  if (sheetSearch) sheetSearch.addEventListener('input', function() {
+    if (_sheetTimer) clearTimeout(_sheetTimer);
+    _sheetTimer = setTimeout(function() {
+      _sheetTimer = null;
+      EVAL_SEARCH = sheetSearch.value.trim();
+      EVAL_PAGE = 1;
+      renderEvalBrowse();
+    }, 400);
+  });
+  if (sheetSort) sheetSort.addEventListener('change', function() {
+    EVAL_SORT = sheetSort.value;
+    EVAL_PAGE = 1;
+    renderEvalBrowse();
+  });
+  if (sheetMin) sheetMin.addEventListener('input', function() {
+    var v = parseFloat(sheetMin.value);
+    EVAL_MIN_RATING = (!isNaN(v) && v >= 0) ? v : 0;
+    EVAL_PAGE = 1;
+    renderEvalBrowse();
+  });
   // Restore on close
   sheet._restoreEvalOut = function() { EVAL_OUT = oldEvalOut; };
 }
@@ -4172,10 +4756,14 @@ function closeNcesSheet() {
 
 
 // -- Bid panel (积分选课) ---------------------------------------------
-// Visible only in personal mode + when at least one section is picked
-// + no schedule conflicts. Refreshes the round info on every render.
+// Shows whenever there is something to bid on — picks, or locked-enrolled
+// rows when the "Ignore TIS enrolled" toggle is off. NOT gated on the
+// left search pane's mode: picks exist in both modes (cards are pickable
+// from the campus catalog too), and applying a saved candidate must
+// bring the panel back even while browsing the catalog or when TIS isn't
+// answering the personal query (2026-09-02: applying a candidate with
+// the page in catalog mode left step 5 blank).
 function bidShouldShow() {
-  if (MODE !== 'personal') return false;
   if (Object.keys(PICKED).length) return true;
   // No picks — but if locked-enrolled exist and locked mode is on, show
   // the panel so the user can SEE their committed-on-TIS bids (otherwise
@@ -4234,23 +4822,77 @@ function computePickedConflicts() {
   }
 }
 
-function bidTotal() {
-  // Sum picks the user is actively bidding on. Locked-enrolled courses
-  // (ENROLLED_RWH - PICKED, when IGNORE_TIS_ENROLLED is off) are added
-  // here so the displayed budget reflects the user's total committed
-  // points — picks + already-enrolled. They still don't get submitted
-  // because submitBids() iterates PICKED_BIDS directly, not this total.
+// -- Bid budget model (verified live 2026-08-31) ----------------------------
+// TIS reports TWO numbers and they are NOT the same:
+//   · xkgzszOne.jfxs (→ ROUND_INFO.jffs, e.g. 26) = the points this
+//     student STILL has available. Already-committed enrolled bids are
+//     NOT part of it.
+//   · xkgzszList[].jfxs (the round list, e.g. 155) = the round's total.
+// Semester budget = committed + remaining (129 + 26 = 155 for this
+// user; varies per student). Only bids ABOVE the TIS-held baseline
+// consume the remaining points — re-stating an enrolled course's
+// current bid costs nothing; raising it costs the difference; lowering
+// it frees points back.
+
+// Points TIS already holds for enrolled sections (the committed part).
+function bidCommitted() {
+  var s = 0;
+  if (!ENROLLED_RWH || !ENROLLED_RWH.size) return 0;
+  ENROLLED_RWH.forEach(function(rwh) {
+    s += Number(TIS_BID_BASELINE[rwh]) || 0;
+  });
+  return s;
+}
+
+// What the CURRENT bid values would add to (or free from) the remaining
+// pool: new picks count in full (minus any cart baseline); enrolled
+// courses count only their delta vs the TIS-held baseline — but ONLY
+// the enrolled courses the bid UI actually represents (picked, or
+// locked-enrolled when the toggle is off). Ignored-mode enrolled
+// courses have no bid box, so they neither consume nor credit.
+function bidConsumption() {
   var s = 0;
   for (var k in PICKED_BIDS) {
-    if (PICKED_BIDS.hasOwnProperty(k)) s += Number(PICKED_BIDS[k]) || 0;
+    if (!PICKED_BIDS.hasOwnProperty(k) || !PICKED[k]) continue;
+    if (ENROLLED_RWH.has(k)) continue;   // handled via the enrolled delta below
+    s += (Number(PICKED_BIDS[k]) || 0) - (Number(TIS_BID_BASELINE[k]) || 0);
   }
-  if (!IGNORE_TIS_ENROLLED) {
+  if (ENROLLED_RWH && ENROLLED_RWH.size) {
     ENROLLED_RWH.forEach(function(rwh) {
-      if (PICKED[rwh]) return;          // already counted via PICKED_BIDS
-      s += Number(EXISTING_BIDS[rwh]) || 0;
+      if (PICKED[rwh]) {
+        // picked-enrolled: current value vs the TIS-held baseline
+        s += (Number(PICKED_BIDS[rwh]) || 0) - (Number(TIS_BID_BASELINE[rwh]) || 0);
+      } else if (!IGNORE_TIS_ENROLLED) {
+        // locked-enrolled: the editable box reads/writes EXISTING_BIDS
+        s += (Number(EXISTING_BIDS[rwh]) || 0) - (Number(TIS_BID_BASELINE[rwh]) || 0);
+      }
     });
   }
   return s;
+}
+
+// One snapshot of the whole budget state — every display site reads
+// THIS so the banner / header / stat / sync gate can never drift apart.
+function bidBudgetState() {
+  var jffs = Number(ROUND_INFO.jffs) || 0;
+  var committed = bidCommitted();
+  var consumption = bidConsumption();
+  return {
+    jffs: jffs,                       // remaining available (26)
+    committed: committed,             // already in TIS (129)
+    consumption: consumption,         // what current values draw from the remaining
+    projected: committed + consumption,  // semester spend if everything synced
+    total: committed + jffs,          // semester budget (155)
+    over: !!(jffs && consumption > jffs),
+    overBy: consumption - jffs,
+  };
+}
+
+// Projected semester spend — the bar/stat display total (committed +
+// what the current values add). The OVER-BUDGET check deliberately
+// does NOT use this; it lives in bidBudgetState().over.
+function bidTotal() {
+  return bidBudgetState().projected;
 }
 
 function renderBidPanel() {
@@ -4295,19 +4937,26 @@ function renderBidPanel() {
   updateExportIcsButton();
 
   BID_STAT.style.display = 'block';
-  var jffs = ROUND_INFO.jffs;
-  var total = bidTotal();
-  var overBudget = !!(jffs && total > jffs);
+  var bs = bidBudgetState();
+  var overBudget = bs.over;
 
   // Over-budget banner — loud warning, but the submit button stays
   // enabled. TIS will reject the over-budget POST with a clear error,
   // and we'd rather the user see that exact response than hide the
   // failure mode behind a disabled button.
+  //
+  // Budget model (verified live 2026-08-31): jffs is what TIS reports
+  // as STILL available; the points already committed to enrolled
+  // courses don't count against it. Only the CONSUMPTION (new bids +
+  // increases above the TIS-held baseline) is checked — a panel full of
+  // re-stated enrolled bids must never show a false "over budget".
   if (BID_OVER_BANNER) {
     if (overBudget) {
-      BID_OVER_BANNER.textContent = '⚠ Over budget: ' + total.toFixed(1) +
-        ' / ' + jffs.toFixed(1) + ' pts — ' +
-        (total - jffs).toFixed(1) + ' pts over. TIS will reject this — submit anyway to see the exact rejection, or lower bids first.';
+      BID_OVER_BANNER.textContent = '⚠ Over budget: requesting ' + bs.consumption +
+        ' pts with only ' + bs.jffs + ' available — ' + bs.overBy +
+        ' pts over. Lower bids first (the ' + bs.committed +
+        ' pts already committed to enrolled courses don\'t count against the remaining).' +
+        ' TIS will reject the sync.';
     } else {
       BID_OVER_BANNER.textContent = '';
     }
@@ -4317,10 +4966,16 @@ function renderBidPanel() {
   // The user is a SUSTech student who knows their budget; hiding
   // the action would mask the real server-side response.
 
-  if (jffs && total > jffs) {
-    BID_STAT_TEXT.innerHTML = '🎯 ' + total + ' pts used · <span style="color:var(--bad)">⚠ over ' + (total - jffs).toFixed(1) + ' pts budget</span> — click to manage';
-  } else if (total > 0) {
-    BID_STAT_TEXT.innerHTML = '🎯 ' + total + ' pts used' + (jffs ? ' / ' + jffs.toFixed(1) + ' available' : '') + ' — click to manage';
+  var liveRound = !!(ROUND_INFO.ok && ROUND_INFO.xkfsdm);
+  if (bs.over) {
+    BID_STAT_TEXT.innerHTML = '🎯 requesting ' + bs.consumption + ' of ' + bs.jffs +
+      ' free pts · <span style="color:var(--bad)">⚠ ' + bs.overBy + ' over</span>' +
+      ' · ' + bs.projected + ' / ' + bs.total + ' total — click to manage';
+  } else if (bs.projected > 0) {
+    BID_STAT_TEXT.innerHTML = liveRound
+      ? '🎯 ' + bs.projected + ' / ' + bs.total + ' pts' +
+        ' · requesting ' + bs.consumption + ' of ' + bs.jffs + ' free — click to manage'
+      : '🎯 requesting ' + bs.consumption + ' pts — no live round data, budget unknown — click to manage';
   } else {
     BID_STAT.style.display = 'none';
   }
@@ -4328,10 +4983,12 @@ function renderBidPanel() {
   var phaseLabel = ROUND_INFO.lcmc || '积分选课';
   BID_META.textContent = phaseLabel +
     (ROUND_INFO.ksrq ? ' · ' + ROUND_INFO.ksrq.slice(5, 16) + ' → ' + ROUND_INFO.jsrq.slice(5, 16) : '');
-  var jffs = ROUND_INFO.jffs;
-  var total = bidTotal();
-  BID_JFFS.textContent = (jffs ? jffs.toFixed(1) : '—') + ' pts available · using ' + total;
-  if (jffs && total > jffs) {
+  BID_JFFS.textContent = liveRound
+    ? bs.jffs + ' pts free / ' + bs.total + ' total' +
+      (bs.committed ? ' (' + bs.committed + ' enrolled)' : '') +
+      ' · requesting ' + bs.consumption
+    : '— pts free — no live round data · requesting ' + bs.consumption;
+  if (bs.over) {
     BID_JFFS.classList.add('over');
   } else {
     BID_JFFS.classList.remove('over');
@@ -4341,11 +4998,11 @@ function renderBidPanel() {
   if (!keys.length && (!ENROLLED_RWH.size || IGNORE_TIS_ENROLLED)) {
     BID_BAR.innerHTML = '';
   } else {
-    // Use max(jffs, total) for the scale so over-budget is still visible.
-    // Include locked-enrolled EXISTING_BIDS in total so the bar reflects
-    // committed budget; otherwise the user only sees their picks and the
-    // bar hides the enrolled portion.
-    var scale = Math.max(jffs || 0, total, 1);
+    // Scale = the semester budget (committed + remaining, e.g. 155) so
+    // the committed 🔒 segments and the picks share one honest scale.
+    // Include locked-enrolled EXISTING_BIDS in the bar so it reflects
+    // the full projected spend; max(projected) keeps over-budget visible.
+    var scale = Math.max(bs.total, bs.projected, 1);
     var segs = '';
     for (var i = 0; i < keys.length; i++) {
       var rwh = keys[i];
@@ -4587,16 +5244,20 @@ function onBidEditInput() {
 // (which would destroy the edit input). Includes locked-enrolled segments
 // in the bar so editing a locked-enrolled bid reflects immediately.
 function updateBidTotals() {
-  var jffs = ROUND_INFO.jffs;
-  var total = bidTotal();
+  var bs = bidBudgetState();
+  var liveRound = !!(ROUND_INFO.ok && ROUND_INFO.xkfsdm);
   if (BID_JFFS) {
-    BID_JFFS.textContent = (jffs ? jffs.toFixed(1) : '—') + ' pts available · using ' + total;
-    if (jffs && total > jffs) BID_JFFS.classList.add('over');
+    BID_JFFS.textContent = liveRound
+      ? bs.jffs + ' pts free / ' + bs.total + ' total' +
+        (bs.committed ? ' (' + bs.committed + ' enrolled)' : '') +
+        ' · requesting ' + bs.consumption
+      : '— pts free — no live round data · requesting ' + bs.consumption;
+    if (bs.over) BID_JFFS.classList.add('over');
     else BID_JFFS.classList.remove('over');
   }
   if (BID_BAR) {
     var keys = Object.keys(PICKED);
-    var scale = Math.max(jffs || 0, total, 1);
+    var scale = Math.max(bs.total, bs.projected, 1);
     var segs = '';
     for (var i = 0; i < keys.length; i++) {
       var bid = Number(PICKED_BIDS[keys[i]]) || 0;
@@ -4681,15 +5342,23 @@ function assignOneToUnbidded() {
 // in the right column. Called live from the bid-edit input listener.
 function updateBidStat() {
   if (!BID_STAT || !BID_STAT_TEXT) return;
-  var has = Object.keys(PICKED).length > 0;
+  // Show whenever the bid panel has content — picks OR locked-enrolled
+  // boxes (0 picks + 9 locked is still a budget to see).
+  var has = Object.keys(PICKED).length > 0 ||
+            (!IGNORE_TIS_ENROLLED && ENROLLED_RWH && ENROLLED_RWH.size);
   if (!has) { BID_STAT.style.display = 'none'; return; }
-  var jffs = ROUND_INFO.jffs;
-  var total = bidTotal();
+  var bs = bidBudgetState();
+  var liveRound = !!(ROUND_INFO.ok && ROUND_INFO.xkfsdm);
   BID_STAT.style.display = 'block';
-  if (jffs && total > jffs) {
-    BID_STAT_TEXT.innerHTML = '🎯 ' + total + ' pts used · <span style="color:var(--bad)">⚠ over ' + (total - jffs).toFixed(1) + ' pts budget</span> — click to manage';
+  if (bs.over) {
+    BID_STAT_TEXT.innerHTML = '🎯 requesting ' + bs.consumption + ' of ' + bs.jffs +
+      ' free pts · <span style="color:var(--bad)">⚠ ' + bs.overBy + ' over</span>' +
+      ' · ' + bs.projected + ' / ' + bs.total + ' total — click to manage';
+  } else if (liveRound) {
+    BID_STAT_TEXT.innerHTML = '🎯 ' + bs.projected + ' / ' + bs.total + ' pts' +
+      ' · requesting ' + bs.consumption + ' of ' + bs.jffs + ' free — click to manage';
   } else {
-    BID_STAT_TEXT.innerHTML = '🎯 ' + total + ' pts used' + (jffs ? ' / ' + jffs.toFixed(1) + ' available' : '') + ' — click to manage';
+    BID_STAT_TEXT.innerHTML = '🎯 requesting ' + bs.consumption + ' pts — no live round data, budget unknown — click to manage';
   }
 }
 
@@ -4963,11 +5632,13 @@ renderBidPanel();
 
 // Hook: after loadInfo → loadCourses completes, the round info is
 // already embedded in the courses response, so just re-render the
-// panel. (No second TIS call.)
+// panel. (No second TIS call.) Mode-independent: the panel reflects
+// PICKED, and a personal response may arrive while the browse mode is
+// catalog (e.g. a refresh from the bid step).
 var _origLoadInfo = loadInfo;
 loadInfo = function() {
   return _origLoadInfo().then(function() {
-    if (MODE === 'personal') renderBidPanel();
+    renderBidPanel();
   });
 };
 
@@ -5056,7 +5727,16 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   });
 
-  // -- Step 4 terminal action wiring (Export ICS, Sync to TIS) --------
+  // -- Step 5 terminal action wiring (Apply schedule, Export ICS, Sync) --
+  // btn-apply-tis moved here from the right bar (2026-09-02, user
+  // request): the enroll-commit action belongs with the other terminal
+  // actions, not beside the destructive Drop-all. Its label follows the
+  // "Ignore TIS enrolled" toggle via _updateApplyTisButton().
+  var btnApplyTis = document.getElementById('btn-apply-tis');
+  if (btnApplyTis) {
+    btnApplyTis.onclick = applyScheduleToTIS;
+    _updateApplyTisButton();
+  }
   var btnExportIcs = document.getElementById('btn-export-ics');
   if (btnExportIcs) btnExportIcs.onclick = exportICS;
   var btnSyncTis = document.getElementById('btn-sync-tis');
@@ -5225,7 +5905,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (MODE === 'campus' && ALL_CAT.length) filterResultsClientSide();
     else loadCourses();
   }
-  var filterEls = [KW, F_COL, F_TASK, F_CAT, F_CAM, F_LANG, F_CULT, F_TEACHER, F_SCH];
+  var filterEls = [KW, F_COL, F_TASK, F_CAT, F_CAM, F_LANG, F_CULT, F_TEACHER, F_SCH, F_GRADING].filter(function(el) { return el; });
   for (var fi = 0; fi < filterEls.length; fi++) {
     // Selects / checkboxes: fire on change only (no debounce needed)
     if (filterEls[fi] === KW) {
@@ -5290,6 +5970,16 @@ document.addEventListener('DOMContentLoaded', function() {
     qs += '&period_start=' + encodeURIComponent((document.getElementById('f-ps') || {}).value || '');
     qs += '&period_end=' + encodeURIComponent((document.getElementById('f-pe') || {}).value || '');
     qs += '&page_size=500';
+    // Backfill live counts for picks the current search page does NOT
+    // cover (e.g. sections loaded from a saved picks file that don't
+    // match the active filters) — without this their badge stays "? / M"
+    // forever no matter how often Refresh load is clicked.
+    var missingPicks = Object.keys(PICKED).filter(function(r) {
+      return LOAD_BY_RWH[r] == null;
+    });
+    if (missingPicks.length) {
+      qs += '&rwhs=' + encodeURIComponent(missingPicks.join(','));
+    }
 
     return postJSON('/api/tis/refresh-load' + qs, {}).then(function(d) {
       btn.disabled = false;
@@ -5518,6 +6208,10 @@ function initPickedActions() {
       '<span>Ignore TIS enrolled</span>' +
     '</label>' +
     '<div id="enrolled-status" class="enrolled-status"></div>' +
+    // The enroll/apply action is NOT here: it lives in the step-⑤
+    // terminal-actions row next to Sync to TIS (user request 2026-09-02:
+    // the commit action must not sit beside the destructive Drop-all in
+    // the right bar). Drop-all stays here — it's about the enrolled set.
     '<button class="drop-all-tis-btn" id="btn-drop-all" title="Drop every currently-enrolled section on TIS (destructive — will prompt for confirmation)">🗑 Drop all enrolled courses in TIS</button>';
 
   // Wire the toggle. Three things flip when the user changes this:
@@ -5541,12 +6235,14 @@ function initPickedActions() {
     IGNORE_TIS_ENROLLED = ignoreChk.checked;
     dropBtnEl.style.display = IGNORE_TIS_ENROLLED ? '' : 'none';
     if (ENROLLED_OUT) ENROLLED_OUT.dataset.ignoreFlag = IGNORE_TIS_ENROLLED ? '1' : '0';
+    _updateApplyTisButton();
   }
   function _onIgnoreFlagChange() {
     var prevIgnore = IGNORE_TIS_ENROLLED;
     IGNORE_TIS_ENROLLED = ignoreChk.checked;
     dropBtnEl.style.display = IGNORE_TIS_ENROLLED ? '' : 'none';
     if (ENROLLED_OUT) ENROLLED_OUT.dataset.ignoreFlag = IGNORE_TIS_ENROLLED ? '1' : '0';
+    _updateApplyTisButton();
     // Re-render the right-panel enrolled list (badge/banner state changed)
     // and the step-3 grid (solver-affecting change). We don't refetch if
     // the data is already loaded — flag flipping alone doesn't change the
@@ -5599,6 +6295,9 @@ function initPickedActions() {
   document.getElementById('btn-save-picks').onclick = savePicksToFile;
   document.getElementById('btn-load-picks').onclick = loadPicksFromFile;
   document.getElementById('btn-drop-all').onclick = dropAllEnrolled;
+  // btn-apply-tis is NOT wired here — it lives in the step-⑤ terminal
+  // row and is wired in DOMContentLoaded next to Sync to TIS.
+  _updateApplyTisButton();
 
   // Sync the new header/button labels to the CURRENT pick state. The
   // init order is: loadPicksFromStorage() → applyPicksFromData() (which
@@ -5758,8 +6457,16 @@ function readPicksFile(file, mode) {
   reader.onload = function() {
     try {
       var data = JSON.parse(reader.result);
-      if (!data || data.version !== 1 || !Array.isArray(data.picks)) {
-        flash('Not a valid picks file (missing version or picks).', 'err');
+      if (data && data.version === 2 && Array.isArray(data.sections)) {
+        // v2 (2026-08-31): identifiers only. Build thin picks — the
+        // verify pipeline pings the catalog per rwh and enrichment
+        // fills live content (current search rows first, so the load
+        // badges show real N / M, then the catalog row for the rest).
+        data.picks = data.sections.map(function(rwh) {
+          return { rwh: String(rwh) };
+        });
+      } else if (!data || data.version !== 1 || !Array.isArray(data.picks)) {
+        flash('Not a valid picks file (expected version 1 or 2).', 'err');
         return;
       }
       // No picks to load — nothing to verify, just apply (which is a no-op)
@@ -5776,6 +6483,47 @@ function readPicksFile(file, mode) {
 // Ping /api/tis/course/<rwh> for every pick in parallel, then show a
 // confirmation modal with the breakdown: N found, M gone, K errored.
 // The user picks what to do next.
+// _enrichPickFromFile: fill GAPS in a loaded pick from fresher sources.
+// Priority: the FILE's own values win; then the in-memory LIVE rows —
+// the last personal search's results (ALL_CAT) and the enrolled data —
+// which carry the LIVE enrollment count (`enrolled`) that the catalog
+// ping does NOT (catalog rows have capacity but no count — enriching
+// from it alone is why loaded courses used to show "? / cap" while the
+// search cards next to them showed a real N / M); finally the catalog
+// row from the verify ping (teachers/grading/schedule for rwhs outside
+// the current results). Mutates and returns the same pick object (it's
+// a reference into data.picks).
+function _enrichPickFromFile(pick, serverCourse) {
+  if (!pick) return pick;
+  var live = null;
+  for (var li = 0; li < ALL_CAT.length; li++) {
+    if (ALL_CAT[li] && ALL_CAT[li].rwh === pick.rwh) { live = ALL_CAT[li]; break; }
+  }
+  if (!live && ENROLLED_DATA[pick.rwh]) live = ENROLLED_DATA[pick.rwh];
+  [live, serverCourse].forEach(function(server) {
+    if (!server) return;
+    ['teachers', 'slots', 'rooms'].forEach(function(k) {
+      var pv = pick[k], sv = server[k];
+      if ((!pv || (Array.isArray(pv) && !pv.length)) && sv && sv.length) pick[k] = sv;
+    });
+    ['name', 'name_en', 'section_name', 'section_name_en', 'class_group',
+     'code', 'college', 'category', 'campus', 'credits', 'capacity',
+     'undergrad_seats', 'grad_seats', 'grading', 'conflicts',
+     'requirement', 'note', 'schedule', 'language', 'task_type', 'id'
+    ].forEach(function(k) {
+      var pv = pick[k], sv = server[k];
+      if ((pv == null || pv === '') && sv != null && sv !== '') pick[k] = sv;
+    });
+    // The live count: prefer a number from the live sources over the
+    // file's possibly-stale one ONLY when the file has none. (The file's
+    // own count, when present, stays — it's the user's saved data.)
+    if (typeof pick.enrolled !== 'number' && typeof server.enrolled === 'number') {
+      pick.enrolled = server.enrolled;
+    }
+  });
+  return pick;
+}
+
 function verifyPicksBeforeLoad(data, file, mode) {
   // Reset PICKED_BIDS only if we're replacing (so partial apply doesn't
   // nuke the existing bids). The mutator does the full reset in
@@ -5799,7 +6547,21 @@ function verifyPicksBeforeLoad(data, file, mode) {
         flash('Load cancelled — file left untouched.', 'warn');
       },
       onLoadFoundOnly: function() {
-        var filtered = { version: 1, picks: found.map(function(v) { return v.pick; }) };
+        var filtered = { version: data.version || 1,
+                         picks: found.map(function(v) { return v.pick; }) };
+        // Keep the saved bid distribution for the picks that survived
+        // the filter (#7) — drop bids for rwhs the user is skipping.
+        if (data.bids) {
+          filtered.bids = {};
+          for (var fi = 0; fi < filtered.picks.length; fi++) {
+            var frwh = filtered.picks[fi] && filtered.picks[fi].rwh;
+            if (frwh && data.bids[frwh] != null) filtered.bids[frwh] = data.bids[frwh];
+          }
+        }
+        // MUST-take marks ride along (#4) — codes are stable even if a
+        // section was skipped (a must-code with no surviving pick simply
+        // reports impossible at solve time).
+        if (data.mustCodes) filtered.mustCodes = data.mustCodes;
         finishLoad(filtered, file, mode);
       },
       onLoadAll: function() {
@@ -5845,7 +6607,16 @@ function verifyPicksBeforeLoad(data, file, mode) {
       }
       var url = '/api/tis/course/' + encodeURIComponent(pick.rwh) + sem();
       fetch(url).then(function(resp) {
-        if (resp.status === 200) verified.push({ rwh: pick.rwh, status: 'ok', pick: pick });
+        if (resp.status === 200) {
+          // The ping returns the FULL course dict (catalog row: teachers,
+          // grading, credits, slots, …). Keep it — the load path merges
+          // it into the pick so files saved without teachers (older
+          // versions / endpoint-sourced rows) don't render "TBD".
+          return resp.json().then(function(serverCourse) {
+            verified.push({ rwh: pick.rwh, status: 'ok', pick: pick,
+                            serverCourse: (serverCourse && serverCourse.rwh) ? serverCourse : null });
+          });
+        }
         else if (resp.status === 404) verified.push({ rwh: pick.rwh, status: 'gone', pick: pick });
         else verified.push({ rwh: pick.rwh, status: 'error', pick: pick, code: resp.status });
       }).catch(function(e) {
@@ -5854,6 +6625,15 @@ function verifyPicksBeforeLoad(data, file, mode) {
         pending--;
         if (pending === 0 && !allDone) {
           allDone = true;
+          // Enrich every verified pick from its server catalog row
+          // BEFORE the load paths slice/clone anything — the pick
+          // objects are references into data.picks, so this fixes
+          // both "Load only found" and "Load all anyway".
+          for (var evi = 0; evi < verified.length; evi++) {
+            if (verified[evi].serverCourse && verified[evi].pick) {
+              _enrichPickFromFile(verified[evi].pick, verified[evi].serverCourse);
+            }
+          }
           var foundCount = verified.filter(function(v) { return v.status === 'ok'; }).length;
           var goneCount = verified.filter(function(v) { return v.status === 'ok' ? 0 : 1; }).length;
           // If everything verified OK and no decision needed, skip the modal
@@ -5972,12 +6752,61 @@ function showPicksVerifyModal(opts) {
   });
 }
 
+// _picksBidsSnapshot: the bid distribution to save alongside picks (#7).
+// Picks read through the shared _bidRead helper (locked-enrolled picks
+// come from EXISTING_BIDS); enrolled-tagged rwhs read EXISTING_BIDS
+// directly (they're not in PICKED). Used by savePicksToFile.
+function _picksBidsSnapshot(keys, enrolledToAdd) {
+  var bids = {};
+  for (var bk = 0; bk < keys.length; bk++) bids[keys[bk]] = _bidRead(keys[bk]);
+  for (var ek = 0; ek < enrolledToAdd.length; ek++) {
+    var erwh = enrolledToAdd[ek];
+    if (EXISTING_BIDS[erwh] != null) bids[erwh] = Number(EXISTING_BIDS[erwh]) || 0;
+  }
+  return bids;
+}
+
+// _applyBidsFromData: restore a saved bid distribution (#7). __enrolled-
+// tagged picks → EXISTING_BIDS; regular picks → PICKED_BIDS. rwhs that
+// aren't picks but ARE TIS-enrolled (locked-mode boxes edited before the
+// save) → EXISTING_BIDS too — their live state comes from TIS, the file
+// only carries locally-edited values. Used by applyPicksFromData.
+function _applyBidsFromData(bids) {
+  if (!bids) return 0;
+  var applied = 0;
+  for (var bkey in bids) {
+    if (!bids.hasOwnProperty(bkey)) continue;
+    var bval = Number(bids[bkey]) || 0;
+    var pickEntry = PICKED[bkey];
+    if (pickEntry) {
+      if (pickEntry.__enrolled) EXISTING_BIDS[bkey] = bval;
+      else PICKED_BIDS[bkey] = bval;
+      applied++;
+    } else if (ENROLLED_RWH && ENROLLED_RWH.has(bkey)) {
+      // enrolled, not picked — the locked bid box store
+      EXISTING_BIDS[bkey] = bval;
+      applied++;
+    }
+    // neither picked nor enrolled — nothing to restore onto
+  }
+  return applied;
+}
+
 function applyPicksFromData(data) {
   if (!data || !data.picks) return;
   for (var i = 0; i < data.picks.length; i++) {
     var c = data.picks[i];
     if (c && c.rwh) PICKED[c.rwh] = c;
   }
+  // Restore the bid strategy saved with the file (#7), then fall through
+  // to the shared cascade — renderBidPanel/updateBidStat show the result.
+  _applyBidsFromData(data.bids);
+  // Restore the MUST-take marks saved with the file (#4).
+  if (Array.isArray(data.mustCodes)) {
+    MUST_CODES = {};
+    data.mustCodes.forEach(function(c) { if (c) MUST_CODES[c] = true; });
+  }
+  updateMustCodes();
   // Same cascade as the mutators — restoring is a mutation too.
   renderResults(CAT);
   renderPicked();
@@ -5990,35 +6819,37 @@ function applyPicksFromData(data) {
 }
 
 function savePicksToFile() {
+  // v2 format (2026-08-31, user request): the file stores ONLY the
+  // section identifiers (rwh - the key every /api/tis endpoint uses)
+  // plus the bid strategy. Course CONTENT is fetched fresh on load:
+  // no stale embedded rows, no TBD teachers, and the load badges show
+  // the live counts from the current search instead of whatever was
+  // saved. v1 files (full objects) still load - readPicksFile accepts
+  // both.
   var keys = Object.keys(PICKED);
-  // In locked mode, enrolled courses are saveable even with zero picks.
-  var enrolledToAdd = (!IGNORE_TIS_ENROLLED && ENROLLED_RWH.size)
+  var enrolledToAdd = (ENROLLED_RWH && ENROLLED_RWH.size)
     ? Array.from(ENROLLED_RWH).filter(function(rwh) { return !PICKED[rwh]; })
     : [];
-  if (!keys.length && !enrolledToAdd.length) {
-    flash('No sections picked — nothing to save.', 'warn');
+  var bids = _picksBidsSnapshot(keys, enrolledToAdd);
+  if (!keys.length && !Object.keys(bids).length) {
+    flash('No sections picked - nothing to save.', 'warn');
     return;
-  }
-  var picksArr = [];
-  for (var i = 0; i < keys.length; i++) picksArr.push(PICKED[keys[i]]);
-  // Locked mode (IGNORE_TIS_ENROLLED off): the TIS-enrolled courses are
-  // part of the user's schedule even though they're not in PICKED. Save
-  // them too (tagged __enrolled) so the file round-trips the full
-  // schedule — otherwise a save with 0 picks + 7 enrolled would write an
-  // empty file and the user would lose the enrolled half of the picture.
-  var enrolledAdded = 0;
-  for (var ei = 0; ei < enrolledToAdd.length; ei++) {
-    var item = ENROLLED_DATA[enrolledToAdd[ei]];
-    if (!item) continue;
-    var copy = JSON.parse(JSON.stringify(item));
-    copy.__enrolled = true;
-    picksArr.push(copy);
-    enrolledAdded++;
   }
   var ts = new Date().toISOString().replace(/[:.]/g, '-').replace(/T/, '_').slice(0, 19);
   var filename = 'tis-picks-' + ts + '.json';
   var blob = new Blob([JSON.stringify({
-    version: 1, picks: picksArr, savedAt: new Date().toISOString(),
+    version: 2,
+    type: 'tis-picks',
+    savedAt: new Date().toISOString(),
+    // rwh section identifiers, e.g. "2026-2027-1-MA212-001". On load
+    // each one is verified against the catalog and enriched with live
+    // content (search rows first, catalog row as fallback).
+    sections: keys.slice(),
+    // Bid strategy (#7): picks get their current bid; TIS-enrolled
+    // (incl. locked-mode edits) get the TIS-held/local value.
+    bids: bids,
+    // MUST-take courses (#4): codes the solver must keep.
+    mustCodes: Object.keys(MUST_CODES),
   }, null, 2)], { type: 'application/json' });
   var url = URL.createObjectURL(blob);
   var a = document.createElement('a');
@@ -6030,8 +6861,9 @@ function savePicksToFile() {
   // not authoritative (the user could rename/move it).
   CURRENT_FILE = { kind: 'saved', name: filename };
   updatePickedActionsState();
-  flash('Saved ' + keys.length + ' pick(s)' +
-    (enrolledAdded ? ' + ' + enrolledAdded + ' enrolled' : '') +
+  flash('Saved ' + keys.length + ' section(s)' +
+    (Object.keys(bids).length > keys.length
+      ? ' + bids for ' + (Object.keys(bids).length - keys.length) + ' enrolled' : '') +
     ' → ' + filename, 'ok');
 }
 
@@ -6042,29 +6874,57 @@ function savePicksToFile() {
 // closed, conflict, etc.) is surfaced verbatim by the .catch handlers.
 
 function syncToTIS() {
-  var keys = Object.keys(PICKED);
-  if (!keys.length) { flash('No sections picked — nothing to sync.', 'warn'); return; }
   // Group by endpoint. Enrolled picks go to updXkxsByyx; cart picks go
-  // to upd_xkxsBygwc. The previous code hardcoded 'cart' for everything,
-  // so bids on already-enrolled sections silently failed.
+  // to the cart endpoint (addGouwuche under the hood). The previous
+  // code hardcoded 'cart' for everything, so bids on already-enrolled
+  // sections silently failed.
+  //
+  // Locked-enrolled EDITS (enrolled courses NOT in PICKED, whose box
+  // the user edited — values live in EXISTING_BIDS) are included when
+  // they differ from the TIS-held baseline: TIS supports altering the
+  // bid on already-enrolled sections via the same enrolled endpoint.
   var picksByWhere = { cart: {}, enrolled: {} };
+  var baselineByWhere = { cart: {}, enrolled: {} };
   for (var k in PICKED_BIDS) {
     if (PICKED_BIDS.hasOwnProperty(k) && PICKED[k]) {
       var w = ENROLLED_RWH.has(k) ? 'enrolled' : 'cart';
       picksByWhere[w][k] = PICKED_BIDS[k];
+      baselineByWhere[w][k] = Number(TIS_BID_BASELINE[k]) || 0;
     }
   }
+  var lockedEdits = 0;
+  if (!IGNORE_TIS_ENROLLED) {
+    ENROLLED_RWH.forEach(function(rwh) {
+      if (PICKED[rwh]) return;                    // already included above
+      var cur = EXISTING_BIDS[rwh];
+      if (cur == null) return;                    // no bid known — skip
+      var base = Number(TIS_BID_BASELINE[rwh]) || 0;
+      if (Number(cur) === base) return;           // unchanged — nothing to send
+      picksByWhere.enrolled[rwh] = Number(cur);
+      baselineByWhere.enrolled[rwh] = base;
+      lockedEdits++;
+    });
+  }
   var totalPicks = Object.keys(picksByWhere.cart).length + Object.keys(picksByWhere.enrolled).length;
-  if (!totalPicks) { flash('No bids set on any picked section.', 'warn'); return; }
+  if (!totalPicks) {
+    flash('Nothing to sync — no bids set on picks and no edited enrolled bids.', 'warn');
+    return;
+  }
 
-  // Verbose confirm: list every rwh + bid value the user is about to commit.
+  // Verbose confirm: list every rwh + bid the user is about to commit.
+  // Enrolled edits show "was X → Y" so the user sees it's an alteration,
+  // not a new spend.
   var preview = '';
-  var allKeys = Object.keys(picksByWhere.cart).concat(Object.keys(picksByWhere.enrolled));
+  var allKeys = Object.keys(picksByWhere.enrolled).concat(Object.keys(picksByWhere.cart));
   for (var i = 0; i < allKeys.length; i++) {
     var rwh = allKeys[i];
-    var c = PICKED[rwh];
-    var bid = PICKED_BIDS[rwh] || 0;
-    preview += '\n  · ' + (c.code || rwh) + ' ' + (c.class_group || '') + ' — ' + bid + ' pts';
+    var where = picksByWhere.enrolled[rwh] != null ? 'enrolled' : 'cart';
+    var c = PICKED[rwh] || ENROLLED_DATA[rwh] || {};
+    var bid = picksByWhere[where][rwh] || 0;
+    var base = baselineByWhere[where][rwh] || 0;
+    preview += '\n  · ' + (c.code || rwh) + ' ' + (c.class_group || c.section || '') +
+      ' — ' + bid + ' pts' +
+      (base ? ' (was ' + base + ')' : '');
   }
   if (!confirm('Sync ' + totalPicks + ' bid(s) to TIS? This is a real action — it will overwrite any bids TIS already has.\n\n' + preview)) return;
 
@@ -6076,27 +6936,52 @@ function syncToTIS() {
   var lbId = syncStart('Syncing ' + totalPicks + ' bid(s) to TIS…',
                         'This writes to TIS — keep this tab open until done.');
 
-  function _sendBatch(where, picks) {
+  // jffs_limit = the REMAINING points; the server checks each batch's
+  // CONSUMPTION (bid - baseline) against it, so re-stating enrolled
+  // bids never trips the guard (verified live: enrolled 129 vs 26
+  // remaining must NOT read as over budget).
+  // xkfsdm: enrolled-bid updates go through updXkxsByyx, which the HAR
+  // shows always uses "yixuan" — NOT the search tab's round code (the
+  // old code sent e.g. kzyxk there). Cart adds keep the active round.
+  function _sendBatch(where, picks, baseline) {
     return postJSON('/api/tis/bids' + sem(), {
       picks: picks, round_code: ROUND_INFO.xkfsdm || '',
-      where: where, jffs_limit: ROUND_INFO.jffs || null, dry_run: false,
+      xkfsdm: where === 'enrolled' ? 'yixuan' : (ROUND_INFO.xkfsdm || ''),
+      where: where, jffs_limit: ROUND_INFO.jffs || null,
+      baseline: baseline, dry_run: false,
     });
   }
-  var batches = [];
-  if (Object.keys(picksByWhere.cart).length) batches.push(_sendBatch('cart', picksByWhere.cart));
-  if (Object.keys(picksByWhere.enrolled).length) batches.push(_sendBatch('enrolled', picksByWhere.enrolled));
-
-  Promise.all(batches).then(function(results) {
+  // SEQUENTIAL: enrolled first, then cart. An enrolled-bid DECREASE
+  // frees points in TIS before the cart batch spends them; firing both
+  // in parallel risks the cart add being checked against the stale
+  // remaining. Sequential also respects TIS's rate limit.
+  var merged = { results: [], sum: 0, check_sum: 0, over_limit: false };
+  var allResults = [];
+  var chain = Promise.resolve();
+  if (Object.keys(picksByWhere.enrolled).length) {
+    chain = chain.then(function() {
+      return _sendBatch('enrolled', picksByWhere.enrolled, baselineByWhere.enrolled)
+        .then(function(r) { allResults.push(r); });
+    });
+  }
+  if (Object.keys(picksByWhere.cart).length) {
+    chain = chain.then(function() {
+      return _sendBatch('cart', picksByWhere.cart, baselineByWhere.cart)
+        .then(function(r) { allResults.push(r); });
+    });
+  }
+  chain.then(function() {
     if (btn) { btn.disabled = false; btn.textContent = prevLabel || '📤 Sync to TIS'; }
-    var merged = { results: [], sum: 0, over_limit: false };
-    for (var i = 0; i < results.length; i++) {
-      var r = results[i] || {};
+    for (var i = 0; i < allResults.length; i++) {
+      var r = allResults[i] || {};
       if (r.over_limit) merged.over_limit = true;
       merged.sum += r.sum || 0;
+      merged.check_sum += r.check_sum || 0;
       merged.results = merged.results.concat(r.results || []);
     }
     if (merged.over_limit) {
-      var msg = 'Over budget: ' + merged.sum + ' > ' + ROUND_INFO.jffs + ' pts. Adjust bids first.';
+      var msg = 'Over budget: requesting ' + merged.check_sum + ' of ' +
+        ROUND_INFO.jffs + ' remaining pts. Lower bids first (already-committed enrolled bids don\'t count).';
       syncEnd(lbId, { kind: 'error', text: msg, detail: 'No bids were committed.', sticky: true });
       flash(msg, 'err');
       return;
@@ -6111,13 +6996,15 @@ function syncToTIS() {
       var parts = [];
       for (var fj = 0; fj < failed.length; fj++) {
         var f = failed[fj];
-        var code = (PICKED[f.rwh] && PICKED[f.rwh].code) || f.rwh;
-        parts.push(code + ' (' + (f.message || 'no message') + ')');
+        var fc = PICKED[f.rwh] || ENROLLED_DATA[f.rwh] || {};
+        parts.push((fc.code || f.rwh) + ' (' + (f.message || 'no message') + ')');
       }
       failedSummary = ' · ' + failed.length + ' failed: ' + parts.join('; ');
     }
     var flashMsg = 'Synced: ' + okCount + '/' + merged.results.length + ' bid(s)' +
-      (merged.sum ? ' · total ' + merged.sum + ' pts' : '') + failedSummary;
+      (lockedEdits ? ' · ' + lockedEdits + ' enrolled edit(s)' : '') +
+      (merged.check_sum ? ' · +' + merged.check_sum + ' pts of ' + ROUND_INFO.jffs + ' free' : '') +
+      failedSummary;
     var allOk = okCount === merged.results.length;
     syncEnd(lbId, {
       kind: allOk ? 'success' : 'error',
@@ -6138,13 +7025,33 @@ function syncToTIS() {
   });
 }
 
+// Reentry guard for the lazy-load path — a failed load must not loop.
+var _dropAllLoading = false;
+
 function dropAllEnrolled() {
-  if (!ENROLLED_RWH.size) { flash('No enrolled sections to drop.', 'warn'); return; }
-  // Verbose preview — every rwh the user is about to drop.
+  if (!ENROLLED_RWH.size) {
+    // No enrolled data in memory yet — the personal search normally
+    // ingests it, but a failed search / campus mode leaves it empty.
+    // Lazy-load through /api/tis/enrolled and retry ONCE instead of
+    // the old "No enrolled sections to drop." dead end (user report
+    // 2026-08-31: ignore mode showed the button but it did nothing).
+    if (_dropAllLoading) return;
+    _dropAllLoading = true;
+    flash('Loading your TIS enrolled courses…', 'info');
+    loadEnrolled().then(function() {
+      _dropAllLoading = false;
+      if (ENROLLED_RWH.size) dropAllEnrolled();
+      else flash('No enrolled sections to drop.', 'warn');
+    })['catch'](function() { _dropAllLoading = false; });
+    return;
+  }
+  // Verbose preview — every enrolled section, with real course info
+  // from ENROLLED_DATA (rich rows since the search/enrolled ingest).
   var preview = '';
   ENROLLED_RWH.forEach(function(rwh) {
-    var c = PICKED[rwh];
-    preview += '\n  · ' + (c ? (c.code || rwh) + ' ' + (c.class_group || '') : rwh);
+    var c = PICKED[rwh] || ENROLLED_DATA[rwh] || {};
+    preview += '\n  · ' + (c.code || rwh) + ' ' + (c.name || '') +
+      (c.class_group ? ' ' + c.class_group : '');
   });
   if (!confirm('Drop all ' + ENROLLED_RWH.size + ' enrolled section(s)? This is a real action — you can re-add them but the operation is not reversible on the server side.\n\n' + preview)) return;
 
@@ -6186,6 +7093,130 @@ function dropAllEnrolled() {
     });
   }
   _next(0);
+}
+
+// -- Apply / overwrite the schedule on TIS ---------------------------------
+// One button, two behaviors driven by the "Ignore TIS enrolled" toggle:
+//   - Ignore ON  (default): OVERWRITE — drop every TIS-enrolled section
+//     first, then enroll exactly the picked schedule. Button label:
+//     "Overwrite TIS courses with schedule".
+//   - Ignore OFF (enrolled locked): APPLY — enroll the picked sections
+//     that aren't already enrolled; never drop anything. Button label:
+//     "Apply to TIS".
+// Both are gated by the UG credit cap (UG_MAX_CREDITS = 25/semester).
+
+function _picksCreditsTotal() {
+  var seen = {}, total = 0;
+  Object.keys(PICKED).forEach(function(rwh) {
+    var c = PICKED[rwh];
+    if (!c || !c.code || seen[c.code]) return;
+    seen[c.code] = true;
+    total += parseFloat(c.credits) || 0;
+  });
+  return total;
+}
+
+function _keptEnrolledCredits() {
+  // Credits of TIS-enrolled courses that stay (apply mode only).
+  if (IGNORE_TIS_ENROLLED) return 0;   // overwrite drops them all
+  var pickedCodes = {};
+  Object.keys(PICKED).forEach(function(r) {
+    var c = PICKED[r];
+    if (c && c.code) pickedCodes[c.code] = true;
+  });
+  var seen = {}, total = 0;
+  ENROLLED_RWH.forEach(function(rwh) {
+    var ec = ENROLLED_DATA[rwh];
+    if (!ec || !ec.code || seen[ec.code] || pickedCodes[ec.code]) return;
+    seen[ec.code] = true;
+    total += parseFloat(ec.credits) || 0;
+  });
+  return total;
+}
+
+function _updateApplyTisButton() {
+  var b = document.getElementById('btn-apply-tis');
+  if (!b) return;
+  if (IGNORE_TIS_ENROLLED) {
+    b.textContent = 'Overwrite TIS courses with schedule';
+    b.title = 'Drop every enrolled course on TIS, then enroll exactly your picks ' +
+              '(final plan must be ≤ ' + UG_MAX_CREDITS + ' credits)';
+  } else {
+    b.textContent = 'Apply to TIS';
+    b.title = 'Enroll picked courses on TIS without touching existing enrollments';
+  }
+}
+
+function applyScheduleToTIS() {
+  var pickRwhs = Object.keys(PICKED);
+  if (!pickRwhs.length) {
+    flash('No sections picked — nothing to apply.', 'warn');
+    return;
+  }
+  var overwrite = !!IGNORE_TIS_ENROLLED;
+  var picksCr = _picksCreditsTotal();
+  var keptEnCr = overwrite ? 0 : _keptEnrolledCredits();
+  var finalCr = picksCr + keptEnCr;
+  if (finalCr > UG_MAX_CREDITS) {
+    flash('⚠ Plan is ' + finalCr.toFixed(1) + ' credits — over the UG limit of ' +
+          UG_MAX_CREDITS + '. Remove courses first.', 'err');
+    return;
+  }
+  var toDrop = overwrite ? (ENROLLED_RWH.size ? Array.from(ENROLLED_RWH) : []) : [];
+  var toAdd = pickRwhs.filter(function(r) {
+    return !(ENROLLED_RWH.has(r) && !overwrite);   // apply mode: skip already-enrolled
+  });
+  if (!toDrop.length && !toAdd.length) {
+    flash('Nothing to do — all picked sections are already enrolled.', 'warn');
+    return;
+  }
+  var head = overwrite
+    ? 'Overwrite TIS with your schedule?\n\n  · Drop ' + toDrop.length + ' enrolled section(s)\n  · Enroll ' + toAdd.length + ' picked section(s)'
+    : 'Apply ' + toAdd.length + ' picked section(s) to TIS?';
+  var confirmText = head +
+    '\n  · Final total ' + finalCr.toFixed(1) + ' credits (UG cap ' + UG_MAX_CREDITS + ')' +
+    (overwrite ? '\n\n⚠ Destructive: dropped seats can be taken by others.' : '');
+  if (!confirm(confirmText)) return;
+
+  var lbId = syncStart(overwrite ? 'Overwriting TIS schedule…' : 'Applying schedule to TIS…',
+                       'This writes to TIS — keep this tab open until done.');
+  var okDrop = 0, failedDrop = [];
+  var okAdd = 0, failedAdd = [];
+
+  function _finish() {
+    var bad = failedAdd.length || failedDrop.length;
+    syncEnd(lbId, {
+      kind: bad ? 'error' : 'success',
+      text: (overwrite ? 'Dropped ' + okDrop + '/' + toDrop.length + ' · ' : '') +
+            'Enrolled ' + okAdd + '/' + toAdd.length,
+      detail: (failedDrop.length ? failedDrop.length + ' drop(s) failed. ' : '') +
+              (failedAdd.length ? failedAdd.length + ' enroll(s) failed. ' : '') +
+              (bad ? 'See the console for per-section messages.' : 'TIS now matches your schedule.'),
+      sticky: !!bad,
+    });
+    loadEnrolled();
+  }
+
+  var ai = 0;
+  function _addNext() {
+    if (ai >= toAdd.length) { _finish(); return; }
+    postJSON('/api/tis/add' + sem(), { rwh: toAdd[ai], dry_run: false }).then(function(r) {
+      if (r && r.ok) okAdd++;
+      else failedAdd.push({ rwh: toAdd[ai], message: (r && (r.message || r.error)) || 'unknown' });
+      ai++; _addNext();
+    })['catch'](function(e) { failedAdd.push({ rwh: toAdd[ai], message: e.message }); ai++; _addNext(); });
+  }
+
+  var di = 0;
+  function _dropNext() {
+    if (di >= toDrop.length) { _addNext(); return; }
+    postJSON('/api/tis/drop' + sem(), { rwh: toDrop[di], dry_run: false }).then(function(r) {
+      if (r && r.ok) okDrop++;
+      else failedDrop.push({ rwh: toDrop[di], message: (r && (r.message || r.error)) || 'unknown' });
+      di++; _dropNext();
+    })['catch'](function(e) { failedDrop.push({ rwh: toDrop[di], message: e.message }); di++; _dropNext(); });
+  }
+  _dropNext();
 }
 
 // -- ICS export (was exportICal / parseSlotsForIcal — renamed for consistency) --

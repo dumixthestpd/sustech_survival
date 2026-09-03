@@ -123,3 +123,16 @@ button.primary {
     --danger: #d93030;
   }
 }
+/* -- Brand icon (torch-only logo) --------------------------- */
+.brand-icon {
+  width: 30px;
+  height: 30px;
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 8px;
+}
+header h1 {
+  display: inline-block;
+  vertical-align: middle;
+  margin: 0;
+}

@@ -28,6 +28,18 @@ def code(code: str, *, teacher: str = "", xn: str = "", xq: str = "") -> dict:
     return brief if brief is not None else s.not_found(code)
 
 
+def ratings(items: list[dict], *, xn: str = "", xq: str = "") -> dict:
+    """Batch mini ratings for a search-result page (eager card badges).
+
+    ``items``: ``[{"code": "BIO103", "teacher": "鲍志戎,王晓晨"}, ...]``.
+    Returns ``{"results": {"<code>::<teacher>": mini_brief}}`` keyed in
+    the skin's cache-key format. One cached NCES search per unique code;
+    teacher-team matching happens server-side (never misattributes).
+    """
+    s = _get_scraper()
+    return s.mini_ratings(items or [], xn=xn, xq=xq)
+
+
 def teacher(name: str) -> dict:
     """All NCES sections taught by a teacher."""
     s = _get_scraper()
@@ -118,5 +130,5 @@ def reviews(code: str, *, teacher: str = "") -> dict:
     return {"available": True, "code": code, "count": len(reviews_), "reviews": reviews_}
 
 
-__all__ = ["code", "teacher", "course", "browse", "search", "status",
-           "refresh", "reviews"]
+__all__ = ["code", "ratings", "teacher", "course", "browse", "search",
+           "status", "refresh", "reviews"]

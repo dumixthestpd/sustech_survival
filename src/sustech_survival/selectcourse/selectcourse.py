@@ -1,38 +1,39 @@
-"""
-sustech_survival.selectcourse.selectcourse — Read-side TIS client.
+﻿"""
+sustech_survival.selectcourse.selectcourse 鈥?Read-side TIS client.
 
 Orchestrator: catalog browse (any xq), personal enrollment lookup,
 and (via `dry_run=False`) the 5 write methods in `writes.py`.
 
-Architecture mirrors classroom.ClassroomOccupancy — same auth, same
+Architecture mirrors classroom.ClassroomOccupancy 鈥?same auth, same
 cache, same TIS catalog endpoints. The difference: this client is
 course-centric (one row per offering), not room-centric.
 
 Files in this package (post-split, 2026-08-08):
-  selectcourse.py (this file) — client orchestrator, cache, READ methods
-  course.py                  — Course dataclass
-  maps.py                    — CATEGORY_MAP, language_to_code, etc.
-  endpoints.py               — TIS URL constants + XKTJZ_*
-  queryform.py               — TIS wire-format payload builder (1 function)
-  errors.py                  — EnrollmentError
-  writes.py                  — 5 write methods + _post_xsxk helper
-  ical.py                    — ICS calendar export (unchanged)
-  __main__.py                — CLI entry (unchanged)
-  __init__.py                — singleton + re-exports (unchanged)
+  selectcourse.py (this file) 鈥?client orchestrator, cache, READ methods
+  course.py                  鈥?Course dataclass
+  maps.py                    鈥?CATEGORY_MAP, language_to_code, etc.
+  endpoints.py               鈥?TIS URL constants + XKTJZ_*
+  queryform.py               鈥?TIS wire-format payload builder (1 function)
+  errors.py                  鈥?EnrollmentError
+  writes.py                  鈥?5 write methods + _post_xsxk helper
+  ical.py                    鈥?ICS calendar export (unchanged)
+  __main__.py                鈥?CLI entry (unchanged)
+  __init__.py                鈥?singleton + re-exports (unchanged)
 
 Endpoints used (read side):
-    Xsxktz/queryRwxxcxList          — public course catalog
-    xszykb/queryxszykbzong          — your enrolled courses
-    xszykb/queryxszykbzhou          — your enrolled courses for a week
-    Xsxk/queryKxrw                  — 选课 search (personal)
-    Xsxk/queryYxkc                  — course-type tabs
-    Xsxk/queryXkdqXnxq              — current TIS active term
+    Xsxktz/queryRwxxcxList          鈥?public course catalog
+    xszykb/queryxszykbzong          鈥?your enrolled courses
+    xszykb/queryxszykbzhou          鈥?your enrolled courses for a week
+    Xsxk/queryKxrw                  鈥?閫夎 search (personal)
+    Xsxk/queryYxkc                  鈥?course-type tabs
+    Xsxk/queryXkdqXnxq              鈥?current TIS active term
 
 Write-side (add_course / drop_course / submit_bids / ...) lives in
 `writes.py`. Every write defaults to `dry_run=True` and prints what
 would be POSTed. Discovery doc: references/tis-api.md.
 """
 from __future__ import annotations
+from sustech_survival._net import timeout as _net_timeout
 
 import json
 import time
@@ -69,7 +70,7 @@ class SelectCourseClient:
     Read side: catalog browse (any xq), personal enrollment lookup,
     filter options, by-code lookup.
 
-    Write side: see `writes.py` — methods are bound onto this class at
+    Write side: see `writes.py` 鈥?methods are bound onto this class at
     the bottom of this file. Every write defaults to `dry_run=True`.
     """
 
@@ -88,7 +89,7 @@ class SelectCourseClient:
             self.xn = self._sem.xn
             self.xq = self._sem.xq
         else:
-            # Partial or full explicit term — fall back to the current term
+            # Partial or full explicit term 鈥?fall back to the current term
             # for whichever component wasn't supplied.
             current = Semester.current()
             self._sem = Semester(xn or current.xn, xq or current.xq)
@@ -105,12 +106,22 @@ class SelectCourseClient:
         self._courses: Optional[List[Course]] = None
         # In-memory cache for the queryXkdqXnxq "current TIS active term"
         # response. The active term does not change during a session, so
-        # caching eliminates the round-trip on every search_personal call —
-        # critical for dodging TIS's "查询请求频率过高" rate limit.
+        # caching eliminates the round-trip on every search_personal call 鈥?
+        # critical for dodging TIS's "鏌ヨ璇锋眰棰戠巼杩囬珮" rate limit.
         self._dq_cache: Optional[dict] = None
         self._dq_cache_at: float = 0.0
-        # TISAuth — Authorizer subclass that hides all HTTP.
-        # Use self._auth.post(path, ...) — never access .session directly.
+        # Short-TTL cache for queryKxrw search results, keyed by the
+        # serialized queryform. The official TIS page makes exactly ONE
+        # queryKxrw call per search and reuses it for every widget on the
+        # screen; our webui surfaces the same search from several places
+        # (/api/tis/courses, /api/tis/refresh-load, load badges). A short
+        # TTL (30s) makes repeated identical searches hit this cache
+        # instead of TIS, while staying fresh enough that enrolled counts
+        # don't go stale mid-session.
+        self._search_cache: dict = {}
+        self._search_cache_at: float = 0.0
+        # TISAuth 鈥?Authorizer subclass that hides all HTTP.
+        # Use self._auth.post(path, ...) 鈥?never access .session directly.
         from sustech_survival.sso import TISAuth
         self._auth = TISAuth()
 
@@ -124,12 +135,17 @@ class SelectCourseClient:
         if not cf.exists():
             return None
         try:
-            payload = json.loads(cf.read_text())
+            # Explicit UTF-8: Path.read_text() without an encoding uses the
+            # locale default (cp936/GBK on Chinese Windows), which produced
+            # unreadable caches on other machines and masked stale data.
+            # Any legacy GBK-encoded cache now fails to decode 鈫?treated as
+            # stale 鈫?refetched live. That is the intended self-heal.
+            payload = json.loads(cf.read_text(encoding="utf-8"))
         except Exception:
             return None
         if time.time() - payload.get("saved_at", 0) > self.max_age:
             return None
-        # Reconstruct Course objects (skip kcxx-derived fields — they'll
+        # Reconstruct Course objects (skip kcxx-derived fields 鈥?they'll
         # be re-parsed from the cached raw on demand).
         out: List[Course] = []
         for c in payload.get("courses", []):
@@ -146,6 +162,10 @@ class SelectCourseClient:
                 slots_raw=c["slots_raw"],
                 id=c.get("id", ""),
                 enrolled=c.get("enrolled"),
+                grading=c.get("grading", ""),
+                conflicts=c.get("conflicts", ""),
+                requirement=c.get("requirement", ""),
+                note=c.get("note", ""),
             )
             out.append(course)
         return out
@@ -167,10 +187,14 @@ class SelectCourseClient:
                     "slots_raw": c.slots_raw,
                     "id": c.id,
                     "enrolled": c.enrolled,
+                    "grading": c.grading,
+                    "conflicts": c.conflicts,
+                    "requirement": c.requirement,
+                    "note": c.note,
                 }
                 for c in courses
             ],
-        }, ensure_ascii=False))
+        }, ensure_ascii=False), encoding="utf-8")
 
     # -- Catalog fetch --------------------------------------------------------
 
@@ -188,7 +212,7 @@ class SelectCourseClient:
                 "pageNum": str(pg), "pageSize": str(page_size),
             }
             r = self._auth.post("/Xsxktz/queryRwxxcxList", data=params,
-                          timeout=30, headers={"X-Requested-With": "XMLHttpRequest"})
+                          timeout=_net_timeout("tis"), headers={"X-Requested-With": "XMLHttpRequest"})
             r.raise_for_status()
             d = r.json()
             items = d.get("rwList", {}).get("list") or []
@@ -197,7 +221,7 @@ class SelectCourseClient:
                 break
             # TIS rate-limits ~3-5s between catalog calls. Throttle
             # paginated fetches so a cold cache does not trigger
-            # "查询请求频率过高". Skip on last page (no further call).
+            # "鏌ヨ璇锋眰棰戠巼杩囬珮". Skip on last page (no further call).
             if pg < 9:
                 time.sleep(0.6)
 
@@ -232,7 +256,7 @@ class SelectCourseClient:
                      campus: Optional[str] = None) -> List[Course]:
         """List course offerings with optional filters.
 
-        `cultivation`: "本科" (1) or "研究生" (2) — matches the pylx field.
+        `cultivation`: "鏈" (1) or "鐮旂┒鐢? (2) 鈥?matches the pylx field.
         All other filters are case-insensitive substring matches.
         """
         courses = self._ensure_loaded()
@@ -268,7 +292,7 @@ class SelectCourseClient:
                       teacher: Optional[str] = None,
                       scheduled_only: bool = False,
                       ) -> List[Course]:
-        """Search the campus-wide course catalog (全校课表).
+        """Search the campus-wide course catalog (鍏ㄦ牎璇捐〃).
 
         All filters are case-insensitive substring matches on the cached
         catalog data.
@@ -307,7 +331,7 @@ class SelectCourseClient:
         return out
 
     def search_courses(self, **kw) -> List[Course]:
-        """Deprecated — use search_campus() instead."""
+        """Deprecated 鈥?use search_campus() instead."""
         return self.search_campus(**kw)
 
     def search_personal(self, *,
@@ -323,41 +347,46 @@ class SelectCourseClient:
                        weekday: Optional[int] = None,
                        period_start: Optional[int] = None,
                        period_end: Optional[int] = None,
+                       free_weekday: Optional[int] = None,
+                       free_period_start: Optional[int] = None,
+                       free_period_end: Optional[int] = None,
                        round_code: Optional[str] = None,
                        page: int = 1,
                        page_size: int = 50,
                        ) -> dict:
-        """Search courses available for YOUR registration (选课 via Xsxk/queryKxrw).
+        """Search courses available for YOUR registration (閫夎 via Xsxk/queryKxrw).
 
         Returns dict with: ok, courses, total, enrolled, cart, message,
         course_types, current_type, round.
 
         `round_code` is the selection round code (e.g. "bxxk" for
-        通识必修选课). Required by TIS to know which round to query.
+        閫氳瘑蹇呬慨閫夎). Required by TIS to know which round to query.
         """
         self._auth.ensure()
         # Round-trip: get the current TIS active term for the dq fields.
-        # Cached — the term does not change during a session, and re-fetching
-        # on every call is what triggers TIS's "查询请求频率过高".
+        # Cached 鈥?the term does not change during a session, and re-fetching
+        # on every call is what triggers TIS's "鏌ヨ璇锋眰棰戠巼杩囬珮".
         dq = self._fetch_dq()
-        # Translate display names → TIS DM codes. TIS's personal-mode
+        # Translate display names 鈫?TIS DM codes. TIS's personal-mode
         # search silently returns 0 if given a display name in any of
-        # these params — see CATEGORY_MAP docstring. Pass-through if the
+        # these params 鈥?see CATEGORY_MAP docstring. Pass-through if the
         # input is already a code (digits) or unrecognized.
         category_code = category_name_to_code(category) if category else ""
         skyy_code = language_to_code(language) if language else ""
         queryform = {
             "p_pylx": "1",
-            "p_sfgldjr": "",
-            "p_sfredis": "",
-            "p_sfsyxkgwc": "1",          # 是否使用选课购物车
+            "p_sfgldjr": "0",            # 鏄惁绠＄悊绔繘鍏?(official: 0)
+            "p_sfredis": "0",            # 鏄惁Redis缂撳瓨 (official: 0)
+            "p_sfsyxkgwc": "1",          # 鏄惁浣跨敤閫夎璐墿杞?(official page uses 0;
+                                         # we keep 1 so xkgwcList/cart rides along
+                                         # in the same response 鈥?verified live)
             "p_xktjz": None,
             "p_chaxunxh": "",
             "p_gjz": keyword or "",
             "p_skjs": teacher or "",
             "p_xn": self._sem.xn,
             "p_xq": self._sem.xq,
-            "p_xnxq": "",
+            "p_xnxq": self._sem.xn + self._sem.xq,   # "2026-20271" 鈥?matches official
             "p_dqxn": dq.get("p_dqxn", ""),
             "p_dqxq": dq.get("p_dqxq", ""),
             "p_dqxnxq": dq.get("p_dqxnxq", ""),
@@ -386,21 +415,41 @@ class SelectCourseClient:
             "p_xzcxtjz_bj": "",
             "p_sfxsgwckb": "1",
             "p_skyy": skyy_code,
-            "p_sfmxzj": "0",
+            "p_sfmxzj": "",
+            "p_chaxunxkfsdm": "",
             "cxsfmt": dq.get("cxsfmt", "0"),
             "mxpylx": "1",
             "pageNum": str(page),
             "pageSize": str(page_size),
         }
+        # Second time-filter group seen in the official UI
+        # (tis.sustech.edu.cn HAR, 2026-08-30): p_xqj / p_ksjc / p_jsjc
+        # alongside p_kxsj_* 鈥?the 绌洪棽鏃堕棿 (free-time) filter: "show
+        # courses that leave me free on day X periods A鈥揃". Empty when
+        # the user hasn't set it, exactly like the official page.
+        queryform["p_xqj"] = str(free_weekday) if free_weekday else ""
+        queryform["p_ksjc"] = str(free_period_start) if free_period_start else ""
+        queryform["p_jsjc"] = str(free_period_end) if free_period_end else ""
         # Drop None values (TIS rejects keys with value 'None')
         queryform = {k: v for k, v in queryform.items() if v is not None}
+        # Short-TTL search cache 鈥?one queryKxrw per distinct queryform,
+        # like the official page. 30s keeps counts live without hammering
+        # TIS (which rate-limits ~1 call / 3-5s).
+        import hashlib as _hashlib
+        _fp = _hashlib.sha1(
+            repr(sorted(queryform.items())).encode("utf-8", "replace")
+        ).hexdigest()
+        _now = time.time()
+        if self._search_cache.get("fp") == _fp \
+                and (_now - self._search_cache_at) < 30.0:
+            return self._search_cache["result"]
         r = self._auth.post("/Xsxk/queryKxrw", data=queryform,
-                            timeout=30, headers={"X-Requested-With": "XMLHttpRequest"})
+                            timeout=_net_timeout("tis"), headers={"X-Requested-With": "XMLHttpRequest"})
         r.raise_for_status()
         d = r.json()
         jg = d.get("jg", "-1")
         if jg != "1":
-            return {
+            result = {
                 "ok": False,
                 "courses": [],
                 "total": 0,
@@ -410,6 +459,9 @@ class SelectCourseClient:
                 "course_types": d.get("xkgzszList") or d.get("xsxkPage", {}).get("xkgzszList") or [],
                 "current_type": d.get("xkgzszOne") or d.get("xsxkPage", {}).get("xkgzszOne") or {},
             }
+            self._search_cache = {"fp": _fp, "result": result}
+            self._search_cache_at = _now
+            return result
         kxrw = d.get("kxrwList") or {}
         raw_list = kxrw.get("list") or []
         courses = [Course.from_api(item) for item in raw_list]
@@ -417,7 +469,7 @@ class SelectCourseClient:
         # `_lookup_id()` can find the 32-char hex `id` for any rwh the
         # user is about to write to. Personal-mode rows carry the id;
         # catalog rows (queryRwxxcxList) don't. Without this merge the
-        # write path silently fails with 操作失败.
+        # write path silently fails with 鎿嶄綔澶辫触.
         if self._courses is None:
             self._courses = []
         existing = {c.rwh: i for i, c in enumerate(self._courses)}
@@ -427,8 +479,33 @@ class SelectCourseClient:
                 self._courses[existing[course.rwh]] = course
             else:
                 self._courses.append(course)
+        # Enrolled (yxkcList) / cart (xkgwcList) rows carry the same
+        # 32-char hex write-key (`id`) but may NOT appear in the current
+        # round's SEARCH results 鈥?e.g. a 閫氳瘑 course you're enrolled in
+        # while browsing the kzyxk (plan-courses) tab. Merge their ids
+        # into the catalog so `_lookup_id()` 鈥?and therefore every write
+        # path (enrolled bid updates, drops) 鈥?works for those rwhs.
+        # (Caught live 2026-08-31: updXkxsByyx on an enrolled course
+        # returned jg=-1 鎿嶄綔澶辫触 purely because the id was never in
+        # _courses.)
+        existing = {c.rwh: i for i, c in enumerate(self._courses)}
+        for e in list(d.get("yxkcList") or []) + list(d.get("xkgwcList") or []):
+            rwh_e = e.get("rwh") or ""
+            hex_e = e.get("id") or ""
+            if not rwh_e or not hex_e:
+                continue
+            if rwh_e in existing:
+                self._courses[existing[rwh_e]].id = hex_e
+                continue
+            try:
+                c_e = Course.from_api(e)
+            except Exception:
+                continue
+            c_e.id = hex_e
+            self._courses.append(c_e)
+            existing[rwh_e] = len(self._courses) - 1
         ct = d.get("xkgzszOne") or d.get("xsxkPage", {}).get("xkgzszOne") or {}
-        return {
+        result = {
             "ok": True,
             "courses": courses,
             "total": kxrw.get("total", len(courses)),
@@ -437,8 +514,14 @@ class SelectCourseClient:
             "message": d.get("message", ""),
             "course_types": d.get("xkgzszList") or d.get("xsxkPage", {}).get("xkgzszList") or [],
             "current_type": ct,
-            # Bid-panel fields — extracted from the current_type config so
+            # Bid-panel fields 鈥?extracted from the current_type config so
             # the bid panel does not need a second TIS call.
+            # 鈿?jffs semantics (verified live 2026-08-31): xkgzszOne.jfxs
+            # is the student's REMAINING points, NOT the round total 鈥?
+            # already-committed enrolled bids are excluded from it (live:
+            # 129 committed + 26 remaining = 155, which is what the round
+            # LIST xkgzszList reports). Consumers must only check NEW
+            # spend (bids above the enrolled/cart baseline) against jffs.
             "round": {
                 "xkfsdm": ct.get("xkfsdm", round_code or ""),
                 "jffs": float(ct.get("jfxs") or 0),
@@ -448,6 +531,9 @@ class SelectCourseClient:
                 "xkms": ct.get("xkms", ""),
             },
         }
+        self._search_cache = {"fp": _fp, "result": result}
+        self._search_cache_at = _now
+        return result
 
     def course_types(self) -> list:
         """Get available selection course types (xkfsdm codes/names) from TIS.
@@ -464,7 +550,7 @@ class SelectCourseClient:
         self._auth.ensure()
         r = self._auth.post("/Xsxk/queryYxkc",
                             data={"p_xn": self._sem.xn, "p_xq": self._sem.xq},
-                            timeout=30, headers={"X-Requested-With": "XMLHttpRequest"})
+                            timeout=_net_timeout("tis"), headers={"X-Requested-With": "XMLHttpRequest"})
         r.raise_for_status()
         d = r.json()
         types = d.get("xkgzszList") or []
@@ -519,14 +605,14 @@ class SelectCourseClient:
         """Look up the 32-char hex `id` (TIS write-key) for an rwh.
 
         Walk the cached catalog for a course with matching rwh. Returns
-        "" if not found — callers should treat empty as "id unknown".
+        "" if not found 鈥?callers should treat empty as "id unknown".
 
-        The catalog's queryRwxxcxList doesn't carry `id` — only
+        The catalog's queryRwxxcxList doesn't carry `id` 鈥?only
         queryKxrw does. So this lookup only succeeds after a personal
         search has populated `Course.id` on those rows. If the user
         runs a personal search then a write, this works. If they skip
         the personal search and try to write, this returns "" and the
-        write endpoint rejects with 操作失败.
+        write endpoint rejects with 鎿嶄綔澶辫触.
         """
         for c in self._ensure_loaded():
             if c.rwh == rwh and c.id:
@@ -539,15 +625,15 @@ class SelectCourseClient:
         The "current TIS active term" (`p_dqxn`/`p_dqxq`/`p_dqxnxq`/
         `cxsfmt`) is the same for every request in a session. Caching it
         avoids the round-trip on every `search_personal` call, which is
-        what triggers TIS's "查询请求频率过高" rate-limit error.
+        what triggers TIS's "鏌ヨ璇锋眰棰戠巼杩囬珮" rate-limit error.
         """
-        ttl = 300  # 5 min — semantically stable, but allow a refresh in
+        ttl = 300  # 5 min 鈥?semantically stable, but allow a refresh in
                    # case the user crosses a semester boundary mid-session
         if self._dq_cache is not None and (time.time() - self._dq_cache_at) < ttl:
             return self._dq_cache
         self._auth.ensure()
         dq = self._auth.post("/Xsxk/queryXkdqXnxq", data={},
-                             timeout=15,
+                             timeout=_net_timeout("tis"),
                              headers={"X-Requested-With": "XMLHttpRequest"}).json()
         self._dq_cache = dq
         self._dq_cache_at = time.time()
@@ -559,7 +645,7 @@ class SelectCourseClient:
         `semester`: "2025-2026-2" or "2025-2026-3" (summer). Defaults to
         the current client's semester.
 
-        Returns raw dicts from the xszykb API (no kcxx parsing — these
+        Returns raw dicts from the xszykb API (no kcxx parsing 鈥?these
         are already your personal schedule items).
         """
         if semester:
@@ -573,7 +659,7 @@ class SelectCourseClient:
 
         self._auth.ensure()
         r = self._auth.post("/xszykb/queryxszykbzong",
-                            data={"xn": xn, "xq": xq}, timeout=15,
+                            data={"xn": xn, "xq": xq}, timeout=_net_timeout("tis"),
                             headers={"X-Requested-With": "XMLHttpRequest"})
         r.raise_for_status()
         data = r.json()
@@ -582,7 +668,7 @@ class SelectCourseClient:
     def enrolled_rwhs(self, semester: Optional[str] = None) -> set:
         """Set of `rwh` strings for the courses you're enrolled in.
 
-        Useful for cross-referencing with `list_courses()` — find which
+        Useful for cross-referencing with `list_courses()` 鈥?find which
         catalog courses you've already signed up for.
         """
         rwhs = set()

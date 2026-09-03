@@ -293,6 +293,211 @@ class TestRealCall:
         assert exc_info.value.jg == "-1"
 
 
+# -- submit_bids budget semantics (baseline model) ---------------------------
+#
+# Verified live 2026-08-31: TIS xkgzszOne.jfxs (= the jffs_limit callers
+# pass) is the REMAINING points for this student, NOT the round total.
+# Enrolled bids are already committed and NOT part of the remaining
+# (live: 129 committed + 26 remaining = 155 total). The over-limit check
+# must therefore compare the batch's CONSUMPTION — Σ max(0, bid -
+# baseline) — against jffs_limit, never the raw sum.
+
+
+class TestSubmitBidsBaseline:
+    def _client(self):
+        sc = SelectCourseClient(xn="2026-2027", xq="1")
+        _stub_auth(sc, {"jg": "1", "message": "操作成功"})
+        _seed_catalog_id(sc, rwh="RWH-A", hex_id="HEX-A")
+        _seed_catalog_id(sc, rwh="RWH-B", hex_id="HEX-B")
+        # _seed_catalog_id replaces _courses; seed both in one list
+        from sustech_survival.selectcourse.course import Course
+
+        def _course(rwh, hex_id):
+            return Course(code="T", name="T", name_en="T", class_group="",
+                          rwh=rwh, college="", category="", nature="", campus="",
+                          credits=0, total_hours=0, capacity=None,
+                          undergrad_seats=None, grad_seats=None, cultivation="1",
+                          rooms=[], teachers=[], slots_raw=[], id=hex_id)
+        sc._courses = [_course("RWH-A", "HEX-A"), _course("RWH-B", "HEX-B")]
+        return sc
+
+    def test_restatement_of_enrolled_bids_is_not_over_budget(self):
+        # 129 pts of enrolled bids re-stated against 26 remaining MUST
+        # pass — the baseline says those points are already committed.
+        sc = self._client()
+        out = sc.submit_bids(
+            {"RWH-A": 100, "RWH-B": 29},
+            where="enrolled", jffs_limit=26,
+            baseline={"RWH-A": 100, "RWH-B": 29},
+            dry_run=False,
+        )
+        assert out["over_limit"] is False
+        assert out["ok"] is True
+        assert out["check_sum"] == 0
+        assert out["sum"] == 129  # raw display sum is unchanged
+
+    def test_increase_above_baseline_consumes_only_the_delta(self):
+        sc = self._client()
+        out = sc.submit_bids(
+            {"RWH-A": 102, "RWH-B": 29},          # +2 on A, restated B
+            where="enrolled", jffs_limit=26,
+            baseline={"RWH-A": 100, "RWH-B": 29},
+            dry_run=False,
+        )
+        assert out["over_limit"] is False
+        assert out["check_sum"] == 2
+
+    def test_new_picks_without_baseline_count_in_full(self):
+        sc = self._client()
+        # A single 20-pt pick fits the 26 remaining
+        out = sc.submit_bids(
+            {"RWH-A": 20}, where="cart", jffs_limit=26, dry_run=False,
+        )
+        assert out["over_limit"] is False
+        assert out["check_sum"] == 20
+        # 20 + 10 = 30 > 26 with no baseline → over, short-circuited
+        calls_before = sc._auth.post.call_count
+        out3 = sc.submit_bids(
+            {"RWH-A": 20, "RWH-B": 10}, where="cart", jffs_limit=26,
+            dry_run=False,
+        )
+        assert out3["over_limit"] is True
+        assert out3["check_sum"] == 30
+        assert all(not r["ok"] for r in out3["results"])
+        # Over-limit short-circuits BEFORE any TIS call
+        assert sc._auth.post.call_count == calls_before
+
+    def test_decrease_below_baseline_frees_points(self):
+        sc = self._client()
+        out = sc.submit_bids(
+            {"RWH-A": 80},                        # 100 → 80 frees 20
+            where="enrolled", jffs_limit=26,
+            baseline={"RWH-A": 100},
+            dry_run=False,
+        )
+        assert out["over_limit"] is False
+        assert out["check_sum"] == 0
+
+    def test_legacy_behavior_without_baseline(self):
+        # baseline=None keeps the historical raw-sum check for callers
+        # that don't know the TIS-held values.
+        sc = self._client()
+        out = sc.submit_bids(
+            {"RWH-A": 30}, where="cart", jffs_limit=26, dry_run=False,
+        )
+        assert out["over_limit"] is True
+        assert out["check_sum"] == 30
+
+    def test_mixed_restated_and_new(self):
+        # Enrolled A restated at its baseline (free) + new pick B at 5:
+        # consumption 5 ≤ 26 → OK even though the raw sum is 105.
+        sc = self._client()
+        out = sc.submit_bids(
+            {"RWH-A": 100, "RWH-B": 5},
+            where="enrolled", jffs_limit=26,
+            baseline={"RWH-A": 100, "RWH-B": 0},
+            dry_run=False,
+        )
+        assert out["over_limit"] is False
+        assert out["check_sum"] == 5
+        assert out["sum"] == 105
+
+
+# -- Enrolled/cart rows feed the write-key lookup ----------------------------
+#
+# Caught live 2026-08-31: updXkxsByyx on an enrolled course returned
+# jg=-1 操作失败 because `_lookup_id()` only saw kxrwList SEARCH rows —
+# an enrolled course that isn't in the current round's search results
+# (e.g. a 通识 course while browsing the kzyxk tab) had no id in
+# _courses. search_personal now merges yxkcList/xkgwcList ids too.
+
+
+class TestEnrolledIdMerge:
+    def test_enrolled_row_id_reaches_lookup(self):
+        sc = SelectCourseClient(xn="2026-2027", xq="1")
+        canned = {
+            "jg": "1", "message": "操作成功",
+            "kxrwList": {"list": [], "total": 0},
+            "yxkcList": [
+                {"rwh": "RWH-ENR", "id": "HEX-ENR-123", "kcdm": "GE331",
+                 "kcmc": "体育Ⅴ", "xf": "0.5", "xkxs": "2"},
+            ],
+            "xkgwcList": [
+                {"rwh": "RWH-CART", "id": "HEX-CART-456", "kcdm": "MSE301",
+                 "kcmc": "材料化学", "xf": "3", "xkxs": "1"},
+            ],
+            "xkgzszOne": {"xkfsdm": "kzyxk", "jfxs": "26"},
+        }
+        _stub_auth(sc, canned)
+        r = sc.search_personal(round_code="kzyxk")
+        assert r["ok"] is True
+        # The write-key for BOTH enrolled and cart rwhs is now resolvable
+        assert sc._lookup_id("RWH-ENR") == "HEX-ENR-123"
+        assert sc._lookup_id("RWH-CART") == "HEX-CART-456"
+
+    def test_enrolled_row_parses_as_course(self):
+        sc = SelectCourseClient(xn="2026-2027", xq="1")
+        canned = {
+            "jg": "1", "message": "操作成功",
+            "kxrwList": {"list": [], "total": 0},
+            "yxkcList": [
+                {"rwh": "RWH-ENR", "id": "HEX-ENR-123", "kcdm": "GE331",
+                 "kcmc": "体育Ⅴ", "xf": "0.5", "xkxs": "2"},
+            ],
+            "xkgwcList": [],
+            "xkgzszOne": {},
+        }
+        _stub_auth(sc, canned)
+        sc.search_personal(round_code="kzyxk")
+        c = sc.by_code("GE331")
+        assert c is not None
+        assert c.rwh == "RWH-ENR"
+        assert c.id == "HEX-ENR-123"
+
+
+# -- xkfsdm defaults (HAR-verified per endpoint) -----------------------------
+#
+# Caught live 2026-08-31: /api/tis/drop never passed xkfsdm, and
+# drop_course's docstring CLAIMED "defaults to yixuan" while the code
+# passed None through to build_queryform → p_xkfsdm="" → tuike rejected
+# with jg=-1 操作失败. The defaults are real now; these tests pin them.
+
+
+class TestXkfsdmDefaults:
+    def test_drop_course_defaults_to_yixuan(self):
+        sc = SelectCourseClient(xn="2026-2027", xq="1")
+        post = _stub_auth(sc)
+        _seed_catalog_id(sc)
+        sc.drop_course("TEST-RWH", dry_run=False)
+        payload = post.call_args.kwargs.get("data")
+        assert payload["p_xkfsdm"] == "yixuan"
+
+    def test_drop_course_explicit_xkfsdm_wins(self):
+        sc = SelectCourseClient(xn="2026-2027", xq="1")
+        post = _stub_auth(sc)
+        _seed_catalog_id(sc)
+        sc.drop_course("TEST-RWH", dry_run=False, xkfsdm="bxxk")
+        payload = post.call_args.kwargs.get("data")
+        assert payload["p_xkfsdm"] == "bxxk"
+
+    def test_update_bid_defaults_to_yixuan(self):
+        sc = SelectCourseClient(xn="2026-2027", xq="1")
+        post = _stub_auth(sc)
+        _seed_catalog_id(sc)
+        sc.update_bid("TEST-RWH", 5, where="enrolled", dry_run=False)
+        payload = post.call_args.kwargs.get("data")
+        assert payload["p_xkfsdm"] == "yixuan"
+        assert payload["p_xkxs"] == 5
+
+    def test_update_bid_cart_also_defaults_to_yixuan(self):
+        sc = SelectCourseClient(xn="2026-2027", xq="1")
+        post = _stub_auth(sc)
+        _seed_catalog_id(sc)
+        sc.update_bid("TEST-RWH", 5, where="cart", dry_run=False)
+        payload = post.call_args.kwargs.get("data")
+        assert payload["p_xkfsdm"] == "yixuan"
+
+
 # -- Error class ------------------------------------------------------------
 
 

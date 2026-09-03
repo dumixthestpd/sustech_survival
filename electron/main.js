@@ -43,14 +43,122 @@ function findFreePort() {
 
 // -- Locate the bundled Python interpreter --------------------------------
 
-function pythonBinary() {
-  if (isDev) {
-    // Dev mode: use system Python on PATH so `sustech_survival` resolves
-    // via the editable install (pip install -e .).
-    return process.platform === 'win32' ? 'python.exe' : 'python3';
+function bundledPythonDir() {
+  // Bundled portable Python (python-build-standalone) lives under
+  // resources/python/<platform>-<arch>/ — e.g. python/win32-x64/python.exe.
+  return path.join(RESOURCES, 'python', `${process.platform}-${process.arch}`);
+}
+
+// -- Locate the Python interpreter -----------------------------------------
+//
+// Packaged: the bundled portable Python (python-build-standalone) under
+// resources/python/<platform>-<arch>/ — always used, env-independent.
+//
+// Dev: we need SOME Python with `sustech_survival` importable. Resolution:
+//   1. $SUSTECH_PYTHON override, then this project's conda env
+//      (ai-sustech-dev), then plain Python on PATH — the first candidate
+//      that ALREADY has the module wins (fast path; nothing is installed
+//      into any env).
+//   2. If none of them has it, the app creates an ISOLATED venv at
+//      electron/.venv and pip-installs the repo (editable) into it — the
+//      user's conda/system envs are NEVER touched. First run needs network
+//      and takes about a minute; afterwards it is instant.
+
+function bundledPythonDir() {
+  // Bundled portable Python (python-build-standalone) lives under
+  // resources/python/<platform>-<arch>/ — e.g. python/win32-x64/python.exe.
+  return path.join(RESOURCES, 'python', `${process.platform}-${process.arch}`);
+}
+
+const DEV_VENV_DIR = path.join(__dirname, '.venv');
+
+function venvPythonPath() {
+  return process.platform === 'win32'
+    ? path.join(DEV_VENV_DIR, 'Scripts', 'python.exe')
+    : path.join(DEV_VENV_DIR, 'bin', 'python');
+}
+
+function basePythonBinary() {
+  // Dev candidates, in order. Only existence is checked here; module
+  // presence is probed by ensureDevPython().
+  const envCandidates = [
+    process.env.SUSTECH_PYTHON,                       // explicit override
+    'D:\\dumix\\Applications\\conda\\envs\\ai-sustech-dev\\python.exe',
+    path.join(process.env.USERPROFILE || '', 'Applications', 'conda',
+              'envs', 'ai-sustech-dev', 'python.exe'),
+  ].filter(Boolean);
+  for (const c of envCandidates) {
+    if (fs.existsSync(c)) return c;
   }
+  return process.platform === 'win32' ? 'python.exe' : 'python3';
+}
+
+function runQuiet(py, args) {
+  // Resolve true when the command exits 0. Failure (missing interpreter,
+  // crash, exit != 0) resolves false. Output is discarded.
+  return new Promise((resolve) => {
+    const proc = spawn(py, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    proc.stdout.resume();
+    proc.stderr.resume();
+    proc.on('error', () => resolve(false));
+    proc.on('exit', (code) => resolve(code === 0));
+  });
+}
+
+function runLogged(py, args, tag) {
+  // Run a longer bootstrap step (venv create / pip install) with its
+  // output streamed to the terminal under [tag].
+  return new Promise((resolve) => {
+    const proc = spawn(py, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    proc.stdout.on('data', (b) => console.log(`[${tag}]`, b.toString().trimEnd()));
+    proc.stderr.on('data', (b) => console.error(`[${tag}:err]`, b.toString().trimEnd()));
+    proc.on('error', (e) => {
+      console.error(`[${tag}] failed to launch:`, e);
+      resolve(false);
+    });
+    proc.on('exit', (code) => resolve(code === 0));
+  });
+}
+
+async function ensureDevPython() {
+  // Fast path: reuse a Python that already has the module. Nothing is
+  // installed anywhere — the user's envs stay exactly as they are.
+  const base = basePythonBinary();
+  if (await runQuiet(base, ['-c', 'import sustech_survival'])) {
+    return base;
+  }
+
+  // Isolated fallback: electron/.venv, created FROM `base` (the base
+  // interpreter is only used to create the venv, never polluted).
+  const venvPy = venvPythonPath();
+  if (fs.existsSync(venvPy)) {
+    if (await runQuiet(venvPy, ['-c', 'import sustech_survival'])) {
+      console.log(`[venv] using existing ${venvPy}`);
+      return venvPy;
+    }
+    console.log('[venv] existing .venv is stale — re-creating');
+    fs.rmSync(DEV_VENV_DIR, { recursive: true, force: true });
+  }
+
+  console.log(`[venv] creating isolated venv at ${DEV_VENV_DIR} …`);
+  if (!await runLogged(base, ['-m', 'venv', DEV_VENV_DIR], 'venv')) {
+    throw new Error(`failed to create venv with ${base} (python -m venv)`);
+  }
+  console.log('[venv] installing sustech_survival[webui] (editable, from the repo) …');
+  const repoRoot = path.join(__dirname, '..');
+  if (!await runLogged(venvPy,
+                       ['-m', 'pip', 'install', '--disable-pip-version-check',
+                        '-e', `${repoRoot}[webui]`], 'venv')) {
+    throw new Error('failed to pip install sustech_survival[webui] into the venv');
+  }
+  console.log(`[venv] ready — using ${venvPy}`);
+  return venvPy;
+}
+
+async function pythonBinary() {
+  if (isDev) return ensureDevPython();
   const exe = process.platform === 'win32' ? 'python.exe' : 'bin/python3';
-  return path.join(RESOURCES, 'python', exe);
+  return path.join(bundledPythonDir(), exe);
 }
 
 // -- Spawn the webui as a child process -----------------------------------
@@ -59,15 +167,30 @@ let webuiProc = null;
 let webuiPort = null;
 let mainWindow = null;
 
+function windowIcon() {
+  // Torch-only logo as the window/taskbar icon. Packaged: resources
+  // folder; dev: electron/build/.
+  const candidates = [
+    path.join(RESOURCES, 'icon.png'),
+    path.join(__dirname, 'build', 'icon.png'),
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c;
+  }
+  return undefined;
+}
+
 async function startWebui() {
   webuiPort = await findFreePort();
-  const py = pythonBinary();
+  const py = await pythonBinary();
 
   if (!isDev && !fs.existsSync(py)) {
     dialog.showErrorBox(
       'Bundled Python missing',
       `Could not find portable Python at ${py}.\n` +
-      'Reinstall sustech_survival or report an issue.'
+      'This build was not packaged with a Python runtime — ' +
+      'reinstall sustech_survival from the official installer, or ' +
+      'report this issue.'
     );
     app.quit();
     return;
@@ -120,7 +243,22 @@ function stopWebui() {
 // -- BrowserWindow --------------------------------------------------------
 
 async function createWindow() {
-  await startWebui();
+  try {
+    await startWebui();
+  } catch (e) {
+    console.error('[webui] failed to start:', e);
+    dialog.showErrorBox(
+      'sustech_survival could not start',
+      'The built-in web service failed to start.\n\n' +
+      String(e && e.message ? e.message : e) + '\n\n' +
+      'If this is a development build: the app auto-installs the module ' +
+      'into electron/.venv when no Python has it (first run needs network; ' +
+      'see the terminal log). Otherwise install it into the Python being ' +
+      'used (pip install -e ".[webui]").'
+    );
+    app.quit();
+    return;
+  }
 
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -128,6 +266,7 @@ async function createWindow() {
     minWidth: 800,
     minHeight: 600,
     title: 'sustech_survival',
+    icon: windowIcon(),
     backgroundColor: '#0f1115',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -207,7 +346,7 @@ ipcMain.handle('settings:set', (_e, { key, value }) => {
 // -- IPC: Python module upgrade (`pip install --upgrade`) -----------------
 
 ipcMain.handle('python:upgrade', async () => {
-  const py = pythonBinary();
+  const py = await pythonBinary();
   return new Promise((resolve) => {
     const proc = spawn(py, ['-m', 'pip', 'install', '--upgrade', 'sustech_survival[webui]'], {
       stdio: ['ignore', 'pipe', 'pipe'],

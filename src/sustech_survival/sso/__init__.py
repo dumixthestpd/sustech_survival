@@ -90,6 +90,7 @@ SKILL_ROOT = _Path(__file__).resolve().parent.parent.parent.parent
 # =============================================================================
 
 class TISAuth(CASAuthorizer):
+    SERVICE = "tis"
     BASE_URL = "https://tis.sustech.edu.cn"
     SERVICE_URL = "https://tis.sustech.edu.cn/cas"
     XHR_MODE = True
@@ -124,6 +125,13 @@ class TISAuth(CASAuthorizer):
         Signal 1: Non-XHR endpoints redirect to CAS login (302/303).
         Signal 2: XHR endpoints return the CAS login page as HTML when
         the session is dead (Content-Type: text/html instead of JSON).
+        Signal 3: XHR endpoints return HTTP 401 with a JSON body like
+        ``{"content":"session已失效"}`` (verified live 2026-08-30). The
+        final URL is often ``https://tis.sustech.edu.cn/authentication/
+        require`` — TIS's session-required sentinel. A bare 401 is NOT
+        treated as stale for other services (off-campus network issues
+        also produce 401s), but for TIS XHR endpoints the JSON
+        ``session已失效`` payload is unambiguous.
         """
         if response.status_code in self.REDIRECT_STATUS:
             loc = response.headers.get("Location", "")
@@ -133,6 +141,15 @@ class TISAuth(CASAuthorizer):
         if ct and "text/html" in ct:
             snippet = getattr(response, "text", "")[:1000].lower()
             if "统一身份认证" in snippet or "cas/login" in snippet:
+                return True
+        # Signal 3 — TIS session-required sentinel (401 + JSON expiry body,
+        # or the /authentication/require URL itself).
+        if response.status_code == 401:
+            url = (response.url or "").lower()
+            if "authentication/require" in url:
+                return True
+            body = getattr(response, "text", "") or ""
+            if "session" in body.lower() and ("失效" in body or "expired" in body.lower()):
                 return True
         return False
 
@@ -155,6 +172,7 @@ class TISAuth(CASAuthorizer):
 # =============================================================================
 
 class BBAuth(CASAuthorizer):
+    SERVICE = "bb"
     BASE_URL = "https://bb.sustech.edu.cn"
     SERVICE_URL = "https://bb.sustech.edu.cn/webapps/bb-sso-BBLEARN/index.jsp"
 
@@ -195,6 +213,7 @@ class BBAuth(CASAuthorizer):
 # =============================================================================
 
 class LibAuth(CASAuthorizer):
+    SERVICE = "lib"
     BASE_URL = "https://sustc.primo.exlibrisgroup.com.cn"
     SERVICE_URL = "https://sustc.primo.exlibrisgroup.com.cn/infra/casRedirect?ctx=/primaws"
 

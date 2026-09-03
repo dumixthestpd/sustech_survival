@@ -21,7 +21,7 @@ sys.path.insert(0, str(CLI_DIR.parent.parent))
 
 import click
 from sustech_survival.sso import TISAuth
-from sustech_survival.exceptions import SessionExpired, NetworkError
+from sustech_survival.exceptions import SessionExpired, NetworkError, APIError
 from sustech_survival.tis.grades import get_grades, calc_gpa, format_grade_row
 
 # Shared auth instance — refreshed once per CLI invocation
@@ -428,11 +428,20 @@ def schedule_cmd(zc, xn, xq, fetch_all) -> None:
     import json as _json
     from .schedule import week_schedule, semester_schedule, current_week
     if fetch_all:
-        data = semester_schedule(xn, xq)
+        try:
+            data = semester_schedule(xn, xq)
+        except APIError as e:
+            click.secho(f"❌  {e}", fg="red", err=True)
+            raise SystemExit(1)
         click.echo(_json.dumps(data, ensure_ascii=False, indent=2))
         return
-    week = zc if zc is not None else current_week()
-    data = week_schedule(week, xn, xq)
+    try:
+        week = zc if zc is not None else current_week()
+        data = week_schedule(week, xn, xq)
+    except APIError as e:
+        # APIError covers SessionExpired + NetworkError (both subclasses).
+        click.secho(f"❌  {e}", fg="red", err=True)
+        raise SystemExit(1)
     click.echo(f"=== Week {week} ===")
     for entry in data:
         click.echo(f"  [{entry['KEY']}] {entry['SKSJ']}")
