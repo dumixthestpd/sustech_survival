@@ -1,5 +1,10 @@
 # Papers
 
+> **DEPRECATED (2026-09-01)** — `sustech.papers` is unmaintained and slated
+> for removal. It is not part of the webui/Electron surface. For paper
+> search/fetch, prefer maintained tooling (scholarly, the OpenAlex API,
+> paper-downloaders).
+
 SUSTech paper search and off-campus access.
 
 ---

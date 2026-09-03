@@ -1,15 +1,15 @@
-# =============================================================================
-# BookingAuth — ehall 场地预约 sub-app (booking.sustech.edu.cn)
+﻿# =============================================================================
+# BookingAuth 鈥?ehall 鍦哄湴棰勭害 sub-app (booking.sustech.edu.cn)
 # =============================================================================
 # Lives on its own host behind SUSTech CAS, but does NOT use the ehall MAIN
-# host's JSESSIONID auth — instead it uses a CAS + secondary token handshake:
+# host's JSESSIONID auth 鈥?instead it uses a CAS + secondary token handshake:
 #
-#   1. CAS login (POST /cas/login with submit="提交") — same as TIS, but the
-#      SUBMIT_VALUE for ehall sub-apps is the Chinese "提交", NOT empty
-#   2. GET /redirect?ticket=ST-... — cookies land on booking.sustech.edu.cn
+#   1. CAS login (POST /cas/login with submit="鎻愪氦") 鈥?same as TIS, but the
+#      SUBMIT_VALUE for ehall sub-apps is the Chinese "鎻愪氦", NOT empty
+#   2. GET /redirect?ticket=ST-... 鈥?cookies land on booking.sustech.edu.cn
 #   3. POST /api/SystemApi/GetUserProfile
 #        body: {MessageType:1001, MessageID:<uuid>, Data:{Url, St:ticket}}
-#        → returns Data.Token (UUID)
+#        鈫?returns Data.Token (UUID)
 #   4. All subsequent API calls attach: Authorization: <Token>
 #
 # The Authorizer base class ships a LegacyAdapter that breaks on newer
@@ -17,6 +17,7 @@
 # get_ticket_cookies() with a hand-rolled session that doesn't need it.
 # =============================================================================
 
+from sustech_survival import _net
 import json
 import re
 import uuid
@@ -32,12 +33,12 @@ BOOKING_SERVICE = f"{BOOKING_BASE}/redirect"
 BOOKING_API = f"{BOOKING_BASE}/api/SystemApi"
 
 # Off-campus signal: SUSTech firewall returns this exact body on 403 before
-# any auth runs. (Same pattern as `pms.py` — see references/sustech-firewall-off-campus-403.md.)
+# any auth runs. (Same pattern as `pms.py` 鈥?see references/sustech-firewall-off-campus-403.md.)
 OFF_CAMPUS_BODY = "Access forbidden, please contact administrator."
 OFF_CAMPUS_HINT = (
     "Booking server blocked the request (HTTP 403: 'Access forbidden, "
     "please contact administrator.'). You are most likely NOT on the "
-    "SUSTech campus network — connect to campus Wi-Fi / wired, or this "
+    "SUSTech campus network 鈥?connect to campus Wi-Fi / wired, or this "
     "module will not work."
 )
 
@@ -47,9 +48,9 @@ def _looks_off_campus(r: requests.Response) -> bool:
 
 
 class BookingAuth(Authorizer):
-    """Headless login for the ehall 场地预约 sub-app (booking.sustech.edu.cn).
+    """Headless login for the ehall 鍦哄湴棰勭害 sub-app (booking.sustech.edu.cn).
 
-    Subclass of Authorizer — does NOT inherit from CASAuthorizer (the
+    Subclass of Authorizer 鈥?does NOT inherit from CASAuthorizer (the
     LegacyAdapter inside CASAuthorizer.get_ticket_cookies throws on newer
     urllib3). We hand-roll the CAS POST + token handshake here.
 
@@ -66,14 +67,14 @@ class BookingAuth(Authorizer):
 
         Lightweight local check: do we have cookies + a cached token? The actual
         API token may have been rotated server-side, but the next real API call
-        will fail with a 401/403 if so — and the caller (BookingClient) auto-
+        will fail with a 401/403 if so 鈥?and the caller (BookingClient) auto-
         re-logs-in on auth errors. Re-validating via GetUserProfile with the
         OLD ticket would fail because tickets are single-use.
         """
         if not self._session_cache:
-            return False, "No session — login needed."
+            return False, "No session 鈥?login needed."
         if not self._cached_token():
-            return False, "No cached token — login needed."
+            return False, "No cached token 鈥?login needed."
         return True, f"Session has {len(self._session_cache)} cookies + token"
 
     def ensure(self) -> Tuple[bool, str]:
@@ -111,50 +112,50 @@ class BookingAuth(Authorizer):
         try:
             username, password = self._read_creds()
         except AuthorizerError as e:
-            print(f"❌ BookingAuth refresh skipped: {e}")
+            print(f"鉂?BookingAuth refresh skipped: {e}")
             return False
         return self._refresh_with_creds(username, password)
 
     def _refresh_with_creds(self, username: str, password: str) -> bool:
         """Shared CAS + token handshake used by both _refresh() and login_password()."""
         try:
-            # Step 1-3: CAS login → ticket → cookies on booking domain
+            # Step 1-3: CAS login 鈫?ticket 鈫?cookies on booking domain
             cookies, ticket = self._get_ticket_cookies(username, password)
             self._set_session(cookies)
 
-            # Step 4: secondary handshake — GetUserProfile to obtain API token
+            # Step 4: secondary handshake 鈥?GetUserProfile to obtain API token
             self._do_token_handshake(ticket)
 
             cls = self.__class__.__name__
-            print(f"✅ {cls} session refreshed ({len(cookies)} cookies)")
+            print(f"鉁?{cls} session refreshed ({len(cookies)} cookies)")
             return True
         except (AuthorizerError, Exception) as e:
-            print(f"❌ BookingAuth refresh failed: {e}")
+            print(f"鉂?BookingAuth refresh failed: {e}")
             return False
 
     def _get_ticket_cookies(self, username: str, password: str) -> Tuple[dict, str]:
         """CAS login handshake. Returns (cookies_dict, ticket_string).
 
         Steps 1-3 of the auth flow:
-          1. CAS GET → fetch execution token
-          2. CAS POST → receive ticket via Location redirect
-          3. Follow ticket redirect → cookies land on booking.sustech.edu.cn
+          1. CAS GET 鈫?fetch execution token
+          2. CAS POST 鈫?receive ticket via Location redirect
+          3. Follow ticket redirect 鈫?cookies land on booking.sustech.edu.cn
         """
         sess = requests.Session()
         sess.headers["User-Agent"] = UA
 
-        # Step 1: CAS GET → fetch execution token
+        # Step 1: CAS GET 鈫?fetch execution token
         r = sess.get(
             "https://cas.sustech.edu.cn/cas/login",
             params={"service": BOOKING_SERVICE},
-            timeout=10,
+            timeout=_net.timeouts().service_timeout("booking"),
         )
         m = re.search(r'name="execution" value="([^"]+)"', r.text)
         if not m:
             raise AuthorizerError("No execution token at CAS login page.")
         exec_token = m.group(1)
 
-        # Step 2: CAS POST → ticket. SUBMIT_VALUE="提交" for ehall sub-apps.
+        # Step 2: CAS POST 鈫?ticket. SUBMIT_VALUE="鎻愪氦" for ehall sub-apps.
         r = sess.post(
             "https://cas.sustech.edu.cn/cas/login",
             params={"service": BOOKING_SERVICE},
@@ -163,10 +164,10 @@ class BookingAuth(Authorizer):
                 "password": password,
                 "execution": exec_token,
                 "_eventId": "submit",
-                "submit": "提交",       # Chinese — NOT empty (TIS uses "")
+                "submit": "鎻愪氦",       # Chinese 鈥?NOT empty (TIS uses "")
             },
             allow_redirects=False,
-            timeout=10,
+            timeout=_net.timeouts().service_timeout("booking"),
         )
         if r.status_code not in (301, 302):
             raise AuthorizerError(
@@ -183,8 +184,8 @@ class BookingAuth(Authorizer):
             raise AuthorizerError("Could not extract ticket from CAS Location header.")
         ticket = ticket_match.group(1)
 
-        # Step 3: follow ticket → cookies land on booking.sustech.edu.cn
-        r = sess.get(ticket_url, allow_redirects=True, timeout=10)
+        # Step 3: follow ticket 鈫?cookies land on booking.sustech.edu.cn
+        r = sess.get(ticket_url, allow_redirects=True, timeout=_net.timeouts().service_timeout("booking"))
         cookies = {c.name: c.value for c in sess.cookies}
         if not cookies:
             raise AuthorizerError("No cookies after ticket exchange.")
@@ -206,7 +207,7 @@ class BookingAuth(Authorizer):
                 "MessageID": str(uuid.uuid4()),
                 "Data": {"Url": BOOKING_SERVICE, "St": ticket},
             },
-            timeout=10,
+            timeout=_net.timeouts().service_timeout("booking"),
         )
         if _looks_off_campus(hs):
             raise AuthorizerError(OFF_CAMPUS_HINT)
@@ -223,7 +224,7 @@ class BookingAuth(Authorizer):
 
     # -- Token storage (in-memory only) ---------------------------------------
     #
-    # The auth token is NOT in the cookie jar — it's a JSON field returned by
+    # The auth token is NOT in the cookie jar 鈥?it's a JSON field returned by
     # GetUserProfile. We store it in memory only (no disk I/O).
 
     def _cache_token(self, token: str) -> None:
@@ -251,3 +252,4 @@ class BookingAuth(Authorizer):
 # -- Module-level singleton --------------------------------------------------
 
 _auth = BookingAuth()  # resolves skill_root by walking up looking for credentials.txt
+

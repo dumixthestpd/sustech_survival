@@ -17,6 +17,12 @@ sustech context --level verbose    # everything
 sustech context --json             # JSON output
 ```
 
+For AI agents, use the `sustech` command directly:
+
+```bash
+sustech context --json
+```
+
 ---
 
 ## Python API

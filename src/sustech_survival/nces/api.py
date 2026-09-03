@@ -11,6 +11,7 @@ This file owns only:
 
 Endpoints:
   GET  /api/nces/code/<code>      — single-course brief (TIS-card hover/click)
+  POST /api/nces/ratings          — batch mini ratings (eager card badges)
   GET  /api/nces/teacher          — all sections taught by a teacher
   GET  /api/nces/course/<id>      — single-course detail (eval-tab click)
   GET  /api/nces/browse           — paginated course list (eval-tab browse)
@@ -51,6 +52,32 @@ def register(reg: CollectorRegistry) -> None:
             xq=request.args.get("xq", ""),
         )
         return jsonify(brief if brief is not None else s.not_found(code))
+
+    @reg.post("nces.ratings", "/api/nces/ratings")
+    def api_nces_ratings():
+        """Batch mini ratings for a search-result page (eager card badges).
+
+        POST body (JSON):
+          {"items": [{"code": "BIO103", "teacher": "鲍志戎,..."}, ...],
+           "xn": "2026-2027", "xq": "1"}
+        → {"results": {"<code>::<teacher>": mini_brief}, "codes_searched": N}
+
+        One cached NCES search per unique course code; teacher-team
+        matching is server-side so a mini badge never shows another
+        teacher's rating. Sequential internally — respects the shared
+        NCES throttle.
+        """
+        body = request.get_json(force=True, silent=True) or {}
+        items = body.get("items") or []
+        if not isinstance(items, list):
+            items = []
+        s = _get_scraper()
+        out = s.mini_ratings(
+            items,
+            xn=str(body.get("xn", "") or ""),
+            xq=str(body.get("xq", "") or ""),
+        )
+        return jsonify(out)
 
     @reg.get("nces.teacher", "/api/nces/teacher")
     def api_nces_teacher():

@@ -1,5 +1,12 @@
 """Paper Research Tool — unified workflow.
 
+⚠ DEPRECATED (2026-09-01) — slated for removal.
+The module is unmaintained (CrossRef search + OA PDF fetch; the cloudscraper
+path in fetch.py is disabled and wos_integration.py is dead code), is NOT
+part of the webui/Electron surface, and duplicates maintained general-purpose
+tools (scholarly, the OpenAlex API, paper-downloaders). It warns on import
+and will be removed in a future release — prefer those tools for new code.
+
 Usage:
     from sustech_survival.papers import search_and_fetch
     results = search_and_fetch(["electrochromic WPU"], dest_dir="papers/")
@@ -9,6 +16,16 @@ Or use individual modules:
     papers = search.crossref_search("electrochromic polymer", max_results=10)
     fetch.fetch_batch(papers, dest_dir="papers/")
 """
+
+import warnings as _warnings
+
+_warnings.warn(
+    "sustech_survival.papers is deprecated and will be removed in a future "
+    "release — it is not used by the webui; use maintained CrossRef/OpenAlex "
+    "tooling instead",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 import json
 from pathlib import Path

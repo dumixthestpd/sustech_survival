@@ -64,7 +64,29 @@ def _course_to_dict(c) -> dict:
         "task_type": c.task_type,
         "language": c.language,
         "college_code": c.college_code,
+        "grading": c.grading,
+        "conflicts": c.conflicts,
+        "requirement": c.requirement,
+        "note": c.note,
     }
+
+
+def _member_row(raw: dict, **markers) -> dict:
+    """Parse one enrolled (yxkcList) / cart (xkgwcList) raw row into the
+    same render-ready shape as ``_course_to_dict``, plus ``bid`` (the
+    TIS-held 选课系数, raw ``xkxs`` — kept verbatim too for older skins)
+    and the caller's membership markers. Falls back to the raw row on
+    any parse failure. Mirrors ``selectcourse/api.py::_member_row``.
+    """
+    from sustech_survival.selectcourse.course import Course
+    try:
+        d = _course_to_dict(Course.from_api(raw))
+    except Exception:
+        d = dict(raw)
+    d["xkxs"] = raw.get("xkxs")
+    d["bid"] = raw.get("xkxs")
+    d.update(markers)
+    return d
 
 
 def _int_or_none(v: Any) -> "Optional[int]":
@@ -152,13 +174,25 @@ def courses(
             )
             courses_ = result["courses"]
             out = [_course_to_dict(x) for x in courses_]
-            enrolled = result["enrolled"]
-            cart = result["cart"]
+            # Enrolled/cart rows parsed into the course shape + bid, so
+            # consumers can render enrolled courses with full details.
+            # Mirrors the Flask route in selectcourse/api.py.
+            enrolled = [_member_row(e, tis_enrolled=True)
+                        for e in (result["enrolled"] or [])]
+            cart = [_member_row(g, in_cart=True)
+                    for g in (result["cart"] or [])]
             msg = result["message"]
             if not result["ok"]:
                 if msg == "操作失败":
-                    msg = ("Course selection period not yet open. "
-                           "Catalog mode shows all courses — use the toggle above.")
+                    # Generic TIS rejection — NEVER assume "round closed".
+                    # The usual real cause is a missing/wrong selection-round
+                    # code (xkfsdm): with no round context TIS refuses
+                    # queryKxrw with this generic error even while a round
+                    # is wide open. Say so plainly instead of lying.
+                    msg = ("TIS rejected the personal query (raw: 操作失败) — "
+                           "the selection round (xkfsdm) is probably unset or "
+                           "wrong for the current phase. Pick a round in the "
+                           "tabs, or use Catalog mode.")
                 elif not msg:
                     msg = "Personal selection unavailable."
             return {
@@ -220,4 +254,4 @@ def _call_write(fn, rwh, *, dry_run, kw):
 
 
 __all__ = ["info", "courses", "course_detail", "write", "resolve_semester",
-           "_course_to_dict"]
+           "_course_to_dict", "_member_row"]

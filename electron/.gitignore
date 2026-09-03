@@ -1,0 +1,9 @@
+node_modules/
+package-lock.json
+dist/
+out/
+.cache/
+*.log
+.DS_Store
+python/
+.venv/

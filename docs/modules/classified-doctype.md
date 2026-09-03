@@ -12,7 +12,7 @@ files land in the right place.
 | **Architecture / internal** | How a module is implemented, its file layout, contracts, and invariants. | `docs/en/webui-architecture.md`, `docs/en/context.md` |
 | **Reference** | Stable links, resources, or external database notes. | `docs/en/resources.md`, `docs/en/cnki.md`, `docs/en/rsc.md`, `docs/en/wos.md` |
 | **Dev instructions** | How to contribute or extend the project (skins, new modules, docs). | `docs/dev-instructions/` |
-| **Classified index** | This page: where to look for a given doc type. | `docs/classified-doctype/README.md` |
+| **Classified index** | This page: where to look for a given doc type. | `docs/modules/classified-doctype.md` |
 
 ## How to classify new docs
 

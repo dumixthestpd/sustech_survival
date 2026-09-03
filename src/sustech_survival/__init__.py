@@ -39,7 +39,7 @@ from . import lib
 # -- sso --------------------------------------------------------------------
 from . import sso
 
-# -- papers -----------------------------------------------------------------
+# -- papers (DEPRECATED 2026-09 — slated for removal; see sustech_survival.papers) --
 from . import papers
 
 # -- context -------------------------------------------------------------

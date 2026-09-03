@@ -40,7 +40,7 @@
 - **ical** — 已选课程的 `.ics` 导出。位于 `selectcourse.ical`，通过 webui 的 `GET /api/tis/ical` 接入。
 - **webui** — 皮肤式 Flask Web UI。包内自带两个皮肤 —— `default`（英文）与 `default_zh`（中文），都包含完整的 TIS 选课流程（搜索 → 选课 → 无冲突课表 → 方案对比 → 积分与同步）、公交地图与 NCES 评价。皮肤完全自包含且单语言（无语言切换）。启动：`python -m sustech_survival.webui serve`。
 - **context** — 为 AI 助手设计的每日快照：日期、周次、最近作业/考试/上课时间、天气、AQI。
-- **papers** — 学术论文搜索与下载，覆盖 CrossRef、CNKI、WoS、RSC。
+- **papers** *(已弃用)* — 学术论文搜索（CrossRef）。**2026-09 起弃用，未维护且计划移除**；webui 与 Electron 应用均不使用。
 
 ---
 
@@ -54,7 +54,7 @@ CLI（`click`）已包含在核心依赖中 —— `pip install sustech_survival
 
 - `webui` — Flask 皮肤式 Web 界面：`default`/`default_zh` 皮肤，含完整 TIS 选课流程 + 公交地图 + NCES 评价
 - `nces` — Anubis PoW 求解器（NCES 列表抓取用）
-- `papers` — cloudscraper（绕过出版商网站的 requests 拦截）
+- `papers` — cloudscraper（供 SSO 出版商供应商使用：ACS / IEEE / JSTOR / Springer / Wiley / Scopus；papers 模块本身已弃用）
 - `all` — 以上全部
 
 本项目**没有发布到 PyPI**，请直接从 GitHub 安装：
@@ -65,6 +65,16 @@ pip install "sustech_survival @ git+https://github.com/dumixthestpd/sustech_surv
 pip install "sustech_survival[webui] @ git+https://github.com/dumixthestpd/sustech_survival.git"        # + Web 界面
 pip install "sustech_survival[all] @ git+https://github.com/dumixthestpd/sustech_survival.git"          # 全部
 ```
+
+> **命令名冲突：** TypeScript 移植版
+> [`wormforce/sustech-cli`](https://github.com/wormforce/sustech-cli) 同样会安装
+> `sustech` 命令。若两者装在同一台机器上，PATH 顺序决定 `sustech` 实际运行哪一个 ——
+> 用 `where sustech` 查看，或用完整路径调用以区分；不要把它们装进同一个环境。
+>
+> **面向 AI 智能体：** 直接使用 `sustech` 命令（例如 `sustech context --json`）。
+> 若本 CLI 与 TypeScript 移植版同时安装，`where sustech` 决定实际运行哪一个 ——
+> 需要区分时用完整路径调用。完整智能体集成指南：
+> `docs/en/agents.md`（进程内 API、HTTP `/api/*`、CLI —— 刻意不做 MCP 服务端克隆）。
 
 ### 2. （可选）设置 $SUSTECH_HOME 环境变量
 
@@ -204,7 +214,7 @@ sustech_survival/
 ├── faculty/        ← 教师目录（列表 / 搜索 / 档案）
 ├── context/        ← 每日快照（日期、截止、当前课程、天气、AQI）
 ├── calendar.py     ← 校历与日期智能
-├── papers/         ← 学术检索 / 抓取（CrossRef、CNKI、WoS、RSC）
+├── papers/         ← 学术检索 / 抓取（CrossRef）—— 已弃用，计划移除
 ├── webui/          ← 皮肤加载器 —— default/default_zh 皮肤，含完整选课引擎
 └── api/            ← 无 Flask 的 JSON 契约，供 webui / 自定义 skin 使用
 

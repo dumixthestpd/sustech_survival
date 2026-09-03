@@ -38,8 +38,15 @@ select.filter{flex:1;min-width:60px}
 .c-card{padding:.55rem 1rem;border-bottom:1px solid var(--border);cursor:pointer;position:relative}
 .c-card:hover{background:var(--panel)}
 .c-card.active{background:var(--panel2);border-left:3px solid var(--accent);padding-left:calc(1rem - 3px)}
-.c-card .top{display:flex;gap:.5rem;align-items:center}
-.c-card .top .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.c-card .top{display:flex;flex-wrap:wrap;gap:.3rem .5rem;align-items:center}
+/* Full course name on its own line — never compressed/ellipsized. The
+   other elements (code/class + NCES/load badges) wrap to the row below
+   so long names get all the horizontal space. */
+.c-card .top .nm-line{flex:1 1 100%;display:flex;align-items:center;gap:.4rem;min-width:0}
+.c-card .top .nm-line .nm{flex:1;min-width:0;white-space:normal;word-break:break-word;line-height:1.3}
+.c-card .top .must-badge{flex:0 0 auto}
+.c-card .top-sub{flex:1 1 100%;display:flex;align-items:center;gap:.5rem;min-width:0}
+.c-card .top-sub .mini-card{margin-left:auto}
 /* Mini-card pinned to the right of the title row. Two compact badges
    showing NCES rating (placeholder dash until briefFetch hydrates) and
    TIS load (current/capacity, always live). Kept small + right-aligned
@@ -309,11 +316,16 @@ table.grid tbody tr th { background: var(--panel); }
 
 .step-terminal-actions{margin-top:.5rem;padding-top:1rem;border-top:1px dashed var(--border);display:flex;flex-direction:column;gap:.5rem}
 .step-terminal-h{font-size:.66rem;color:var(--mut);text-transform:uppercase;letter-spacing:.06em}
-.step-terminal-row{display:flex;gap:.6rem;align-items:center}
+.step-terminal-row{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center}
 .step-terminal-row .ics-export-btn{margin:0;padding:.4rem .8rem;font-size:.8rem}
 .step-terminal-row .sync-tis-btn{margin:0;padding:.4rem 1rem;font-size:.8rem}
 .step-terminal-row .ics-export-btn:disabled{opacity:.45;cursor:not-allowed}
 .step-terminal-row .ics-export-btn:disabled:hover{border-color:var(--border)}
+/* Apply/Overwrite schedule — the enroll-commit action. Sits in the step-5
+   terminal row with Sync to TIS (user request 2026-09-02: it must NOT be
+   grouped with the destructive Drop-all in the right bar). */
+.step-terminal-row .apply-tis-btn{margin:0;padding:.4rem 1rem;font-size:.8rem;border-color:var(--ok)!important;color:var(--ok)!important;background:transparent}
+.step-terminal-row .apply-tis-btn:hover{background:var(--ok);color:#fff!important}
 
 /* NCES detail sheet — near-fullscreen centered modal (opened by clicking a course card) */
 .nces-sheet{position:fixed;inset:0;z-index:9000;display:none}
@@ -361,8 +373,9 @@ table.grid tbody tr th { background: var(--panel); }
 
 /* picked / my selection -- FIX for overlap bug */
 .picked{display:flex;flex-direction:column}
-.pick{position:relative;padding:.6rem .7rem;border-bottom:1px solid var(--border);clear:both;margin-bottom:0;overflow:visible;cursor:grab;display:flex;gap:.55rem;align-items:flex-start}
-.pick:active{cursor:grabbing}
+.pick{position:relative;padding:.55rem .55rem .55rem 1.2rem;border-bottom:1px solid var(--border);clear:both;margin-bottom:0;overflow:visible;display:flex;gap:.4rem;align-items:flex-start}
+/* Whole rows are NOT draggable (that would block text selection); the
+   grip strip carries the drag (see .pick-grip below). */
 .pick.dragging{opacity:.4;outline:2px dashed var(--accent)}
 .pick.drag-over-above{box-shadow:0 -2px 0 var(--accent) inset,0 -2px 4px var(--accent)}
 .pick.drag-over-below{box-shadow:0 2px 0 var(--accent) inset,0 2px 4px var(--accent)}
@@ -490,6 +503,30 @@ pre.wire{padding:.6rem;background:var(--panel2);border:1px solid var(--border);b
 /* eval */
 .eval-toolbar{display:flex;gap:.5rem;align-items:center;padding:.6rem 1rem;background:var(--panel);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:5;flex-wrap:wrap}
 .eval-toolbar select{font-size:.78rem}
+.eval-toolbar input[type=number]{width:5.5rem}
+/* Pick-row drag grip — an overlay strip on the row's left edge (no
+   layout width: content keeps the full row). The row itself stays
+   text-selectable. */
+.pick-grip{position:absolute;left:.2rem;top:.35rem;bottom:.35rem;width:11px;cursor:grab;user-select:none;opacity:.5;border-radius:3px;background-image:radial-gradient(var(--mut) 1.2px,transparent 1.2px);background-size:4px 8px;background-position:center;background-repeat:repeat-y}
+.pick-grip:hover{opacity:1;background-color:color-mix(in srgb,var(--accent) 12%,transparent)}
+.pick-grip:active{cursor:grabbing}
+/* Over-capacity enrollment — yellow badge */
+.load-badge.over-cap b{color:#e8c547!important}
+.load-badge.over-cap{outline:1px solid #e8c54766;border-radius:3px}
+/* Parity-aware blocks in the split odd/even grids: fill the matching
+   square fully instead of drawing a half-triangle in both grids. */
+.cell.blocked.blocked-parity{background:color-mix(in srgb,var(--bad) 30%,transparent)}
+.cell.blocked.blocked-parity::after{content:"";opacity:0}
+/* MUST-take courses (#4) — star toggle, badges, chips */
+.must-btn{cursor:pointer;background:none;border:none;color:var(--mut);font-size:.62rem;line-height:1;padding:0;width:1rem;height:1rem;display:inline-flex;align-items:center;justify-content:center;flex:0 0 1rem;opacity:.65;border-radius:3px;margin-top:.12rem}
+.must-btn:hover{opacity:1;color:#e8c547;background:color-mix(in srgb,#e8c547 15%,transparent)}
+.must-btn.on{color:#e8c547;opacity:1}
+.must-badge{color:#e8c547;font-weight:700;font-size:.6rem;border:1px solid #e8c54766;border-radius:4px;padding:.05rem .3rem;margin-left:.3rem;vertical-align:middle}
+.must-chip{display:inline-block;background:color-mix(in srgb,#e8c547 18%,transparent);border:1px solid #e8c54766;border-radius:10px;padding:.1rem .45rem;margin:.1rem .25rem .1rem 0;font-size:.75rem}
+.must-chip-x{cursor:pointer;color:var(--mut);margin-left:.3rem}
+.must-chip-x:hover{color:var(--bad)}
+/* No golden edge on MUST rows — the right-side ★ is the marker. */
+.sc-drop-row.sc-must-drop{background:color-mix(in srgb,#e8c547 10%,transparent);border-radius:4px;padding:.1rem .3rem}
 .eval-pager{display:flex;align-items:center;gap:.3rem;font-size:.78rem;color:var(--mut)}
 .eval-pager button{padding:.15rem .5rem;font-size:.92rem;line-height:1}
 .eval-pager button:disabled{opacity:.3;cursor:default}
@@ -816,6 +853,9 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
       <div class="row"><span class="lbl">Language</span><select class="filter" id="f-lang"><option value="">All</option></select></div>
       <div class="row"><span class="lbl">Level</span><select class="filter" id="f-cult"><option value="">All</option><option value="本科">Undergrad</option><option value="研究生">Graduate</option></select></div>
       <div class="row"><span class="lbl">Teacher</span><input type="text" id="f-teacher" placeholder="teacher name"/></div>
+      <!-- Grading scheme (二级制/十三级制) — TIS has no server-side param for
+           this, so both modes filter it client-side (see tis.js). -->
+      <div class="row"><span class="lbl">Grading</span><select class="filter" id="f-grading"><option value="">All</option><option value="二级制">2-level</option><option value="十三级制">13-level</option></select></div>
       <!-- personal-mode filters (hidden in campus mode) -->
       <div class="personal-only" style="display:none">
         <div class="row"><span class="lbl">Type</span><select class="filter" id="f-xkfsdm"><option value="">Type</option></select></div>
@@ -945,6 +985,9 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
           <div style="color:var(--mut);font-size:.82rem;margin-top:.4rem">
             <b style="color:var(--txt)">Codes to solve:</b> <span id="solve-codes">none</span>
           </div>
+          <div style="color:var(--mut);font-size:.82rem;margin-top:.4rem">
+            <b style="color:var(--txt)">Must take:</b> <span id="must-codes">none</span>
+          </div>
           <button class="primary" id="btn-solve">Solve combinations</button>
           <div id="solve-out" style="margin-top:.6rem"></div>
         </div>
@@ -991,6 +1034,7 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
             <div class="step-terminal-actions">
               <div class="step-terminal-h">Terminal actions</div>
               <div class="step-terminal-row">
+                <button class="apply-tis-btn" id="btn-apply-tis" title="Enroll your picked schedule on TIS">📥 Apply schedule to TIS</button>
                 <button class="ghost ics-export-btn" id="btn-export-ics" title="Download schedule as .ics (requires conflict-free schedule)">📅 Export ICS</button>
                 <button class="primary sync-tis-btn" id="btn-sync-tis" title="Push your picked sections + bids to TIS">📤 Sync to TIS</button>
               </div>

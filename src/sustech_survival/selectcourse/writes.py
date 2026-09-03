@@ -1,22 +1,23 @@
-"""
-sustech_survival.selectcourse.writes — Course add/drop/update_bid methods.
+﻿"""
+sustech_survival.selectcourse.writes 鈥?Course add/drop/update_bid methods.
 
 Split from `selectcourse.py` (2026-08-08) so the read-side client stays
-narrow. These methods mutate enrollment on TIS — every one defaults to
+narrow. These methods mutate enrollment on TIS 鈥?every one defaults to
 `dry_run=True` and prints the payload that WOULD be POSTed. The user
 must explicitly set `dry_run=False` to fire a real write.
 
 The 5 public methods:
-  add_course(rwh)         — Xsxk/addXuanke       (direct enroll)
-  drop_course(rwh)        — Xsxk/tuike           (drop)
-  add_to_cart(rwh)        — Xsxk/addGouwuche     (add to cart)
-  remove_from_cart(rwh)   — Xsxk/delGouwuche     (remove from cart)
-  update_bid(rwh, bid)    — Xsxk/updXkxsByyx|gwc (set bid on existing pick)
-  submit_bids(picks)      — bulk wrapper around update_bid
+  add_course(rwh)         鈥?Xsxk/addXuanke       (direct enroll)
+  drop_course(rwh)        鈥?Xsxk/tuike           (drop)
+  add_to_cart(rwh)        鈥?Xsxk/addGouwuche     (add to cart)
+  remove_from_cart(rwh)   鈥?Xsxk/delGouwuche     (remove from cart)
+  update_bid(rwh, bid)    鈥?Xsxk/updXkxsByyx|gwc (set bid on existing pick)
+  submit_bids(picks)      鈥?bulk wrapper around update_bid
 
 Discovery doc: references/tis-api.md
 """
 from __future__ import annotations
+from sustech_survival._net import timeout as _net_timeout
 
 from typing import Optional
 
@@ -54,7 +55,7 @@ def _post_xsxk(self, endpoint: str, payload: dict, *,
         }
 
     self._auth.ensure()
-    r = self._auth.post(endpoint, data=payload, timeout=30,
+    r = self._auth.post(endpoint, data=payload, timeout=_net_timeout("tis"),
                         headers={"X-Requested-With": "XMLHttpRequest"})
     r.raise_for_status()
     res = r.json() if r.content else {}
@@ -69,10 +70,10 @@ def _build(self, **kw) -> dict:
     """Shorthand for build_queryform bound to this client.
 
     Defaults:
-    - `xkfsdm="yixuan"` (已选) — matches HAR for updXkxsByyx/tuike.
-    - `xktjz="rwtjzyx"` (任务提交至已选) — HAR shows this for ALL write
+    - `xkfsdm="yixuan"` (宸查€? 鈥?matches HAR for updXkxsByyx/tuike.
+    - `xktjz="rwtjzyx"` (浠诲姟鎻愪氦鑷冲凡閫? 鈥?HAR shows this for ALL write
       endpoints (addGouwuche/updXkxsByyx/tuike). If omitted, TIS
-      rejects with 操作失败 because the field is required.
+      rejects with 鎿嶄綔澶辫触 because the field is required.
     Callers needing other values (e.g. "bxxk" for addGouwuche cart add,
     "gwctjzyx" for addXuanke cart-final) should pass them explicitly.
     """
@@ -99,27 +100,27 @@ def add_course(self, rwh: str, *,
                pylx: Optional[str] = None,
                id_field: Optional[str] = None,
                xkfsdm: Optional[str] = None) -> dict:
-    """Add a course to your enrolled list (直接选课).
+    """Add a course to your enrolled list (鐩存帴閫夎).
 
-    `rwh`: the 任务号 (task number) from `Course.rwh` or `my_courses()`.
+    `rwh`: the 浠诲姟鍙?(task number) from `Course.rwh` or `my_courses()`.
            Used as a key to look up the hex `id_field` if not given.
-    `id_field`: 32-char hex UUID from `queryKxrw` row.id — the actual
+    `id_field`: 32-char hex UUID from `queryKxrw` row.id 鈥?the actual
            TIS write-key. If omitted, the client looks it up in its
            cached catalog (requires a prior personal-mode search to
            have populated `Course.id` for that rwh).
     `xkfsdm`: round code (HAR shows "yixuan" for enrolled-list ops).
            Defaults to "yixuan" via _build.
 
-    `bid`: 选课系数 (the credit bid in 积分选课). 1 = minimum.
+    `bid`: 閫夎绯绘暟 (the credit bid in 绉垎閫夎). 1 = minimum.
 
     `dry_run=True` (default): returns what would be POSTed without
                               firing the request. SAFE.
     `dry_run=False`: actually fires `Xsxk/addXuanke`. This MUTATES
-                     your enrollment — use only after reviewing.
+                     your enrollment 鈥?use only after reviewing.
 
     Returns the TIS response dict. On dry_run, includes `dry_run=True`
     and `would_post=<full payload>`. On real call, includes `jg='1'`
-    and `message='选课成功'` (or similar) on success.
+    and `message='閫夎鎴愬姛'` (or similar) on success.
 
     Raises EnrollmentError on real-call failure (jg != '1').
     Raises ValueError if id_field is missing AND can't be looked up
@@ -153,11 +154,16 @@ def drop_course(self, rwh: str, *, dry_run: bool = True,
                 pylx: Optional[str] = None,
                 id_field: Optional[str] = None,
                 xkfsdm: Optional[str] = None) -> dict:
-    """Drop a course (退课) by 任务号.
+    """Drop a course (閫€璇? by 浠诲姟鍙?
 
     Same `dry_run` semantics as `add_course`. Fires `Xsxk/tuike`.
-    `xkfsdm` defaults to "yixuan" (matches HAR).
+    `xkfsdm` defaults to "yixuan" (matches HAR 鈥?tuike with any other
+    code, or empty, is rejected with jg=-1 鎿嶄綔澶辫触; verified against
+    the 2026-08-31 full-flow HAR where the official page's successful
+    tuike carried p_xkfsdm=yixuan).
     """
+    if xkfsdm is None:
+        xkfsdm = "yixuan"
     if id_field is None:
         id_field = self._lookup_id(rwh)
     payload = _build(self, id_field=id_field, pylx=pylx, xkfsdm=xkfsdm)
@@ -177,9 +183,9 @@ def add_to_cart(self, rwh: str, *, bid: int = 1,
                 pylx: Optional[str] = None,
                 id_field: Optional[str] = None,
                 xkfsdm: Optional[str] = "bxxk") -> dict:
-    """Add a course to your shopping cart (购物车).
+    """Add a course to your shopping cart (璐墿杞?.
 
-    `xkfsdm` defaults to "bxxk" (通识必修选课) — matches HAR for
+    `xkfsdm` defaults to "bxxk" (閫氳瘑蹇呬慨閫夎) 鈥?matches HAR for
     `addGouwuche`. Set to "yixuan" to commit the cart in one step.
 
     Fires `Xsxk/addGouwuche`.
@@ -230,22 +236,24 @@ def update_bid(self, rwh: str, bid: int, *,
                dry_run: bool = True,
                id_field: Optional[str] = None,
                xkfsdm: Optional[str] = None) -> dict:
-    """Update the bid (选课系数) on an already-picked course.
+    """Update the bid (閫夎绯绘暟) on an already-picked course.
 
-    `where`: "enrolled" (已选 → calls Xsxk/updXkxsByyx)
-             or  "cart"    (购物车 → calls Xsxk/upd_xkxsBygwc)
+    `where`: "enrolled" (宸查€?鈫?calls Xsxk/updXkxsByyx)
+             or  "cart"    (璐墿杞?鈫?calls Xsxk/upd_xkxsBygwc)
     `xkfsdm`: round code. HAR shows "yixuan" for both updXkxsByyx and
-             upd_xkxsBygwc — default to "yixuan" if None.
-    `bid`: positive integer. TIS rejects if the round uses 积分
+             upd_xkxsBygwc 鈥?default to "yixuan" if None.
+    `bid`: positive integer. TIS rejects if the round uses 绉垎
            mode and bid is missing / 0 / non-integer.
     `id_field`: hex UUID for `p_id`. If omitted, looked up from catalog.
 
-    For NEW picks (not yet in cart/enrolled), use `add_to_cart(bid=…)`
-    or `add_course(bid=…)` instead — they pass the bid on the create.
+    For NEW picks (not yet in cart/enrolled), use `add_to_cart(bid=鈥?`
+    or `add_course(bid=鈥?` instead 鈥?they pass the bid on the create.
     """
     bid = int(bid)
     if bid < 1:
         raise ValueError(f"bid must be a positive integer, got {bid}")
+    if xkfsdm is None:
+        xkfsdm = "yixuan"   # HAR: upd endpoints use yixuan; "" 鈫?jg=-1
     if where == "enrolled":
         url = TIS_UPD_XKXS_BY_YX
     elif where == "cart":
@@ -262,7 +270,7 @@ def update_bid(self, rwh: str, bid: int, *,
     name="selectcourse.submit_bids",
     severity=Severity.HIGH,
     irreversible=True,
-    what_changes="Commits your bid values for multiple courses (积分选课).",
+    what_changes="Commits your bid values for multiple courses (绉垎閫夎).",
     risk=("Bid window may not reopen; a wrong bid is hard to undo. "
           "Review the per-course preview before committing."),
     verify_url="https://tis.sustech.edu.cn/#/xsxk",
@@ -271,22 +279,32 @@ def submit_bids(self, picks: dict, *,
                 round_code: str = "",
                 where: str = "cart",
                 jffs_limit: Optional[float] = None,
+                baseline: Optional[dict] = None,
                 pylx: Optional[str] = None,
                 dry_run: bool = True,
                 id_map: Optional[dict] = None,
                 xkfsdm: Optional[str] = None) -> dict:
     """Submit a batch of bid values for the user's picked courses.
 
-    `picks`:  {rwh: bid_int, ...} — the user's desired bid per course.
+    `picks`:  {rwh: bid_int, ...} 鈥?the user's desired bid per course.
     `round_code`: the active round code. Used as the default xkfsdm if
                   `xkfsdm` not given (HAR shows both updXkxsByyx and
                   upd_xkxsBygwc use "yixuan" for the enrolled-cart round).
     `where`:  "enrolled" (call updXkxsByyx) or "cart" (call
-              upd_xkxsBygwc) — same as `update_bid`.
-    `jffs_limit`: if provided, validate that `sum(picks.values())`
-                  does not exceed it (the 剩余积分 from the round).
-                  If sum > jffs_limit, return ok=False without any
-                  TIS calls.
+              upd_xkxsBygwc) 鈥?same as `update_bid`.
+    `jffs_limit`: the REMAINING bid points for this student (TIS
+                  xkgzszOne.jfxs 鈥?verified live 2026-08-31: enrolled
+                  bids are NOT part of it; semester total = committed +
+                  jffs, e.g. 129 + 26 = 155). If provided, validate that
+                  the batch's budget CONSUMPTION does not exceed it and
+                  return ok=False without any TIS calls otherwise.
+    `baseline`: optional {rwh: bid_int} 鈥?the bid values TIS already
+                  holds (enrolled xkxs / cart xkxs). The budget
+                  consumption of a pick is `max(0, bid - baseline)`:
+                  re-stating an enrolled course's current bid costs
+                  nothing, raising it costs the difference, lowering it
+                  frees points. Without a baseline entry the full bid
+                  counts (a brand-new pick).
     `id_map`: optional {rwh: id_hex} pre-populated by caller (e.g. from
               a prior personal search). If omitted, each rwh is
               looked up in the catalog; missing entries cause the
@@ -297,17 +315,18 @@ def submit_bids(self, picks: dict, *,
       {
         "ok": True/False,
         "results": [{rwh, bid, ok, message}, ...],
-        "sum": N,
+        "sum": N,               # raw sum of the bids (display)
+        "check_sum": N,         # budget consumption actually checked
         "jffs_limit": X or None,
         "over_limit": True/False,
         "round_code": str,
       }
 
-    Each TIS call still respects `dry_run` — the loop is read+write
+    Each TIS call still respects `dry_run` 鈥?the loop is read+write
     either way; `dry_run` only controls whether the actual POST
     fires. Validation (jffs check) always runs.
 
-    If `sum(picks.values()) > jffs_limit`, the function short-circuits
+    If the consumption exceeds `jffs_limit`, the function short-circuits
     BEFORE making any TIS calls (including dry-run). The result
     includes the picks you asked for so the caller can show them
     back to the user.
@@ -321,30 +340,40 @@ def submit_bids(self, picks: dict, *,
         xkfsdm = round_code or "yixuan"
 
     results: list = []
+    base = baseline or {}
 
-    # Pre-compute the total. If it would blow the budget, return
-    # WITHOUT firing any TIS calls (including dry-run). Build a
-    # synthetic per-pick result so the caller can render what was
-    # rejected.
+    # Pre-compute the totals. If the consumption would blow the
+    # remaining budget, return WITHOUT firing any TIS calls (including
+    # dry-run). Build a synthetic per-pick result so the caller can
+    # render what was rejected.
     try:
         coerced = {rwh: int(b) for rwh, b in picks.items()}
     except (TypeError, ValueError):
         return {
             "ok": False, "results": [],
             "error": "all bid values must be integers",
-            "sum": 0, "jffs_limit": jffs_limit, "over_limit": False,
+            "sum": 0, "check_sum": 0, "jffs_limit": jffs_limit,
+            "over_limit": False,
             "round_code": round_code, "dry_run": dry_run,
         }
     total = sum(max(0, b) for b in coerced.values())
-    if jffs_limit is not None and total > jffs_limit:
+    # Budget consumption: only the part ABOVE the TIS-held baseline
+    # draws from the remaining points (enrolled/cart re-statements and
+    # decreases are free / credit).
+    check_total = sum(
+        max(0, b - int(base.get(rwh) or 0)) for rwh, b in coerced.items()
+    )
+    if jffs_limit is not None and check_total > jffs_limit:
         results = [{"rwh": rwh, "bid": b, "ok": False,
-                    "message": f"over budget ({total} > {jffs_limit})",
+                    "message": (f"over budget (needs {check_total} of "
+                                f"{jffs_limit} remaining pts)"),
                     "dry_run": dry_run}
                    for rwh, b in coerced.items() if b >= 1]
         return {
             "ok": False,
             "results": results,
             "sum": total,
+            "check_sum": check_total,
             "jffs_limit": jffs_limit,
             "over_limit": True,
             "round_code": round_code,
@@ -354,7 +383,7 @@ def submit_bids(self, picks: dict, *,
     for rwh, bid in coerced.items():
         if bid < 1:
             results.append({"rwh": rwh, "bid": bid, "ok": False,
-                            "message": "bid must be ≥ 1",
+                            "message": "bid must be 鈮?1",
                             "dry_run": dry_run})
             continue
         # Use pre-populated id_map if provided; else look up.
@@ -378,6 +407,7 @@ def submit_bids(self, picks: dict, *,
         "ok": all(r["ok"] for r in results),
         "results": results,
         "sum": total,
+        "check_sum": check_total,
         "jffs_limit": jffs_limit,
         "over_limit": False,
         "round_code": round_code,

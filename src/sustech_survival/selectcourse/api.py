@@ -129,7 +129,8 @@ def register(reg: CollectorRegistry) -> None:
         Personal mode filters (选课):
           keyword, teacher, college, campus, category, language,
           cultivation, ignore_conflicts, ignore_zero_capacity,
-          weekday (1-7), period_start, period_end, page, page_size
+          weekday (1-7), period_start, period_end, free_weekday (1-7),
+          free_period_start, free_period_end, page, page_size
         """
         xn, xq = _parse_sem(request.args)
         mode = request.args.get("mode", "campus")
@@ -149,20 +150,38 @@ def register(reg: CollectorRegistry) -> None:
                     weekday=_int_or_none(request.args.get("weekday")),
                     period_start=_int_or_none(request.args.get("period_start")),
                     period_end=_int_or_none(request.args.get("period_end")),
+                    free_weekday=_int_or_none(request.args.get("free_weekday")),
+                    free_period_start=_int_or_none(request.args.get("free_period_start")),
+                    free_period_end=_int_or_none(request.args.get("free_period_end")),
                     round_code=request.args.get("round_code") or request.args.get("xkfsdm") or None,
                     page=int(request.args.get("page", "1")),
                     page_size=int(request.args.get("page_size", "50")),
                 )
                 courses = result["courses"]
-                enrolled = result["enrolled"]
-                cart = result["cart"]
                 out = [_course_to_dict(x) for x in courses]
-                # Translate common TIS "operation failed" to friendly English
+                # Enrolled (yxkcList) / cart (xkgwcList) rows arrive RAW
+                # from search_personal. Parse them into the SAME
+                # render-ready shape as `courses` so the skin can show
+                # the enrolled courses with full details (code, name,
+                # teachers, schedule, credits, grading, capacity, bid)
+                # — not just a count. Raw `xkxs` is kept on the row so
+                # older skins (default_zh reads items[i].xkxs) keep
+                # working unchanged.
+                enrolled = [_member_row(e, tis_enrolled=True)
+                            for e in (result["enrolled"] or [])]
+                cart = [_member_row(g, in_cart=True)
+                        for g in (result["cart"] or [])]
+                # Translate common TIS "operation failed" to friendly English.
+                # 操作失败 is GENERIC — never claim "round closed"; the real
+                # cause is usually a missing/wrong selection-round code
+                # (xkfsdm), which TIS refuses with this while a round is open.
                 msg = result["message"]
                 if not result["ok"]:
                     if msg == "操作失败":
-                        msg = ("Course selection period not yet open. "
-                               "Catalog mode shows all courses — use the toggle above.")
+                        msg = ("TIS rejected the personal query (raw: 操作失败) — "
+                               "the selection round (xkfsdm) is probably unset or "
+                               "wrong for the current phase. Pick a round in the "
+                               "tabs, or use Catalog mode.")
                     elif not msg:
                         msg = "Personal selection unavailable."
                 return jsonify({
@@ -257,8 +276,9 @@ def register(reg: CollectorRegistry) -> None:
         if not result["ok"]:
             msg = result["message"]
             if msg == "操作失败":
-                msg = ("Course selection period not yet open — cannot "
-                       "fetch live load. Try again later, or use Catalog mode.")
+                msg = ("TIS rejected the load query (raw: 操作失败) — the "
+                       "selection round (xkfsdm) is probably unset or wrong "
+                       "for the current phase.")
             elif not msg:
                 msg = "Personal selection unavailable."
             return jsonify({"ok": False, "message": msg, "loads": {}}), 200
@@ -270,6 +290,38 @@ def register(reg: CollectorRegistry) -> None:
         for course in result["courses"]:
             if course.enrolled is not None:
                 loads[course.rwh] = course.enrolled
+
+        # Backfill: explicit rwhs (e.g. picks loaded from a saved file)
+        # that the filtered search page did not return. Live counts exist
+        # only in the personal search, so run ONE keyword=code search per
+        # distinct missing code (no other filters — we only want the
+        # section rows) and merge. This is what keeps a pick row's
+        # badge from sitting at "? / M" forever.
+        extra_rwhs = [r.strip() for r in (request.args.get("rwhs", "") or "").split(",") if r.strip()]
+        if extra_rwhs:
+            missing = [r for r in extra_rwhs if r not in loads]
+            if missing:
+                code_by_rwh: Dict[str, str] = {}
+                try:
+                    for x in c.list_courses():
+                        code_by_rwh.setdefault(x.rwh, x.code)
+                except Exception:
+                    code_by_rwh = {}
+                round_code = request.args.get("round_code") or request.args.get("xkfsdm") or None
+                missing_codes = sorted({code_by_rwh[r] for r in missing if code_by_rwh.get(r)})
+                for code in missing_codes:
+                    try:
+                        sub = c.search_personal(
+                            keyword=code, page=1, page_size=100,
+                            round_code=round_code,
+                        )
+                    except Exception:
+                        continue
+                    if not sub.get("ok"):
+                        continue
+                    for course in sub.get("courses", []):
+                        if course.enrolled is not None:
+                            loads.setdefault(course.rwh, course.enrolled)
         return jsonify({
             "ok": True,
             "loads": loads,
@@ -322,6 +374,14 @@ def register(reg: CollectorRegistry) -> None:
             #   [room]
             lines = [ln.strip() for ln in sksj.splitlines() if ln.strip()]
             name = lines[0] if lines else ""
+            # Teacher list on line 2 (may carry literal brackets — strip
+            # them, then split on the usual delimiters like from_api).
+            teachers_raw = lines[1] if len(lines) >= 2 else ""
+            if teachers_raw.startswith("[") and teachers_raw.endswith("]"):
+                teachers_raw = teachers_raw[1:-1]
+            import re as _re
+            teachers = [t.strip() for t in _re.split(r"[,，、]", teachers_raw)
+                        if t.strip()]
             # Drop [brackets] from the section line for a clean display.
             section = lines[2] if len(lines) >= 3 else ""
             if section.startswith("[") and section.endswith("]"):
@@ -343,6 +403,11 @@ def register(reg: CollectorRegistry) -> None:
                 "name": name,
                 "section": section,
                 "code": rwh_to_code(rwh),
+                # Teachers so enrolled rows never render "TBD" when this
+                # endpoint is the only data source (the personal-search
+                # ingest also carries them; this covers toggle-first
+                # flows and JSON-file enrichment).
+                "teachers": teachers,
                 # Schedule data so the step-3 grid can render the enrolled
                 # course block alongside picked sections. Same shape as
                 # `Course.slots_raw` (a list of {day, period_start,
@@ -375,6 +440,14 @@ def register(reg: CollectorRegistry) -> None:
                         Use this for "TIS-enrolled is unquestionable":
                         TIS-enrolled rwhs go in here, and the solver drops
                         other picked courses to make them fit.
+          required_codes — list of course CODES that MUST be covered in
+                        every solution (MUST-take courses). Unlike
+                        locked_rwhs, ANY section of the code is acceptable
+                        (teacher/class doesn't matter) — only the code must
+                        appear. If the full must-set is infeasible, the
+                        best partial solutions are still returned, plus
+                        must_feasible / must_impossible so the UI can
+                        report "what got removed in must-takes".
           max         — max solutions total (default 30)
         """
         body = request.get_json(silent=True) or {}
@@ -383,6 +456,7 @@ def register(reg: CollectorRegistry) -> None:
         rwhs: list = body.get("rwhs", [])
         blocked: list = body.get("blocked", [])
         locked_rwhs: list = body.get("locked_rwhs", []) or []
+        required_codes: list = body.get("required_codes", []) or []
         max_res = int(body.get("max", 30))
 
         xn, xq = _parse_sem(request.args)
@@ -391,6 +465,20 @@ def register(reg: CollectorRegistry) -> None:
             all_courses = c.list_courses()
         except Exception as e:
             return jsonify({"error": str(e)}), 500
+
+        # An EMPTY catalog must never masquerade as "no valid combination".
+        # TIS unreachable (off-campus/VPN), expired session, or a semester
+        # with no offerings all produce an empty list — solving is then
+        # impossible regardless of what the user picked/marked.
+        if not all_courses:
+            return jsonify({
+                "solutions": [],
+                "count": 0,
+                "catalog_empty": True,
+                "message": "Course catalog is empty — TIS is unreachable "
+                           "(off-campus/VPN?) or the session expired. "
+                           "Cannot solve until the catalog loads.",
+            })
 
         # Build a lookup from rwh → course, then group by code
         by_rwh = {x.rwh: x for x in all_courses}
@@ -424,6 +512,16 @@ def register(reg: CollectorRegistry) -> None:
         # Build priority index for sorting subsets
         pidx = {code: i for i, code in enumerate(priority)}
 
+        # MUST-take pool: for required codes the solver may choose ANY
+        # catalog section of the code — "no matter the teacher/class".
+        # Locked rwhs stay exact; free codes stay picked-only.
+        required_set = set(required_codes)
+        must_all: Dict[str, list] = {}
+        for code in required_codes:
+            secs = [x for x in all_courses if x.code == code]
+            if secs:
+                must_all[code] = secs
+
         # Only codes that have at least one picked section
         active_codes = [co for co in codes if co in by_code]
         if not active_codes:
@@ -441,7 +539,10 @@ def register(reg: CollectorRegistry) -> None:
                     result.append([_course_to_dict(x) for x in current])
                     return
                 code = subset_codes[i]
-                for sec in by_code[code]:
+                # Required (MUST-take) codes draw from ALL their catalog
+                # sections; everything else from the user's picked sections.
+                pool = must_all.get(code) if code in required_set else by_code.get(code, [])
+                for sec in pool:
                     if not sec.has_schedule:
                         continue
                     # Locked rwhs MUST appear in every solution — never pick
@@ -465,77 +566,100 @@ def register(reg: CollectorRegistry) -> None:
             return result
 
         n = len(active_codes)
-        # Locked codes MUST be in every subset — restrict the iteration to
-        # subsets that contain all of them. The solver would still try
-        # dropping them otherwise (it's a global "drop lowest priority"
-        # rule), which is exactly what the user said NO to.
-        free_codes = [c for c in active_codes if c not in set(locked_codes)]
-        if locked_codes and not free_codes:
-            # Only locked codes present; trivially solve if compatible
-            return jsonify({
-                "solutions": [{
-                    "sections": [_course_to_dict(s) for s in
-                                 [sec for code in locked_codes for sec in by_code[code]
-                                  if sec.rwh in locked_set and sec.has_schedule]],
-                    "covered": len(locked_codes),
-                    "total": n,
-                    "dropped": [],
-                    "size": len(locked_codes),
-                }],
-                "count": 1,
-                "codes": active_codes,
-                "priority": priority,
-            })
-        # The max subset size is len(free_codes) + len(locked_codes) —
-        # every solution must include all locked codes.
-        max_subset_size = len(free_codes) + len(locked_codes)
-        # Min size is locked_codes (at least — if they fit alone)
-        min_subset_size = len(locked_codes)
 
         final_solutions: list = []
         remaining_budget = max_res
 
-        # Try sizes from max down to min. For each size, enumerate
-        # combinations of free_codes (size - len(locked_codes)) and
-        # always include locked_codes.
-        for size in range(max_subset_size, min_subset_size - 1, -1):
+        # Tiered MUST search (#4): first try the FULL must-set (drop_n=0),
+        # then progressively allow dropping ONE required code at a time
+        # (lowest priority first). When the full must-set is infeasible the
+        # user still gets the best partial solutions — each annotated with
+        # must_dropped ("what got removed in must-takes"). Locked rwhs are
+        # never dropped at any tier.
+        required_order = sorted(required_codes, key=lambda c: pidx.get(c, 999))
+        for drop_n in range(0, len(required_order) + 1):
             if remaining_budget <= 0:
                 break
-            free_needed = size - len(locked_codes)
-            subsets: List[tuple] = list(itertools.combinations(free_codes, free_needed))
-            # Sort by priority sum: lower pidx = higher priority = preferred.
-            subsets.sort(key=lambda s: sum(pidx.get(c, 999) for c in s))
-            for subset in subsets:
+            for dropped_required in itertools.combinations(required_order, drop_n):
                 if remaining_budget <= 0:
                     break
-                subset_list = list(locked_codes) + list(subset)
-                solutions = _solve_subset(subset_list, remaining_budget)
-                if solutions:
-                    kept_codes = set(s["code"] for s in solutions[0])
-                    dropped = [c for c in active_codes if c not in kept_codes]
-                    dropped.sort(key=lambda c: pidx.get(c, 999))
-                    for sol in solutions:
-                        final_solutions.append({
-                            "sections": sol,
-                            "covered": len(sol),
-                            "total": n,
-                            "dropped": dropped,
-                            "size": size,
-                        })
-                    remaining_budget -= len(solutions)
+                drop_set = set(dropped_required)
+                tier_must = list(locked_codes) + [
+                    c for c in required_order if c not in drop_set]
+                tier_set = set(tier_must)
+                free_codes = [c for c in active_codes if c not in tier_set]
+                # Max subset size = free + tier_must; min = tier_must alone.
+                for size in range(len(free_codes) + len(tier_must),
+                                  len(tier_must) - 1, -1):
+                    if remaining_budget <= 0:
+                        break
+                    free_needed = size - len(tier_must)
+                    subsets: List[tuple] = list(itertools.combinations(free_codes, free_needed))
+                    # Sort by priority sum: lower pidx = higher priority = preferred.
+                    subsets.sort(key=lambda s: sum(pidx.get(c, 999) for c in s))
+                    for subset in subsets:
+                        if remaining_budget <= 0:
+                            break
+                        subset_list = list(tier_must) + list(subset)
+                        solutions = _solve_subset(subset_list, remaining_budget)
+                        if solutions:
+                            kept_codes = set(s["code"] for s in solutions[0])
+                            dropped = [c for c in active_codes if c not in kept_codes]
+                            dropped.sort(key=lambda c: pidx.get(c, 999))
+                            # MUST-take report for this solution group: which
+                            # required codes were dropped (the "removed in
+                            # must-takes" list per solution).
+                            must_dropped = [c for c in required_codes if c not in kept_codes]
+                            must_dropped.sort(key=lambda c: pidx.get(c, 999))
+                            for sol in solutions:
+                                final_solutions.append({
+                                    "sections": sol,
+                                    "covered": len(sol),
+                                    "total": n,
+                                    "dropped": dropped,
+                                    "size": size,
+                                    "must_dropped": must_dropped,
+                                    "must_covered": len(required_codes) - len(must_dropped),
+                                    "must_total": len(required_codes),
+                                })
+                            remaining_budget -= len(solutions)
 
-        # Sort: higher coverage first, then by priority (lower sum = better
-        # priority kept).
+        # Sort: MUST coverage first (solutions keeping every required code
+        # win), then higher code coverage, then by priority kept.
         final_solutions.sort(key=lambda s: (
+            -s["must_covered"],
             -s["covered"],
             sum(pidx.get(c, 999) for c in {x["code"] for x in s["sections"]})
         ))
+
+        # MUST means MUST: when a solution keeping EVERY required code
+        # exists, the partial tiers (which drop a required code) are noise —
+        # the user never wants to see a must-code dropped if it can fit.
+        if required_codes and any(not s["must_dropped"] for s in final_solutions):
+            final_solutions = [s for s in final_solutions if not s["must_dropped"]]
+
+        # MUST-take feasibility:
+        #  - must_feasible = the FULL must-set is coverable in a single
+        #    solution (no required code dropped). Two required codes can
+        #    be mutually exclusive even when each appears in some
+        #    solution, so this must be checked per solution.
+        #  - must_impossible = required codes that appear in NONE of the
+        #    returned solutions (inherently impossible with the current
+        #    picks / blocks / other must codes).
+        must_feasible = any(not s["must_dropped"] for s in final_solutions)
+        must_impossible: list = []
+        if required_codes:
+            for c in required_codes:
+                if not final_solutions or all(c in s["must_dropped"] for s in final_solutions):
+                    must_impossible.append(c)
 
         return jsonify({
             "solutions": final_solutions[:max_res],
             "count": len(final_solutions),
             "codes": active_codes,
             "priority": priority,
+            "must_feasible": must_feasible,
+            "must_impossible": must_impossible,
         })
 
     @reg.post("tis.add", "/api/tis/add")
@@ -552,21 +676,24 @@ def register(reg: CollectorRegistry) -> None:
         b = request.get_json(silent=True) or {}
         return _write("drop", b.get("rwh", ""),
                       dry_run=b.get("dry_run", True),
-                      pylx=b.get("pylx"))
+                      pylx=b.get("pylx"),
+                      xkfsdm=b.get("xkfsdm"))
 
     @reg.post("tis.add-to-cart", "/api/tis/add-to-cart")
     def api_add_cart():
         b = request.get_json(silent=True) or {}
         return _write("add_to_cart", b.get("rwh", ""),
                       dry_run=b.get("dry_run", True),
-                      pylx=b.get("pylx"))
+                      pylx=b.get("pylx"),
+                      xkfsdm=b.get("xkfsdm"))
 
     @reg.post("tis.remove-from-cart", "/api/tis/remove-from-cart")
     def api_remove_cart():
         b = request.get_json(silent=True) or {}
         return _write("remove_from_cart", b.get("rwh", ""),
                       dry_run=b.get("dry_run", True),
-                      pylx=b.get("pylx"))
+                      pylx=b.get("pylx"),
+                      xkfsdm=b.get("xkfsdm"))
 
     @reg.get("tis.course-types", "/api/tis/course-types")
     def api_course_types():
@@ -627,7 +754,16 @@ def register(reg: CollectorRegistry) -> None:
             "round_code": "...",             # selection round code (TIS xkfsdm)
             "xkfsdm":    "...",              # optional override; defaults to "yixuan"
             "where":     "cart" | "enrolled",
-            "jffs_limit": <float>,           # optional: from /api/tis/round
+            "jffs_limit": <float>,           # optional: REMAINING pts (TIS
+                                             # xkgzszOne.jfxs — NOT the round
+                                             # total; semester total =
+                                             # committed + jffs)
+            "baseline":  {rwh: bid, ...},    # optional: bids TIS already
+                                             # holds (enrolled/cart xkxs).
+                                             # Budget consumption per pick =
+                                             # max(0, bid - baseline) —
+                                             # re-stating an enrolled bid
+                                             # costs nothing.
             "pylx":      "1" | "2",
             "dry_run":   <bool>              # default True
           }
@@ -649,6 +785,17 @@ def register(reg: CollectorRegistry) -> None:
                 jffs_limit = float(jffs_limit)
             except (TypeError, ValueError):
                 jffs_limit = None
+        baseline = b.get("baseline")
+        if not isinstance(baseline, dict):
+            baseline = None
+        else:
+            clean_baseline = {}
+            for brwh, bval in baseline.items():
+                try:
+                    clean_baseline[str(brwh)] = int(bval)
+                except (TypeError, ValueError):
+                    continue
+            baseline = clean_baseline or None
 
         if not isinstance(picks, dict) or not picks:
             return jsonify({"ok": False,
@@ -674,6 +821,7 @@ def register(reg: CollectorRegistry) -> None:
                         id_map[rwh] = hit
             result = c.submit_bids(picks, round_code=round_code,
                                    where=where, jffs_limit=jffs_limit,
+                                   baseline=baseline,
                                    pylx=pylx, dry_run=dry_run,
                                    id_map=id_map, xkfsdm=xkfsdm)
             return jsonify(result)
@@ -769,7 +917,14 @@ def _client(xn: str, xq: str) -> SelectCourseClient:
     with _clients_lock:
         c = _clients.get(key)
         if c is None:
-            c = sc_factory(xn=xn, xq=xq)
+            # Catalog TTL: the campus catalog (queryRwxxcxList) is a 9-page
+            # paginated fetch — expensive and rate-limit-prone. BUT its rows
+            # also carry the LIVE "currently selected" counts (yxzrs & co),
+            # which change constantly during a round. A 6h cache was serving
+            # a snapshot fetched while TIS wasn't populating counts (the
+            # "? / M" bug). 10 min keeps refetches rare while counts stay
+            # usable; the 🔄 refresh button forces a fresh fetch on demand.
+            c = sc_factory(xn=xn, xq=xq, max_age=10 * 60)
             _clients[key] = c
         return c
 
@@ -794,7 +949,35 @@ def _course_to_dict(c) -> dict:
         "task_type": c.task_type,
         "language": c.language,
         "college_code": c.college_code,
+        "grading": c.grading,
+        "conflicts": c.conflicts,
+        "requirement": c.requirement,
+        "note": c.note,
     }
+
+
+def _member_row(raw: dict, **markers) -> dict:
+    """Parse one enrolled (yxkcList) / cart (xkgwcList) raw row into the
+    same render-ready shape as ``_course_to_dict``, plus:
+
+    - ``bid`` — the TIS-held 选课系数 (raw ``xkxs``), the baseline for
+      the budget model and sync.
+    - ``xkxs`` — kept verbatim for backward compatibility (older skins
+      read ``items[i].xkxs`` directly).
+    - any caller markers (``tis_enrolled`` / ``in_cart``).
+
+    Falls back to the raw row (plus bid/markers) if parsing fails, so a
+    layout change on TIS degrades to the old behavior instead of 500s.
+    """
+    from sustech_survival.selectcourse.course import Course
+    try:
+        d = _course_to_dict(Course.from_api(raw))
+    except Exception:
+        d = dict(raw)
+    d["xkxs"] = raw.get("xkxs")
+    d["bid"] = raw.get("xkxs")
+    d.update(markers)
+    return d
 
 
 def _parse_sem(args) -> tuple[str, str]:
@@ -836,6 +1019,13 @@ def _write(action: str, rwh: str, *, dry_run: bool, **kw):
                 "risk": cons.risk,
                 "verify_url": cons.verify_url,
             }
+        # CANONICAL response shape: success must carry `ok: true` — the
+        # TIS raw dict (jg='1', message=…) has no `ok` key, so UI callers
+        # that check `r.ok` used to report REAL successes as failures
+        # (drop-all reported "did not succeed" while TIS had dropped).
+        if isinstance(res, dict) and not dry_run:
+            res = dict(res)
+            res.setdefault("ok", True)
         return jsonify(res)
     except EnrollmentError as e:
         return jsonify({"ok": False, "error": str(e), "jg": e.jg,

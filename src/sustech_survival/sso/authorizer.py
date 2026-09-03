@@ -215,6 +215,18 @@ class Authorizer(ABC):
     XHR_MODE: bool = False
     REDIRECT_STATUS: tuple = (302, 303)
 
+    # Network config key (config.json "timeouts.services") used for this
+    # service's request timeout. Subclasses override (e.g. TISAuth → "tis");
+    # the base derives a name from the class if left unset.
+    SERVICE: str = ""
+
+    @classmethod
+    def _service_key(cls) -> str:
+        if cls.SERVICE:
+            return cls.SERVICE
+        name = cls.__name__.lower()
+        return name[:-4] if name.endswith("auth") else name
+
     # Per-subclass singleton cache. Each Authorizer subclass (BBAuth, TISAuth,
     # LibAuth, etc.) gets one shared instance so that ``TISAuth()`` from any
     # call site returns the same in-memory session.
@@ -247,26 +259,63 @@ class Authorizer(ABC):
         Auto-detects stale-session responses (override ``_is_stale_response()``
         per subclass): refreshes cookies once and retries the request transparently.
         Raises ``InvalidCredentials`` or ``NetworkError`` if refresh fails.
+
+        Timeout comes from the root config.json (``timeouts.services.<service>``,
+        resolved by :meth:`_http_timeout`) unless the caller passes one; GET is
+        idempotent, so a network-level timeout/drop is retried up to the
+        configured attempt count before surfacing an error.
         """
+        kwargs.setdefault("timeout", self._http_timeout())
         url = self._url(path)
-        response = self.session.get(url, **kwargs)
+        response = self._send("get", url, **kwargs)
         if self._is_stale_response(response):
             if self._refresh():
-                response = self.session.get(url, **kwargs)
+                response = self._send("get", url, **kwargs)
             else:
                 self._raise_last_error()
         return response
 
     def post(self, path: str, **kwargs) -> requests.Response:
-        """POST path relative to BASE_URL. Same stale-detection as ``get()``."""
+        """POST path relative to BASE_URL. Same stale-detection as ``get()``.
+
+        Timeout likewise resolves from config unless overridden. POST is
+        non-idempotent — no blind network retry (stale-session refresh only).
+        """
+        kwargs.setdefault("timeout", self._http_timeout())
         url = self._url(path)
-        response = self.session.post(url, **kwargs)
+        response = self._send("post", url, **kwargs)
         if self._is_stale_response(response):
             if self._refresh():
-                response = self.session.post(url, **kwargs)
+                response = self._send("post", url, **kwargs)
             else:
                 self._raise_last_error()
         return response
+
+    # -- Network config (timeouts from root config.json) --------------------
+
+    def _http_timeout(self) -> float:
+        """Request timeout for this service, from ``timeouts.services``."""
+        from sustech_survival import _net
+        return _net.timeouts().service_timeout(self._service_key())
+
+    def _login_timeout(self) -> float:
+        """Login-step timeout for this service (CAS & friends)."""
+        from sustech_survival import _net
+        return _net.timeouts().service_login_timeout(self._service_key())
+
+    def _send(self, method: str, url: str, **kwargs) -> requests.Response:
+        """One request with configured network-level retry for GETs."""
+        from sustech_survival import _net
+        attempts = _net.timeouts().request_attempts()
+        last_err: Exception | None = None
+        for attempt in range(attempts if method == "get" else 1):
+            try:
+                return self.session.request(method, url, **kwargs)
+            except (requests.ConnectionError, requests.Timeout) as e:
+                last_err = e
+                if method != "get":
+                    raise
+        raise last_err  # type: ignore[misc]
 
     def _is_stale_response(self, response: requests.Response) -> bool:
         """Universal stale-session detection for all SUSTech CAS services.

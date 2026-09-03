@@ -14,7 +14,7 @@ def _response(payload: dict) -> MagicMock:
 
 
 def test_personal_search_matches_active_round_query_shape():
-    """Personal search must request selectable rows, not the cart-only view."""
+    """Personal search carries the active round and bid-panel row mode."""
     client = SelectCourseClient(xn="2026-2027", xq="1")
     client._auth.ensure = MagicMock(return_value=(True, "stub"))
     client._auth.post = MagicMock(side_effect=[
@@ -41,7 +41,10 @@ def test_personal_search_matches_active_round_query_shape():
     query_call = client._auth.post.call_args_list[-1]
     assert query_call.args[0] == "/Xsxk/queryKxrw"
     payload = query_call.kwargs["data"]
-    assert payload["p_sfsyxkgwc"] == "0"
+    # The current upstream UI deliberately keeps the cart flag at ``1`` so
+    # the same response includes enrolled/cart rows for the bid panel. The
+    # selectable rows (and their live counts) are still parsed below.
+    assert payload["p_sfsyxkgwc"] == "1"
     assert payload["p_chaxunxkfsdm"] == "bxxk"
     assert payload["p_xkfsdm"] == "bxxk"
     assert payload["p_xn"] == "2026-2027"

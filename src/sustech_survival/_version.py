@@ -7,4 +7,4 @@ This file is the ONLY version source. Hatchling reads it via
 ``[tool.hatch.version]`` in pyproject.toml, so ``pip show`` and
 ``sustech_survival.__version__`` always agree.
 """
-__version__ = "2026.8.27"
+__version__ = "2026.9.3"

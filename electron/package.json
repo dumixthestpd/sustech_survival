@@ -1,0 +1,96 @@
+{
+  "name": "sustech_survival-electron",
+  "version": "2026.8.25-electron.1",
+  "description": "Friendly desktop wrapper for sustech_survival — bundles the Python webui in a native window with credential-vault login and auto-update.",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "build:mac": "electron-builder --mac --publish never",
+    "build:win": "electron-builder --win --publish never",
+    "build:linux": "electron-builder --linux --publish never"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.0",
+    "electron-store": "^10.0.0"
+  },
+  "build": {
+    "appId": "edu.sustech.sustech_survival.electron",
+    "productName": "sustech_survival",
+    "directories": {
+      "buildResources": "build",
+      "output": "../dist/electron"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "package.json",
+      "!**/*.map",
+      "!**/.DS_Store",
+      "!build/**"
+    ],
+    "extraResources": [
+      {
+        "from": "python/${platform}-${arch}",
+        "to": "python/${platform}-${arch}",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "skins",
+        "to": "skins",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
+      }
+    ],
+    "icon": "build/icon.png",
+    "mac": {
+      "category": "public.app-category.education",
+      "icon": "build/icon.icns",
+      "target": [
+        { "target": "dmg", "arch": ["arm64", "x64"] },
+        { "target": "zip", "arch": ["arm64", "x64"] }
+      ]
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "zip", "arch": ["x64"] }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "sustech_survival",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "artifactName": "sustech_survival-${version}-setup.${ext}"
+    },
+    "linux": {
+      "category": "Education",
+      "icon": "build/icon.png",
+      "target": [
+        { "target": "AppImage", "arch": ["x64", "arm64"] },
+        { "target": "deb", "arch": ["x64", "arm64"] }
+      ]
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "dumixthestpd",
+      "repo": "sustech_survival"
+    }
+  }
+}

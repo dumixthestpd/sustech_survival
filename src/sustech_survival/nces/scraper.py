@@ -156,6 +156,10 @@ class NCESScraper:
         # paying 2-4 sequential NCES API roundtrips each time.
         # Value is None for cached "not found" responses (negative cache).
         self._brief_cache: dict[tuple, tuple[float, dict | None]] = {}
+        # Raw /api/v1/search items per course code — feeds mini_ratings()
+        # batch lookups (one search per unique code per result page).
+        # Value is (ts, items); items may be [] for a negative cache.
+        self._ratings_search_cache: dict[str, tuple[float, list[dict]]] = {}
         self._last_request_at: float = 0.0
         # Throttle: NCES rate-limits aggressively. 0.2s is the floor; we
         # back off further when the server returns 429 (see _throttle).
@@ -724,6 +728,198 @@ class NCESScraper:
             "available": False,
             "reason": "course not found in NCES",
             "search_url": f"{self.BASE}/search?q={code}",
+        }
+
+    # -- Batch mini ratings (eager card badges) ------------------------------
+    def mini_ratings(
+        self, items: list[dict], *, xn: str = "", xq: str = "",
+        max_codes: int = 40,
+    ) -> dict:
+        """Lightweight batch ratings for a whole search-result page.
+
+        ``items`` is a list of ``{"code": str, "teacher": str}`` dicts
+        (teacher optional, comma-joined TIS teacher list). Returns
+        ``{"results": {"<code>::<teacher>": mini_brief}}`` with keys in
+        EXACTLY the client's cache-key format (code as sent, teacher as
+        sent) so the skin can drop them straight into its mini cache.
+
+        Each mini_brief is either:
+          ``{"available": True, "rating": float, "review_count": int,
+             "nces_id": int, "code": str, "teacher_mismatch": False}``
+        or ``{"available": False, "teacher_mismatch": bool, "reason": str}``.
+
+        Deliberately cheap vs ``brief()``: ONE ``/api/v1/search`` per
+        UNIQUE course code (cached 5 min, negative-cached too; codes
+        with a cached full brief are served with ZERO upstream calls),
+        no per-teacher augment searches, no review fetches, no
+        teacher-other collection — those stay on the hover/click path.
+        All calls are sequential so the shared throttle (NCES rate
+        limits aggressively) is respected.
+
+        Never misattributes: when TIS teachers are given but none of
+        the returned sections matches the full teacher team, the result
+        is ``available=False, teacher_mismatch=True`` — the mini badge
+        shows no value and the hover brief still does the deep
+        augmented lookup on demand.
+        """
+        term_id = _tis_to_nces_term(xn, xq) if xn and xq else ""
+        cleaned: list[tuple[str, str]] = []
+        seen_keys: set[str] = set()
+        for it in items or []:
+            if not isinstance(it, dict):
+                continue
+            code = str(it.get("code", "") or "").strip()
+            if not code:
+                continue
+            teacher = str(it.get("teacher", "") or "")
+            key = f"{code}::{teacher}"
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            cleaned.append((code, teacher))
+            if len(cleaned) >= max_codes * 3:
+                break
+
+        results: dict[str, dict] = {}
+        pending: list[tuple[str, str]] = []
+
+        # Pass 1: resolve from the brief cache FIRST — a cached full
+        # brief() already has the exact (code, teacher) answer, so its
+        # code needs no upstream search at all. A page the user has
+        # already hovered through costs ZERO NCES calls.
+        for code, teacher in cleaned:
+            bcache = self._brief_cache.get((code.upper(), teacher, xn, xq))
+            if bcache and (time.time() - bcache[0]) < self.TTL and bcache[1]:
+                b = bcache[1]
+                results[f"{code}::{teacher}"] = {
+                    "available": True,
+                    "rating": b.get("rating", 0),
+                    "review_count": b.get("review_count", 0),
+                    "nces_id": b.get("nces_id", 0),
+                    "code": code,
+                    "teacher_mismatch": bool(b.get("teacher_mismatch")),
+                }
+            else:
+                pending.append((code, teacher))
+
+        # Unique codes that still need a search (cap applies here — one
+        # upstream call each). Case-insensitive: the per-code search cache
+        # is keyed upper, so "bio103" reuses a "BIO103" search.
+        need_codes: list[str] = []
+        seen_codes: set[str] = set()
+        for code, _teacher in pending:
+            if code.upper() in seen_codes:
+                continue
+            seen_codes.add(code.upper())
+            need_codes.append(code)
+        capped = set()
+        if len(need_codes) > max_codes:
+            capped = {c.upper() for c in need_codes[max_codes:]}
+            need_codes = need_codes[:max_codes]
+
+        # Pass 2: fetch + cache raw search items per code (sequential,
+        # throttled — the shared session/throttle is not thread-safe).
+        fetched = 0
+        sections_by_code: dict[str, list[dict]] = {}
+        unavailable: set[str] = set()
+        for code in need_codes:
+            cache_key = code.upper()
+            cached = self._ratings_search_cache.get(cache_key)
+            if cached and (time.time() - cached[0]) < self.TTL:
+                sections_by_code[code] = cached[1]
+                continue
+            try:
+                data = self._api_search(code)
+                raw = list(data.get("courses", {}).get("items", []) or [])
+            except Exception:
+                # Transient upstream failure — do NOT negative-cache;
+                # the next search retries this code.
+                unavailable.add(code)
+                continue
+            fetched += 1
+            self._ratings_search_cache[cache_key] = (time.time(), raw)
+            sections_by_code[code] = raw
+
+        # Pass 3: resolve the pending items against the fetched sections.
+        for code, teacher in pending:
+            key = f"{code}::{teacher}"
+            if code.upper() in capped:
+                results[key] = {
+                    "available": False, "teacher_mismatch": False,
+                    "reason": "batch cap reached — hover loads this card individually",
+                }
+                continue
+            if code in unavailable:
+                results[key] = {
+                    "available": False, "teacher_mismatch": False,
+                    "reason": "NCES unavailable — try again",
+                }
+                continue
+            sections = sections_by_code.get(code) or []
+            if not sections:
+                results[key] = {
+                    "available": False, "teacher_mismatch": False,
+                    "reason": "not found in NCES",
+                    "search_url": f"{self.BASE}/search?q={code}",
+                }
+                continue
+
+            tis_teachers = _split_teachers(teacher.replace("，", ",")) if teacher else []
+            if not tis_teachers:
+                # No teacher filter — same convention as search_course:
+                # the top section is the match.
+                best = self._to_course(sections[0], code)
+                results[key] = {
+                    "available": True,
+                    "rating": best.rating,
+                    "review_count": best.review_count,
+                    "nces_id": best.nces_id,
+                    "code": code,
+                    "teacher_mismatch": False,
+                }
+                continue
+
+            # Exact team match: EVERY TIS teacher appears in the NCES
+            # section's teacher list (same matching as search_course).
+            # Prefer current-term sections, then most-reviewed.
+            def _team_match(sec: dict) -> bool:
+                nces_t = _split_teachers(sec.get("teacher_names", ""))
+                if not nces_t:
+                    return False
+                return all(
+                    any(t == n or t in n or n in t for n in nces_t)
+                    for t in tis_teachers
+                )
+
+            matching = [s for s in sections if _team_match(s)]
+            if not matching:
+                results[key] = {
+                    "available": False, "teacher_mismatch": True,
+                    "reason": "no exact teacher match — hover for the full lookup",
+                }
+                continue
+            matching.sort(
+                key=lambda s: (
+                    1 if (term_id and term_id in (s.get("term_ids") or [])) else 0,
+                    int(s.get("review_count") or 0),
+                ),
+                reverse=True,
+            )
+            best = self._to_course(matching[0], code)
+            results[key] = {
+                "available": True,
+                "rating": best.rating,
+                "review_count": best.review_count,
+                "nces_id": best.nces_id,
+                "code": code,
+                "teacher_mismatch": False,
+            }
+
+        return {
+            "ok": True,
+            "count": len(results),
+            "codes_searched": fetched,
+            "results": results,
         }
 
     # -- CLI compat ---------------------------------------------------------
