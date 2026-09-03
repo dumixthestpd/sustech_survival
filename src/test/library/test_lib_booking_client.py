@@ -500,7 +500,9 @@ class TestAutoRelogin:
         mock_auth = MagicMock()
         mock_auth.username = "u"
         mock_auth.password = "p"
-        mock_auth.session_cache = {"ic-cookie": "new-cookie-value"}
+        # Authorizer keeps cookies in its private in-memory cache; the client
+        # must use the current API after auto-relogin.
+        mock_auth._session_cache = {"ic-cookie": "new-cookie-value"}
 
         s, calls = _make_session([
             # 1st whoami call: returns auth error
@@ -517,6 +519,7 @@ class TestAutoRelogin:
         mock_auth.login_password.assert_called_once_with("u", "p")
         # 2 calls total: initial fail + retry after relogin
         assert len(calls) == 2
+        s.cookies.set.assert_called_once_with("ic-cookie", "new-cookie-value")
 
     def test_auth_error_without_auth_raises(self):
         s, _ = _make_session([_err("用户未登录", code=300)])

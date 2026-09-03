@@ -47,7 +47,7 @@ class PMSAuth(Authorizer):
     Subclass of Authorizer 鈥?does NOT inherit from CASAuthorizer.
     PMS uses its own RSA-encrypted login API rather than standard CAS.
 
-    Storage: in-memory only (session_cache). Use refresh() to re-populate.
+    Storage: in-memory only (`_session_cache`). Use refresh() to re-populate.
     """
 
     BASE_URL = PMS_BASE

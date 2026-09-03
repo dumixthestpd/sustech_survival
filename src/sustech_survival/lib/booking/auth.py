@@ -3,15 +3,15 @@ sustech_survival.lib.booking.auth — CAS + authcenter handshake for IC library 
 
 Subclass of CASAuthorizer (NOT raw Authorizer). The CAS service URL is
 dynamic — generated per-login via the authcenter /auth/address endpoint.
-We override refresh() to inject that pre-CAS step before delegating to
-the parent get_ticket_cookies().
+We override ``_refresh()`` to inject that pre-CAS step before delegating to
+the parent ``_get_ticket_cookies()``.
 
 Full 6-hop chain:
     1. GET /ic-web/auth/address → authcenter URL
     2. GET /authcenter/toLoginPage → 302 to CAS with UUID service URL
-    3–4. CAS login (standard — handled by CASAuthorizer.post_cas)
+    3–4. CAS login (standard — handled by ``CASAuthorizer._post_cas``)
     5–6. Ticket exchange + redirect following → ic-cookie (handled by
-         CASAuthorizer.exchange_ticket via get_ticket_cookies)
+         CASAuthorizer._exchange_ticket via ``_get_ticket_cookies()``)
 
 DIFFERENT FROM:
   - ehall MAIN (ehall.sustech.edu.cn) — needs JSESSIONID, not this flow.
@@ -62,13 +62,14 @@ class LibBookingAuth(CASAuthorizer):
     """CASAuthorizer subclass for IC library booking (authcenter pattern).
 
     The CAS service URL is NOT static — it's generated per-login via the
-    authcenter /auth/address endpoint. We override refresh() to resolve
+    authcenter /auth/address endpoint. We override ``_refresh()`` to resolve
     that dynamic URL, then delegate to the parent's CAS flow (which goes
-    through post_cas() → exchange_ticket() → get_ticket_cookies()) —
+    through ``_post_cas()`` → ``_exchange_ticket()`` →
+    ``_get_ticket_cookies()``) —
     NO hand-rolled CAS code.
 
     The session cookie is `ic-cookie` (set on the final redirect hop of the
-    authcenter relay chain), which exchange_ticket() captures automatically
+    authcenter relay chain), which ``_exchange_ticket()`` captures automatically
     because it follows all redirects with allow_redirects=True.
 
     Do NOT confuse with `sustech_survival.booking.BookingAuth` (ehall
@@ -89,11 +90,15 @@ class LibBookingAuth(CASAuthorizer):
     def session_file(self) -> Path:
         return self.submodule_dir / "session.json"
 
-    def build_session(self) -> requests.Session:
-        """Override: plain session (no LegacyAdapter — broken on py3.12)."""
-        sess = requests.Session()
+    def _build_session(self) -> requests.Session:
+        """Build a plain session with the cached library-booking cookies."""
+        sess = super()._build_session()
         sess.headers["User-Agent"] = UA
         return sess
+
+    def build_session(self) -> requests.Session:
+        """Backward-compatible alias for the current private hook."""
+        return self._build_session()
 
     # -- Authcenter pre-CAS step (the only new code needed) -----------------
 
@@ -142,14 +147,14 @@ class LibBookingAuth(CASAuthorizer):
             )
         return cas_url
 
-    # -- refresh() — the single override point -----------------------------
+    # -- _refresh() — the single override point -----------------------------
 
-    def refresh(self) -> bool:
+    def _refresh(self) -> bool:
         """Resolve dynamic SERVICE_URL, then delegate to parent CAS flow.
 
-        The parent refresh() calls get_ticket_cookies() which does the
+        The CAS provider's flow calls ``_get_ticket_cookies()`` which does the
         standard CAS 3.0 flow (fetch execution → POST creds → exchange
-        ticket). `exchange_ticket()` follows all redirects with
+        ticket). ``_exchange_ticket()`` follows all redirects with
         allow_redirects=True, which captures the ic-cookie from the
         final authcenter relay hop automatically.
 
@@ -169,7 +174,7 @@ class LibBookingAuth(CASAuthorizer):
             old = self.SERVICE_URL
             self.SERVICE_URL = cas_service_url
             try:
-                cookies = self.get_ticket_cookies(username, password)
+                cookies = self._get_ticket_cookies(username, password)
             finally:
                 self.SERVICE_URL = old
 
@@ -179,7 +184,7 @@ class LibBookingAuth(CASAuthorizer):
                     "CAS exchange did not return ic-cookie. Auth rejected?"
                 )
 
-            self.set_session(cookies)
+            self._set_session(cookies)
             self._user_info = self._fetch_user_info()
             print(
                 f"✅ LibBookingAuth session refreshed "
@@ -200,11 +205,11 @@ class LibBookingAuth(CASAuthorizer):
         return 401/403 if the cookie is dead, and the client auto-relogs
         via `_looks_auth_error` + retry.
         """
-        if not self.session_cache:
+        if not self._session_cache:
             return False, "No session — login needed."
-        if "ic-cookie" not in self.session_cache:
+        if "ic-cookie" not in self._session_cache:
             return False, "No ic-cookie in session — login needed."
-        return True, f"Session has {len(self.session_cache)} cookies"
+        return True, f"Session has {len(self._session_cache)} cookies"
 
     def ensure(self) -> Tuple[bool, str]:
         """check() + auto-refresh if needed. In-memory only — no disk I/O."""

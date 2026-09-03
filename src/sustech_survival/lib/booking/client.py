@@ -164,7 +164,7 @@ class LibBookingClient:
                 raise LibBookingError(f"Auto-relogin failed: {e}") from e
             # Re-apply cookies to session
             self.s.cookies.clear()
-            for name, value in self._auth.session_cache.items():
+            for name, value in self._auth._session_cache.items():
                 self.s.cookies.set(name, value)
             return self._call(method, path, params=params, json_body=json_body, _is_retry=True)
 
@@ -762,7 +762,7 @@ def lib_booking() -> LibBookingClient:
     # the domain to a wildcard ".sustech.edu.cn" so cookies apply to
     # all subdomains (booking.lib, cas, etc.) — the TGC cookie lives
     # at cas.sustech.edu.cn and is forwarded by authcenter.
-    for name, value in auth.session_cache.items():
+    for name, value in auth._session_cache.items():
         if name == "ic-cookie":
             sess.cookies.set(name, value, domain="booking.lib.sustech.edu.cn", path="/")
         elif name == "TGC":
