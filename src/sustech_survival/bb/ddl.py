@@ -35,10 +35,13 @@ def session():
     return bb_auth.session
 
 
+_session = session  # alias: `session` params/locals shadow the module factory
+
+
 def api(path: str, session=None):
     """GET BB REST API endpoint. Returns JSON dict or dies."""
     if session is None:
-        session = session()
+        session = _session()
     url = "https://bb.sustech.edu.cn" + path
     r = session.get(url, timeout=15)
     if r.status_code == 401:
@@ -189,7 +192,7 @@ def upcoming_deadlines(days: int = 30) -> list[dict]:
     Each dict: {name, course, due, due_str, days_left, due_dt}
     Returns [] if none found. Raises _SessionExpired on auth failure.
     """
-    session = session()
+    session = _session()
     now = datetime.now()
     cutoff = now + timedelta(days=days)
 
@@ -228,7 +231,7 @@ def upcoming_deadlines(days: int = 30) -> list[dict]:
 
 def run(days: int = 7, course_id: str = None):
     """See docs/bb.md."""
-    session = session()
+    session = _session()
     now = datetime.now()
     cutoff = now + timedelta(days=days)
 

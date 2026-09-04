@@ -46,19 +46,16 @@ def _default_out_dir(kind: str) -> Path:
 
 
 def session():
-    """Return requests.Session with BB cookies.
-
-    Goes through BBAuth (not raw file IO) so the session lives at
-    <skill_root>/.cache/sso/bb/session.json — auto-migrated from
-    legacy bb/session.json on first access.
-    """
+    """Return an authenticated requests.Session from the SSO BBAuth layer."""
     from sustech_survival.sso import BBAuth
-    auth = BBAuth()
-    raw = auth.load()  # deprecation warning + migration logic lives here
-    s = requests.Session()
-    for name, value in raw.items():
-        s.cookies.set(name, value, domain=".bb.sustech.edu.cn", path="/")
-    return s
+    bb_auth = BBAuth()
+    ok, reason = bb_auth.ensure()
+    if not ok:
+        raise _SessionExpired(f"BB auth failed: {reason}")
+    return bb_auth.session
+
+
+_session = session  # alias: api()'s `session` param shadows the module factory
 
 
 from sustech_survival.exceptions import SessionExpired as _SessionExpired
@@ -66,7 +63,7 @@ from sustech_survival.exceptions import SessionExpired as _SessionExpired
 
 def api(path, session=None):
     if session is None:
-        session = session()
+        session = _session()
     r = session.get(BB_BASE + path, timeout=15)
     if r.status_code == 401:
         raise _SessionExpired("BB session expired. Run `bb.py login`.")
@@ -85,7 +82,30 @@ def resolve_course(content_id):
     sess = session()
     cids = [f"_{content_id}_1"]
 
-    # Walk the paginated course list (term _57_1) to find the owning course.
+    # Fast path: search the current user's own enrolled courses first (the
+    # term-wide catalog walk below misses courses outside term _57_1 and is slow).
+    try:
+        me = sess.get(f"{BB_BASE}/learn/api/public/v1/users/me", timeout=10).json()
+        uid = me["id"]
+        enr = sess.get(f"{BB_BASE}/learn/api/public/v1/users/{uid}/courses", timeout=10).json()
+        for e in enr.get("results", []):
+            bid = e.get("courseId", "")
+            if not bid:
+                continue
+            for cid in cids:
+                try:
+                    r = sess.get(
+                        f"{BB_BASE}/learn/api/public/v1/courses/{bid}/contents/{cid}",
+                        timeout=5,
+                    )
+                    if r.status_code == 200:
+                        return bid.lstrip("_").rstrip("_1")
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    # Fallback: walk the paginated course list (term _57_1) to find the owner.
     offset = 0
     while True:
         try:
@@ -202,7 +222,12 @@ def download_file(out_path, url_or_path, session_cookies):
     """Download a file from a URL or special path."""
     if url_or_path.startswith("_bbfile:"):
         raise ValueError(f"Cannot download x-bb-file content directly: {url_or_path}")
-    full_url = url_or_path if url_or_path.startswith("http") else BB_BASE + url_or_path
+    if url_or_path.startswith("http"):
+        full_url = url_or_path
+    else:
+        # body HTML uses root-relative URLs like "bbcswebdav/pid-.../xid-..."
+        prefix = "/" if not url_or_path.startswith("/") else ""
+        full_url = BB_BASE + prefix + url_or_path
     resp = requests.get(full_url, cookies=session_cookies, timeout=30, stream=True)
     resp.raise_for_status()
     with open(out_path, "wb") as f:
