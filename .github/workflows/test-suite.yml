@@ -1,5 +1,9 @@
 name: Test Suite
 
+# Action versions pinned to the Node 24-compatible major (see docs.yml for
+# the rationale). v4 / v5 still work but emit a deprecation warning on
+# every run that surfaces as a GH notification — bump together.
+
 on:
   push:
     branches: ["main"]
@@ -18,9 +22,9 @@ jobs:
         os: [ubuntu-latest, macos-latest]
 
     steps:
-      - uses: "actions/checkout@v4"
+      - uses: "actions/checkout@v5"
 
-      - uses: "actions/setup-python@v5"
+      - uses: "actions/setup-python@v6"
         with:
           python-version: ${{ matrix.python-version }}
           cache: "pip"

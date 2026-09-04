@@ -4,12 +4,33 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
+    # Bundling all pip bumps into a single grouped PR (instead of one PR
+    # per package) keeps the dependency-update notification noise to
+    # something a human can actually triage.
     groups:
       python-packages:
         patterns:
           - "*"
+    # Title + commit prefix match the rest of the repo's commit style.
+    commit-message:
+      prefix: "deps"
+      include: "scope"
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "monthly"
+    # Same grouping rationale as pip: collapse multiple action bumps
+    # into one PR (otherwise every action update opens its own PR, which
+    # is what produced the noisy run of #1/#2/#8 cascades in Sep 2026).
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    # Cap at 2 open PRs so a stuck Dependabot update (e.g. transient
+    # publisher errors on actions/upload-pages-artifact) doesn't wedge
+    # newer bumps behind it.
+    open-pull-requests-limit: 2

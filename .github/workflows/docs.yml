@@ -3,6 +3,14 @@ name: Docs
 # Builds the MkDocs site and deploys to GitHub Pages
 # (https://dumixthestpd.github.io/sustech_survival/).
 # Triggered on push to main and manual dispatch.
+#
+# Action versions are pinned to the Node 24-compatible major:
+#   - actions/checkout@v5            (v4 → v5, 2025-09)
+#   - actions/setup-python@v6        (v5 → v6, 2025-Q4; runner >= v2.327.1)
+#   - actions/upload-pages-artifact@v5
+#   - actions/deploy-pages@v5
+# Keeping all three bumped together avoids Node 20 deprecation noise on
+# every run and matches what the official GitHub Pages deploy flow expects.
 
 on:
   push:
@@ -22,11 +30,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -39,7 +47,7 @@ jobs:
       - name: Build site
         run: mkdocs build
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site
 
@@ -51,4 +59,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

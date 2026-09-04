@@ -14,6 +14,13 @@ name: Deploy release
 #   4. `git tag 2026.7.14b1 && git push --tags`
 #
 # Live (requires-network) tests are skipped via the default `-m "not live"`.
+#
+# PyPI is currently disabled (see commit history). The PyPI publish step
+# is gated behind the `PUBLISH_TO_PYPI` repository variable so a stray tag
+# push doesn't fail CI with a noisy PyPI trusted-publisher error. Set the
+# variable to `true` (in repo Settings → Secrets and variables → Actions
+# → Variables) once a trusted publisher is registered, and the step runs
+# again.
 
 on:
   push:
@@ -21,14 +28,36 @@ on:
       - "*"
 
 jobs:
+  build:
+    # Always run: verifies the sdist + wheel actually build for the
+    # tagged commit. Cheap (sdist + wheel only, no upload).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: "actions/checkout@v5"
+
+      - uses: "actions/setup-python@v6"
+        with:
+          python-version: "3.12"
+
+      - name: "Install build tooling"
+        run: python -m pip install --upgrade build
+
+      - name: "Build sdist + wheel"
+        run: python -m build
+
   pypi:
+    needs: build
+    # Only run when explicitly enabled via repo variable. Without this,
+    # every tag push fails with "Publisher with matching claims was not
+    # found" once PyPI trusted publishing stops being maintained.
+    if: ${{ vars.PUBLISH_TO_PYPI == 'true' }}
     permissions:
       id-token: write  # OIDC trusted publishing
     runs-on: ubuntu-latest
     steps:
-      - uses: "actions/checkout@v4"
+      - uses: "actions/checkout@v5"
 
-      - uses: "actions/setup-python@v5"
+      - uses: "actions/setup-python@v6"
         with:
           python-version: "3.12"
 
