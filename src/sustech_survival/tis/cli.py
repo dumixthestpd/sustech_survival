@@ -14,6 +14,7 @@ Credentials: credentials.txt (format: sid:password)
 Session: in-memory only, not persisted to disk.
 """
 import sys
+import unicodedata
 from pathlib import Path
 
 CLI_DIR = Path(__file__).resolve().parent
@@ -69,6 +70,41 @@ def _normalize_semester_label(value):
         except ValueError:
             pass
     return v
+
+
+# -- CJK-aware table helpers ---------------------------------------------------
+
+def _disp_width(text):
+    """On-screen width of ``text``: CJK / full-width chars occupy 2 columns."""
+    width = 0
+    for ch in str(text):
+        width += 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+    return width
+
+
+def _clip(text, max_width):
+    """Truncate ``text`` to ``max_width`` display columns, appending '…'."""
+    text = str(text)
+    if _disp_width(text) <= max_width:
+        return text
+    out = ""
+    used = 0
+    for ch in text:
+        w = 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+        if used + w > max_width - 1:  # keep a column free for the ellipsis
+            break
+        out += ch
+        used += w
+    return out + "…"
+
+
+def _pad(text, width, align="left"):
+    """Pad ``text`` to ``width`` display columns (left or right aligned)."""
+    text = str(text)
+    gap = width - _disp_width(text)
+    if gap <= 0:
+        return text
+    return (" " * gap + text) if align == "right" else (text + " " * gap)
 
 
 # -- CLI group ----------------------------------------------------------------
@@ -188,22 +224,47 @@ def courses_cmd(semester, show_all):
         seen_in_sem.setdefault(sem, set()).add(key)
         by_sem.setdefault(sem, []).append(c)
 
+    # One shared table layout for every term so the current (timetable) and
+    # past (grade-record) sections line up column-for-column.
+    headers = ("课程代码", "课程名称", "学分", "教师")
+    aligns = ("left", "left", "right", "left")
+    caps = (16, 44, 7, 20)  # per-column display-width caps
+    sections = []
+    all_cells = []
     for sem, sem_courses in sorted(by_sem.items()):
         total = sum(c.get("xf", 0) or 0 for c in sem_courses)
-        credits_txt = f", {total:.0f} 学分" if total else ""
-        click.secho(f"\n{'-' * 55}")
-        click.secho(f"  {sem}  ({len(sem_courses)} 门课{credits_txt})")
-        click.secho(f"  {'-' * 55}")
+        title = f"{sem}  ({len(sem_courses)} 门课"
+        title += f", {total:.0f} 学分)" if total else ")"
+        cells = []
         for c in sem_courses:
-            code = c.get("kcdm", "")
-            name = c.get("kcmc", "") or c.get("kcmc_en", "")
+            code = (c.get("kcdm", "") or "").strip() or "—"
+            name = (c.get("kcmc", "") or c.get("kcmc_en", "") or "").strip()
             credit = c.get("xf", 0) or 0
-            teacher = c.get("dgjsmc", "") or ""
-            display = f"{code} {name}" if code else name
-            credit_txt = f" {credit:.1f}学分" if credit else ""
-            click.echo(f"    {display[:45]:<46}{credit_txt}")
-            if teacher:
-                click.echo(f"      👤 {teacher}")
+            # Timetable rows carry no credit figure — "—" until grades post.
+            credit_s = f"{credit:.1f}" if credit else "—"
+            teacher = (c.get("dgjsmc", "") or "").strip() or "—"
+            cells.append((code, name, credit_s, teacher))
+        sections.append((title, cells))
+        all_cells.extend(cells)
+
+    widths = []
+    for i, header in enumerate(headers):
+        w = max([_disp_width(header)] + [_disp_width(r[i]) for r in all_cells])
+        widths.append(min(w, caps[i]))
+
+    def fmt(values):
+        return "  ".join(
+            _pad(_clip(v, widths[i]), widths[i], aligns[i])
+            for i, v in enumerate(values)
+        )
+
+    separator = "─" * (sum(widths) + (len(headers) - 1) * 2)
+    for title, cells in sections:
+        click.secho(f"\n{title}", bold=True)
+        click.secho(fmt(headers), bold=True)
+        click.echo(separator)
+        for row in cells:
+            click.echo(fmt(row))
 
 
 # -- Grades --------------------------------------------------------------------
