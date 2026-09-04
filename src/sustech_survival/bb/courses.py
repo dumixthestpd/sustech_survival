@@ -32,20 +32,22 @@ SKIP_COURSE_NAMES = {
 # -- REST-based course discovery ------------------------------------------------
 
 def session():
-    """Return requests.Session with BB cookies from SSO auth layer."""
+    """Return an authenticated requests.Session from the SSO BBAuth layer."""
     from sustech_survival.sso import BBAuth
-    auth = BBAuth(skill_dir=str(BB_DIR.parent.parent.parent.parent))
-    raw = auth.load()
-    sess = __import__('requests').Session()
-    for name, value in raw.items():
-        sess.cookies.set(name, value, domain=".bb.sustech.edu.cn", path="/")
-    return sess
+    bb_auth = BBAuth()
+    ok, reason = bb_auth.ensure()
+    if not ok:
+        raise _SessionExpired(f"BB auth failed: {reason}")
+    return bb_auth.session
+
+
+_session = session  # alias: api()'s `session` param shadows the module factory
 
 
 def api(path, session=None):
     """GET BB REST endpoint. Returns JSON. Dies on auth error."""
     if session is None:
-        session = session()
+        session = _session()
     r = session.get(BB_BASE + path, timeout=15)
     if r.status_code == 401:
         raise _SessionExpired("BB session expired. Run `bb.py login` to refresh.")

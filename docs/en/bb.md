@@ -58,9 +58,9 @@ sustech bb types              # list content types per course
 ```python
 from sustech_survival.bb import ddl
 
-ddl()                    # next 7 days, all courses
-ddl(days=14)             # next 14 days
-ddl(course_id='_8053_1') # single course
+ddl.run()                    # next 7 days, all courses
+ddl.run(days=14)             # next 14 days
+ddl.run(course_id='_8053_1') # single course
 ```
 
 **How it works:** REST API for assignment items + portal page for course IDs. Due dates are parsed from item titles (Week N) or body text (每周六晚12点).

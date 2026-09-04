@@ -2,8 +2,8 @@
 
 Usage:
     from sustech_survival.bb import ddl
-    ddl()        → print upcoming BB assignment deadlines
-    ddl(days=7)  → deadlines within N days
+    ddl.run()        → print upcoming BB assignment deadlines
+    ddl.run(days=7)  → deadlines within N days
 
 REST-based modules (no Playwright):
     from sustech_survival.bb import query, download, submit
@@ -27,8 +27,7 @@ __all__ = [
     "submit_file", "submit_assignment", "submit_assignment_rest", "check_attempts",
 ]
 
-from sustech_survival.bb import query, download
-from sustech_survival.bb.ddl import run as _ddl_run
+from sustech_survival.bb import query, download, ddl
 
 # submit is pure REST now (no Playwright; the legacy Playwright submitter and
 # the bb._playwright module were removed). Lazy-import so the package loads
@@ -46,7 +45,8 @@ def __getattr__(name):
 # `import sustech_survival.bb.submit as m` got the function, not the
 # module, breaking monkeypatching and any code that needed the module.
 # Renamed the function to `submit_file` to break the collision.
-
-def ddl(days: int = 7, course_id: str = None):
-    """Print upcoming BB assignment deadlines. See docs/bb.md."""
-    _ddl_run(days=days, course_id=course_id)
+#
+# ddl had the same flaw: a package-level `ddl()` function shadowed the
+# `sustech_survival.bb.ddl` SUBMODULE (fixed 2026-09-04 the same way). The
+# submodule now owns the `ddl` name; the old deadline convenience is
+# `ddl.run(...)`.

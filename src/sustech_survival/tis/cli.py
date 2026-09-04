@@ -14,6 +14,7 @@ Credentials: credentials.txt (format: sid:password)
 Session: in-memory only, not persisted to disk.
 """
 import sys
+import unicodedata
 from pathlib import Path
 
 CLI_DIR = Path(__file__).resolve().parent
@@ -49,6 +50,61 @@ def ok_s(s):
 
 def err_s(s):
     return click.style(s, fg="red")
+
+
+def _normalize_semester_label(value):
+    """Map a '--semester' value to the Chinese xnxqmc label the grade API uses.
+
+    Accepts either a raw label/substring ('2025春季', '2025') or a TIS code
+    ('2025-2026-2' / '2025-20262'); codes are converted to their label
+    (e.g. '2025-20262' -> '2025春季').
+    """
+    if not value:
+        return value
+    v = value.strip()
+    compact = v.replace("-", "")
+    if len(compact) == 9 and compact.isdigit():
+        from sustech_survival.semester import Semester
+        try:
+            return Semester(compact).xnxqmc
+        except ValueError:
+            pass
+    return v
+
+
+# -- CJK-aware table helpers ---------------------------------------------------
+
+def _disp_width(text):
+    """On-screen width of ``text``: CJK / full-width chars occupy 2 columns."""
+    width = 0
+    for ch in str(text):
+        width += 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+    return width
+
+
+def _clip(text, max_width):
+    """Truncate ``text`` to ``max_width`` display columns, appending '…'."""
+    text = str(text)
+    if _disp_width(text) <= max_width:
+        return text
+    out = ""
+    used = 0
+    for ch in text:
+        w = 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+        if used + w > max_width - 1:  # keep a column free for the ellipsis
+            break
+        out += ch
+        used += w
+    return out + "…"
+
+
+def _pad(text, width, align="left"):
+    """Pad ``text`` to ``width`` display columns (left or right aligned)."""
+    text = str(text)
+    gap = width - _disp_width(text)
+    if gap <= 0:
+        return text
+    return (" " * gap + text) if align == "right" else (text + " " * gap)
 
 
 # -- CLI group ----------------------------------------------------------------
@@ -103,51 +159,112 @@ def session_cmd(cmd):
 
 @cli.command(name="courses")
 @click.option("--semester", "-s", default=None,
-              help="Filter by semester name (e.g. '2025-2026-2')")
-def courses_cmd(semester):
-    """List courses from TIS."""
-    try:
-        auth = auth_or_exit()
-    except AuthorizerError as e:
-        click.secho(f"❌  {e}", fg="red")
+              help="List a specific term's courses: the Chinese label "
+                   "('2025春季') or a TIS code ('2025-2026-2'). "
+                   "Default: the current in-progress term (your enrolled "
+                   "courses, from the personal timetable).")
+@click.option("--all", "show_all", is_flag=True, default=False,
+              help="List every term: the current in-progress term (from the "
+                   "personal timetable) plus all past terms that already have "
+                   "posted grades. Mutually exclusive with --semester.")
+def courses_cmd(semester, show_all):
+    """List courses.
+
+    Default (no flags): the CURRENT in-progress term's enrolled courses,
+    fetched from your personal timetable (xszykb) — the grade API only covers
+    terms that already have posted grades, so a just-started term would
+    otherwise show nothing.
+
+    --all: every term in one listing — the current in-progress term (from the
+    personal timetable) plus each past term that already has posted grades
+    (from the grade records), one section per term.
+
+    --semester: a specific past term's graded courses (Chinese label
+    '2025春季' or TIS code '2025-2026-2').
+    """
+    if semester and show_all:
+        click.secho("❌  --all and --semester are mutually exclusive", fg="red")
         sys.exit(1)
+    auth = auth_or_exit()
 
     click.secho("📚 Fetching courses...", fg="cyan")
     try:
-        from sustech_survival.tis.courses import get_courses
-        courses = get_courses(auth.session, semester=semester)
+        if semester:
+            from sustech_survival.tis.courses import get_courses
+            courses = get_courses(auth.session, semester=_normalize_semester_label(semester))
+        elif show_all:
+            from sustech_survival.tis.courses import get_courses, get_current_courses
+            courses = get_courses(auth.session) + get_current_courses()
+        else:
+            from sustech_survival.tis.courses import get_current_courses
+            courses = get_current_courses()
     except (SessionExpired, NetworkError) as e:
         click.secho(f"❌  {e}", fg="red")
         sys.exit(1)
 
     if not courses:
         click.secho(
-            "No courses returned — Spring 2026 grades may not be posted yet. "
-            "Available: 2024秋季, 2025春季, 2025秋季. "
-            "Use --semester 2025-2026-1 to filter for Fall 2025.",
+            "No courses found. If the current term just started, its "
+            "timetable may not be published yet; for a past term pass "
+            "--semester, e.g. --semester 2025春季.",
             fg="yellow"
         )
         return
 
+    # Dedupe by (semester, course) — when a term is reachable both via the
+    # grade API and the timetable (--all merge), the grade row comes first and
+    # wins (it carries credits); the timetable's duplicate drops out.
     by_sem = {}
+    seen_in_sem = {}
     for c in courses:
         sem = c.get("xnxqmc", "未知")
+        key = (c.get("kcdm", ""), c.get("kcmc", "") or c.get("kcmc_en", ""))
+        if key in seen_in_sem.get(sem, set()):
+            continue
+        seen_in_sem.setdefault(sem, set()).add(key)
         by_sem.setdefault(sem, []).append(c)
 
+    # One shared table layout for every term so the current (timetable) and
+    # past (grade-record) sections line up column-for-column.
+    headers = ("课程代码", "课程名称", "学分", "教师")
+    aligns = ("left", "left", "right", "left")
+    caps = (16, 44, 7, 20)  # per-column display-width caps
+    sections = []
+    all_cells = []
     for sem, sem_courses in sorted(by_sem.items()):
-        total = sum(c.get("xf", 0) for c in sem_courses)
-        click.secho(f"\n{'-' * 55}")
-        click.secho(f"  {sem}  ({len(sem_courses)} 门课, {total:.0f} 学分)")
-        click.secho(f"  {'-' * 55}")
+        total = sum(c.get("xf", 0) or 0 for c in sem_courses)
+        title = f"{sem}  ({len(sem_courses)} 门课"
+        title += f", {total:.0f} 学分)" if total else ")"
+        cells = []
         for c in sem_courses:
-            code = c.get("kcdm", "")
-            name = c.get("kcmc", "") or c.get("kcmc_en", "")
-            credit = c.get("xf", 0)
-            teacher = c.get("dgjsmc", "") or ""
-            display = f"{code} {name}" if code else name
-            click.echo(f"    {display[:45]:<46} {credit:.1f}学分")
-            if teacher:
-                click.echo(f"      👤 {teacher}")
+            code = (c.get("kcdm", "") or "").strip() or "—"
+            name = (c.get("kcmc", "") or c.get("kcmc_en", "") or "").strip()
+            credit = c.get("xf", 0) or 0
+            # Timetable rows carry no credit figure — "—" until grades post.
+            credit_s = f"{credit:.1f}" if credit else "—"
+            teacher = (c.get("dgjsmc", "") or "").strip() or "—"
+            cells.append((code, name, credit_s, teacher))
+        sections.append((title, cells))
+        all_cells.extend(cells)
+
+    widths = []
+    for i, header in enumerate(headers):
+        w = max([_disp_width(header)] + [_disp_width(r[i]) for r in all_cells])
+        widths.append(min(w, caps[i]))
+
+    def fmt(values):
+        return "  ".join(
+            _pad(_clip(v, widths[i]), widths[i], aligns[i])
+            for i, v in enumerate(values)
+        )
+
+    separator = "─" * (sum(widths) + (len(headers) - 1) * 2)
+    for title, cells in sections:
+        click.secho(f"\n{title}", bold=True)
+        click.secho(fmt(headers), bold=True)
+        click.echo(separator)
+        for row in cells:
+            click.echo(fmt(row))
 
 
 # -- Grades --------------------------------------------------------------------
@@ -165,11 +282,7 @@ def grades_cmd(semester, export_path, as_json):
     if semester:
         semester = semester.replace("-", "")  # 2025-2026-2 → 2025-20262
 
-    try:
-        auth = auth_or_exit()
-    except AuthorizerError as e:
-        click.secho(f"❌  {e}", fg="red")
-        sys.exit(1)
+    auth = auth_or_exit()
 
     click.secho("📊 Fetching grades...", fg="cyan")
     try:
@@ -241,11 +354,7 @@ def evals_cmd(pending):
       已保存  (3)   = saved as draft, NOT submitted
       待评价  (0)   = not started
     """
-    try:
-        auth = auth_or_exit()
-    except AuthorizerError as e:
-        click.secho(f"❌  {e}", fg="red")
-        sys.exit(1)
+    auth = auth_or_exit()
 
     r = auth.get(
         "/personnelEvaluation/listObtainPersonnelEvaluationTasks",
@@ -340,11 +449,7 @@ def query_cmd(path, params, method):
     Example:
       tis.py query /personnelEvaluation/listObtainPersonnelEvaluationTasks yhdm=<sid> sfyp=0
     """
-    try:
-        auth = auth_or_exit()
-    except AuthorizerError as e:
-        click.secho(f"❌  {e}", fg="red")
-        sys.exit(1)
+    auth = auth_or_exit()
 
     param_dict = {}
     for p in params:
