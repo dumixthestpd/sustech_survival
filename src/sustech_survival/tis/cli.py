@@ -127,15 +127,28 @@ def session_cmd(cmd):
                    "('2025春季') or a TIS code ('2025-2026-2'). "
                    "Default: the current in-progress term (your enrolled "
                    "courses, from the personal timetable).")
-def courses_cmd(semester):
+@click.option("--all", "show_all", is_flag=True, default=False,
+              help="List every term: the current in-progress term (from the "
+                   "personal timetable) plus all past terms that already have "
+                   "posted grades. Mutually exclusive with --semester.")
+def courses_cmd(semester, show_all):
     """List courses.
 
-    Without --semester this shows the CURRENT in-progress term's enrolled
-    courses, fetched from your personal timetable (xszykb) — the grade API
-    only covers terms that already have posted grades, so a just-started term
-    would otherwise show nothing. Pass --semester to read a past term's
-    graded courses from the grade records instead.
+    Default (no flags): the CURRENT in-progress term's enrolled courses,
+    fetched from your personal timetable (xszykb) — the grade API only covers
+    terms that already have posted grades, so a just-started term would
+    otherwise show nothing.
+
+    --all: every term in one listing — the current in-progress term (from the
+    personal timetable) plus each past term that already has posted grades
+    (from the grade records), one section per term.
+
+    --semester: a specific past term's graded courses (Chinese label
+    '2025春季' or TIS code '2025-2026-2').
     """
+    if semester and show_all:
+        click.secho("❌  --all and --semester are mutually exclusive", fg="red")
+        sys.exit(1)
     auth = auth_or_exit()
 
     click.secho("📚 Fetching courses...", fg="cyan")
@@ -143,6 +156,9 @@ def courses_cmd(semester):
         if semester:
             from sustech_survival.tis.courses import get_courses
             courses = get_courses(auth.session, semester=_normalize_semester_label(semester))
+        elif show_all:
+            from sustech_survival.tis.courses import get_courses, get_current_courses
+            courses = get_courses(auth.session) + get_current_courses()
         else:
             from sustech_survival.tis.courses import get_current_courses
             courses = get_current_courses()
@@ -159,9 +175,17 @@ def courses_cmd(semester):
         )
         return
 
+    # Dedupe by (semester, course) — when a term is reachable both via the
+    # grade API and the timetable (--all merge), the grade row comes first and
+    # wins (it carries credits); the timetable's duplicate drops out.
     by_sem = {}
+    seen_in_sem = {}
     for c in courses:
         sem = c.get("xnxqmc", "未知")
+        key = (c.get("kcdm", ""), c.get("kcmc", "") or c.get("kcmc_en", ""))
+        if key in seen_in_sem.get(sem, set()):
+            continue
+        seen_in_sem.setdefault(sem, set()).add(key)
         by_sem.setdefault(sem, []).append(c)
 
     for sem, sem_courses in sorted(by_sem.items()):

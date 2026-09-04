@@ -43,8 +43,9 @@ sustech tis session refresh   # force re-login
 ## CLI Overview
 
 ```bash
-sustech tis courses                    # list enrolled courses
-sustech tis courses --semester 2026春季
+sustech tis courses                    # list current in-progress term's enrolled courses (timetable)
+sustech tis courses --all              # list every term: current (timetable) + past terms with posted grades
+sustech tis courses --semester 2026春季  # list one specific past term (grade records)
 sustech tis grades                     # show grades + GPA
 sustech tis grades --csv path/to/file  # export CSV
 sustech tis evals                      # list pending evaluations
