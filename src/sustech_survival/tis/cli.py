@@ -51,6 +51,26 @@ def err_s(s):
     return click.style(s, fg="red")
 
 
+def _normalize_semester_label(value):
+    """Map a '--semester' value to the Chinese xnxqmc label the grade API uses.
+
+    Accepts either a raw label/substring ('2025春季', '2025') or a TIS code
+    ('2025-2026-2' / '2025-20262'); codes are converted to their label
+    (e.g. '2025-20262' -> '2025春季').
+    """
+    if not value:
+        return value
+    v = value.strip()
+    compact = v.replace("-", "")
+    if len(compact) == 9 and compact.isdigit():
+        from sustech_survival.semester import Semester
+        try:
+            return Semester(compact).xnxqmc
+        except ValueError:
+            pass
+    return v
+
+
 # -- CLI group ----------------------------------------------------------------
 
 @click.group()
@@ -103,28 +123,38 @@ def session_cmd(cmd):
 
 @cli.command(name="courses")
 @click.option("--semester", "-s", default=None,
-              help="Filter by semester name (e.g. '2025-2026-2')")
+              help="List a specific term's courses: the Chinese label "
+                   "('2025春季') or a TIS code ('2025-2026-2'). "
+                   "Default: the current in-progress term (your enrolled "
+                   "courses, from the personal timetable).")
 def courses_cmd(semester):
-    """List courses from TIS."""
-    try:
-        auth = auth_or_exit()
-    except AuthorizerError as e:
-        click.secho(f"❌  {e}", fg="red")
-        sys.exit(1)
+    """List courses.
+
+    Without --semester this shows the CURRENT in-progress term's enrolled
+    courses, fetched from your personal timetable (xszykb) — the grade API
+    only covers terms that already have posted grades, so a just-started term
+    would otherwise show nothing. Pass --semester to read a past term's
+    graded courses from the grade records instead.
+    """
+    auth = auth_or_exit()
 
     click.secho("📚 Fetching courses...", fg="cyan")
     try:
-        from sustech_survival.tis.courses import get_courses
-        courses = get_courses(auth.session, semester=semester)
+        if semester:
+            from sustech_survival.tis.courses import get_courses
+            courses = get_courses(auth.session, semester=_normalize_semester_label(semester))
+        else:
+            from sustech_survival.tis.courses import get_current_courses
+            courses = get_current_courses()
     except (SessionExpired, NetworkError) as e:
         click.secho(f"❌  {e}", fg="red")
         sys.exit(1)
 
     if not courses:
         click.secho(
-            "No courses returned — Spring 2026 grades may not be posted yet. "
-            "Available: 2024秋季, 2025春季, 2025秋季. "
-            "Use --semester 2025-2026-1 to filter for Fall 2025.",
+            "No courses found. If the current term just started, its "
+            "timetable may not be published yet; for a past term pass "
+            "--semester, e.g. --semester 2025春季.",
             fg="yellow"
         )
         return
@@ -135,17 +165,19 @@ def courses_cmd(semester):
         by_sem.setdefault(sem, []).append(c)
 
     for sem, sem_courses in sorted(by_sem.items()):
-        total = sum(c.get("xf", 0) for c in sem_courses)
+        total = sum(c.get("xf", 0) or 0 for c in sem_courses)
+        credits_txt = f", {total:.0f} 学分" if total else ""
         click.secho(f"\n{'-' * 55}")
-        click.secho(f"  {sem}  ({len(sem_courses)} 门课, {total:.0f} 学分)")
+        click.secho(f"  {sem}  ({len(sem_courses)} 门课{credits_txt})")
         click.secho(f"  {'-' * 55}")
         for c in sem_courses:
             code = c.get("kcdm", "")
             name = c.get("kcmc", "") or c.get("kcmc_en", "")
-            credit = c.get("xf", 0)
+            credit = c.get("xf", 0) or 0
             teacher = c.get("dgjsmc", "") or ""
             display = f"{code} {name}" if code else name
-            click.echo(f"    {display[:45]:<46} {credit:.1f}学分")
+            credit_txt = f" {credit:.1f}学分" if credit else ""
+            click.echo(f"    {display[:45]:<46}{credit_txt}")
             if teacher:
                 click.echo(f"      👤 {teacher}")
 
@@ -165,11 +197,7 @@ def grades_cmd(semester, export_path, as_json):
     if semester:
         semester = semester.replace("-", "")  # 2025-2026-2 → 2025-20262
 
-    try:
-        auth = auth_or_exit()
-    except AuthorizerError as e:
-        click.secho(f"❌  {e}", fg="red")
-        sys.exit(1)
+    auth = auth_or_exit()
 
     click.secho("📊 Fetching grades...", fg="cyan")
     try:
@@ -241,11 +269,7 @@ def evals_cmd(pending):
       已保存  (3)   = saved as draft, NOT submitted
       待评价  (0)   = not started
     """
-    try:
-        auth = auth_or_exit()
-    except AuthorizerError as e:
-        click.secho(f"❌  {e}", fg="red")
-        sys.exit(1)
+    auth = auth_or_exit()
 
     r = auth.get(
         "/personnelEvaluation/listObtainPersonnelEvaluationTasks",
@@ -340,11 +364,7 @@ def query_cmd(path, params, method):
     Example:
       tis.py query /personnelEvaluation/listObtainPersonnelEvaluationTasks yhdm=<sid> sfyp=0
     """
-    try:
-        auth = auth_or_exit()
-    except AuthorizerError as e:
-        click.secho(f"❌  {e}", fg="red")
-        sys.exit(1)
+    auth = auth_or_exit()
 
     param_dict = {}
     for p in params:

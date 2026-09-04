@@ -1,10 +1,11 @@
 """See docs/courses.md."""
 
+import re
 from pathlib import Path as _Path
 
 SKILL_ROOT = _Path(__file__).resolve().parent.parent.parent.parent
 
-__all__ = ["run"]
+__all__ = ["run", "get_current_courses"]
 
 from sustech_survival.exceptions import NetworkError, SessionExpired
 from sustech_survival.sso import TISAuth
@@ -104,3 +105,58 @@ def run(semester: str = None, format: str = "table"):
             print(f"    {display[:45]:<46} {credit:.1f}学分")
             if teacher:
                 print(f"      👤 {teacher}")
+
+
+def get_current_courses():
+    """Return the current (in-progress) semester's enrolled courses.
+
+    The grade API that ``get_courses()`` reads only returns semesters that
+    already have posted grades — a just-started term (e.g. Fall 2026 in its
+    first weeks) has none, so ``get_courses()`` shows nothing for it. The live
+    term's courses come from the personal timetable (xszykb) instead.
+
+    Returns a list of dicts shaped like ``get_courses()`` rows ({kcdm, kcmc,
+    xnxqmc, xf, dgjsmc}); ``xf`` (credits) is not provided by the timetable
+    source and is left 0 (the CLI renders it conditionally). Rows are
+    de-duplicated by course name, so a lecture and its experiment keep their
+    separate rows while multiple meetings of one course collapse to one.
+    """
+    from sustech_survival.tis import schedule as _sched
+    try:
+        sem = _sched.current_semester()
+        rows = _sched.semester_schedule()
+    except SessionExpired:
+        raise
+    except RuntimeError as e:
+        raise SessionExpired(f"TIS schedule auth failed: {e}") from e
+    except Exception as e:
+        # Flaky off-campus / proxy connections surface here as raw requests
+        # exceptions from the schedule helpers; fold them into NetworkError so
+        # the CLI can print a clean message instead of a traceback.
+        raise NetworkError(f"TIS schedule query failed: {e}") from e
+
+    term_label = sem.get("XNXQ") or ""
+    seen = set()
+    out = []
+    for r in rows:
+        name = (r.get("KCWZSM") or "").strip()
+        if not name:
+            name = (r.get("SKSJ") or "").split("\n")[0].strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        # Course code is embedded in the 教学班 id, e.g. 2026-2027-1-CS323-001.
+        code = ""
+        m = re.match(r"^\d{4}-\d{4}-\d-(.+?)-\d+$", r.get("RWH") or "")
+        if m:
+            code = m.group(1)
+        lines = (r.get("SKSJ") or "").split("\n")
+        teacher = re.sub(r"[\[\]]", "", lines[1]).strip() if len(lines) > 1 else ""
+        out.append({
+            "kcdm": code,
+            "kcmc": name,
+            "xnxqmc": term_label,
+            "xf": 0,
+            "dgjsmc": teacher,
+        })
+    return out
