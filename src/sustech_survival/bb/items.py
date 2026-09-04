@@ -186,7 +186,7 @@ def _bb_session_for_discovery():
     # Refresh only if the in-memory cache is empty. We don't probe+refresh
     # on every call — that would do a full CAS login on every from_submission_page
     # call, which is slow and unnecessary.
-    if not auth.session_cache:
+    if not auth._session_cache:
         if not auth.refresh():
             raise RuntimeError(
                 "BB auth not initialized and refresh() failed — re-login required"

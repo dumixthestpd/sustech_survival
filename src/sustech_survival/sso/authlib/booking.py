@@ -14,7 +14,7 @@
 #
 # The Authorizer base class ships a LegacyAdapter that breaks on newer
 # urllib3 (see reference `ehall-booking-venue-2026-06-15.md`); we override
-# get_ticket_cookies() with a hand-rolled session that doesn't need it.
+# `_get_ticket_cookies()` with a hand-rolled session that doesn't need it.
 # =============================================================================
 
 from sustech_survival import _net
@@ -51,7 +51,7 @@ class BookingAuth(Authorizer):
     """Headless login for the ehall 鍦哄湴棰勭害 sub-app (booking.sustech.edu.cn).
 
     Subclass of Authorizer 鈥?does NOT inherit from CASAuthorizer (the
-    LegacyAdapter inside CASAuthorizer.get_ticket_cookies throws on newer
+    LegacyAdapter inside `CASAuthorizer._get_ticket_cookies()` throws on newer
     urllib3). We hand-roll the CAS POST + token handshake here.
 
     Storage: in-memory only (_session_cache + self._token).

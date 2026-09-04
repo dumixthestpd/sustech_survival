@@ -117,7 +117,7 @@ def _bb_session() -> requests.Session:
     have to remember.
     """
     auth = BBAuth()
-    if not auth.session_cache:
+    if not auth._session_cache:
         if not auth.refresh():
             raise RuntimeError(
                 "BB auth not initialized and refresh() failed — re-login required"
