@@ -382,6 +382,10 @@ class SelectCourseClient:
                                          # in the same response 鈥?verified live)
             "p_xktjz": None,
             "p_chaxunxh": "",
+            # TIS expects the active round code in both fields for a
+            # personal-selection query; leaving this blank can return an
+            # empty result even while the round is open.
+            "p_chaxunxkfsdm": round_code or "",
             "p_gjz": keyword or "",
             "p_skjs": teacher or "",
             "p_xn": self._sem.xn,
@@ -407,7 +411,7 @@ class SelectCourseClient:
             "p_kcdm_js": "",
             "p_kcdm_cxrw": "",
             "p_kcdm_cxrw_zckc": "",
-            "p_kc_gjz": "",
+            "p_kc_gjz": keyword or "",
             "p_xzcxtjz_nj": "",
             "p_xzcxtjz_yx": "",
             "p_xzcxtjz_zy": "",
@@ -416,7 +420,6 @@ class SelectCourseClient:
             "p_sfxsgwckb": "1",
             "p_skyy": skyy_code,
             "p_sfmxzj": "",
-            "p_chaxunxkfsdm": "",
             "cxsfmt": dq.get("cxsfmt", "0"),
             "mxpylx": "1",
             "pageNum": str(page),

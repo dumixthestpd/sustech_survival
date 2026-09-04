@@ -119,3 +119,25 @@ class TestCourseFromApi:
     def test_invalid_capacity_string_returns_none(self):
         c = Course.from_api({"kcdm": "X", "kcmc": "Y", "zrl": "abc"})
         assert c.capacity is None
+
+    def test_current_personal_selection_count_fields(self):
+        c = Course.from_api({
+            "kcdm": "CS217", "kcmc": "数据结构与算法分析（H）",
+            "zrl": "60", "bksrl": "60", "yxzrs": "58",
+        })
+        assert c.capacity == 60
+        assert c.enrolled == 58
+
+    def test_undergraduate_selection_count_fallback(self):
+        c = Course.from_api({
+            "kcdm": "CS207", "kcmc": "数字逻辑",
+            "zrl": "120", "bksrl": "120", "bksyxrs": "117",
+        })
+        assert c.enrolled == 117
+
+    def test_selection_count_capacity_fallback(self):
+        c = Course.from_api({
+            "kcdm": "HUM032", "kcmc": "写作与交流",
+            "zrl": "35", "yxzrlrs": "34",
+        })
+        assert c.enrolled == 34

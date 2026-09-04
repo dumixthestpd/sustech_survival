@@ -170,6 +170,31 @@ def test_write_dry_run_forwards_dry_run_flag():
     assert c.add_course.call_args.kwargs["dry_run"] is True
 
 
+@pytest.mark.parametrize("path", [
+    "/api/tis/add",
+    "/api/tis/drop",
+    "/api/tis/add-to-cart",
+    "/api/tis/remove-from-cart",
+])
+def test_web_write_routes_default_to_dry_run(path, monkeypatch):
+    """HTTP write proxies must be safe when ``dry_run`` is omitted."""
+    from sustech_survival.selectcourse import api as web_api
+    from sustech_survival.webui.app import create_app
+
+    captured = {}
+
+    def fake_write(action, rwh, *, dry_run, **kwargs):
+        captured.update(action=action, rwh=rwh, dry_run=dry_run)
+        return {"dry_run": dry_run}
+
+    monkeypatch.setattr(web_api, "_write", fake_write)
+    app = create_app(skin="default")
+    response = app.test_client().post(path, json={"rwh": "TEST-RWH"})
+
+    assert response.status_code == 200
+    assert captured["dry_run"] is True
+
+
 # ── each api submodule imports and exposes its core entrypoints ────────────
 
 def test_api_submodules_export_entrypoints():

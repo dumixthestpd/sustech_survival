@@ -666,7 +666,7 @@ def register(reg: CollectorRegistry) -> None:
     def api_add():
         b = request.get_json(silent=True) or {}
         return _write("add", b.get("rwh", ""),
-                      dry_run=b.get("dry_run", False),
+                      dry_run=b.get("dry_run", True),
                       ignore_conflicts=b.get("ignore_conflicts"),
                       ignore_zero_capacity=b.get("ignore_zero_capacity"),
                       pylx=b.get("pylx"))
@@ -675,7 +675,7 @@ def register(reg: CollectorRegistry) -> None:
     def api_drop():
         b = request.get_json(silent=True) or {}
         return _write("drop", b.get("rwh", ""),
-                      dry_run=b.get("dry_run", False),
+                      dry_run=b.get("dry_run", True),
                       pylx=b.get("pylx"),
                       xkfsdm=b.get("xkfsdm"))
 
@@ -683,7 +683,7 @@ def register(reg: CollectorRegistry) -> None:
     def api_add_cart():
         b = request.get_json(silent=True) or {}
         return _write("add_to_cart", b.get("rwh", ""),
-                      dry_run=b.get("dry_run", False),
+                      dry_run=b.get("dry_run", True),
                       pylx=b.get("pylx"),
                       xkfsdm=b.get("xkfsdm"))
 
@@ -691,7 +691,7 @@ def register(reg: CollectorRegistry) -> None:
     def api_remove_cart():
         b = request.get_json(silent=True) or {}
         return _write("remove_from_cart", b.get("rwh", ""),
-                      dry_run=b.get("dry_run", False),
+                      dry_run=b.get("dry_run", True),
                       pylx=b.get("pylx"),
                       xkfsdm=b.get("xkfsdm"))
 
