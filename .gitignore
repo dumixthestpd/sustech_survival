@@ -149,3 +149,10 @@ CHANGELOG.md
 
 # Real-network verification tests (need credentials + TIS reachability)
 live_tests/
+
+# profile.md contains PII (SID, name, phone). Never commit it — gen via
+# `sustech profile` which writes to ~/.sustech_survival/profile.md by default.
+# Also block the legacy cwd-default name in case someone runs the old
+# gen_usr_profile path manually.
+sustech_profile.md
+profile.md

@@ -114,7 +114,7 @@ def courses_cmd(semester):
 
     click.secho("📚 Fetching courses...", fg="cyan")
     try:
-        from sustech_survival.tis.courses import _get_courses
+        from sustech_survival.tis.courses import get_courses
         courses = get_courses(auth.session, semester=semester)
     except (SessionExpired, NetworkError) as e:
         click.secho(f"❌  {e}", fg="red")
@@ -157,7 +157,9 @@ def courses_cmd(semester):
               help="Filter by semester (e.g. '2025-20262' or '2025-2026-2')")
 @click.option("--export", "-e", "export_path", default=None,
               help="Export to CSV file")
-def grades_cmd(semester, export_path):
+@click.option("--json", "as_json", is_flag=True,
+              help="Emit JSON instead of a text table")
+def grades_cmd(semester, export_path, as_json):
     """Show grades from TIS."""
     # Normalize semester format if provided
     if semester:
@@ -186,6 +188,11 @@ def grades_cmd(semester, export_path):
         )
         return
 
+    if as_json:
+        import json as _json
+        click.echo(_json.dumps([format_grade_row(g) for g in grades], ensure_ascii=False, indent=2))
+        return
+
     if export_path:
         import csv
         with open(export_path, "w", newline="", encoding="utf-8-sig") as f:
@@ -199,17 +206,21 @@ def grades_cmd(semester, export_path):
         return
 
     gpa, total_creds = calc_gpa(grades)
-    click.secho(f"\n{'-' * 60}", fg="cyan")
+    click.secho(f"\n{'-' * 78}", fg="cyan")
     click.secho(f"  {len(grades)} 门课  |  GPA: {gpa}  |  总学分: {total_creds:.0f}")
-    click.secho(f"{'-' * 60}\n")
+    click.secho(f"{'-' * 78}\n", fg="cyan")
+    # Header so the score/credit/type columns don't look like random numbers.
+    click.secho(f"  {'课程 (code)':<44} {'分数':>5}  {'学分':>4}  {'性质':<6}  学期", fg="cyan")
     for g in grades:
         row = format_grade_row(g)
         code = row.get("课程代码", "")
         name = row.get("课程名称", "")
         score = row.get("分数", "-")
+        credit = row.get("学分", "")
         nature = row.get("性质", "")
-        display = f"{code} {name}" if code else name
-        click.echo(f"  {display[:44]:<45} {score:>5}  {nature}")
+        term = row.get("学期", "")
+        display = f"{code} {name}".strip() if code else name
+        click.echo(f"  {display[:42]:<44} {score:>5}  {credit:>4}  {nature:<6}  {term}")
     click.echo("")
 
 
@@ -478,6 +489,18 @@ def campus_schedule_cmd(semester, full, as_json, as_csv) -> None:
         # Plain text — default
         for row in rows:
             click.echo(str(row))
+
+
+# -- Classroom inquiry + booking ---------------------------------------------
+# `tis/classroom/cli.py` is a self-contained click group; mount it under the
+# TIS CLI so `sustech tis classroom {rooms,room,refresh,...}` works. Without
+# this registration, dispatching into the package name raises
+# `is a package and cannot be directly executed` (Click tries to invoke the
+# package itself as a __main__).
+
+from .classroom.cli import cli as _classroom_cli  # noqa: E402
+
+cli.add_command(_classroom_cli)
 
 
 # -- Main ----------------------------------------------------------------------

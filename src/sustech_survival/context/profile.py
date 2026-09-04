@@ -32,9 +32,10 @@ _BLANK_MD = """\
 ## Identity
 - **SID**     : {{sid}}
 - **Name**    : {{name}}
-- **Department** : {{department}}
+- **Department** : {{department}}  ({{dept_code}})
 - **Enrollment** : {{class_name}}
-- **Year/track** : {{major}}
+- **Year/track** : {{major}} ({{level}}, track={{track}})
+- **Phone**   : {{phone}}
 
 ## Academic
 - **Current term**   : {{current_semester}}
@@ -104,14 +105,41 @@ def fetch_profile(*, semester=None) -> dict[str, Any]:
     sem = semester if semester is not None else Semester.current()
 
     me = _get_json(auth, "/user/me")
+    # TIS /user/me field mapping (verified 2026-09 against the live endpoint):
+    #   yhdm      → TIS user code (numeric SID)
+    #   xm        → Chinese name
+    #   xm_en     → English name
+    #   bmdm      → department code (e.g. "020020")
+    #   bmmc      → department name (e.g. "材料科学与工程系")
+    #   bmmc_en   → department name EN
+    #   pyccm     → 培养层次码 (e.g. "03" = 本科, "02" = 硕士)
+    #   pylx      → 培养类型 (e.g. "1")
+    #   lxdh      → phone (mobile)
+    # Major (zymc) and email (dzz_em) are NOT returned by /user/me — they
+    # live on a different endpoint or have to be inferred from the class
+    # roster. Kept as (unknown) with a TODO until we find the right call.
+    _PYCCM_TO_LEVEL = {
+        "01": "专科",
+        "02": "硕士",
+        "03": "本科",
+        "04": "博士",
+    }
+    pyccm_code = (me.get("pyccm") or "").strip()
+    pyccm_label = _PYCCM_TO_LEVEL.get(pyccm_code, pyccm_code)
+
     profile = {
-        "sid": _scalar(me, "sid", "xh", "yhdm") or "(unknown)",
+        "sid": _scalar(me, "sid", "yhdm", "xh") or "(unknown)",
         "name": _scalar(me, "xm", "name", "trueName") or "(unknown)",
-        "department": _scalar(me, "szmc", "ssmc", "department", "deptName") or "(unknown)",
+        "department": _scalar(me, "bmmc", "department", "ssmc", "szmc", "deptName") or "(unknown)",
         "class_name": _scalar(me, "ssmc", "bj", "className", "szbj") or "(unknown)",
         "major": _scalar(me, "zymc", "major", "zy") or "(unknown)",
         "user_code": _scalar(me, "yhdm", "sid") or "(unknown)",
         "email": _scalar(me, "email", "dzz_em") or "(unknown)",
+        # New fields: phone + 培养层次 + 培养类型
+        "phone": _scalar(me, "lxdh", "mobile", "phone") or "(unknown)",
+        "level": pyccm_label or "(unknown)",
+        "track": _scalar(me, "pylx") or "(unknown)",
+        "dept_code": _scalar(me, "bmdm") or "(unknown)",
     }
 
     # Enrolled courses for the current term — TIS schedule endpoint.
@@ -170,7 +198,6 @@ def gen_usr_profile(path: Optional[str] = None, *, template: Optional[str] = Non
         3. renders the template, writing it to ``path``.
     """
     from datetime import datetime
-    import os
 
     values = fetch_profile()
     values.setdefault("generated_at", datetime.now().strftime("%Y-%m-%d %H:%M"))
@@ -191,7 +218,18 @@ def gen_usr_profile(path: Optional[str] = None, *, template: Optional[str] = Non
     import re
     rendered = re.sub(r"\{\{[a-zA-Z0-9_]+\}\}", "(unknown)", rendered)
 
-    out = Path(path) if path else Path(os.getcwd()) / "sustech_profile.md"
+    # Default write path: the user's config dot-directory, NOT cwd. Writing
+    # PII (SID + name) to whatever directory the agent happens to be in is a
+    # footgun — it silently drops a profile.md next to any project the user is
+    # working in. We use ``config_root()`` so we respect the same $SUSTECH_HOME
+    # override the rest of the package honours (and avoid the iron-law #12
+    # ban on raw ``Path.home()`` access outside sso/authorizer.py).
+    # Users can still pass an explicit --output to override.
+    if path:
+        out = Path(path)
+    else:
+        from sustech_survival._cache import config_root
+        out = config_root() / "profile.md"
     out = out.expanduser().resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(rendered, encoding="utf-8")

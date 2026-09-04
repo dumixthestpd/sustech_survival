@@ -101,7 +101,7 @@ def test_faculty_commands_import_parent_package(monkeypatch):
         def get(self, slug):
             return _Record("Ada")
 
-        def search(self, query, dept=None, limit=10):
+        def search(self, query, dept=None, limit=10, full=True):
             return [_Record("Ada")]
 
         def render(self, slug):

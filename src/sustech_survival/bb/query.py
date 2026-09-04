@@ -402,6 +402,21 @@ def type_stats_items(*args, **kwargs):
 def print_stats(stats, courses=None):
     if courses is None:
         courses = {}
+    # Backward compat: accept the raw item list from discover_all_items and
+    # derive the aggregate stats dict here. Previously this expected a
+    # precomputed dict and crashed with `AttributeError: 'list' has no .get`
+    # when callers passed the discovery result directly.
+    if isinstance(stats, list):
+        items = stats
+        type_counts: dict = {}
+        for it in items:
+            t = (it.get("type") if isinstance(it, dict) else None) or "?"
+            type_counts[t] = type_counts.get(t, 0) + 1
+        stats = {
+            "total_courses": len({(it.get("course_name") if isinstance(it, dict) else None) for it in items if isinstance(it, dict)}),
+            "total_items": len(items),
+            "item_types": type_counts,
+        }
     print(f"\n📊 BB Live Statistics")
     print(f"{'='*50}")
     print(f"  Total courses:  {stats.get('total_courses', '?')}")

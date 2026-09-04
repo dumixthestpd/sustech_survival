@@ -132,6 +132,11 @@ def _parse_current_network_block(text: str) -> dict | None:
       - Channel: 52 (5GHz, 40MHz)
       - Security: WPA2 Enterprise  (or "None")
       - Signal / Noise: -52 dBm / -98 dBm  → signal_dbm
+
+    Note on "Security: None": for SUSTech's captive-portal networks
+    (SUSTC-Wifi / SUSTC-Wifi-5G) this is correct — the L2 link layer is open
+    and authentication happens at L3 via the web portal. Don't mistake it
+    for a misconfiguration.
     """
     lines = text.splitlines()
     i = 0

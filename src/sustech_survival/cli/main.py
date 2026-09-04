@@ -369,11 +369,21 @@ def faculty_get(slug: str, as_json: bool) -> None:
 
 @faculty_cmd.command(name="search", help="Live keyword search.")
 @click.argument("query")
-@click.option("--dept", default=None, help="Restrict to one department.")
+@click.option("--dept", default=None, help="Restrict to one department (recommended; cross-dept search is ~10x slower).")
 @click.option("--limit", type=int, default=10)
-def faculty_search(query: str, dept: str | None, limit: int) -> None:
+@click.option("--full/--lightweight", default=False,
+              help="Fetch every profile HTML for richer scoring (slower). Default lightweight uses index-page name/title only.")
+def faculty_search(query: str, dept: str | None, limit: int, full: bool) -> None:
     from ..faculty import faculty as _fc
-    hits = _fc.search(query, dept=dept, limit=limit)
+    # Cross-dept search without --dept is ~10 minutes — warn loudly instead
+    # of letting the CLI hang silently for hundreds of seconds.
+    if dept is None:
+        click.echo(
+            "[faculty] no --dept given — searching all 50+ departments. "
+            "Pass --dept '<院系名>' to scope to one dept (~5–30s instead of ~10min).",
+            err=True,
+        )
+    hits = _fc.search(query, dept=dept, limit=limit, full=full)
     scope = dept or "ALL"
     click.echo(f"# search: {query!r}  scope={scope}  → {len(hits)} hits")
     for f in hits:
@@ -914,7 +924,7 @@ def context_cmd(level: str, as_json: bool) -> None:
 
 @click.command(name="profile", help="Fill and write the user's SUSTech profile.")
 @click.option("-o", "--output", "output", default=None,
-              help="Where to write the profile Markdown (default: ./sustech_profile.md).")
+              help="Where to write the profile Markdown. Default: ~/.sustech_survival/profile.md (NOT cwd — profile.md contains PII).")
 @click.option("--json", "as_json", is_flag=True, help="Print the profile as JSON instead.")
 def profile_cmd(output: Optional[str], as_json: bool) -> None:
     """Build the user profile from live SUSTech data and render it.

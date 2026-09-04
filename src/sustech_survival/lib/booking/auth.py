@@ -200,11 +200,11 @@ class LibBookingAuth(CASAuthorizer):
         return 401/403 if the cookie is dead, and the client auto-relogs
         via `_looks_auth_error` + retry.
         """
-        if not self.session_cache:
+        if not self._session_cache:
             return False, "No session — login needed."
-        if "ic-cookie" not in self.session_cache:
+        if "ic-cookie" not in self._session_cache:
             return False, "No ic-cookie in session — login needed."
-        return True, f"Session has {len(self.session_cache)} cookies"
+        return True, f"Session has {len(self._session_cache)} cookies"
 
     def ensure(self) -> Tuple[bool, str]:
         """check() + auto-refresh if needed. In-memory only — no disk I/O."""

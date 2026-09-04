@@ -29,7 +29,14 @@ def cli():
               help="Don't use existing cache; force refresh")
 def refresh_cmd(sort: str, max_pages: int, no_cache: bool):
     """Refresh the NCES course index cache."""
-    s = NCESScraper(use_cache=not no_cache)
+    # NCESScraper keeps a 5-min in-memory TTL by design and does not
+    # accept a `use_cache` kwarg — the CLI `--no-cache` flag was a leftover
+    # from an earlier API and triggered `TypeError: __init__() got an
+    # unexpected keyword argument 'use_cache'`. `no_cache` is preserved on
+    # the click option for backwards-compatible help text but is currently
+    # a no-op (callers wanting truly fresh data can pass a new session).
+    s = NCESScraper()
+    _ = no_cache
     n = s.refresh_index(sort=sort, max_pages=max_pages, progress=True)
     click.echo(f"✓ cached {n} courses at {s.CACHE_FILE}")
 

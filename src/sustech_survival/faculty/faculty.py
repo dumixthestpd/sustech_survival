@@ -162,6 +162,7 @@ class FacultyClient:
         *,
         dept: Optional[str] = None,
         limit: int = 20,
+        full: bool = True,
     ) -> List[Faculty]:
         """Live keyword search. Fetches profiles in parallel as needed.
 
@@ -170,6 +171,10 @@ class FacultyClient:
             dept:  restrict to one department (recommended for speed)
                    If None, searches all 50+ departments (~10 min)
             limit: max results
+            full:  if True (default), fetch every profile HTML for richer
+                   scoring (research_interests weight=8 dominates). If False,
+                   score only on the lightweight IndexCard fields (name,
+                   title, department) — ~10x faster but lower quality.
 
         Returns:
             list[Faculty] sorted by relevance desc, each carrying
@@ -180,9 +185,9 @@ class FacultyClient:
         terms = query.split()
 
         if dept is not None:
-            candidates = self.list(dept, full=True)
+            candidates = self.list(dept, full=full)
         else:
-            candidates = self._candidates_for_cross_dept_search(terms, limit * 3)
+            candidates = self._candidates_for_cross_dept_search(terms, limit * 3, full=full)
 
         hits: List[Faculty] = []
         for f in candidates:
@@ -252,8 +257,16 @@ class FacultyClient:
                 out[idx] = fac
         return [f for f in out if f is not None]
 
-    def _candidates_for_cross_dept_search(self, terms: List[str], cap: int) -> List[Faculty]:
-        """Cross-dept search: prefilter on IndexCard fields, fetch survivors."""
+    def _candidates_for_cross_dept_search(
+        self, terms: List[str], cap: int, *, full: bool = True
+    ) -> List[Faculty]:
+        """Cross-dept search: prefilter on IndexCard fields, fetch survivors.
+
+        If ``full`` is False, only the lightweight IndexCards are used and the
+        survivors' profile HTMLs are NOT fetched — search runs in ~10s instead
+        of ~10min across 50+ departments, at the cost of lower relevance
+        (research_interests / biography fields aren't available).
+        """
 
         def card_match(card: IndexCard) -> bool:
             # Include slug so ASCII queries like "wangf" / "chengc" reach profile scoring
@@ -270,6 +283,12 @@ class FacultyClient:
                 continue
             matched_cards = [c for c in cards if card_match(c)]
             if not matched_cards:
+                continue
+            if not full:
+                # Lightweight: build Faculty from IndexCard directly, skip profile fetch
+                out.extend(Faculty.from_index_card(c) for c in matched_cards)
+                if len(out) >= cap:
+                    return out
                 continue
             slugs = [c.slug for c in matched_cards]
             for fac in self._fetch_profiles_parallel(slugs, on_error="warn"):

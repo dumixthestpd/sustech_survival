@@ -6,9 +6,10 @@
 ## Identity
 - **SID**     : {{sid}}
 - **Name**    : {{name}}
-- **Department** : {{department}}
+- **Department** : {{department}}  ({{dept_code}})
 - **Enrollment** : {{class_name}}
-- **Year/track** : {{major}}
+- **Year/track** : {{major}} ({{level}}, track={{track}})
+- **Phone**   : {{phone}}
 
 ## Academic
 - **Current term**   : {{current_semester}}
