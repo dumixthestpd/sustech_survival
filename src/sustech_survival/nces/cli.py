@@ -43,10 +43,15 @@ def refresh_cmd(sort: str, max_pages: int, no_cache: bool):
 
 @cli.command("lookup")
 @click.argument("code")
-def lookup_cmd(code: str):
-    """Look up a course by TIS-style code (e.g. HUM032)."""
+@click.option("--teacher", default="", help="Restrict to one NCES teacher's section.")
+def lookup_cmd(code: str, teacher: str):
+    """Look up a course by TIS-style code (e.g. HUM032).
+
+    Resolves through the NCES search, so a code with several sections reports
+    which teacher's section the numbers belong to.
+    """
     s = NCESScraper()
-    c = s.lookup(code)
+    c, exact, alternatives = s.search_course(code, teacher)
     if c is None:
         raise click.ClickException(f"course not found: {code}")
     click.echo(f"{c.name} · {c.teacher}  [{c.code}]")
@@ -57,6 +62,11 @@ def lookup_cmd(code: str):
     click.echo(f"  Grading:    {c.grading[0]:>10} ({c.grading[1]:.0f}%)")
     click.echo(f"  Takeaways:  {c.takeaways[0]:>10} ({c.takeaways[1]:.0f}%)")
     click.echo(f"  {c.direct_url}")
+    if not teacher and alternatives:
+        names = ", ".join(sorted({a.teacher for a in alternatives if a.teacher}))
+        click.echo(f"  other sections of {c.code}: {names or '(unnamed)'}")
+    if teacher and not exact:
+        click.echo(f"  note: no section matched teacher {teacher!r}; showing the top-reviewed section")
 
 
 @cli.command("status")
