@@ -113,6 +113,7 @@ nav:
       - WS: ws.md
       - E-Hall Booking: booking.md
       - Language Tutoring (CLE): cle.md
+      - Open-Source Mirror: mirror.md
       - Library Booking: lib-booking.md
       - Library (Primo): lib.md
       - Calendar: calendar.md
@@ -140,6 +141,7 @@ nav:
           - PMS: modules/pms.md
           - Booking: modules/booking.md
           - CLE: modules/cle.md
+          - Mirror: modules/mirror.md
           - Library: modules/lib.md
           - Calendar: modules/calendar.md
           - Resources: modules/resources.md
