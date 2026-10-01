@@ -15,8 +15,10 @@ get cluttered as we add content categories):
       batch                   bulk-fetch from your TIS history
 
   mirror program <sub>...     — 本科人才培养方案 (per-major plans)
-      get <major> [--year Y]  download a training-program PDF
       years                   list years available
+      url <year>...           print the URL that exists (PDF or year directory)
+      list <year>             the per-major PDFs inside a year directory
+      get <year>              download it; a directory year wants --all/--index
 
   mirror handbook <sub>...    — 书院/迎新 handbooks
       get <kind>              download a handbook PDF
@@ -319,6 +321,95 @@ def syllabus_batch(semester, out_dir, overwrite, limit, dry_run, extract):
 PROGRAM_PREFIX = "/courses/本科人才培养方案"
 
 
+def _unquote(name: str) -> str:
+    """Nginx autoindex hrefs are percent-encoded; show the decoded name."""
+    from urllib.parse import unquote
+    return unquote(name)
+
+
+def _autoindex_rows(url_or_path: str) -> list[tuple[str, str, bool]]:
+    """Parse an Nginx autoindex page → [(display name, href, is_dir)] (raises on HTTP error).
+
+    One parser for every listing call site (`mirror list`, `mirror program list`),
+    because the mirror's HTML shape is a single thing that can rot in one place.
+    Pass either an absolute URL or a mirror-root-relative path. ``href`` stays
+    percent-encoded: the mirror 404s a raw UTF-8 path, so links are built from it
+    as-is, while the display name is decoded for humans.
+    """
+    import re
+    url = url_or_path if url_or_path.startswith("http") else (
+        f"{_syllabus.MIRROR_BASE}/{url_or_path.strip('/')}"
+    )
+    if not url.endswith("/"):
+        url += "/"
+    r = _syllabus._session().get(url, timeout=_net.service_timeout("mirror"))
+    if r.status_code in (403, 404):
+        raise SyllabusNotFound(f"no listing at {url} (HTTP {r.status_code})")
+    if r.status_code != 200:
+        raise SyllabusFetchError(f"mirror returned {r.status_code} for {url}")
+    rows: list[tuple[str, str, bool]] = []
+    for href, _title in re.findall(r'<a\s+href="([^"]+)"[^>]*>([^<]+)</a>', r.text):
+        if href in ("../", "/", "") or href.startswith("?"):
+            continue
+        rows.append((_unquote(href), href, href.endswith("/")))
+    return rows
+
+
+def _pdf_rows(rows) -> list[tuple[str, str]]:
+    """``[(display name, href)]`` for the PDFs in an autoindex listing."""
+    return [(name, href) for name, href, is_dir in rows
+            if not is_dir and name.lower().endswith(".pdf")]
+
+
+def _program_base() -> str:
+    """Mirror base for 本科人才培养方案, percent-encoded.
+
+    The mirror 404s a raw UTF-8 path (``curl`` sends the bytes as-is) while
+    `requests` silently percent-encodes, so every URL is built encoded here and
+    the same string is used for probing, printing and downloading.
+    """
+    from urllib.parse import quote
+    return f"{_syllabus.MIRROR_BASE}/courses/{quote('本科人才培养方案')}"
+
+
+def _program_stem(year: str) -> str:
+    """``2024级本科人才培养方案``, percent-encoded."""
+    from urllib.parse import quote
+    return quote(f"{year}本科人才培养方案")
+
+
+def _program_urls(year: str) -> tuple[str, str]:
+    """The two shapes a training-plan year takes on the mirror.
+
+    Most years are a *directory* of per-major PDFs (``00-<year>级通识培养方案.pdf``,
+    ``01-<year>级金融数学专业本科人才培养方案.pdf``, …); the newest year is
+    sometimes one whole-school PDF instead (2025级 was). Both are probed, so the
+    command never prints a URL that 404s.
+    """
+    base, stem = _program_base(), _program_stem(year)
+    return (f"{base}/{stem}.pdf", f"{base}/{stem}/")
+
+
+def _probe_code(url: str) -> int:
+    """HEAD probe → status code; 0 when the request itself failed."""
+    try:
+        return _syllabus._session().head(
+            url, allow_redirects=True, timeout=_net.service_timeout("mirror")
+        ).status_code
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def _program_kind(year: str) -> tuple[str, str]:
+    """('file', url) | ('dir', url) | ('missing', '')."""
+    file_url, dir_url = _program_urls(year)
+    if _probe_code(file_url) == 200:
+        return "file", file_url
+    if _probe_code(dir_url) == 200:
+        return "dir", dir_url
+    return "missing", ""
+
+
 @mirror_cmd.group(name="program",
                   help="Undergrad training programs (本科人才培养方案).")
 def program_cmd() -> None:
@@ -359,38 +450,147 @@ def program_years():
         click.echo(f"  {f}")
 
 
-@program_cmd.command(name="get",
-                     help="Download a training-plan PDF. <year> like '2024级'.")
+def _download(url: str, target, *, overwrite: bool) -> bool:
+    """Fetch ``url`` into ``target``. True when the file is on disk afterwards."""
+    from pathlib import Path
+    target = Path(target)
+    if target.exists() and not overwrite:
+        click.secho(f"  ⏭  {target} already exists (pass --overwrite)", fg="yellow")
+        return True
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        r = _syllabus._session().get(
+            url, allow_redirects=True, timeout=_net.service_timeout("mirror")
+        )
+    except Exception as e:  # noqa: BLE001
+        click.secho(f"  ❌ fetch error: {e}", fg="red")
+        return False
+    if r.status_code != 200:
+        click.secho(f"  ❌ mirror returned {r.status_code} for {url}", fg="red")
+        return False
+    target.write_bytes(r.content)
+    click.secho(f"  ✅ {target} ({len(r.content):,} bytes)", fg="green")
+    return True
+
+
+@program_cmd.command(name="url",
+                     help="Print the training-plan URL that exists (probes the PDF, then the directory).")
+@click.argument("years", nargs=-1, required=True)
+def program_url_cmd(years):
+    """Resolve each year, so a printed URL is one that answers 200.
+
+    A year is usually a *directory* of per-major PDFs, so that is the URL
+    printed for it; `sustech mirror program list <year>` shows what is inside.
+    The probe is one HEAD request per candidate — the mirror's layout changes
+    (2019–2024 are directories, 2025级 was a single whole-school PDF), so the
+    offline guess this replaced printed 404s for most years.
+    """
+    failed = False
+    for year in years:
+        kind, url = _program_kind(year)
+        if kind == "missing":
+            click.secho(f"  ❌ no training plan for {year} (tried the PDF and the directory)",
+                        fg="red", err=True)
+            failed = True
+            continue
+        click.echo(url)
+        if kind == "dir" and sys.stdout.isatty():
+            click.secho(f"  → {year} is a directory of per-major PDFs; "
+                        f"see `sustech mirror program list {year}`", fg="yellow", err=True)
+    if failed:
+        sys.exit(1)
+
+
+@program_cmd.command(name="list", help="List the per-major PDFs inside a year directory.")
 @click.argument("year")
+def program_list(year):
+    """Print ``<name><TAB><url>`` for every PDF the year holds."""
+    kind, url = _program_kind(year)
+    if kind == "missing":
+        click.secho(f"  ❌ no training plan for {year}", fg="red")
+        sys.exit(1)
+    if kind == "file":
+        click.echo(f"{year}本科人才培养方案.pdf\t{url}")
+        return
+    try:
+        rows = _autoindex_rows(f"{_program_base()}/{_program_stem(year)}")
+    except SyllabusError as e:
+        click.secho(f"  ❌ {e}", fg="red")
+        sys.exit(1)
+    prefix = f"{_program_base()}/{_program_stem(year)}"
+    pdfs = _pdf_rows(rows)
+    for name, href in pdfs:
+        click.echo(f"{name}\t{prefix}/{href}")
+    if not pdfs:
+        click.secho(f"  ❌ no PDFs inside {year}本科人才培养方案/", fg="red")
+        sys.exit(1)
+
+
+@program_cmd.command(name="get",
+                     help="Download a training plan (a directory year takes --all or --index).")
+@click.argument("year")
+@click.option("--all", "all_majors", is_flag=True, default=False,
+              help="Directory years: download every PDF into <out>/<year>本科人才培养方案/.")
+@click.option("--index", default=None,
+              help="Directory years: download only the PDF starting with this, e.g. 01.")
 @click.option("-o", "--output", "out_dir", default=None,
               help="Destination directory. Default: ~/.sustech_survival/downloads/program")
 @click.option("--overwrite", is_flag=True)
-def program_get(year, out_dir, overwrite):
-    """Download a single per-year training-program compendium PDF."""
+def program_get(year, all_majors, index, out_dir, overwrite):
+    """Download a training plan.
+
+    A whole-school year downloads its compendium PDF; a *directory* year
+    downloads the ``00-<year>级通识培养方案.pdf`` that anchors it, unless
+    ``--all`` (every major) or ``--index NN`` (one major) says otherwise.
+    """
     from pathlib import Path
-    target_dir = Path(out_dir).expanduser() if out_dir else (
-        _cache.config_root() / "downloads" / "program"
-    )
-    target_dir.mkdir(parents=True, exist_ok=True)
-    target = target_dir / f"{year}本科人才培养方案.pdf"
-    if target.exists() and not overwrite:
-        click.secho(f"  ⏭  {target} already exists (pass --overwrite)", fg="yellow")
+    kind, url = _program_kind(year)
+    if kind == "missing":
+        click.secho(f"  ❌ no training plan for {year} (tried the PDF and the directory)", fg="red")
+        click.secho("  Try `sustech mirror program years`.", fg="yellow")
+        sys.exit(1)
+    target_root = (Path(out_dir).expanduser() if out_dir
+                   else _cache.config_root() / "downloads" / "program")
+    if kind == "file":
+        if not _download(url, target_root / f"{year}本科人才培养方案.pdf", overwrite=overwrite):
+            sys.exit(1)
         return
-    url = f"{_syllabus.MIRROR_BASE}{PROGRAM_PREFIX}/{year}本科人才培养方案.pdf"
     try:
-        r = _syllabus._session().get(url, allow_redirects=True, timeout=_net.service_timeout("mirror"))
-    except Exception as e:  # noqa: BLE001
-        click.secho(f"  ❌ fetch error: {e}", fg="red")
+        rows = _autoindex_rows(f"{_program_base()}/{_program_stem(year)}")
+    except SyllabusError as e:
+        click.secho(f"  ❌ {e}", fg="red")
         sys.exit(1)
-    if r.status_code == 404:
-        click.secho(f"  ❌ 404 at {url}", fg="red")
-        click.secho("  Try `sustech mirror program years` to see available years.", fg="yellow")
+    pdfs = _pdf_rows(rows)
+    if not (all_majors or index):
+        # A directory year does not name a single PDF. The 00-…通识 compendium
+        # anchors every year directory (this is what the TypeScript lane has
+        # always fetched), so take that one and point at --all/--index for the
+        # per-major plans.
+        anchor = [p for p in pdfs if p[0].startswith("00-")][:1] or pdfs[:1]
+        if not anchor:
+            click.secho(f"  ❌ no PDFs inside {year}本科人才培养方案/", fg="red")
+            sys.exit(1)
+        click.secho(f"{year} is a directory of {len(pdfs)} PDFs; taking the 00-通识 compendium "
+                    f"(--all for every major, --index NN for one)", fg="yellow")
+        pdfs = anchor
+    if index:
+        picked = [(n, h) for n, h in pdfs if n.startswith(f"{index}-") or n == index]
+        if not picked:
+            click.secho(f"  ❌ nothing in {year}本科人才培养方案/ starts with {index!r}", fg="red")
+            click.secho(f"  See: sustech mirror program list {year}", fg="yellow")
+            sys.exit(1)
+        pdfs = picked
+    prefix = f"{_program_base()}/{_program_stem(year)}"
+    target_dir = target_root / f"{year}本科人才培养方案"
+    ok = fail = 0
+    for name, href in pdfs:
+        if _download(f"{prefix}/{href}", target_dir / name, overwrite=overwrite):
+            ok += 1
+        else:
+            fail += 1
+    click.echo(f"\n{ok} downloaded, {fail} failed.")
+    if fail:
         sys.exit(1)
-    if r.status_code != 200:
-        click.secho(f"  ❌ mirror returned {r.status_code}", fg="red")
-        sys.exit(1)
-    target.write_bytes(r.content)
-    click.secho(f"  ✅ {target} ({len(r.content):,} bytes)", fg="green")
 
 
 # -- handbook + map placeholders --------------------------------------------
@@ -543,25 +743,17 @@ def mirror_list(subpath):
       sustech mirror list /courses
       sustech mirror list /courses/syllabus
     """
-    url = f"{_syllabus.MIRROR_BASE}/{subpath.strip('/')}/"
     try:
-        r = _syllabus._session().get(url, timeout=_net.service_timeout("mirror"))
-    except Exception as e:  # noqa: BLE001
-        click.secho(f"  ❌ fetch error: {e}", fg="red")
+        rows = _autoindex_rows(subpath)
+    except SyllabusNotFound as e:
+        click.secho(f"  ❌ {e}", fg="red")
         sys.exit(1)
-    if r.status_code == 403:
-        click.secho("  ❌ 403 Forbidden — directory listing disabled for this path.", fg="red")
+    except SyllabusFetchError as e:
+        click.secho(f"  ❌ {e}", fg="red")
         sys.exit(1)
-    if r.status_code != 200:
-        click.secho(f"  ❌ mirror returned {r.status_code}", fg="red")
-        sys.exit(1)
-    import re
-    rows = re.findall(r'<a\s+href="([^"]+)"[^>]*>([^<]+)</a>', r.text)
-    for href, title in rows:
-        if href in ("../", "/", "") or href.startswith("?"):
-            continue
-        marker = "/" if href.endswith("/") else " "
-        click.echo(f"  {marker} {href}")
+    for name, _href, is_dir in rows:
+        marker = "/" if is_dir else " "
+        click.echo(f"  {marker} {name}")
 
 
 # -- shared helper -----------------------------------------------------------

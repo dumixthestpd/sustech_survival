@@ -233,3 +233,145 @@ def test_fetch_course_json_returns_none_when_no_data(monkeypatch):
     fake_auth = MagicMock(ensure=MagicMock(return_value=(False, "no auth")))
     monkeypatch.setattr("sustech_survival.sso.TISAuth", lambda: fake_auth)
     assert t.fetch_course_json("DOESNOTEXIST") is None
+
+
+# -- program (本科人才培养方案): the 404 regression ---------------------------
+#
+# 2019–2024 are *directories* of per-major PDFs on the mirror, only 2025级 is a
+# single whole-school PDF, and the mirror 404s a raw UTF-8 path. The old code
+# guessed `<year>本科人才培养方案.pdf` offline, so every directory year printed
+# and downloaded a URL that answered 404. These tests pin the resolved behavior.
+
+
+def _mirror_cli():
+    from sustech_survival.mirror import cli as m
+    return m
+
+
+def test_program_urls_are_percent_encoded():
+    m = _mirror_cli()
+    pdf_url, dir_url = m._program_urls("2024级")
+    assert pdf_url.startswith("https://mirrors.sustech.edu.cn/courses/%E6%9C%AC%E7%A7%91")
+    assert pdf_url.endswith(".pdf") and dir_url.endswith("/")
+    assert "%E7%BA%A7" in pdf_url          # 级 encoded — the raw byte path 404s
+    assert "级" not in pdf_url
+
+
+def test_program_kind_tries_the_pdf_then_the_directory(monkeypatch):
+    m = _mirror_cli()
+    pdf_url, dir_url = m._program_urls("2024级")
+    monkeypatch.setattr(m, "_probe_code", lambda url: 200 if url == pdf_url else 404)
+    assert m._program_kind("2024级") == ("file", pdf_url)
+    monkeypatch.setattr(m, "_probe_code", lambda url: 200 if url == dir_url else 404)
+    assert m._program_kind("2024级") == ("dir", dir_url)
+    monkeypatch.setattr(m, "_probe_code", lambda url: 404)
+    assert m._program_kind("2024级") == ("missing", "")
+
+
+def test_pdf_rows_skips_directories_and_non_pdf():
+    m = _mirror_cli()
+    rows = [("a.pdf", "a.pdf", False), ("sub/", "sub/", True), ("notes.txt", "notes.txt", False)]
+    assert m._pdf_rows(rows) == [("a.pdf", "a.pdf")]
+
+
+def test_program_url_prints_the_directory_url(monkeypatch):
+    from click.testing import CliRunner
+    m = _mirror_cli()
+    _pdf, dir_url = m._program_urls("2024级")
+    monkeypatch.setattr(m, "_probe_code", lambda url: 200 if url == dir_url else 404)
+    res = CliRunner().invoke(m.mirror_cmd, ["program", "url", "2024级"])
+    assert res.exit_code == 0, res.output
+    assert res.output.strip() == dir_url
+
+
+def test_program_url_fails_loudly_for_an_unknown_year(monkeypatch):
+    from click.testing import CliRunner
+    m = _mirror_cli()
+    monkeypatch.setattr(m, "_probe_code", lambda url: 404)
+    res = CliRunner().invoke(m.mirror_cmd, ["program", "url", "1999级"])
+    assert res.exit_code == 1
+    assert "no training plan" in res.output
+
+
+def test_program_list_prints_name_and_encoded_url(monkeypatch):
+    from click.testing import CliRunner
+    m = _mirror_cli()
+    _pdf, dir_url = m._program_urls("2024级")
+    monkeypatch.setattr(m, "_program_kind", lambda year: ("dir", dir_url))
+    monkeypatch.setattr(m, "_autoindex_rows", lambda url: [
+        ("00-2024级通识培养方案.pdf",
+         "00-2024%E7%BA%A7%E9%80%9A%E8%AF%86%E5%9F%B9%E5%85%BB%E6%96%B9%E6%A1%88.pdf", False),
+        ("subdir/", "subdir/", True),
+    ])
+    res = CliRunner().invoke(m.mirror_cmd, ["program", "list", "2024级"])
+    assert res.exit_code == 0, res.output
+    lines = [ln for ln in res.output.strip().splitlines() if ln.strip()]
+    assert len(lines) == 1, res.output
+    name, _, url = lines[0].partition("\t")
+    assert name == "00-2024级通识培养方案.pdf"
+    assert url.startswith(dir_url) and url.endswith(".pdf")
+
+
+def test_program_list_of_a_file_year_prints_that_one_pdf(monkeypatch):
+    from click.testing import CliRunner
+    m = _mirror_cli()
+    pdf_url, _dir = m._program_urls("2025级")
+    monkeypatch.setattr(m, "_program_kind", lambda year: ("file", pdf_url))
+    res = CliRunner().invoke(m.mirror_cmd, ["program", "list", "2025级"])
+    assert res.exit_code == 0, res.output
+    assert res.output.strip() == f"2025级本科人才培养方案.pdf\t{pdf_url}"
+
+
+def test_program_get_bare_on_a_directory_year_takes_the_00_compendium(monkeypatch, tmp_path):
+    """Both lanes agree: a bare `get <dir year>` fetches the 00-通识 compendium."""
+    from click.testing import CliRunner
+    m = _mirror_cli()
+    _pdf, dir_url = m._program_urls("2024级")
+    monkeypatch.setattr(m, "_program_kind", lambda year: ("dir", dir_url))
+    monkeypatch.setattr(m, "_autoindex_rows", lambda url: [
+        ("00-2024级通识培养方案.pdf", "00-x.pdf", False),
+        ("01-2024级金数.pdf", "01-y.pdf", False),
+    ])
+    seen = []
+    monkeypatch.setattr(m, "_download",
+                        lambda url, target, overwrite: seen.append((url, str(target))) or True)
+    res = CliRunner().invoke(m.mirror_cmd, ["program", "get", "2024级", "-o", str(tmp_path)])
+    assert res.exit_code == 0, res.output
+    assert len(seen) == 1, seen
+    assert seen[0][0] == f"{dir_url}00-x.pdf"
+    assert "--all" in res.output and "--index" in res.output
+
+
+def test_program_get_index_downloads_only_that_pdf(monkeypatch, tmp_path):
+    from click.testing import CliRunner
+    m = _mirror_cli()
+    _pdf, dir_url = m._program_urls("2024级")
+    monkeypatch.setattr(m, "_program_kind", lambda year: ("dir", dir_url))
+    monkeypatch.setattr(m, "_autoindex_rows", lambda url: [
+        ("00-通识.pdf", "00-x.pdf", False),
+        ("01-金数.pdf", "01-y.pdf", False),
+    ])
+    seen = []
+    monkeypatch.setattr(m, "_download",
+                        lambda url, target, overwrite: seen.append((url, str(target))) or True)
+    res = CliRunner().invoke(
+        m.mirror_cmd, ["program", "get", "2024级", "--index", "01", "-o", str(tmp_path)])
+    assert res.exit_code == 0, res.output
+    assert len(seen) == 1, seen
+    url, target = seen[0]
+    assert url == f"{dir_url}01-y.pdf"
+    assert target.replace("\\", "/").endswith("2024级本科人才培养方案/01-金数.pdf")
+
+
+def test_program_get_file_year_downloads_the_pdf(monkeypatch, tmp_path):
+    from click.testing import CliRunner
+    m = _mirror_cli()
+    pdf_url, _dir = m._program_urls("2025级")
+    monkeypatch.setattr(m, "_program_kind", lambda year: ("file", pdf_url))
+    seen = []
+    monkeypatch.setattr(m, "_download",
+                        lambda url, target, overwrite: seen.append((url, str(target))) or True)
+    res = CliRunner().invoke(m.mirror_cmd, ["program", "get", "2025级", "-o", str(tmp_path)])
+    assert res.exit_code == 0, res.output
+    assert seen and seen[0][0] == pdf_url
+    assert seen[0][1].replace("\\", "/").endswith("2025级本科人才培养方案.pdf")
