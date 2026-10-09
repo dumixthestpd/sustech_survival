@@ -1,96 +1,171 @@
-﻿# =============================================================================
-# PMS (鑱斿垱鎵撳嵃绠＄悊绯荤粺) 鈥?Unifound cloud print authorizer
-# =============================================================================
-# PMS does NOT use SUSTech CAS directly. Its login flow is custom:
-#
-#   1. POST /api/client/Auth/GetAuthToken     鈫?{ szToken }
-#   2. GET  /api/client/Auth/PublicKey         鈫?{ publicKey, nonceStr }
-#   3. Encrypt `password + ";" + nonceStr` with the RSA public key (PKCS#1 v1.5)
-#   4. POST /api/client/Auth/Login            { szLogonName, szPassword, szToken }
-#      鈫?sets `OSESSIONID` cookie on the pms.sustech.edu.cn domain
-#
-# However, the page is also CAS-fronted: visiting any PMS URL while unauth'd
-# redirects through https://cas.sustech.edu.cn/cas/login and the back-end
-# links your CAS identity to your print account at first login (creates
-# the account if needed). If the print account doesn't exist, /Auth/Check
-# returns the message "浜戞墦鍗扮郴缁熷唴娌℃湁鎮ㄧ殑璐﹀彿淇℃伅锛岃鑱旂郴鍥句功棣嗘妧鏈儴澶勭悊".
-#
-# This authorizer handles BOTH paths:
-#   - login_password()      鈥?direct username/password (requires print account)
-#   - login_via_cas()       鈥?full CAS SSO flow; lets PMS auto-link account
-#
-# After either path, call `auth.check()` to confirm the session is alive
-# before doing anything else.
-# =============================================================================
+"""PMS authentication through its dynamic SSO entry and the shared CAS provider.
 
-from sustech_survival import _net
+The direct RSA print-account login remains an explicit alternative; campus CAS
+credentials are used by ensure() through the website's SSO flow.
+"""
+
 import json
 from typing import Optional, Tuple
+from urllib.parse import parse_qs, urljoin, urlsplit
 
 import requests
-from Crypto.PublicKey import RSA
+from bs4 import BeautifulSoup
 from Crypto.Cipher import PKCS1_v1_5 as PKCS1Padding
+from Crypto.PublicKey import RSA
 
-from ..authorizer import Authorizer, AuthorizerError, UA
+from sustech_survival import _net
+from sustech_survival.exceptions import NetworkError
+
 from ...pms.pms import OFF_CAMPUS_HINT, _looks_off_campus
-
+from ..authorizer import UA, AuthorizerError
+from ..providers.cas import CASAuthorizer
 
 PMS_BASE = "https://pms.sustech.edu.cn"
-PMS_SERVICE = f"{PMS_BASE}/client/new/cprintPc/"
+PMS_SERVICE = f"{PMS_BASE}/client/new/cprintPc/printDoc.html"
 PMS_API = f"{PMS_BASE}/api"
 
 
-class PMSAuth(Authorizer):
-    """Headless login for the SUSTech 鑱斿垱 PMS cloud print system.
+class PMSAuth(CASAuthorizer):
+    """In-memory PMS SSO session, retaining cookies from the SSO bootstrap."""
 
-    Subclass of Authorizer 鈥?does NOT inherit from CASAuthorizer.
-    PMS uses its own RSA-encrypted login API rather than standard CAS.
-
-    Storage: in-memory only (`_session_cache`). Use refresh() to re-populate.
-    """
-
+    SERVICE = "pms"
     BASE_URL = PMS_BASE
     SERVICE_URL = PMS_SERVICE
-
-    # -- Session management ----------------------------------------------------
+    SUBMIT_VALUE = ""
 
     def check(self) -> Tuple[bool, str]:
-        """Is the current session still authenticated? Calls /Auth/Check.
-        Auto-refreshes if no session cached."""
+        """Read Auth/Check without starting another login or disclosing identity."""
+        self._check_needs_login = not bool(self._session_cache)
         if not self._session_cache:
-            if not self._refresh():
-                return False, "PMSAuth session not available"
-        sess = self._api_session()
-        r = sess.post(
-            f"{PMS_API}/client/Auth/Check",
-            timeout=_net.timeouts().service_timeout("pms"),
-        )
-        if _looks_off_campus(r):
-            return False, OFF_CAMPUS_HINT
+            return False, "No PMS session; login needed"
         try:
+            r = self._api_session().post(
+                f"{PMS_API}/client/Auth/Check", timeout=_net.service_timeout("pms")
+            )
+            if _looks_off_campus(r):
+                return False, OFF_CAMPUS_HINT
+            if r.status_code == 401:
+                self._check_needs_login = True
+                return False, "PMS session expired (HTTP 401)"
+            r.raise_for_status()
             data = r.json()
-        except Exception:
-            return False, f"Non-JSON response from /Auth/Check (HTTP {r.status_code})"
-
-        if data.get("code") == 0:
-            name = (data.get("result") or {}).get("szTrueName", "<unknown>")
-            return True, f"Logged in as {name}"
-        return False, data.get("message", "Not authenticated")
+            if not isinstance(data, dict):
+                raise ValueError
+        except requests.RequestException as exc:
+            return False, f"PMS Auth/Check failed ({type(exc).__name__})"
+        except ValueError:
+            return False, f"Non-JSON/invalid response from Auth/Check (HTTP {r.status_code})"
+        if data.get("code") == 0 and isinstance(data.get("result"), dict):
+            return True, "Logged in to PMS"
+        self._check_needs_login = data.get("code") == 4294967295
+        return False, f"PMS authentication unavailable (code={data.get('code')})"
 
     def ensure(self) -> Tuple[bool, str]:
-        """check() + auto-refresh via ticket cookies, no disk I/O."""
+        """Reuse a verified session, or complete one normal dynamic CAS login."""
         ok, reason = self.check()
-        if ok:
-            return True, reason
-        # Try refresh via ticket cookies
-        self._refresh()
+        if ok or not self._check_needs_login:
+            return ok, reason
+        if not self._refresh():
+            return False, self._refresh_error_message()
         return self.check()
+
+    def _get_ticket_cookies(self, username: str, password: str) -> dict:
+        # Use the same cookie jar for SSoPage, authcenter, CAS and the callback.
+        sess = self._build_cas_session()
+        sess.headers.update({"User-Agent": UA})
+        try:
+            r = sess.get(
+                f"{PMS_API}/client/Auth/SSoPage",
+                params={"backurl": PMS_SERVICE},
+                timeout=_net.service_timeout("pms"),
+            )
+            if _looks_off_campus(r):
+                raise AuthorizerError(OFF_CAMPUS_HINT)
+            r.raise_for_status()
+            try:
+                data = r.json()
+            except ValueError:
+                raise AuthorizerError("PMS SSO entry returned non-JSON content") from None
+            if (
+                not isinstance(data, dict)
+                or data.get("code") != 0
+                or not isinstance(data.get("result"), str)
+            ):
+                raise AuthorizerError("PMS SSO entry is unavailable")
+            entry = urljoin(PMS_BASE, data["result"])
+            for _ in range(6):
+                target = urlsplit(entry)
+                if (
+                    target.scheme == "https"
+                    and target.netloc == "cas.sustech.edu.cn"
+                    and target.path == "/cas/login"
+                ):
+                    break
+                if target.scheme != "https" or target.netloc != "pms.sustech.edu.cn":
+                    raise AuthorizerError("Unexpected PMS SSO host; stopped")
+                r = sess.get(entry, allow_redirects=False, timeout=_net.service_timeout("pms"))
+                if _looks_off_campus(r):
+                    raise AuthorizerError(OFF_CAMPUS_HINT)
+                r.raise_for_status()
+                if r.status_code not in self.REDIRECT_STATUS or not r.headers.get("Location"):
+                    raise AuthorizerError("Interactive or unsupported PMS SSO page; stopped")
+                entry = urljoin(entry, r.headers["Location"])
+            else:
+                raise AuthorizerError("PMS SSO redirect limit reached")
+            services = parse_qs(target.query).get("service", [])
+            callback = urlsplit(services[0]) if len(services) == 1 else None
+            if (
+                not callback
+                or callback.scheme != "https"
+                or callback.netloc != "pms.sustech.edu.cn"
+            ):
+                raise AuthorizerError("Unexpected PMS CAS callback; stopped")
+            # The callback includes dynamic state. Never hard-code or log it.
+            self.SERVICE_URL = services[0]
+            try:
+                ticket_url = self._post_cas(sess, username, password)
+            except AuthorizerError:
+                raise AuthorizerError(
+                    "PMS CAS login failed or requires interactive authentication"
+                ) from None
+            destination = urlsplit(ticket_url)
+            if destination.scheme != "https" or destination.netloc != "pms.sustech.edu.cn":
+                raise AuthorizerError("Unexpected PMS ticket destination; stopped")
+            self._exchange_ticket(sess, ticket_url)
+            cookies = {
+                c.name: c.value
+                for c in sess.cookies
+                if c.domain.lstrip(".") == "pms.sustech.edu.cn"
+            }
+            if not cookies:
+                raise AuthorizerError("PMS SSO did not establish a session")
+            self._pms_session = sess
+            return cookies
+        except requests.RequestException as exc:
+            raise NetworkError(f"PMS SSO request failed ({type(exc).__name__})") from None
+
+    def _fetch_execution(self, sess: requests.Session) -> str:
+        r = sess.get(self._cas_url, headers=self._headers, timeout=self._login_timeout())
+        r.raise_for_status()
+        soup = BeautifulSoup(r.text, "html.parser")
+        if soup.select(
+            'input[name*="captcha" i], input[id*="captcha" i], .g-recaptcha, .h-captcha, iframe[src*="recaptcha"], input[name="otp"]'
+        ):
+            raise AuthorizerError("Interactive CAS challenge; stopped before credential POST")
+        node = soup.select_one('input[name="execution"]')
+        if not node or not node.get("value"):
+            raise AuthorizerError("CAS login form unavailable; stopped before credential POST")
+        return node["value"]
+
+    def _build_session(self) -> requests.Session:
+        # Preserve cookie domains/paths and rotations from the live SSO session.
+        if getattr(self, "_pms_session", None) is not None:
+            return self._pms_session
+        return super()._build_session()
 
     # -- Direct login (RSA + token) --------------------------------------------
 
-    def login_password(
-        self, username: Optional[str] = None, password: Optional[str] = None
-    ) -> str:
+    def login_password(self, username: Optional[str] = None, password: Optional[str] = None) -> str:
         """Login with print-system username + password (RSA-encrypted).
 
         Returns the szTrueName (Chinese display name) on success.
@@ -105,7 +180,9 @@ class PMSAuth(Authorizer):
         sess.headers.update({"User-Agent": UA, "Referer": PMS_SERVICE})
 
         # Step 1: get auth token
-        r = sess.post(f"{PMS_API}/client/Auth/GetAuthToken", timeout=_net.timeouts().service_timeout("pms"))
+        r = sess.post(
+            f"{PMS_API}/client/Auth/GetAuthToken", timeout=_net.timeouts().service_timeout("pms")
+        )
         if _looks_off_campus(r):
             raise AuthorizerError(OFF_CAMPUS_HINT)
         tok = r.json()
@@ -114,7 +191,9 @@ class PMSAuth(Authorizer):
         sz_token = tok["szToken"]
 
         # Step 2: get public key + nonce
-        r = sess.get(f"{PMS_API}/client/Auth/PublicKey", timeout=_net.timeouts().service_timeout("pms"))
+        r = sess.get(
+            f"{PMS_API}/client/Auth/PublicKey", timeout=_net.timeouts().service_timeout("pms")
+        )
         if _looks_off_campus(r):
             raise AuthorizerError(OFF_CAMPUS_HINT)
         pk = r.json()
@@ -143,12 +222,12 @@ class PMSAuth(Authorizer):
         out = r.json()
         if out.get("code") != 0:
             raise AuthorizerError(
-                f"Login failed: {out.get('message', 'unknown')} "
-                f"(code={out.get('code')})"
+                f"Login failed: {out.get('message', 'unknown')} " f"(code={out.get('code')})"
             )
 
         # Pull OSESSIONID (and any other auth cookies) into the in-memory cache
         cookies_dict = {c.name: c.value for c in sess.cookies}
+        self._pms_session = sess
         self._set_session(cookies_dict)
 
         result = out.get("result") or {}
@@ -157,46 +236,14 @@ class PMSAuth(Authorizer):
     # -- CAS SSO login --------------------------------------------------------
 
     def login_via_cas(self, headless: bool = False) -> str:
-        """Full CAS SSO flow via Playwright. Use when print account doesn't exist
-        yet 鈥?the PMS back-end will auto-link the CAS identity on first login.
+        """Complete the normal SSO flow without browser automation.
+
+        ``headless`` is retained for compatibility; no browser is launched.
         """
-        from playwright.sync_api import sync_playwright
-
-        username, password = self._read_creds()
-
-        pw = sync_playwright().start()
-        browser = pw.chromium.launch(headless=headless)
-        ctx = browser.new_context()
-        page = ctx.new_page()
-        try:
-            page.goto(PMS_SERVICE, wait_until="commit", timeout=_net.page_timeout_ms("pms"))
-            page.wait_for_load_state("networkidle", timeout=_net.page_timeout_ms("pms"))
-
-            if "cas.sustech.edu.cn" in page.url:
-                page.fill('input[type="text"], input[name="username"]', username)
-                page.fill('input[type="password"], input[name="password"]', password)
-                btn = page.get_by_role("button", name="鐧诲綍")
-                if not btn.count():
-                    btn = page.locator("button:has-text('鐧诲綍')").first
-                btn.click()
-                page.wait_for_load_state("networkidle", timeout=_net.page_timeout_ms("pms"))
-
-            # Drain any further redirects
-            for _ in range(5):
-                page.wait_for_timeout(1500)
-                if page.url.startswith(PMS_SERVICE) and "cas.sustech.edu.cn" not in page.url:
-                    break
-
-            cookies = {c["name"]: c["value"] for c in ctx.cookies(PMS_BASE)}
-            self._set_session(cookies)
-
-            ok, msg = self.check()
-            if not ok:
-                raise AuthorizerError(f"CAS login landed but not authed: {msg}")
-            return msg
-        finally:
-            browser.close()
-            pw.stop()
+        ok, reason = self.ensure()
+        if not ok:
+            raise AuthorizerError(reason)
+        return reason
 
     # -- Refresh ----------------------------------------------------------------
 
@@ -209,14 +256,17 @@ class PMSAuth(Authorizer):
     def _api_session(self) -> requests.Session:
         """A requests.Session pre-loaded with the in-memory cookies + JSON headers."""
         sess = self.session
-        sess.headers.update({
-            "Accept": "application/json, text/javascript, */*; q=0.01",
-            "X-Requested-With": "XMLHttpRequest",
-        })
+        sess.headers.update(
+            {
+                "Accept": "application/json, text/javascript, */*; q=0.01",
+                "X-Requested-With": "XMLHttpRequest",
+            }
+        )
         return sess
 
 
 # -- Crypto helper ------------------------------------------------------------
+
 
 def _rsa_encrypt(public_key_pem: str, plaintext: str) -> str:
     """Encrypt `plaintext` with RSA public key, return base64-encoded ciphertext.
@@ -228,6 +278,7 @@ def _rsa_encrypt(public_key_pem: str, plaintext: str) -> str:
     either form.
     """
     import base64
+
     pem = _to_pem(public_key_pem)
     key = RSA.import_key(pem)
     cipher = PKCS1Padding.new(key)
@@ -244,12 +295,11 @@ def _to_pem(key: str) -> str:
         return key
     # Wrap raw base64 in PEM markers, breaking lines at 64 chars per RFC 7468
     b64 = "".join(key.split())
-    lines = [b64[i:i + 64] for i in range(0, len(b64), 64)]
+    lines = [b64[i : i + 64] for i in range(0, len(b64), 64)]
     body = "\n".join(lines)
     return f"-----BEGIN PUBLIC KEY-----\n{body}\n-----END PUBLIC KEY-----"
 
 
 # -- Module-level singleton ---------------------------------------------------
 
-_auth = PMSAuth()  # resolves skill_root by walking up looking for credentials.txt
-
+_auth = PMSAuth()  # credentials resolved by the shared Authorizer on demand

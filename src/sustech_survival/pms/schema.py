@@ -23,10 +23,11 @@ PAPER_A3 = 8
 COLOR_BW = 1
 COLOR_COLOR = 2
 
-# Duplex codes (dwDuplex)
+# Match the PMS queue list: 2 -> vdup/long edge, 3 -> hdup/short edge.
+# The upload page reverses these labels; use the queue convention throughout.
 DUPLEX_SINGLE = 1
-DUPLEX_SHORT_EDGE = 2
-DUPLEX_LONG_EDGE = 3
+DUPLEX_SHORT_EDGE = 3
+DUPLEX_LONG_EDGE = 2
 
 # dwProperty bitmask for printer capabilities (printDev.js, backGong)
 PROPERTY_PRINT = 1
@@ -203,10 +204,12 @@ class PrintJob:
     paper: str = ""           # "A4"/"A3" (from first paper detail)
     dw_total_pages: int = 0   # total across all paper sizes
     is_color: bool = False
-    is_duplex: bool = False
-    duplex_label: str = ""    # 单面 / 双面短边 / 双面长边
+    is_duplex: Optional[bool] = None
+    duplex_label: str = ""    # Matches the PMS queue list
     date_str: str = ""
     time_str: str = ""
+    duplex_flag: str = ""     # Preserve the server token
+    duplex_edge: Optional[str] = None
 
     @classmethod
     def from_api(cls, raw: dict) -> "PrintJob":
@@ -220,20 +223,22 @@ class PrintJob:
         else:
             paper_detail = paper_detail_raw
 
-        attribe = raw.get("szAttribe", "")
-        # Duplex: parse attribe flags
-        if "single" in attribe:
-            duplex_label = "单面"
-            duplex_code = DUPLEX_SINGLE
-        elif "vdup" in attribe:
-            duplex_label = "双面长边"
-            duplex_code = DUPLEX_LONG_EDGE
-        elif "hdup" in attribe:
-            duplex_label = "双面短边"
-            duplex_code = DUPLEX_SHORT_EDGE
+        attribe = raw.get("szAttribe", "") or ""
+        flags = {f.strip() for f in attribe.split(",") if f.strip()}
+        duplex_flags = flags & {"vdup", "hdup"}
+        duplex_edge = None
+        if "single" in flags and not duplex_flags:
+            duplex_flag, duplex_label, is_duplex = "single", "单面", False
+        elif len(duplex_flags) == 1 and "single" not in flags:
+            duplex_flag = next(iter(duplex_flags))
+            duplex_edge, duplex_label = {
+                "vdup": ("long", "双面长边"),
+                "hdup": ("short", "双面短边"),
+            }[duplex_flag]
+            is_duplex = True
         else:
-            duplex_label = "单面"
-            duplex_code = DUPLEX_SINGLE
+            duplex_flag = ",".join(sorted(duplex_flags | (flags & {"single"})))
+            duplex_label, is_duplex = "单双面未确认", None
 
         # Paper info from first detail
         paper = ""
@@ -267,9 +272,11 @@ class PrintJob:
             file_name=raw.get("szJobName", ""),
             paper=paper,
             dw_total_pages=total,
-            is_color="color" in attribe,
-            is_duplex=duplex_code != DUPLEX_SINGLE,
+            is_color="color" in flags,
+            is_duplex=is_duplex,
             duplex_label=duplex_label,
+            duplex_flag=duplex_flag,
+            duplex_edge=duplex_edge,
             date_str=date_str,
             time_str=time_str,
         )

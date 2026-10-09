@@ -7,7 +7,6 @@ import pytest
 
 from sustech_survival.sso import cred_clear, cred_set
 from sustech_survival.sso.authlib.cnki import CNKIAuth
-from sustech_survival.sso.authlib.pms import PMSAuth
 from sustech_survival.sso.authlib.rsc import RSCAuthorizer
 from sustech_survival.sso.authlib.wos import WoSAuth
 
@@ -16,7 +15,6 @@ from sustech_survival.sso.authlib.wos import WoSAuth
     "auth_type,method",
     [
         (CNKIAuth, "login"),
-        (PMSAuth, "login_via_cas"),
         (RSCAuthorizer, "login"),
         (WoSAuth, "login"),
     ],

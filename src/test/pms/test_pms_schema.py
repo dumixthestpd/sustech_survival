@@ -164,16 +164,27 @@ class TestPrintJob:
         assert not j.is_duplex
         assert j.datetime_str == "2026.06.11 17:40:39"
 
-    def test_color_duplex_long(self):
+    def test_color_duplex_vdup_matches_queue_long_edge(self):
         j = PrintJob.from_api(self._raw(szAttribe="color,vdup,A4"))
         assert j.is_color
         assert j.is_duplex
+        assert j.duplex_flag == "vdup"
+        assert j.duplex_edge == "long"
         assert j.duplex_label == "双面长边"
 
-    def test_duplex_short(self):
+    def test_duplex_hdup_matches_queue_short_edge(self):
         j = PrintJob.from_api(self._raw(szAttribe="hdup,A4"))
         assert j.is_duplex
+        assert j.duplex_flag == "hdup"
+        assert j.duplex_edge == "short"
         assert j.duplex_label == "双面短边"
+
+    @pytest.mark.parametrize("flags", ["", "notvdup,", "single,hdup,", "vdup,hdup,"])
+    def test_missing_or_conflicting_flags_are_unknown(self, flags):
+        j = PrintJob.from_api(self._raw(szAttribe=flags))
+        assert j.is_duplex is None
+        assert j.duplex_edge is None
+        assert j.duplex_label == "单双面未确认"
 
     def test_color_pages_count(self):
         # Color pages counted separately
