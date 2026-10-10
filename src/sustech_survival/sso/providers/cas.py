@@ -10,19 +10,16 @@
 # No public methods. Authorizer base class handles the lifecycle.
 # =============================================================================
 
-import re
-import ssl
-import requests
-from ..authorizer import Authorizer, AuthorizerError, CAS_BASE, UA
-from sustech_survival.exceptions import InvalidCredentials, NetworkError
-from sustech_survival._net import timeout as _net_timeout, attempts as _net_attempts
+from urllib.parse import urlsplit
 
-# Constant used only inside the scoped legacy CAS SSL context below. It is NOT
-# applied process-wide: the legacy-TLS tweak belongs to the CAS session alone,
-# never to unrelated urllib3/requests traffic in the process (a former
-# import-time monkeypatch of urllib3.util.ssl_.create_urllib3_context was removed
-# for exactly that reason 鈥?it weakened TLS for every connection).
-_OP_LEGACY = getattr(ssl, 'OP_LEGACY_SERVER_CONNECT', 0x4)
+import requests
+from bs4 import BeautifulSoup
+
+from sustech_survival._net import attempts as _net_attempts
+from sustech_survival.exceptions import InvalidCredentials, NetworkError
+
+from .._tls import LegacyTLSAdapter
+from ..authorizer import Authorizer, AuthorizerError, CAS_BASE, UA
 
 # CAS/TIS are slow and flaky on VPN/off-campus links: a 10s read timeout
 # produced frequent false "CAS timeout" failures during session refresh
@@ -56,41 +53,55 @@ class CASAuthorizer(Authorizer):
         ``NetworkError`` if CAS is unreachable, or ``AuthorizerError`` for
         unexpected response formats.
         """
-        sess = self._build_cas_session()
-        sess.headers['User-Agent'] = UA
-        # Retry the whole flow on network flakiness (timeout / dropped
-        # connection). Each attempt builds a fresh session, so this is safe.
-        # Attempt count is configurable (config.json timeouts.cas_attempts).
-        last_err: Exception | None = None
+        last_error = "CAS authentication failed"
         for _attempt in range(_net_attempts("cas_attempts")):
+            sess = self._build_cas_session()
+            sess.headers["User-Agent"] = UA
+            stage, target = "CAS login", self._cas_url
             try:
                 ticket_url = self._post_cas(sess, username, password)
+                stage, target = "CAS ticket exchange", ticket_url
                 cookies = self._exchange_ticket(sess, ticket_url)
                 if not cookies:
-                    raise AuthorizerError(
-                        "No cookies received after CAS ticket exchange.")
+                    raise AuthorizerError("No cookies received after CAS ticket exchange.")
                 return cookies
-            except (requests.ConnectionError, requests.Timeout) as e:
-                last_err = e
-                # Rebuild the session (the old one may hold a half-open conn).
-                sess = self._build_cas_session()
-                sess.headers['User-Agent'] = UA
-                continue
-            except InvalidCredentials:
-                raise
-            except AuthorizerError:
-                raise
-        raise NetworkError(f"Cannot reach CAS at {self._cas_url}: {last_err}")
+            except requests.RequestException as exc:
+                # Exception strings can contain the ticket, cookies or proxy credentials.
+                request = getattr(exc, "request", None)
+                host = urlsplit(getattr(request, "url", None) or target).hostname or "unknown host"
+                kind = type(exc).__name__
+                if isinstance(exc, requests.exceptions.SSLError):
+                    kind = (
+                        "TLS legacy renegotiation disabled"
+                        if "UNSAFE_LEGACY_RENEGOTIATION_DISABLED" in str(exc)
+                        else "TLS handshake/certificate failure"
+                    )
+                response = getattr(exc, "response", None)
+                if response is not None:
+                    kind += f", HTTP {response.status_code}"
+                last_error = f"{stage} failed at {host} ({kind})"
+                if isinstance(exc, requests.exceptions.SSLError) or not isinstance(
+                    exc, (requests.ConnectionError, requests.Timeout)
+                ):
+                    sess.close()
+                    raise NetworkError(last_error) from None
+                # Retry only transient connection failures, with a fresh session.
+                sess.close()
+        raise NetworkError(last_error) from None
 
     def _fetch_execution(self, sess: requests.Session) -> str:
         r = sess.get(self._cas_url, headers=self._headers, timeout=self._login_timeout())
-        m = re.search(r'name="execution" value="([^"]+)"', r.text)
-        if not m:
-            raise AuthorizerError(
-                f"No execution token found at {self._cas_url}\n"
-                "CAS may be down or SERVICE_URL may be wrong."
-            )
-        return m.group(1)
+        r.raise_for_status()
+        soup = BeautifulSoup(r.text, "html.parser")
+        if soup.select(
+            'input[name*="captcha" i], input[id*="captcha" i], .g-recaptcha, '
+            '.h-captcha, iframe[src*="recaptcha"], input[name="otp"]'
+        ):
+            raise AuthorizerError("Interactive CAS challenge; stopped before credential POST")
+        node = soup.select_one('input[name="execution"]')
+        if not node or not node.get("value"):
+            raise AuthorizerError("CAS login form unavailable; stopped before credential POST")
+        return node["value"]
 
     def _post_cas(self, sess: requests.Session, username: str, password: str) -> str:
         exec_token = self._fetch_execution(sess)
@@ -112,8 +123,7 @@ class CASAuthorizer(Authorizer):
         )
         if r.status_code not in self.REDIRECT_STATUS:
             raise AuthorizerError(
-                f"CAS POST failed: HTTP {r.status_code}\n"
-                f"Response snippet: {r.text[:200]}"
+                f"CAS POST failed: HTTP {r.status_code}"
             )
         loc = r.headers.get("Location", "")
         if not loc:
@@ -131,31 +141,9 @@ class CASAuthorizer(Authorizer):
         return cookies
 
     def _build_cas_session(self) -> requests.Session:
-        """Build a requests Session for CAS login. Handles Primo's ancient TLS."""
-        legacy_ctx = ssl.create_default_context()
-        legacy_ctx.options |= _OP_LEGACY
-        legacy_ctx.check_hostname = False
-        legacy_ctx.verify_mode = ssl.CERT_NONE
-
-        from requests.adapters import HTTPAdapter
-
-        class LegacyAdapter(HTTPAdapter):
-            def init_poolmanager(self, *args, **kwargs):
-                kwargs["ssl_context"] = legacy_ctx
-                return super().init_poolmanager(*args, **kwargs)
-
-            def get_connection_with_tls_context(
-                self, request, verify, proxies=None, cert=None
-            ):
-                # requests adapter hardcodes cert_reqs=CERT_REQUIRED; we need
-                # verify=False so our custom SSL context (with legacy renegotiation
-                # and cert validation disabled) isn't overridden.
-                return super().get_connection_with_tls_context(
-                    request, verify=False, proxies=proxies, cert=cert
-                )
-
+        """Build a CAS session with the same TLS policy through proxies."""
         sess = requests.Session()
-        sess.mount("https://", LegacyAdapter())
+        sess.mount("https://", LegacyTLSAdapter())
         return sess
 
 

@@ -217,31 +217,23 @@ class LibAuth(CASAuthorizer):
     BASE_URL = "https://sustc.primo.exlibrisgroup.com.cn"
     SERVICE_URL = "https://sustc.primo.exlibrisgroup.com.cn/infra/casRedirect?ctx=/primaws"
 
+    def _build_cas_session(self):
+        # Retain real domains, paths and cookie rotations after ticket exchange.
+        self._lib_login_session = super()._build_cas_session()
+        return self._lib_login_session
+
     def _build_session(self):
-        """Session with SSL context that tolerates Primo's ancient TLS."""
-        import ssl
-        _OP_LEGACY = getattr(ssl, 'OP_LEGACY_SERVER_CONNECT', 0x4)
-        legacy_ctx = ssl.create_default_context()
-        legacy_ctx.options |= _OP_LEGACY
-        legacy_ctx.check_hostname = False
-        legacy_ctx.verify_mode = ssl.CERT_NONE
-
-        from requests.adapters import HTTPAdapter
-
-        class LegacyAdapter(HTTPAdapter):
-            def init_poolmanager(self, *args, **kwargs):
-                kwargs["ssl_context"] = legacy_ctx
-                return super().init_poolmanager(*args, **kwargs)
-
-            def get_connection_with_tls_context(
-                self, request, verify, proxies=None, cert=None
-            ):
-                return super().get_connection_with_tls_context(
-                    request, verify=False, proxies=proxies, cert=cert
-                )
+        """Session with Primo's scoped TLS policy, including proxy pools."""
+        login_session = getattr(self, "_lib_login_session", None)
+        if login_session is not None and self._session_cache == {
+            cookie.name: cookie.value for cookie in login_session.cookies
+        }:
+            return login_session
+        from ._tls import LegacyTLSAdapter
 
         sess = _requests.Session()
-        sess.mount("https://", LegacyAdapter())
+        sess.mount("https://", LegacyTLSAdapter())
+        sess.headers["User-Agent"] = UA
         self._apply_cookies(sess, self._session_cache)
         return sess
 

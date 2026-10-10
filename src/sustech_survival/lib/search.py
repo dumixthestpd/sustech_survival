@@ -1,21 +1,9 @@
 """sustech_survival.lib.search — SUSTech Library Primo book/article search.
 
-Auth:    sustech_survival.sso.LibAuth().ensure()  (CAS + Shibboleth)
-Fetch:   Playwright (Primo is a JS SPA; also its SSL config at
-         sustc.primo.exlibrisgroup.com.cn is broken — modern OpenSSL
-         refuses the unsafe legacy renegotiation, which kills any
-         Python-urllib/requests-based access. Chromium handles it.)
-
-Why HTML parsing (not REST API):
-  The Primo NG frontend at https://lib.sustech.edu.cn → "南科学术搜索"
-  POSTs to https://sustc-primo.hosted.exlibrisgroup.com.cn which 302-
-  redirects to https://sustc.primo.exlibrisgroup.com.cn (the broken-SSL
-  host). The detail page is the same SPA. There IS a public Primo PNX
-  REST API (/primaws/rest/pnxs?vid=...) but Ex Libris gates it behind
-  institutional auth and the same broken SSL — so we render the SPA in
-  Playwright and parse the rendered DOM. The DOM is AngularJS-driven but
-  stable enough that the .item-title / .result-item-text / prm-* selectors
-  used here will work across current releases.
+Authentication uses the shared CAS provider and a session-scoped TLS adapter
+that supports both direct and proxy connections. Playwright renders Primo's
+JavaScript search/detail pages. Read failures raise LibraryError; only a
+confirmed empty search window returns an empty list.
 
 Public API:
 
@@ -38,6 +26,8 @@ from __future__ import annotations
 from .. import _net
 
 import re
+import contextlib
+import sys
 import urllib.parse
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
@@ -88,15 +78,24 @@ class BookDetail:
     detail_url: str = ""
 
 
+class LibraryError(RuntimeError):
+    """Authentication, browser or Primo read failed; never an empty result."""
+
+
+PRIMO_BASE = "https://sustc.primo.exlibrisgroup.com.cn"
+RESULT_SELECTOR = "prm-brief-result-container, .list-item-primary-content.result-item-primary-content"
+EMPTY_SELECTOR = "prm-no-search-result, .no-results, .no-results-container"
+
+
 # -- Internal helpers ------------------------------------------------------
 
 
 def _ensure_auth():
-    """Lazy-import + CAS auth. Returns a tuple (sess, ok, reason).
-    `sess` is currently None (Playwright pulls cookies directly)."""
+    """Lazy-import CAS auth; diagnostics go to stderr, never JSON stdout."""
     from sustech_survival.sso import LibAuth
     auth = LibAuth()
-    ok, reason = auth.ensure()
+    with contextlib.redirect_stdout(sys.stderr):
+        ok, reason = auth.ensure()
     return auth, ok, reason
 
 
@@ -168,9 +167,9 @@ def _build_search_url(
 
     # Map our enum values to Primo's URL values.
     scope_map = {
-        "catalog": "catalog_scope",
-        "eresource": "eresource_scope",
-        "default": "default_scope",
+        "catalog": "MyInst_and_CI",
+        "eresource": "CentralIndex",
+        "default": "MyInstitution",
     }
     sort_map = {
         "relevance": "rank",
@@ -183,7 +182,7 @@ def _build_search_url(
         "vid": "86SUSTC_INST:86SUSTC",
         "lang": lang,
         "tab": "Everything",
-        "search_scope": scope_map.get(scope, "catalog_scope"),
+        "search_scope": scope_map.get(scope, "MyInst_and_CI"),
         "mode": mode,
         "displayMode": display_mode,
         "bulkSize": str(limit),
@@ -206,7 +205,7 @@ def _build_search_url(
     # NOTE: Primo URL facet format is `facet=rtype,include,Article,Book&facet=library,include,...`
     # Use a dict that supports duplicate keys — we'll emit multiple facet= params.
 
-    base = "https://sustc-primo.hosted.exlibrisgroup.com.cn/primo-explore/search"
+    base = f"{PRIMO_BASE}/discovery/search"
     qs = urllib.parse.urlencode(params)
 
     # Add duplicate-key facet params (urllib.urlencode drops dup keys).
@@ -234,19 +233,104 @@ def _extract_docid(url: str) -> str:
     return urllib.parse.unquote(m.group(1)) if m else ""
 
 
-def _playwright_page():
-    """Launch Chromium, return (playwright_obj, browser_context).
-
-    Returns (None, None) if Playwright isn't installed — callers detect
-    this and return [] / None gracefully."""
+def _playwright_page(*, headless=True):
+    """Launch the read-only Primo renderer; report missing dependencies clearly."""
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
-        return None, None
-    pw = sync_playwright().start()
-    browser = pw.chromium.launch(headless=True)
-    ctx = browser.new_context()
-    return pw, ctx
+        raise LibraryError(
+            "Library search requires the [playwright] extra and Chromium: "
+            "python -m pip install 'sustech_survival[playwright]'; "
+            "python -m playwright install chromium"
+        ) from None
+    pw = None
+    try:
+        pw = sync_playwright().start()
+        browser = pw.chromium.launch(headless=headless)
+        return pw, browser.new_context()
+    except Exception as exc:
+        if pw is not None:
+            pw.stop()
+        raise LibraryError(
+            f"Library browser startup failed ({type(exc).__name__}); "
+            "run python -m playwright install chromium"
+        ) from None
+
+
+def _copy_cookies(auth, ctx):
+    """Preserve each cookie's actual domain instead of assigning .sustech.edu.cn."""
+    cookies = []
+    for cookie in auth.session.cookies:
+        if not cookie.value or not cookie.domain:
+            continue
+        item = {
+            "name": cookie.name, "value": cookie.value,
+            "domain": cookie.domain, "path": cookie.path or "/",
+            "secure": cookie.secure,
+        }
+        if cookie.expires is not None:
+            item["expires"] = cookie.expires
+        cookies.append(item)
+    if cookies:
+        ctx.add_cookies(cookies)
+
+
+def _apply_search_window(page, *, offset, limit):
+    """Primo resets deep-link offsets; apply the window to its actual read API."""
+    def window(route):
+        url = urllib.parse.urlsplit(route.request.url)
+        params = [
+            (key, value) for key, value in urllib.parse.parse_qsl(url.query, keep_blank_values=True)
+            if key not in {"offset", "limit"}
+        ]
+        params.extend([("offset", str(offset)), ("limit", str(limit))])
+        route.continue_(url=urllib.parse.urlunsplit(
+            url._replace(query=urllib.parse.urlencode(params))
+        ))
+
+    page.route(f"{PRIMO_BASE}/primaws/rest/pub/pnxs?*", window)
+
+
+def _search_response(page, url):
+    """Confirm the requested window using Primo's own search response."""
+    def matches(response):
+        target = urllib.parse.urlsplit(response.url)
+        return target.hostname == urllib.parse.urlsplit(PRIMO_BASE).hostname and target.path == "/primaws/rest/pub/pnxs"
+
+    with page.expect_response(matches, timeout=_net.page_timeout_ms("library")) as pending:
+        response = page.goto(url, wait_until="domcontentloaded", timeout=_net.page_timeout_ms("library"))
+        _check_page(page, response)
+    api = pending.value
+    if api.status != 200:
+        raise LibraryError(f"Primo search API returned HTTP {api.status}")
+    try:
+        data = api.json()
+    except Exception:
+        raise LibraryError("Primo search API returned invalid JSON") from None
+    if (
+        not isinstance(data, dict) or not isinstance(data.get("docs"), list)
+        or not isinstance(data.get("info"), dict)
+        or not isinstance(data["info"].get("total"), (int, float))
+    ):
+        raise LibraryError("Primo search API returned incomplete data")
+    return len(data["docs"])
+
+
+def _read_error(operation, exc):
+    network = re.search(r"net::ERR_[A-Z_]+", str(exc))
+    method = re.match(r"(?:BrowserContext|Page|Locator|Browser)\.[a-z_]+", str(exc))
+    detail = network.group(0) if network else method.group(0) if method else type(exc).__name__
+    return LibraryError(f"Primo {operation} failed ({detail})")
+
+
+def _check_page(page, response):
+    if response is not None and response.status >= 400:
+        raise LibraryError(f"Primo page returned HTTP {response.status}")
+    host = urllib.parse.urlsplit(page.url).hostname or ""
+    if host == "cas.sustech.edu.cn" or page.query_selector(
+        'input[name="captcha"], .g-recaptcha, .h-captcha, input[name="otp"]'
+    ):
+        raise LibraryError("Primo redirected to login or an interactive challenge; stopped")
 
 
 # -- Public API ------------------------------------------------------------
@@ -293,7 +377,7 @@ def search(query: Optional[str] = None, *,
 
     Returns:
         list of SearchResult, ordered by `sort_by` ranking.
-        Empty list if Playwright isn't installed or auth fails.
+        Empty list only for a confirmed empty search window. Failures raise LibraryError.
 
     Example:
         >>> results = search("electrochromic polymer", limit=25)
@@ -316,25 +400,19 @@ def search(query: Optional[str] = None, *,
     """
     if query is None and queries is None:
         raise ValueError("provide either `query` or `queries`")
+    if limit < 1 or offset < 0:
+        raise ValueError("limit must be positive and offset nonnegative")
 
     auth, ok, reason = _ensure_auth()
     if not ok:
-        return []
-    pw, ctx = _playwright_page()
-    if pw is None or ctx is None:
-        return []
-    assert ctx is not None  # for type-narrowing (Pyright)
+        raise LibraryError(reason or "Library authentication failed")
+    pw, ctx = _playwright_page(headless=headless)
 
     results: List[SearchResult] = []
     try:
-        # Inject cookies from BBAuth-style session into the browser context.
-        for c in auth.session.cookies:
-            if c.value:
-                ctx.add_cookies([{
-                    "name": c.name, "value": c.value,
-                    "domain": ".sustech.edu.cn", "path": "/",
-                }])
+        _copy_cookies(auth, ctx)
         page = ctx.new_page()
+        _apply_search_window(page, offset=offset, limit=limit)
         url = _build_search_url(
             query=query, queries=queries, scope=scope,
             material_types=material_types, libraries=libraries,
@@ -344,20 +422,48 @@ def search(query: Optional[str] = None, *,
             limit=limit, offset=offset, sort_by=sort_by,
             lang=lang,
         )
-        page.goto(url, wait_until="domcontentloaded", timeout=_net.page_timeout_ms("library"))
-        # SPA renders the result list after the JS bundle runs.
+        expected_count = _search_response(page, url)
+        if expected_count == 0:
+            return []
         page.wait_for_selector(
-            ".list-item-primary-content.result-item-primary-content",
-            timeout=_net.page_timeout_ms("library"),
+            f"{RESULT_SELECTOR}, {EMPTY_SELECTOR}", timeout=_net.page_timeout_ms("library")
         )
-        # Pull out each result row by the canonical selectors.
-        items = page.query_selector_all(
-            ".list-item-primary-content.result-item-primary-content"
+        _check_page(page, None)
+        # Angular inserts wrappers/hrefs before all highlighted titles render.
+        page.wait_for_function(
+            """limit => {
+                let rows = [...document.querySelectorAll(
+                    '.list-item-primary-content.result-item-primary-content')];
+                if (!rows.length) rows = [...document.querySelectorAll('prm-brief-result-container')];
+                if (!rows.length) return [...document.querySelectorAll(
+                    'prm-no-search-result, .no-results, .no-results-container'
+                )].some(node => node.getClientRects().length);
+                return rows.slice(0, limit).every(row => {
+                    const a = row.querySelector('.item-title a');
+                    return a && a.textContent.trim() && a.href.includes('docid=');
+                });
+            }""",
+            arg=limit, timeout=_net.page_timeout_ms("library"),
         )
-        for rank, item in enumerate(items[:limit], start=1):
+        items = page.query_selector_all(".list-item-primary-content.result-item-primary-content")
+        if not items:
+            items = page.query_selector_all("prm-brief-result-container")
+        if not items:
+            empty = page.query_selector(EMPTY_SELECTOR)
+            if empty is None or not empty.is_visible():
+                raise LibraryError("Primo result list disappeared without a no-results state")
+        if len(items) < min(expected_count, limit):
+            raise LibraryError("Primo rendered fewer records than its search response; read incomplete")
+        for rank, item in enumerate(items[:limit], start=offset + 1):
             title_el = item.query_selector(".item-title a")
-            title = title_el.inner_text().strip() if title_el else ""
-            detail_url = title_el.get_attribute("href") if title_el else ""
+            title = ""
+            if title_el:
+                title = title_el.inner_text().strip()
+                if not title:
+                    title = re.sub(r"^[;\s]+", "", title_el.text_content() or "")
+            detail_url = urllib.parse.urljoin(page.url, title_el.get_attribute("href") or "") if title_el else ""
+            if not title or not _extract_docid(detail_url):
+                raise LibraryError("Primo result is missing its title or record ID")
             type_el = item.query_selector(".media-content-type")
             fmt = type_el.inner_text().strip() if type_el else ""
             full_text = bool(item.query_selector("[class*=fulltext]"))
@@ -374,9 +480,10 @@ def search(query: Optional[str] = None, *,
                 full_text=full_text, peer_reviewed=peer_reviewed,
                 snippet=snippet[:300],
             ))
-    except Exception:
-        # Fail silently — caller's caller will see [] and decide what to do.
-        pass
+    except LibraryError:
+        raise
+    except Exception as exc:
+        raise _read_error("search", exc) from None
     finally:
         ctx.close()
         pw.stop()
@@ -386,7 +493,7 @@ def search(query: Optional[str] = None, *,
 def detail(docid: str, *, headless: bool = True) -> Optional[BookDetail]:
     """Fetch the full Primo record detail page for one docid.
 
-    Parses the prm-full-view AngularJS component to extract title,
+    Parses keyed prm-service-details fields to extract title,
     format, authors, publisher, year, language, subjects, abstract,
     ISBN, full-text availability, and online URL.
 
@@ -396,16 +503,12 @@ def detail(docid: str, *, headless: bool = True) -> Optional[BookDetail]:
         headless: Playwright headless flag
 
     Returns:
-        BookDetail, or None if Playwright not installed / auth fails /
-        page not accessible.
+        BookDetail. Authentication, browser and page failures raise LibraryError.
     """
     auth, ok, reason = _ensure_auth()
     if not ok:
-        return None
-    pw, ctx = _playwright_page()
-    if pw is None or ctx is None:
-        return None
-    assert ctx is not None  # for type-narrowing (Pyright)
+        raise LibraryError(reason or "Library authentication failed")
+    pw, ctx = _playwright_page(headless=headless)
 
     url = (
         f"https://sustc.primo.exlibrisgroup.com.cn/discovery/fulldisplay"
@@ -414,93 +517,67 @@ def detail(docid: str, *, headless: bool = True) -> Optional[BookDetail]:
     )
     out: Optional[BookDetail] = None
     try:
-        for c in auth.session.cookies:
-            if c.value:
-                ctx.add_cookies([{
-                    "name": c.name, "value": c.value,
-                    "domain": ".sustech.edu.cn", "path": "/",
-                }])
+        _copy_cookies(auth, ctx)
         page = ctx.new_page()
-        page.goto(url, wait_until="domcontentloaded", timeout=_net.page_timeout_ms("library"))
-        # Wait for the brief-result inside the full-view to render.
-        page.wait_for_selector("prm-full-view", timeout=_net.page_timeout_ms("library"))
-        # The detail page renders text into a prm-full-view container.
-        # We walk that text and pattern-match the labelled fields.
-        full_text = page.inner_text("prm-full-view") or ""
-        out = _parse_detail_text(full_text)
+        response = page.goto(url, wait_until="domcontentloaded", timeout=_net.page_timeout_ms("library"))
+        _check_page(page, response)
+        page.wait_for_selector(
+            'prm-service-details [data-details-label="title"]',
+            timeout=_net.page_timeout_ms("library"),
+        )
+        _check_page(page, None)
+        details = page.query_selector("prm-service-details")
+        out = _parse_detail_html(details.inner_html())
+        fmt = page.query_selector("prm-full-view .media-content-type")
+        out.format = fmt.inner_text().strip() if fmt else ""
+        if not out.title:
+            raise LibraryError("Primo detail has no readable record title")
         out.detail_url = url
         # Online URL: look for any '在线查看' link href.
         link_el = page.query_selector("a[href*='doi.org'], a.online, [class*=online-viewit]")
         if link_el:
             out.online_url = link_el.get_attribute("href") or ""
-    except Exception:
-        pass
+    except LibraryError:
+        raise
+    except Exception as exc:
+        raise _read_error("detail", exc) from None
     finally:
         ctx.close()
         pw.stop()
     return out
 
 
-def _parse_detail_text(text: str) -> BookDetail:
-    """Parse the human-readable text dump from prm-full-view into a BookDetail.
+def _parse_detail_html(html: str) -> BookDetail:
+    """Read stable detail field keys; translated labels and nearby widgets vary."""
+    from bs4 import BeautifulSoup
 
-    Primo renders the detail page as a Chinese/English label-value list
-    inside one container — the structure is stable, but the labels are
-    translated, so we match both forms.
+    soup = BeautifulSoup(html, "html.parser")
+    for hidden in soup.select('[aria-hidden="true"], .ng-hide, button'):
+        hidden.decompose()
+    fields = {}
+    for label in soup.select("[data-details-label]"):
+        row = label.parent.parent
+        values = [
+            node.get_text(" ", strip=True)
+            for node in row.select('.item-details-element-container [role="listitem"]')
+        ]
+        fields[label["data-details-label"]] = list(dict.fromkeys(v for v in values if v))
 
-    Format:
-        详细信息
-        题名 / Title     <title>
-        作者 / Author    <authors...>
-        主题 / Subject   <subjects...>
-        摘要 / Abstract  <abstract>
-        ISBN            <isbn>
-        出版 / Publisher <publisher>
-        ...
-    """
-    out = BookDetail()
-    # Normalize whitespace.
-    flat = re.sub(r"[ \t]+", " ", text).strip()
-    # Title: the very first long phrase after "详细信息" (or before "作者").
-    # The detail page typically puts title on its own line at the top.
-    title_m = re.search(
-        r"详细信息\s+(?:图书|文章|期刊)?\s*([^\n]+?)\s*(?:作者|Rainsford|Rodés|Taylor|$)",
-        flat, re.S,
+    def text(*keys):
+        return "; ".join(value for key in keys for value in fields.get(key, []))
+
+    identifiers = text("isbn", "identifier")
+    isbn = re.findall(r"(?<![\d-])(?:97[89][\d-]{10,14}|[\d-]{9,12}[\dXx])(?![\d-])", identifiers)
+    return BookDetail(
+        title=text("title"),
+        authors=fields.get("creator", []),
+        publisher=text("publisher"),
+        year=text("creationdate", "date"),
+        language=text("language"),
+        subjects=fields.get("subject", []),
+        abstract=text("description"),
+        isbn="; ".join(isbn),
     )
-    if title_m:
-        out.title = title_m.group(1).strip()[:300]
-    # Format: the Chinese type label at the top.
-    for fmt in ("图书", "文章", "期刊", "学位论文", "会议论文", "数据集", "音像"):
-        if fmt in flat[:200]:
-            out.format = fmt
-            break
-    # Field-by-field extraction — both Chinese and English labels.
-    def extract(label_zh: str, label_en: str) -> str:
-        # Capture everything up to the next label or end-of-text.
-        next_labels = (
-            "题名|作者|主题|摘要|ISBN|出版|语种|语言|格式|全文可用|学科|来源"
-            "|Title|Author|Subject|Abstract|ISBN|Publisher|Language|Format"
-            "|Coverage|Online"
-        )
-        pattern = rf"(?:{label_zh}|{label_en})\s+(.+?)(?=\s+(?:{next_labels})\s|\s*$)"
-        m = re.search(pattern, flat, re.S)
-        return m.group(1).strip()[:1000] if m else ""
-
-    out.authors = [
-        a.strip() for a in
-        extract(r"作者", r"Author").replace(" ; ", "; ").split(";")
-        if a.strip()
-    ] if extract(r"作者", r"Author") else []
-    out.publisher = extract(r"出版(?:者|项)?|Publisher", r"Publisher|Publisher")
-    out.year = extract(r"出版日期|年份|Year", r"Year|Date")
-    out.language = extract(r"语种|Language", r"Language")
-    subjects_text = extract(r"主题", r"Subject")
-    if subjects_text:
-        out.subjects = [s.strip() for s in re.split(r"[;,/]", subjects_text) if s.strip()]
-    out.abstract = extract(r"摘要", r"Abstract")
-    out.isbn = extract(r"ISBN", r"ISBN")
-    out.full_text_availability = extract(r"全文可用性|Full.?text availability", r"Full.text availability")
-    return out
 
 
 # -- CLI -------------------------------------------------------------------

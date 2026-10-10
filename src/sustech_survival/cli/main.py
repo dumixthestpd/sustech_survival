@@ -1326,10 +1326,9 @@ def lib_search_cmd(query: str, scope: str, material_type: tuple, library: tuple,
     type / library / language / date filters, peer-reviewed + full-text
     online toggles, pagination, and sort ordering.
 
-    Uses Playwright because Primo's SSL config (sustc.primo.exlibrisgroup.com.cn)
-    refuses modern OpenSSL's handshake — Python urllib/requests can't reach it.
-    If Playwright isn't installed (`pip install sustech_survival[playwright]`),
-    returns no results.
+    Uses Playwright to render Primo's JavaScript search page. CAS authentication
+    uses the shared requests provider with Primo TLS compatibility, including
+    proxy connections. Authentication/browser/read failures exit nonzero.
 
     Each result includes rank, title, format (图书/文章/期刊/...), detail URL,
     full-text availability flag, and peer-review flag. Run `sustech lib detail
@@ -1344,17 +1343,20 @@ def lib_search_cmd(query: str, scope: str, material_type: tuple, library: tuple,
         sustech lib search --peer-reviewed --sort-by date "machine learning"
         sustech lib search --offset 10 --limit 10 aspirin      # page 2
     """
-    from ..lib.search import search
-    results = search(
-        query=query, scope=scope,
-        material_types=list(material_type) if material_type else None,
-        libraries=list(library) if library else None,
-        languages=list(lang_filter) if lang_filter else None,
-        peer_reviewed=peer_reviewed,
-        full_text_online=full_text_online,
-        date_from=date_from, date_to=date_to,
-        limit=limit, offset=offset, sort_by=sort_by, lang=lang,
-    )
+    from ..lib.search import search, LibraryError
+    try:
+        results = search(
+            query=query, scope=scope,
+            material_types=list(material_type) if material_type else None,
+            libraries=list(library) if library else None,
+            languages=list(lang_filter) if lang_filter else None,
+            peer_reviewed=peer_reviewed,
+            full_text_online=full_text_online,
+            date_from=date_from, date_to=date_to,
+            limit=limit, offset=offset, sort_by=sort_by, lang=lang,
+        )
+    except LibraryError as exc:
+        raise click.ClickException(str(exc)) from None
     if as_json:
         click.echo(_json.dumps([
             {"rank": r.rank, "title": r.title, "format": r.format,
@@ -1365,10 +1367,8 @@ def lib_search_cmd(query: str, scope: str, material_type: tuple, library: tuple,
         ], ensure_ascii=False, indent=2))
         return
     if not results:
-        click.echo(
-            "no results (auth required? Playwright installed? "
-            "→ pip install sustech_survival[playwright])", err=True)
-        raise SystemExit(1)
+        click.echo("no results")
+        return
     for r in results:
         flags = []
         if r.full_text: flags.append("full-text")
@@ -1391,8 +1391,11 @@ def lib_detail_cmd(docid: str, as_json: bool) -> None:
     Returns title, format, authors, publisher, year, language, subjects,
     abstract, ISBN, full-text availability, and online URL.
     """
-    from ..lib.search import detail
-    d = detail(docid)
+    from ..lib.search import detail, LibraryError
+    try:
+        d = detail(docid)
+    except LibraryError as exc:
+        raise click.ClickException(str(exc)) from None
     if d is None:
         click.echo("detail fetch failed (auth? Playwright installed?)", err=True)
         raise SystemExit(1)
