@@ -1,5 +1,25 @@
 # BB（Blackboard）
 
+## 目录发现与可用状态
+
+通用目录扫描 `query.walk_contents()`、`query.discover_pages()` 会排除明确标为
+`availability.available = "No"` 的内容，不展开其子目录，也不在全局搜索中继续
+请求该项详情。`Yes`、`PartiallyVisible` 和缺失状态仍正常读取，权限错误照常处理。
+这项过滤适用于目录发现；直接查询指定内容时仍由 BB 检查权限。
+
+每次实时扫描重新读取父目录列表，目录开放后即可发现，不依赖修改时间或永久
+黑名单。`discover_pages()` 在 stderr 提示不可用内容数量；缓存命中时也保留提示。
+默认仍有一小时缓存，需要当前状态时使用 `refresh=True`。
+不可用内容不计入结果，不能据此宣称已读取课程全部内容。
+
+目录遍历复用一个认证会话，处理分页并拒绝循环、外部主机分页链接；根目录只读
+一次。读取失败或响应格式错误会抛出异常，不将失败缓存为空列表或成功的部分
+结果。此前包含不可用条目的发现缓存不再复用。
+
+详细 API 示例见[英文版](../en/bb.md#content-discovery-and-availability)。
+
+---
+
 本页尚未翻译。最新内容请参阅[英文版](../en/bb.md)。
 
 This page is not yet translated to Chinese. See the [English version](../en/bb.md) for current content.

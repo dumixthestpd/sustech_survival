@@ -1,4 +1,5 @@
 from .. import _net
+from .availability import is_explicitly_unavailable
 from sustech_survival.exceptions import SessionExpired as _SessionExpired
 
 """
@@ -12,7 +13,7 @@ Use these functions — do NOT call termId-based endpoints directly.
 
 import json, re, sys, time
 from pathlib import Path
-from urllib.parse import unquote, urlparse, urlunparse
+from urllib.parse import unquote, urljoin, urlparse, urlsplit, urlunparse
 
 import requests
 
@@ -108,80 +109,120 @@ def discover_courses(term_id=None):
 
 # -- Content Tree Walk --------------------------------------------------------
 
-def walk_contents(course_id, parent_id=None, session=None):
-    """
-    Recursively walk /courses/{course_id}/contents tree via REST.
+def _content_listing(path, sess):
+    """Yield every content-list page, rejecting incomplete or unsafe pagination."""
+    seen_pages = set()
+    for _ in range(30):
+        if path in seen_pages:
+            raise ValueError("BB content pagination loop")
+        seen_pages.add(path)
+        data = api(path, sess)
+        if not isinstance(data, dict) or not isinstance(data.get("results"), list):
+            raise ValueError("BB content collection missing results")
+        for item in data["results"]:
+            if not isinstance(item, dict) or not item.get("id"):
+                raise ValueError("BB content collection contains an invalid item")
+            yield item
+        next_page = (data.get("paging") or {}).get("nextPage")
+        if not next_page:
+            return
+        parts = urlsplit(urljoin(BB_BASE + path, next_page))
+        if parts.scheme != "https" or parts.netloc != "bb.sustech.edu.cn":
+            raise ValueError("BB content pagination left the expected host")
+        path = parts.path + ("?" + parts.query if parts.query else "")
+    raise ValueError("BB content pagination exceeded 30 pages")
+
+
+def walk_contents(course_id, parent_id=None, session=None, *, unavailable=None):
+    """Walk content using one session, excluding explicit availability ``No``.
+
     Yields (content_id, title, content_handler, has_children, parent_id).
+    ``unavailable``, if supplied, collects metadata for excluded items. Every
+    fresh walk checks parent listings again; no historical deny list is used.
+    Other availability states do not establish access. Read failures propagate
+    rather than becoming an empty collection or a cacheable partial result.
     """
+    sess = session if session is not None else _session()
     bid = f"_{course_id}_1"
-    if parent_id:
-        path = f"/learn/api/public/v1/courses/{bid}/contents/{parent_id}/children"
-    else:
+    seen = set()
+
+    def visit(parent):
         path = f"/learn/api/public/v1/courses/{bid}/contents"
+        if parent:
+            path += f"/{parent}/children"
+        for item in _content_listing(path, sess):
+            item_id = item["id"]
+            if item_id in seen:
+                continue
+            seen.add(item_id)
+            cid = _core_id(item_id)
+            if is_explicitly_unavailable(item):
+                if unavailable is not None:
+                    unavailable.append({
+                        "course_id": str(course_id), "content_id": cid,
+                        "title": item.get("title", ""),
+                        "has_children": bool(item.get("hasChildren")),
+                        "reason": "availability_no",
+                    })
+                continue
+            yield (
+                cid, item.get("title", ""),
+                (item.get("contentHandler") or {}).get("id", ""),
+                item.get("hasChildren", False),
+                parent,
+            )
+            if item.get("hasChildren"):
+                yield from visit(item_id)
 
-    try:
-        data = api(path, session)
-    except Exception:
-        return
-
-    for item in data.get("results", []):
-        cid = _core_id(item["id"])
-        handler = item.get("contentHandler", {}).get("id", "")
-        yield (
-            cid,
-            item.get("title", ""),
-            handler,
-            item.get("hasChildren", False),
-            parent_id,
-        )
-        if item.get("hasChildren"):
-            yield from walk_contents(course_id, item["id"], session)
+    yield from visit(parent_id)
 
 
 # -- Page Discovery -----------------------------------------------------------
 
-def discover_pages(course_id, *, refresh=False):
-    """
-    Return list of (content_id, title, section) for all content in a course.
 
-    Uses REST API to walk the content tree — no Playwright needed.
-    section is derived from parent folder title (items with no parent = root).
+def _warn_unavailable(course_id, unavailable):
+    if unavailable:
+        print(f"BB course {course_id}: {len(unavailable)} content item(s) "
+              "marked unavailable (availability=No); excluded from discovery", file=sys.stderr)
+
+
+def discover_pages(course_id, *, refresh=False):
+    """Return (content_id, title, root section) for discoverable course content.
+
+    Explicitly unavailable items are excluded and counted on stderr. Cached
+    listings use the normal BB TTL; ``refresh=True`` checks current state.
+    Failed walks are never saved as an empty or partial discovery result.
     """
     try:
         from . import _cache
     except ImportError:
         import _cache
 
+    # Separate from older listings that included unavailable detail targets.
+    # Keeping the prefix/course order preserves per-course CLI invalidation.
+    cache_args = (course_id, "availability_v1")
     if not refresh:
-        data, ok = _cache.get("discover_pages", course_id)
-        if ok:
-            return data
+        data, ok = _cache.get("discover_pages", *cache_args)
+        if ok and isinstance(data, dict) and isinstance(data.get("pages"), list):
+            _warn_unavailable(course_id, data.get("unavailable", []))
+            return data["pages"]
 
     sess = _session()
-    bid = f"_{course_id}_1"
-
-    # Build parent_id → section name map from root-level folders
-    section_map = {}  # content_id → section name
-    try:
-        root = api(f"/learn/api/public/v1/courses/{bid}/contents", sess)
-        for item in root.get("results", []):
-            if item.get("contentHandler", {}).get("id") == "resource/x-bb-folder":
-                cid = _core_id(item["id"])
-                section_map[cid] = item.get("title", "")
-    except Exception:
-        pass
-
+    section_map = {}
+    unavailable = []
     results = []
-    seen = set()
-    for cid, title, handler, has_children, parent_id in walk_contents(course_id, session=sess):
-        if cid in seen:
-            continue
-        seen.add(cid)
-        section = section_map.get(parent_id, "") if parent_id else ""
+    for cid, title, handler, has_children, parent_id in walk_contents(
+            course_id, session=sess, unavailable=unavailable):
+        section = section_map.get(_core_id(parent_id), "") if parent_id else ""
+        if parent_id is None and handler == "resource/x-bb-folder":
+            section_map[cid] = title
+        else:
+            section_map[cid] = section
         results.append((cid, title, section))
 
+    _warn_unavailable(course_id, unavailable)
     try:
-        _cache.set("discover_pages", results, course_id)
+        _cache.set("discover_pages", {"pages": results, "unavailable": unavailable}, *cache_args)
     except Exception:
         pass
     return results
