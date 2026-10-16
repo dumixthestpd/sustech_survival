@@ -144,6 +144,43 @@ if not pending['complete']:
 
 ---
 
+## Content discovery and availability
+
+`query.walk_contents()` and `query.discover_pages()` exclude items explicitly
+marked `availability.available = "No"`, including their descendants. They do
+not request those items' details during broad discovery. `Yes`,
+`PartiallyVisible`, or missing availability metadata are still read normally;
+these states do not guarantee permission. Direct requests for a specific item
+retain normal server-side permission checks.
+
+Each fresh walk reads parent listings again, so newly available folders are
+included without relying on `modified` timestamps or a permanent deny list.
+`discover_pages()` reports the excluded count on stderr, including cache hits.
+Its usual one-hour cache still applies; use `refresh=True` when current
+availability is required. Unavailable content is
+excluded from totals; a successful read does not establish that the entire
+course is accessible.
+
+The walker reuses one session, reads each collection's pagination, rejects
+pagination loops and links to other hosts, and reads the root collection only
+once. Failed or malformed reads propagate; discovery does not cache a partial
+result as an empty or successful listing. Cached listings created before the
+availability filter are not reused.
+
+```python
+from sustech_survival.bb.query import walk_contents, discover_pages
+
+unavailable = []
+rows = list(walk_contents("1234", unavailable=unavailable))
+# unavailable contains course/content IDs, titles, and availability_no reasons.
+pages = discover_pages("1234", refresh=True)
+```
+
+See Blackboard's [REST API best practices](https://docs.blackboard.com/docs/blackboard/rest-apis/rest-api-best-practices)
+and [content availability rules](https://help.anthology.com/blackboard/instructor/en/original-course-view/common-questions/common-questions-about-releasing-content.html).
+
+---
+
 ## Deadlines
 
 ```python
