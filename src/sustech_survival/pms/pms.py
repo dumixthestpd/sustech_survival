@@ -26,10 +26,11 @@ from __future__ import annotations
 from .. import _net
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, date
 from pathlib import Path
 from typing import List, Optional, Union
+from urllib.parse import parse_qs, urljoin, urlsplit
 
 import requests
 
@@ -45,6 +46,7 @@ from .schema import (
 
 PMS_BASE = "https://pms.sustech.edu.cn"
 PMS_API = f"{PMS_BASE}/api"
+PMS_QUEUE_URL = f"{PMS_BASE}/client/new/cprintPc/printDoc.html"
 
 # PMS sits behind the SUSTech campus firewall. Off-campus (VPN or otherwise)
 # requests get a 403 with a plain-text body before any auth runs.
@@ -117,18 +119,30 @@ class PMSClient:
             params={"timestamp": "0"},
             timeout=_net.service_timeout("pms"),
         )
-        data = self._unwrap(r) or []
-        return [PrintJob.from_api(j) for j in data]
+        data = self._unwrap(r)
+        if not isinstance(data, list) or any(
+            not isinstance(j, dict) or type(j.get("dwJobId")) is not int or j["dwJobId"] <= 0
+            for j in data
+        ):
+            raise PMSError("Invalid or incomplete PMS print queue response")
+        try:
+            return [PrintJob.from_api(j) for j in data]
+        except (ValueError, TypeError, KeyError, AttributeError):
+            raise PMSError("Invalid PMS print queue record") from None
 
-    @consequence_rich(Consequence(
-        name="pms.delete_print_job",
-        severity=Severity.HIGH,
-        irreversible=True,
-        what_changes="Deletes an uploaded (not-yet-printed) print job.",
-        risk=("Irreversible: the uploaded file is gone from your print queue. "
-              "If you don't still have the source file locally, it is DATA LOSS."),
-        verify_url="https://pms.sustech.edu.cn/client/PrintJob/Get",
-    ))
+    @consequence_rich(
+        Consequence(
+            name="pms.delete_print_job",
+            severity=Severity.HIGH,
+            irreversible=True,
+            what_changes="Deletes an uploaded (not-yet-printed) print job.",
+            risk=(
+                "Irreversible: the uploaded file is gone from your print queue. "
+                "If you don't still have the source file locally, it is DATA LOSS."
+            ),
+            verify_url="https://pms.sustech.edu.cn/client/PrintJob/Get",
+        )
+    )
     def delete_print_job(self, job_id: int) -> bool:
         """POST /client/PrintJob/Del — delete an uploaded print job.
 
@@ -238,7 +252,7 @@ class PMSClient:
         risk=("Upload itself is free and reversible (delete the job). Money is "
               "only spent when it is actually printed at a station — check the "
               "file and options before printing, not before upload."),
-        verify_url="https://pms.sustech.edu.cn/client/PrintJob/Get",
+        verify_url=PMS_QUEUE_URL,
     ))
     def upload_print(
         self,
@@ -262,16 +276,19 @@ class PMSClient:
                        PAPER_A3 (8) / "A3"
                        PAPER_UNSPECIFIED (-1) / "不指定" / "" / "unspecified"
             duplex:    DUPLEX_SINGLE (1) / "single" / "单面"
-                       DUPLEX_SHORT_EDGE (2) / "short" / "双面短边"
-                       DUPLEX_LONG_EDGE (3) / "long" / "双面长边"
+                       DUPLEX_SHORT_EDGE (3) / "short" / "双面短边"
+                       DUPLEX_LONG_EDGE (2) / "long" / "双面长边"
+                       These match the PMS queue list labels.
             page_from: 0 = all pages; otherwise the start page (1-indexed).
             page_to:   end page (1-indexed); ignored when page_from == 0.
             copies:    number of copies, 1+.
             dry_run:   if True, return the prepared form data without uploading.
 
         Returns:
-            PrintUploadResult with `ok`, `message`, `code`, and the resolved
-            numeric fields. When `dry_run=True`, `uploaded=False`.
+            PrintUploadResult. `ok=True` requires one new matching queue job.
+            After a sent POST, `uploaded=None` means unknown, not failure; read
+            the queue before retrying. No POST is automatically repeated.
+            When `dry_run=True`, `uploaded=False` and no network calls occur.
 
         Cost note: uploading does NOT spend money — money is only deducted
         when the file is actually picked up at a physical printer. But it does
@@ -314,39 +331,102 @@ class PMSClient:
             result.message = "DRY-RUN: prepared upload, did not POST"
             return result
 
-        with open(file_path, "rb") as f:
-            files = {"szPath": (file_path.name, f)}
-            data = {
-                "dwColor": str(color_code),
-                "dwPaperId": str(paper_code),
-                "dwDuplex": str(duplex_code),
-                "dwFrom": str(dw_from),
-                "dwTo": str(dw_to),
-                "dwCopies": str(copies),
-                "BackURL": "result.html",
-            }
-            r = self.session.post(
-                f"{self.API_BASE}/client/CloudPrint/Upload",
-                files=files,
-                data=data,
-                timeout=_net.service_timeout("pms"),
-            )
-
-        # On success the response is a JSON body with code/message. On failure
-        # the server may respond 413 (too big) or 200 with an error code.
-        if r.status_code == 413:
-            result.message = "File too large (HTTP 413)"
-            return result
+        # Snapshot IDs before the only POST. An old same-name job is not a receipt.
+        before_ids = {j.dw_job_id for j in self.list_print_jobs()}
+        result.status = "unknown"
+        result.uploaded = None
+        acknowledged = False
+        rejected = False
         try:
-            out = r.json()
-        except Exception:
-            result.message = f"Non-JSON response: HTTP {r.status_code}"
-            return result
+            with file_path.open("rb") as f:
+                r = self.session.post(
+                    f"{self.API_BASE}/client/CloudPrint/Upload",
+                    files={"szPath": (file_path.name, f)},
+                    data={
+                        "dwColor": str(color_code),
+                        "dwPaperId": str(paper_code),
+                        "dwDuplex": str(duplex_code),
+                        "dwFrom": str(dw_from),
+                        "dwTo": str(dw_to),
+                        "dwCopies": str(copies),
+                        "BackURL": PMS_QUEUE_URL,
+                    },
+                    allow_redirects=False,
+                    timeout=_net.service_timeout("pms"),
+                )
+            result.http_status = r.status_code
+            if r.status_code in (301, 302, 303, 307, 308):
+                result.response_format = "redirect"
+                target = urlsplit(urljoin(r.url or self.API_BASE, r.headers.get("Location", "")))
+                expected = urlsplit(PMS_QUEUE_URL)
+                if (target.scheme, target.netloc, target.path) == (
+                    expected.scheme,
+                    expected.netloc,
+                    expected.path,
+                ):
+                    codes = parse_qs(target.query).get("code", [])
+                    if len(codes) == 1:
+                        try:
+                            result.code = int(codes[0])
+                        except ValueError:
+                            pass
+                acknowledged = result.code == 0
+                rejected = result.code is not None and result.code != 0
+            elif r.status_code == 413:
+                result.code = 413
+                result.response_format = "http_error"
+                rejected = True
+            else:
+                try:
+                    out = r.json()
+                except ValueError:
+                    out = None
+                if isinstance(out, dict):
+                    result.response_format = "json"
+                    code = out.get("code")
+                    if isinstance(code, int) and not isinstance(code, bool):
+                        result.code = code
+                    acknowledged = r.ok and result.code == 0
+                    rejected = result.code is not None and result.code != 0
+                else:
+                    result.response_format = "non_json"
+                if _looks_off_campus(r):
+                    result.message = OFF_CAMPUS_HINT
+                    rejected = True
+        except requests.RequestException as exc:
+            result.response_format = "request_error"
+            result.message = f"Upload response unavailable ({type(exc).__name__})"
 
-        result.code = out.get("code")
-        result.ok = (out.get("code") == 0)
-        result.uploaded = result.ok
-        result.message = out.get("message", "")
+        # A lost/malformed response is not permission to replay an upload.
+        # Read the queue once, including after an apparent server-side failure.
+        try:
+            created = [
+                j
+                for j in self.list_print_jobs()
+                if j.dw_job_id not in before_ids and j.file_name == file_path.name
+            ]
+            result.observed_job_ids = [j.dw_job_id for j in created]
+            if len(created) == 1:
+                result.job_id = created[0].dw_job_id
+                result.uploaded = result.ok = True
+                result.status = "confirmed"
+                result.message = "Upload confirmed by a new queue job"
+                return result
+            if not created and rejected:
+                result.uploaded = False
+                result.status = "rejected"
+                result.message = (
+                    result.message
+                    or f"Upload rejected (code={result.code}, HTTP {result.http_status})"
+                )
+                return result
+        except (PMSError, requests.RequestException) as exc:
+            result.verification_error = f"Queue read-back unavailable ({type(exc).__name__})"
+        result.message = (
+            (result.message + "; " if result.message else "")
+            + ("Server acknowledged upload; " if acknowledged else "")
+            + "Upload outcome unknown. Check the queue before retrying."
+        )
         return result
 
     # -- Helpers -------------------------------------------------------------
@@ -364,9 +444,12 @@ class PMSClient:
             out = r.json()
         except Exception:
             raise PMSError(
-                f"Non-JSON response: HTTP {r.status_code} "
-                f"(body: {(r.text or '')[:120]!r})"
+                f"Non-JSON response: HTTP {r.status_code}"
             )
+        if not isinstance(out, dict):
+            raise PMSError("Invalid PMS response object")
+        if not r.ok:
+            raise PMSError(f"PMS read failed (HTTP {r.status_code})")
         if out.get("code") != 0:
             raise PMSError(out.get("message", f"code={out.get('code')}"))
         return out.get("result")
@@ -402,25 +485,41 @@ class PrintUploadResult:
     page_from: int
     page_to: int
     copies: int
-    uploaded: bool
+    uploaded: Optional[bool]
     ok: bool
     message: str
     code: Optional[int]
+    status: str = "dry_run"
+    job_id: Optional[int] = None
+    observed_job_ids: List[int] = field(default_factory=list)
+    http_status: Optional[int] = None
+    response_format: str = ""
+    verification_error: str = ""
+    verification_url: str = PMS_QUEUE_URL
 
     def to_markdown(self) -> str:
         if self.code is None and self.message.startswith("DRY-RUN"):
             flag = "🟡 DRY-RUN (no upload)"
         elif self.uploaded:
             flag = "✅ uploaded"
+        elif self.uploaded is None:
+            flag = "⚠ outcome unknown — check queue before retrying"
         else:
             flag = "❌ failed"
+        duplex_label = {
+            DUPLEX_SINGLE: "单面",
+            DUPLEX_SHORT_EDGE: "双面短边",
+            DUPLEX_LONG_EDGE: "双面长边",
+        }.get(self.duplex, "—")
         return (
             f"### {self.file_name} — {flag}\n"
+            f"- **Job ID**: {self.job_id or '—'}\n"
+            f"- **Queue**: {self.verification_url}\n"
             f"- **Code**: {self.code}\n"
             f"- **Message**: {self.message or '—'}\n"
             f"- **Color**: {'黑白' if self.color == COLOR_BW else '彩色'}\n"
             f"- **Paper**: {paper_name(self.paper) or '不指定'}\n"
-            f"- **Duplex**: {['', '单面', '双面短边', '双面长边'][self.duplex] if 1 <= self.duplex <= 3 else '—'}\n"
+            f"- **Duplex**: {duplex_label}; dwDuplex={self.duplex}\n"
             f"- **Pages**: {'全部' if self.page_from == 0 else f'{self.page_from}-{self.page_to}'}\n"
             f"- **Copies**: {self.copies}\n"
         )
@@ -468,9 +567,9 @@ def _coerce_duplex(v) -> int:
     s = str(v).strip().lower()
     if s in ("single", "单面", "1"):
         return DUPLEX_SINGLE
-    if s in ("short", "双面短边", "2"):
+    if s in ("short", "双面短边", "3"):
         return DUPLEX_SHORT_EDGE
-    if s in ("long", "双面长边", "3"):
+    if s in ("long", "双面长边", "2"):
         return DUPLEX_LONG_EDGE
     raise ValueError(f"Unknown duplex: {v!r}")
 
@@ -482,7 +581,9 @@ def _coerce_duplex(v) -> int:
 def _build_default_client() -> PMSClient:
     from sustech_survival.sso.authlib.pms import PMSAuth
     auth = PMSAuth()
-    auth.ensure()  # login if needed
+    ok, reason = auth.ensure()
+    if not ok:
+        raise PMSError(reason)
     return PMSClient(session=auth.session)
 
 
@@ -494,8 +595,11 @@ _pms_client: Optional[PMSClient] = None
 def pms() -> PMSClient:
     """Module-level singleton PMSClient. Logs in on first call."""
     global _pms_client
+    current = _build_default_client()
     if _pms_client is None:
-        _pms_client = _build_default_client()
+        _pms_client = current
+    else:
+        _pms_client.session = current.session
     return _pms_client
 
 

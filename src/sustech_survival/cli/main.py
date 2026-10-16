@@ -22,6 +22,7 @@ in help text but doesn't crash the top-level CLI.
 """
 from __future__ import annotations
 
+import contextlib
 import json as _json
 import sys
 import webbrowser
@@ -456,25 +457,39 @@ def pms_cmd() -> None:
 def pms_check() -> None:
     from sustech_survival.sso.authlib.pms import PMSAuth
     auth = PMSAuth()
-    ok, msg = auth.ensure()
+    with contextlib.redirect_stdout(sys.stderr):
+        ok, msg = auth.ensure()
     click.echo(("✅ " if ok else "❌ ") + msg)
+    if not ok:
+        raise click.exceptions.Exit(1)
+
+
+def _pms_read(method: str, **kwargs):
+    from ..pms import pms, PMSError
+    from ..sso.authorizer import AuthorizerError
+    from requests import RequestException
+    try:
+        with contextlib.redirect_stdout(sys.stderr):
+            return getattr(pms(), method)(**kwargs)
+    except (PMSError, AuthorizerError) as exc:
+        raise click.ClickException(str(exc)) from None
+    except RequestException as exc:
+        raise click.ClickException(f"PMS read failed ({type(exc).__name__})") from None
 
 
 @pms_cmd.command(name="stations", help="List campus printers.")
 @click.argument("group", required=False, type=int, default=None)
 @click.option("--json", "as_json", is_flag=True)
 def pms_stations(group: int | None, as_json: bool) -> None:
-    from ..pms import pms
-    stations = pms().list_stations(group_sn=group)
-    _pp([s.to_dict() if as_json else s.name for s in stations], as_json=as_json)
+    stations = _pms_read("list_stations", group_sn=group)
+    _pp([asdict(s) if as_json else s.sz_name for s in stations], as_json=as_json)
 
 
 @pms_cmd.command(name="jobs", help="List uploaded-but-not-printed jobs.")
 @click.option("--json", "as_json", is_flag=True)
 def pms_jobs(as_json: bool) -> None:
-    from ..pms import pms
-    jobs = pms().list_print_jobs()
-    _pp([j.to_dict() if as_json else f"[{j.dw_job_id}] {j.file_name}" for j in jobs],
+    jobs = _pms_read("list_print_jobs")
+    _pp([asdict(j) if as_json else f"[{j.dw_job_id}] {j.file_name}" for j in jobs],
         as_json=as_json)
 
 

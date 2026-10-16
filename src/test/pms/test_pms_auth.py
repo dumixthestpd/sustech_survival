@@ -164,8 +164,8 @@ class TestPMSAuthLive:
         auth = PMSAuth()
         ok, msg = auth.ensure()
         assert ok, f"ensure() failed: {msg}"
-        # Message should be "Logged in as <name>"
-        assert "Logged in as" in msg
+        # No personal identity is included in authentication diagnostics.
+        assert "Logged in to PMS" in msg
 
     def test_check_after_ensure(self):
         auth = PMSAuth()

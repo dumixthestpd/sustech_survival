@@ -41,8 +41,8 @@ class TestModuleExports:
         assert COLOR_BW == 1
         assert COLOR_COLOR == 2
         assert DUPLEX_SINGLE == 1
-        assert DUPLEX_SHORT_EDGE == 2
-        assert DUPLEX_LONG_EDGE == 3
+        assert DUPLEX_SHORT_EDGE == 3
+        assert DUPLEX_LONG_EDGE == 2
         assert REPORT_TYPE_PRINT == 1
         assert REPORT_TYPE_SCAN == 2
         assert REPORT_TYPE_COPY == 3
@@ -95,8 +95,8 @@ class TestCoercePaper:
 class TestCoerceDuplex:
     def test_int_passthrough(self):
         assert _coerce_duplex(1) == DUPLEX_SINGLE
-        assert _coerce_duplex(2) == DUPLEX_SHORT_EDGE
-        assert _coerce_duplex(3) == DUPLEX_LONG_EDGE
+        assert _coerce_duplex(2) == DUPLEX_LONG_EDGE
+        assert _coerce_duplex(3) == DUPLEX_SHORT_EDGE
 
     def test_string_aliases(self):
         assert _coerce_duplex("single") == DUPLEX_SINGLE
