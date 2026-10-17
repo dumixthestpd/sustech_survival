@@ -64,12 +64,18 @@ Extras add heavier optional capabilities:
 - `playwright` — browser-backed BB download / submit (for UIs that only render in JS)
 - `all` — Everything above
 
-This project is **not published to PyPI**. Install directly from GitHub:
+Published on PyPI. Install from there:
 
 ```bash
-pip install "sustech_survival @ git+https://github.com/dumixthestpd/sustech_survival.git"               # API + CLI only
-pip install "sustech_survival[webui] @ git+https://github.com/dumixthestpd/sustech_survival.git"        # + web UI
-pip install "sustech_survival[all] @ git+https://github.com/dumixthestpd/sustech_survival.git"          # everything
+pip install sustech_survival                 # API + CLI only
+pip install "sustech_survival[webui]"        # + web UI
+pip install "sustech_survival[all]"          # everything
+```
+
+To track `main` instead of the released version:
+
+```bash
+pip install "sustech_survival @ git+https://github.com/dumixthestpd/sustech_survival.git"
 ```
 
 When the install is complete, run

@@ -76,18 +76,21 @@ always produces the sdist + wheel; the `pypi` job only runs when the repository
 variable `PUBLISH_TO_PYPI` is exactly `true` (OIDC trusted publishing, no
 token). The documentation site is a separate `docs.yml` workflow.
 
-Install reality (checked 2026-09-20): the package is **not on PyPI**
-(`https://pypi.org/pypi/sustech_survival/json` → 404) and releases carry **no
-assets**, so users install and update straight from git:
+Install reality (checked 2026-10-16): the package **is on PyPI**
+(`https://pypi.org/project/sustech-survival/`), and releases carry **no
+assets** — the sdist/wheel are built by CI, not attached. Users install from
+PyPI; git remains the path for tracking `main`:
 
 ```bash
-# install
-pip install "sustech_survival[webui] @ git+https://github.com/dumixthestpd/sustech_survival.git"
-# update (re-installs from the current HEAD of main)
+# released version
+pip install "sustech_survival[webui]"
+# update
+pip install -U "sustech_survival[webui]"
+# unreleased HEAD of main
 pip install -U --force-reinstall --no-cache-dir "sustech_survival[webui] @ git+https://github.com/dumixthestpd/sustech_survival.git"
 ```
 
-A tag therefore does not reach a user by itself; with `PUBLISH_TO_PYPI` unset,
+A tag reaches PyPI users only when `PUBLISH_TO_PYPI` is `true`; with it unset,
 tagging only proves that the release builds.
 
 ## Commit messages

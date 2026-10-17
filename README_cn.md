@@ -57,13 +57,18 @@ CLI（`click`）已包含在核心依赖中 —— `pip install sustech_survival
 - `papers` — cloudscraper（供 SSO 出版商供应商使用：ACS / IEEE / JSTOR / Springer / Wiley / Scopus；papers 模块本身已弃用）
 - `all` — 以上全部
 
-本项目**没有发布到 PyPI**，请直接从 GitHub 安装：
+已发布到 PyPI，直接安装：
 
 ```bash
-# 任选其一：
-pip install "sustech_survival @ git+https://github.com/dumixthestpd/sustech_survival.git"               # API + CLI
-pip install "sustech_survival[webui] @ git+https://github.com/dumixthestpd/sustech_survival.git"        # + Web 界面
-pip install "sustech_survival[all] @ git+https://github.com/dumixthestpd/sustech_survival.git"          # 全部
+pip install sustech_survival                 # API + CLI
+pip install "sustech_survival[webui]"        # + Web 界面
+pip install "sustech_survival[all]"          # 全部
+```
+
+要跟随 `main` 而不是发布版：
+
+```bash
+pip install "sustech_survival @ git+https://github.com/dumixthestpd/sustech_survival.git"
 ```
 
 > **命令名冲突：** TypeScript 移植版
