@@ -11,7 +11,7 @@ license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dynamic = ["version"]
 authors = [
-    { name = "dumix", email = "dumix@users.noreply.github.com" },
+    { name = "dumixthestpd", email = "dumixthestpd@hotmail.com" },
 ]
 keywords = [
     "sustech",
