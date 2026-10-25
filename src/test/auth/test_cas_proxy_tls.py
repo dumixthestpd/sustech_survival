@@ -1,5 +1,6 @@
-"""CAS and Primo must retain their scoped TLS context through proxy pools."""
+"""CAS and Primo keep their scoped TLS context — and keep verifying certs."""
 
+import ssl
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -8,7 +9,7 @@ import requests
 
 from sustech_survival.exceptions import NetworkError
 from sustech_survival.sso import LibAuth
-from sustech_survival.sso._tls import LegacyTLSAdapter
+from sustech_survival.sso._tls import LegacyTLSAdapter, campus_ssl_context, insecure_mode
 from sustech_survival.sso.authorizer import Authorizer, AuthorizerError
 from sustech_survival.sso.providers.cas import CASAuthorizer
 
@@ -21,6 +22,11 @@ def auth():
     Authorizer._instances.pop(LibAuth, None)
     if previous is not None:
         Authorizer._instances[LibAuth] = previous
+
+
+@pytest.fixture(autouse=True)
+def _secure_by_default(monkeypatch):
+    monkeypatch.delenv("SUSTECH_TLS_INSECURE", raising=False)
 
 
 @pytest.mark.parametrize("factory", ["_build_cas_session", "_build_session"])
@@ -47,11 +53,51 @@ def test_actual_connection_pool_keeps_legacy_context(auth, factory, proxy):
     session.close()
 
 
-def test_legacy_requests_cert_verify_keeps_existing_policy():
+# -- verification policy ------------------------------------------------------
+
+def test_certificates_are_verified_by_default():
+    adapter = LegacyTLSAdapter()
+    assert adapter.verify is True
+    assert adapter.ssl_context.verify_mode == ssl.CERT_REQUIRED
+    assert adapter.ssl_context.check_hostname is True
+    # ... while the legacy-renegotiation option this adapter exists for stays on.
+    assert adapter.ssl_context.options & 0x4
+
+
+def test_pool_key_asks_for_a_required_certificate():
+    adapter = LegacyTLSAdapter()
+    request = requests.Request("GET", "https://cas.sustech.edu.cn/cas/login").prepare()
+    _host, pool_kwargs = adapter.build_connection_pool_key_attributes(request, True)
+    assert pool_kwargs["ssl_context"] is adapter.ssl_context
+    assert pool_kwargs["cert_reqs"] == "CERT_REQUIRED"
+
+
+def test_caller_verify_false_cannot_downgrade_the_policy():
+    """Requests sets CERT_NONE for a falsy ``verify``; the adapter decides."""
     adapter = LegacyTLSAdapter()
     conn = SimpleNamespace()
-    adapter.cert_verify(conn, "https://example.invalid", verify=True, cert=None)
+    adapter.cert_verify(conn, "https://cas.sustech.edu.cn", verify=False, cert=None)
+    assert conn.cert_reqs == "CERT_REQUIRED"
+
+
+@pytest.mark.parametrize("value", ["1", "true", "YES", "on"])
+def test_insecure_opt_in_disables_verification(monkeypatch, value):
+    monkeypatch.setenv("SUSTECH_TLS_INSECURE", value)
+    assert insecure_mode() is True
+    adapter = LegacyTLSAdapter()
+    assert adapter.verify is False
+    assert adapter.ssl_context.verify_mode == ssl.CERT_NONE
+    assert adapter.ssl_context.check_hostname is False
+    conn = SimpleNamespace()
+    adapter.cert_verify(conn, "https://cas.sustech.edu.cn", verify=True, cert=None)
     assert conn.cert_reqs == "CERT_NONE"
+
+
+@pytest.mark.parametrize("value", ["", "0", "false", "off", "please"])
+def test_only_explicit_opt_in_is_insecure(monkeypatch, value):
+    monkeypatch.setenv("SUSTECH_TLS_INSECURE", value)
+    assert insecure_mode() is False
+    assert campus_ssl_context().verify_mode == ssl.CERT_REQUIRED
 
 
 def test_primo_reuses_ticket_session_with_cookie_domains(auth):

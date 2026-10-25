@@ -2,5 +2,5 @@
 
 Faculty directory.
 
-- [English user guide](../en/faculty.md)
-- [中文用户指南](../zh/faculty.md)
+- [English user guide](/faculty/)
+- [中文用户指南](/zh/faculty/)

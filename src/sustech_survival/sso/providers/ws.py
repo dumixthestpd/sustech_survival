@@ -1,7 +1,7 @@
 ﻿# =============================================================================
-# WSProvider 鈥?SUSTech Student Exchange System (ws.sustech.edu.cn)
+# WSProvider — SUSTech Student Exchange System (ws.sustech.edu.cn)
 # =============================================================================
-# CAS login + session for the 澶栦簨宸ヤ綔鏈嶅姟绯荤粺 (Student Exchange/Abroad Portal).
+# CAS login + session for the 外事工作服务系统 (Student Exchange/Abroad Portal).
 #
 # Auth flow (3-step CAS ticket exchange):
 #   GET  /cas/login?service=ws.sustech.edu.cn/SUSTechHome.aspx
@@ -9,10 +9,10 @@
 #   GET  /SUSTechHome.aspx?ticket=...  鈫?JSESSIONID+ASP.NET_SessionId set here
 #
 # After login the session has cookies:
-#   TGC               鈥?CAS ticket-granting cookie
-#   ASP.NET_SessionId 鈥?WS application session
-#   SUserCode         鈥?user ID (e.g. <sid>)
-#   SUserRole         鈥?role ID (e.g. 1007)
+#   TGC               — CAS ticket-granting cookie
+#   ASP.NET_SessionId — WS application session
+#   SUserCode         — user ID (e.g. <sid>)
+#   SUserRole         — role ID (e.g. 1007)
 #
 # Key API (cookies only, no auth header):
 #   GET /Main/GetSmartLeftMenuTData.do                    鈫?JSON menu
@@ -24,7 +24,6 @@ from __future__ import annotations
 from sustech_survival import _net
 
 import re
-import ssl
 from urllib.parse import quote
 
 import requests
@@ -34,30 +33,18 @@ from ..authorizer import Authorizer, AuthorizerError, CAS_BASE, UA
 __all__ = ["WSProvider"]
 
 
-def build_legacy_adapter():
-    """
-    Build a LegacyAdapter class that uses OP_LEGACY_SERVER_CONNECT so TLS
-    session resumption works reliably against ws.sustech.edu.cn.
-    Returned as a class (not instance) so HTTPAdapter can instantiate it.
-    """
-    _OP_LEGACY = getattr(ssl, "OP_LEGACY_SERVER_CONNECT", 0x4)
-    legacy_ctx = ssl.create_default_context()
-    legacy_ctx.options |= _OP_LEGACY
-
-    from requests.adapters import HTTPAdapter
-
-    class LegacyAdapter(HTTPAdapter):
-        def init_poolmanager(self, *args, **kwargs):
-            kwargs["ssl_context"] = legacy_ctx
-            return super().init_poolmanager(*args, **kwargs)
-
-    return LegacyAdapter
-
-
 def make_ws_session() -> requests.Session:
-    """Return a requests.Session with LegacyAdapter mounted."""
+    """Return a requests.Session on the shared campus TLS adapter.
+
+    WS needs ``OP_LEGACY_SERVER_CONNECT`` so TLS session resumption works
+    against ws.sustech.edu.cn. That option — and the verification policy that
+    goes with it — lives in ``sso._tls.LegacyTLSAdapter``, so every campus
+    service shares one implementation instead of its own private one.
+    """
+    from .._tls import LegacyTLSAdapter
+
     sess = requests.Session()
-    sess.mount("https://", build_legacy_adapter()())
+    sess.mount("https://", LegacyTLSAdapter())
     return sess
 
 
@@ -88,7 +75,7 @@ class WSProvider(Authorizer):
         sess = make_ws_session()
         sess.headers["User-Agent"] = UA
 
-        # Step 1 鈥?fetch CAS login page 鈫?extract execution token
+        # Step 1 — fetch CAS login page 鈫?extract execution token
         resp = sess.get(self.cas_url, timeout=_net.timeouts().service_timeout("ws"))
         if resp.status_code == 200 and "execution" in resp.text:
             m = re.search(r'name="execution"\s+value="([^"]+)"', resp.text)
@@ -100,7 +87,7 @@ class WSProvider(Authorizer):
         else:
             raise AuthorizerError("Unexpected CAS login page response")
 
-        # Step 2 鈥?POST credentials 鈫?receive ticket
+        # Step 2 — POST credentials 鈫?receive ticket
         resp2 = sess.post(
             self.cas_url,
             data={
@@ -124,7 +111,7 @@ class WSProvider(Authorizer):
             body = resp2.text[:500] if resp2.text else "(empty)"
             raise AuthorizerError(f"No ticket ({resp2.status_code}): {body}")
 
-        # Step 3 鈥?exchange ticket at WS service URL
+        # Step 3 — exchange ticket at WS service URL
         sess.get(
             f"{self.SERVICE_URL}?ticket={ticket}",
             headers={"Accept": "text/html"},
@@ -164,26 +151,9 @@ class WSProvider(Authorizer):
     # -- Session ---------------------------------------------------------------
 
     def _build_session(self) -> requests.Session:
-        """
-        A requests.Session with LegacyAdapter so TLS session resumption works
-        reliably against ws.sustech.edu.cn.
-        """
-        import ssl
-        from requests.adapters import HTTPAdapter
-
-        _OP_LEGACY = getattr(ssl, 'OP_LEGACY_SERVER_CONNECT', 0x4)
-        legacy_ctx = ssl.create_default_context()
-        legacy_ctx.options |= _OP_LEGACY
-
-        class LegacyAdapter(HTTPAdapter):
-            def init_poolmanager(self, *args, **kwargs):
-                kwargs["ssl_context"] = legacy_ctx
-                return super().init_poolmanager(*args, **kwargs)
-
-        raw = self._session_cache
-        sess = requests.Session()
-        sess.mount("https://", LegacyAdapter())
-        self._apply_cookies(sess, raw)
+        """Return a WS session on the shared campus TLS adapter."""
+        sess = make_ws_session()
+        self._apply_cookies(sess, self._session_cache)
         return sess
 
     def check(self) -> tuple[bool, str]:

@@ -1,6 +1,6 @@
 # 文档首页 / Documentation Index
 
-**语言 / Languages:** [English →](../en/index.md) · [中文 (当前)](#)
+**语言 / Languages:** [English →](/index/) · [中文 (当前)](#)
 
 `sustech_survival` 的中文文档入口,与 `docs/en/` 平级。
 本目录是模块文档(选课、图书馆、教务、校历、班车……)的中文版位置 —— 文件被翻译后出现在这里,与英文版同样收录在 mkdocs 构建中,两套文档独立维护。

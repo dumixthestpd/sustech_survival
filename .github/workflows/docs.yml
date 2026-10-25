@@ -45,7 +45,9 @@ jobs:
           pip install -e ".[docs]"
 
       - name: Build site
-        run: mkdocs build
+        # --strict turns a broken cross-reference into a failed build; the
+        # docs are dense with inter-page links and silent 404s were shipping.
+        run: mkdocs build --strict
 
       - uses: actions/upload-pages-artifact@v5
         with:

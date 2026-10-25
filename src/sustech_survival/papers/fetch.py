@@ -24,6 +24,13 @@ CLOUDSCRAPER_HOSTS = {"mdpi.com", "wiley.com", "tandf.co.uk", "sagepub.com", "ac
 
 
 def get_scraper():
+    try:
+        import cloudscraper  # optional: lives in the [papers] extra
+    except ImportError as exc:  # pragma: no cover - depends on install
+        raise RuntimeError(
+            "papers.fetch needs the optional 'cloudscraper' dependency: "
+            'pip install "sustech_survival[papers]"'
+        ) from exc
     return cloudscraper.create_scraper(
         browser={"browser": "chrome", "platform": "windows", "desktop": True}
     )

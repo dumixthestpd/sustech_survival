@@ -78,5 +78,5 @@ print(receipt.status, receipt.job_id, receipt.verification_url)
 队列保留 `duplex_flag`，`vdup` 的 `duplex_edge="long"`，`hdup` 为 `"short"`。
 缺失或冲突的单双面标记仍返回 `is_duplex=None`、`duplex_edge=None`。
 
-其他方法见 [英文指南](../en/pms.md)。删除打印或扫描任务会更改账号状态，
+其他方法见 [英文指南](/pms/)。删除打印或扫描任务会更改账号状态，
 需要另外获得授权。

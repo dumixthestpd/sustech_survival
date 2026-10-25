@@ -2,7 +2,7 @@
 
 Unified Flask web interface.
 
-- [English user guide](../en/webui.md)
-- [中文用户指南](../zh/webui.md)
-- [Architecture](../en/webui-architecture.md)
+- [English user guide](/webui/)
+- [中文用户指南](/zh/webui/)
+- [Architecture](/webui-architecture/)
 - [Skin development instructions](../dev-instructions/skin-development.md)

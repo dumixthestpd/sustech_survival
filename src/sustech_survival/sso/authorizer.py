@@ -27,6 +27,8 @@
 
 import json
 import functools
+
+from .._diag import note
 import requests
 from pathlib import Path
 from typing import Callable, Optional
@@ -483,30 +485,30 @@ class Authorizer(ABC):
             username, password = self._read_creds()
         except AuthorizerError as e:
             self._last_refresh_error = InvalidCredentials(str(e))
-            print(f"❌ Auth refresh skipped: {e}")
+            note(f"❌ Auth refresh skipped: {e}")
             return False
         try:
             cookies = self._get_ticket_cookies(username, password)
             self._set_session(cookies)
             self._cached_session = None  # invalidate stale session object
             cls = self.__class__.__name__
-            print(f"✅ {cls} session refreshed ({len(cookies)} cookies)")
+            note(f"✅ {cls} session refreshed ({len(cookies)} cookies)")
             return True
         except InvalidCredentials as e:
             self._last_refresh_error = e
-            print(f"❌ {self.__class__.__name__} credentials rejected")
+            note(f"❌ {self.__class__.__name__} credentials rejected")
             return False
         except NetworkError as e:
             self._last_refresh_error = e
-            print(f"❌ {self.__class__.__name__} network error: {e}")
+            note(f"❌ {self.__class__.__name__} network error: {e}")
             return False
         except NotImplementedError as e:
             self._last_refresh_error = AuthorizerError(str(e))
-            print(f"❌ {self.__class__.__name__} auth not supported: {e}")
+            note(f"❌ {self.__class__.__name__} auth not supported: {e}")
             return False
         except AuthorizerError as e:
             self._last_refresh_error = e
-            print(f"❌ {self.__class__.__name__} auth failed: {e}")
+            note(f"❌ {self.__class__.__name__} auth failed: {e}")
             return False
 
     def _set_session(self, cookies: dict):
@@ -583,12 +585,12 @@ class Authorizer(ABC):
 
             captcha = page.query_selector('[id*="captcha"], .g-recaptcha, [src*="captcha"]')
             if captcha:
-                print("⚠️  Captcha detected at CAS page — complete login interactively")
+                note("⚠️  Captcha detected at CAS page — complete login interactively")
                 browser.close()
                 return False
 
-            print(f"Browser opened — log in via CAS for {self.BASE_URL}")
-            print("Waiting for redirect...")
+            note(f"Browser opened — log in via CAS for {self.BASE_URL}")
+            note("Waiting for redirect...")
             try:
                 page.wait_for_url(f"{self.BASE_URL.rstrip('/')}/**", timeout=0)
             except Exception:
@@ -598,7 +600,7 @@ class Authorizer(ABC):
             cookies = {c['name']: c['value'] for c in ctx.cookies()}
             self._set_session(cookies)
             cls = self.__class__.__name__
-            print(f"✅ {cls} login complete ({len(cookies)} cookies)")
+            note(f"✅ {cls} login complete ({len(cookies)} cookies)")
             browser.close()
             return True
 

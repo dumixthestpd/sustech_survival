@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # evaluation.py imports this module, so type-only
+    from .evaluation import Evaluation
 
 
 class QuestionType(Enum):

@@ -11,15 +11,30 @@ from typing import Any
 def live(*, include_shuttles: bool = True) -> "list[dict[str, Any]]":
     """Live campus-shuttle positions.
 
-    Mirrors the former ``/api/transit/live`` endpoint: each shuttle as
-    ``{line, station, eta_sec}``.
+    Each bus is one flat dict holding the whole ``LiveBus`` record. The old
+    shape asked for ``line``/``station``/``eta_sec``, none of which the feed
+    provides, so every call raised ``AttributeError``.
     """
     from sustech_survival.transit.transit import TransitClient
     client = TransitClient()
     positions = client.get_live_positions(include_shuttles=include_shuttles)
-    return [{
-        "line": p.line, "station": p.station, "eta_sec": p.eta_sec,
-    } for p in positions]
+    return [_live_bus_payload(bus) for bus in positions]
+
+
+def _live_bus_payload(bus: Any) -> "dict[str, Any]":
+    """One ``LiveBus`` as JSON-ready data — the contract skins and agents read."""
+    return {
+        "bus_id": bus.bus_id,
+        "route_code": bus.route_code,
+        "next_station": bus.next_station,
+        "prev_station_id": bus.prev_station_id,
+        "lat": bus.lat,
+        "lng": bus.lng,
+        "speed_kmh": bus.speed_kmh,
+        "course": bus.course,
+        "is_operating": bus.is_operating,
+        "timestamp": bus.timestamp,
+    }
 
 
 def facilities() -> "list[dict[str, Any]]":

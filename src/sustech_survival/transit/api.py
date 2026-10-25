@@ -101,15 +101,14 @@ def register(reg: CollectorRegistry) -> None:
 
     @reg.get("transit.live", "/api/transit/live")
     def api_live():
-        """Direct live-bus JSON (no file refresh needed)."""
+        """Direct live-bus JSON (no file refresh needed).
+
+        Delegates to ``sustech_survival.api.transit.live`` so the HTTP route
+        and the Flask-free contract can never drift into different shapes.
+        """
+        from sustech_survival.api import transit as transit_contract
         try:
-            from sustech_survival.transit.transit import TransitClient
-            client = TransitClient()
-            positions = client.get_live_positions(include_shuttles=True)
-            return jsonify([{
-                "line": p.line, "station": p.station,
-                "eta_sec": p.eta_sec,
-            } for p in positions])
+            return jsonify(transit_contract.live(include_shuttles=True))
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
@@ -146,10 +145,3 @@ def _transit_root() -> Optional[Path]:
 def _data_dir() -> Optional[Path]:
     d = current_app.config.get("TRANSIT_DATA_DIR")
     return Path(d) if d else None
-
-
-try:
-    from sustech_survival import _version as _v
-    reg.version = _v.__version__
-except Exception:  # pragma: no cover
-    pass

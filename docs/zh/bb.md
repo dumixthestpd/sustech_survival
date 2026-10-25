@@ -16,13 +16,13 @@
 一次。读取失败或响应格式错误会抛出异常，不将失败缓存为空列表或成功的部分
 结果。此前包含不可用条目的发现缓存不再复用。
 
-详细 API 示例见[英文版](../en/bb.md#content-discovery-and-availability)。
+详细 API 示例见[英文版](/bb/#content-discovery-and-availability)。
 
 ---
 
-本页尚未翻译。最新内容请参阅[英文版](../en/bb.md)。
+本页尚未翻译。最新内容请参阅[英文版](/bb/)。
 
-This page is not yet translated to Chinese. See the [English version](../en/bb.md) for current content.
+This page is not yet translated to Chinese. See the [English version](/bb/) for current content.
 
 要贡献翻译，请直接编辑本文件并提交 PR。
 To contribute a translation, edit this file and open a PR.

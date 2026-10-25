@@ -36,6 +36,7 @@
 - **selectcourse** — TIS 选课：浏览课程、加退选、管理购物车。
 - **faculty** — 教师信息目录：按学院列表、全文搜索、个人主页查询。
 - **transit** — 校园巴士与步行导航：时刻表、实时 GPS、路线规划。
+- **mirror** — 南科大开源镜像站：课程教学大纲、本科人才培养方案、新生手册、校园地图、目录列表，全部公开无需登录。`sustech mirror syllabus|program|handbook|map|list|course`。
 - **calendar** — 南科大校历与日期智能：从 GitHub 上的 `sustech-calendar` 仓库加载 JSON，解析 (周次, 星期) → 日期，处理补课日调换。在线数据为权威源；本地覆盖用于编辑中的数据。
 - **ical** — 已选课程的 `.ics` 导出。位于 `selectcourse.ical`，通过 webui 的 `GET /api/tis/ical` 接入。
 - **webui** — 皮肤式 Flask Web UI。包内自带两个皮肤 —— `default`（英文）与 `default_zh`（中文），都包含完整的 TIS 选课流程（搜索 → 选课 → 无冲突课表 → 方案对比 → 积分与同步）、公交地图与 NCES 评价。皮肤完全自包含且单语言（无语言切换）。启动：`python -m sustech_survival.webui serve`。

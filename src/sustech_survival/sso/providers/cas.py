@@ -1,10 +1,10 @@
 ﻿# =============================================================================
-# CAS Provider 鈥?Central Authentication Service v3.0
+# CAS Provider — Central Authentication Service v3.0
 # =============================================================================
 # Direct CAS login: fetch execution token 鈫?POST credentials 鈫?exchange ticket.
 # Used by: SUSTech BB, TIS, Lib, and any other CAS-protected service.
 #
-# Flow (all private 鈥?consumers see only Authorizer.ensure()):
+# Flow (all private — consumers see only Authorizer.ensure()):
 #   _fetch_execution() 鈫?_post_cas() 鈫?_exchange_ticket()
 #
 # No public methods. Authorizer base class handles the lifecycle.
@@ -24,7 +24,7 @@ from ..authorizer import Authorizer, AuthorizerError, CAS_BASE, UA
 # CAS/TIS are slow and flaky on VPN/off-campus links: a 10s read timeout
 # produced frequent false "CAS timeout" failures during session refresh
 # (observed live 2026-09-02). Timeouts/attempts are configurable via the
-# root config.json `timeouts` map (see sustech_survival._net) 鈥?defaults:
+# root config.json `timeouts` map (see sustech_survival._net) — defaults:
 # 30s per step, 2 attempts. Operators with a slow TIS can raise them. 
 
 
@@ -37,11 +37,11 @@ class CASAuthorizer(Authorizer):
       - TIS pattern:   cookies arrive on the GET to the ticket URL itself
 
     Additional class attributes:
-        SUBMIT_VALUE   鈥?value for submit button. None = omit, "鎻愪氦" = Chinese "submit"
-        _idp_cas_base  鈥?override CAS endpoint (e.g. for federated IdPs)
+        SUBMIT_VALUE   — value for submit button. None = omit, "提交" = Chinese "submit"
+        _idp_cas_base  — override CAS endpoint (e.g. for federated IdPs)
     """
 
-    SUBMIT_VALUE: str = "鎻愪氦"  # works for BB/Lib; None to skip
+    SUBMIT_VALUE: str = "提交"  # works for BB/Lib; None to skip
     _idp_cas_base: str = CAS_BASE
 
     # -- Private CAS flow -----------------------------------------------------
@@ -130,7 +130,7 @@ class CASAuthorizer(Authorizer):
             raise AuthorizerError("No Location header in CAS response.")
         if "cas.sustech.edu.cn" in loc and "ticket" not in loc:
             raise InvalidCredentials(
-                "CAS rejected credentials 鈥?wrong username or password.\n"
+                "CAS rejected credentials — wrong username or password.\n"
                 f"Check credentials.txt at {self._creds_file}"
             )
         return loc

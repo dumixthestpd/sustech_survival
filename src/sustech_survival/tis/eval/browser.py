@@ -176,6 +176,7 @@ class TISAuthEval(TISAuth):
         from playwright.sync_api import sync_playwright
 
         target = course
+        course_name = target.get("course_name", "")
         r = self.session.get(f"{BASE}/user/me")
         r.raise_for_status()
         yhdm = r.json().get("yhdm", "")
@@ -213,7 +214,7 @@ class TISAuthEval(TISAuth):
                 pass  # unknown format, leave unchanged
             route.continue_(url=url)
 
-        page.route("**/listEcaluationRalationshipEnriry*", _fix_xnxq)
+        page.route("**/listEcaluationRalationshipEnriry*", fix_xnxq)
 
         # Navigate to task page — wjid (task-level) identifies the category.
         # Do NOT include rwid in page URL — Vue needs it absent to fire AJAX.
@@ -348,7 +349,7 @@ class TISAuthEval(TISAuth):
                     pass
                 route.continue_(url=url)
 
-            page.route("**/listEcaluationRalationshipEnriry*", _fix_xnxq)
+            page.route("**/listEcaluationRalationshipEnriry*", fix_xnxq)
 
             for c in target:
                 kcmc = c["course_name"]
@@ -513,7 +514,7 @@ class TISAuthEval(TISAuth):
                     pass
                 route.continue_(url=url)
 
-            page.route("**/listEcaluationRalationshipEnriry*", _fix_xnxq)
+            page.route("**/listEcaluationRalationshipEnriry*", fix_xnxq)
 
             for c in target:
                 kcmc = c["course_name"]

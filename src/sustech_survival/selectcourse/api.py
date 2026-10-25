@@ -1130,12 +1130,3 @@ def _conflicts_blocked(slots, blocked_slots):
                       int(s["period_end"]) + 1)) & bps:
                 return True
     return False
-
-
-# Set the collector's module version from the package version at import
-# time so the registry can warn on mismatch if a future skin demands it.
-try:
-    from sustech_survival import _version as _v
-    reg.version = _v.__version__
-except Exception:  # pragma: no cover
-    pass

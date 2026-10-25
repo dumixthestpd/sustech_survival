@@ -75,7 +75,12 @@ class CollectorRegistry:
         self._module_name_override: str = ""
         self._endpoints: list[EndpointSpec] = []
         self._extras: list = []
-        self.version = ""
+        # Every module ships inside this package, so the package version *is*
+        # the module version. Stamped here once: the assignment used to live
+        # at the bottom of three ``api.py`` files, outside ``register()``,
+        # where ``reg`` was unbound and the NameError was swallowed.
+        from .. import _version as _pkg
+        self.version = _pkg.__version__
 
     @property
     def name(self) -> str:

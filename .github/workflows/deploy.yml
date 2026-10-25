@@ -10,7 +10,8 @@ name: Deploy release
 #      - Workflow filename: deploy.yml
 #      - Environment name: (leave blank — this workflow has no `environment:`)
 #   2. Bump `_version.py` to a release version (e.g. 2026.7.14b1)
-#   3. Update CHANGELOG.md (cut `[Unreleased]` into a dated version section)
+#   3. This repo has no CHANGELOG.md — the annotated tag message is the
+#      release note, and `_version.py` is the single version source.
 #   4. `git tag 2026.7.14b1 && git push --tags`
 #
 # Live (requires-network) tests are skipped via the default `-m "not live"`.

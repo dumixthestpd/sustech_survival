@@ -39,6 +39,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[all]"
 
+      - name: "Static check (undefined names)"
+        # F821 caught real dead code that the browser-backed TIS evaluation
+        # flows and the module registries could reach only at runtime
+        # (issues #36, #37). Cheap gate, no formatting churn.
+        env:
+          TZ: "Asia/Shanghai"
+        run: |
+          pip install ruff
+          ruff check --select F821 src/sustech_survival
+
       - name: "Run tests"
         env:
           TZ: "Asia/Shanghai"

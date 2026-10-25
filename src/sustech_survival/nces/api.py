@@ -186,10 +186,3 @@ def register(reg: CollectorRegistry) -> None:
                             "reason": "course not found in NCES"})
         return jsonify({"available": True, "code": code,
                         "count": len(reviews), "reviews": reviews})
-
-
-try:
-    from sustech_survival import _version as _v
-    reg.version = _v.__version__
-except Exception:  # pragma: no cover
-    pass

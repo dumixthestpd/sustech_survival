@@ -271,7 +271,7 @@ class PMSAuth(CASAuthorizer):
 def _rsa_encrypt(public_key_pem: str, plaintext: str) -> str:
     """Encrypt `plaintext` with RSA public key, return base64-encoded ciphertext.
 
-    Matches JSEncrypt.encrypt() 鈥?PKCS#1 v1.5 padding, base64 output.
+    Matches JSEncrypt.encrypt() — PKCS#1 v1.5 padding, base64 output.
     PMS uses 1024-bit keys; output is ~172 base64 chars.
 
     The server returns the key as raw base64 (no PEM headers). We accept

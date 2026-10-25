@@ -62,6 +62,8 @@ plugins:
             Selectcourse: 选课
             Context: 上下文
             Papers: 论文
+            Mirror: 镜像站
+            "Agents (AI)": 智能体（AI）
             NCES: 课程评价
             WS: 外事
             "E-Hall Booking": 场地预约
@@ -109,6 +111,7 @@ nav:
       - Selectcourse: selectcourse.md
       - Context: context.md
       - Papers: papers.md
+      - Mirror: mirror.md
       - NCES: nces.md
       - WS: ws.md
       - E-Hall Booking: booking.md
@@ -124,6 +127,7 @@ nav:
       - WoS: wos.md
   - Reference:
       - Docs Layout: docs-layout.md
+      - Agents (AI): agents.md
       - Resources: resources.md
   - Module Indexes:
           - Classified Documentation: modules/classified-doctype.md
@@ -135,6 +139,9 @@ nav:
           - SSO: modules/sso.md
           - Context: modules/context.md
           - NCES: modules/nces.md
+          - WS: modules/ws.md
+          - Mirror: modules/mirror.md
+          - Agents (AI): modules/agents.md
           - Papers: modules/papers.md
           - Faculty: modules/faculty.md
           - PMS: modules/pms.md

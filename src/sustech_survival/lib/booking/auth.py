@@ -23,6 +23,7 @@ DIFFERENT FROM:
 
 from __future__ import annotations
 from ... import _net
+from ..._diag import note
 
 import json
 import time
@@ -164,7 +165,7 @@ class LibBookingAuth(CASAuthorizer):
         try:
             username, password = self.read_creds()
         except AuthorizerError as e:
-            print(f"❌ LibBookingAuth refresh skipped: {e}")
+            note(f"❌ LibBookingAuth refresh skipped: {e}")
             return False
 
         try:
@@ -187,13 +188,13 @@ class LibBookingAuth(CASAuthorizer):
 
             self._set_session(cookies)
             self._user_info = self._fetch_user_info()
-            print(
+            note(
                 f"✅ LibBookingAuth session refreshed "
                 f"({len(cookies)} cookies, ic-cookie ✓)"
             )
             return True
         except (AuthorizerError, Exception) as e:
-            print(f"❌ LibBookingAuth refresh failed: {e}")
+            note(f"❌ LibBookingAuth refresh failed: {e}")
             return False
 
     # -- Session management --------------------------------------------------

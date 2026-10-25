@@ -2,6 +2,6 @@
 
 SUSTech Library (Primo).
 
-- [English user guide](../en/lib.md)
-- [中文用户指南](../zh/lib.md)
+- [English user guide](/lib/)
+- [中文用户指南](/zh/lib/)
 - [Library booking](../modules/booking.md)

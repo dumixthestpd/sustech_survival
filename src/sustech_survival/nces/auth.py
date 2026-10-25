@@ -45,6 +45,7 @@ This is what NCESAuth.login() walks.
 """
 from __future__ import annotations
 from .. import _net
+from .._diag import note
 
 import re
 from typing import TYPE_CHECKING, Optional
@@ -111,7 +112,7 @@ class NCESAuth(CASAuthorizer):
         try:
             username, password = self._read_creds()
         except Exception as e:
-            print(f"❌ NCESAuth refresh skipped: {e}")
+            note(f"❌ NCESAuth refresh skipped: {e}")
             return False
         sess = self._cached_session
         if sess is None:
@@ -119,7 +120,7 @@ class NCESAuth(CASAuthorizer):
             sess.headers["User-Agent"] = self.USER_AGENT
             self._cached_session = sess
         if not self._login_chain(sess, username, password):
-            print(f"❌ NCESAuth login chain failed")
+            note(f"❌ NCESAuth login chain failed")
             return False
         # Set a sentinel in _session_cache so the parent's check()
         # thinks we're fresh (TTL is 25min; we keep session warm manually).
@@ -127,7 +128,7 @@ class NCESAuth(CASAuthorizer):
         import time
         self._session_time = time.time()
         cls = self.__class__.__name__
-        print(f"✅ {cls} session refreshed "
+        note(f"✅ {cls} session refreshed "
               f"({len(sess.cookies)} multi-domain cookies)")
         return True
 

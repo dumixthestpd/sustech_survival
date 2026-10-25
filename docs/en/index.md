@@ -1,4 +1,4 @@
-**Languages:** [English (current)](#) · [中文 →](zh/)
+**Languages:** [English (current)](#) · [中文 →](/zh/)
 
 # Documentation Index
 

@@ -100,7 +100,7 @@ from sustech_survival.consequence import (
     Severity, Consequence, consequence_rich,
 )
 
-from .result import success, failure, dry_run as _dry_run_result
+from .result import SubmitResult, success, failure, dry_run as _dry_run_result
 
 BB_BASE = "https://bb.sustech.edu.cn"
 

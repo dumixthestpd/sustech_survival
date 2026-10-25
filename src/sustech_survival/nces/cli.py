@@ -43,20 +43,33 @@ def refresh_cmd(sort: str, max_pages: int, no_cache: bool):
 
 @cli.command("lookup")
 @click.argument("code")
-def lookup_cmd(code: str):
-    """Look up a course by TIS-style code (e.g. HUM032)."""
+@click.option("--teacher", default="", help="Restrict to one NCES teacher's section.")
+def lookup_cmd(code: str, teacher: str):
+    """Look up a course by TIS-style code (e.g. HUM032).
+
+    Resolves through the NCES search, so a code with several sections reports
+    which teacher's section the numbers belong to.
+    """
     s = NCESScraper()
-    c = s.lookup(code)
-    if c is None:
+    course, exact, alternatives = s.search_course(code, teacher)
+    if course is None:
         raise click.ClickException(f"course not found: {code}")
-    click.echo(f"{c.name} · {c.teacher}  [{c.code}]")
-    click.echo(f"  semester:  {c.semester}")
-    click.echo(f"  ★ {c.rating:.1f}/10  ({c.review_count} reviews)")
-    click.echo(f"  Difficulty: {c.difficulty[0]:>10} ({c.difficulty[1]:.0f}%)")
-    click.echo(f"  Workload:   {c.workload[0]:>10} ({c.workload[1]:.0f}%)")
-    click.echo(f"  Grading:    {c.grading[0]:>10} ({c.grading[1]:.0f}%)")
-    click.echo(f"  Takeaways:  {c.takeaways[0]:>10} ({c.takeaways[1]:.0f}%)")
-    click.echo(f"  {c.direct_url}")
+    click.echo(f"{course.name} · {course.teacher}  [{course.code}]")
+    click.echo(f"  semester:  {course.semester}")
+    click.echo(f"  ★ {course.rating:.1f}/10  ({course.review_count} reviews)")
+    click.echo(f"  Difficulty: {course.difficulty[0]:>10} ({course.difficulty[1]:.0f}%)")
+    click.echo(f"  Workload:   {course.workload[0]:>10} ({course.workload[1]:.0f}%)")
+    click.echo(f"  Grading:    {course.grading[0]:>10} ({course.grading[1]:.0f}%)")
+    click.echo(f"  Takeaways:  {course.takeaways[0]:>10} ({course.takeaways[1]:.0f}%)")
+    click.echo(f"  {course.direct_url}")
+    if not teacher and alternatives:
+        names = ", ".join(sorted({a.teacher for a in alternatives if a.teacher}))
+        click.echo(f"  other sections of {course.code}: {names or '(unnamed)'}")
+    if teacher and not exact:
+        click.echo(
+            f"  note: no section matched teacher {teacher!r}; "
+            "showing the top-reviewed section"
+        )
 
 
 @cli.command("status")
