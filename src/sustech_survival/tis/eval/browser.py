@@ -29,6 +29,8 @@ class TISAuthEval(TISAuth):
         self,
         xnxq: Optional[str] = None,
         status: str = "all",
+        *,
+        session=None,
     ) -> list[dict]:
         """
         List evaluation tasks for a semester via REST API.
@@ -44,6 +46,7 @@ class TISAuthEval(TISAuth):
             xnxq:   Semester code (e.g. "2025-20262" or "2025-2026-2").
                     Defaults to the live current semester.
             status: "all", "pending" (lsjgzt=0), or "saved" (lsjgzt=3)
+            session: optional already-authorized TIS session for shared read workflows.
 
         Returns list of course dicts with keys:
             course_name, course_code, teacher, task_type, lsjgzt, status_text,
@@ -58,7 +61,7 @@ class TISAuthEval(TISAuth):
             # "2025-2026-2" → indices: 0-3=year, 4="-", 5-8=year2, 9="-", 10=term
             # "2025-20262" → indices: 0-3=year, 4="-", 5-9=year2+term, 10=empty
             xnxq = f"{xnxq[:4]}-{xnxq[5:9]}{xnxq[10]}"  # "2025-2026-2" → "2025-20262"
-        sess = self.session
+        sess = self.session if session is None else session
 
         # Step 1: get 3 category tasks
         tasks_resp = sess.get(

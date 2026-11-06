@@ -372,7 +372,7 @@ def slot_times(zc: int) -> dict:
     Returns {slot_num: (kssj, jssj)} e.g. {1: ('08:00', '08:50'), 3: ('10:20', '11:10')}.
     Returns {} if auth fails (caller handles gracefully).
 
-    Auth is NOT silently swallowed — if refresh fails this raises AuthorizerError
+    Auth is NOT silently swallowed — if authentication fails this raises AuthorizerError
     so the caller (Context.class_now) surfaces it to the agent.
     """
     from sustech_survival.sso import TISAuth
@@ -380,8 +380,9 @@ def slot_times(zc: int) -> dict:
     from sustech_survival.semester import Semester
     try:
         auth = TISAuth()
-        if not auth.refresh():
-            raise AuthorizerError("TIS auth refresh failed — check credentials.txt")
+        ok, reason = auth.ensure()
+        if not ok:
+            raise AuthorizerError(reason or "TIS authentication failed")
         session = auth.session
         sem = Semester.current()
         resp = session.post(
@@ -621,8 +622,12 @@ def fetch_next_eval() -> Optional[dict]:
 
         # Use the LIVE current semester — never a hardcoded past term.
         sem = Semester.current()
-        auth = TISAuthEval()
-        evals = auth.evaluations(xnxq=sem.tis, status="all")
+        from sustech_survival.sso import TISAuth
+        auth = TISAuth()
+        ok, reason = auth.ensure()
+        if not ok:
+            return {"error": "auth", "hint": "sustech sso check"}
+        evals = TISAuthEval().evaluations(xnxq=sem.tis, status="all", session=auth.session)
         if not evals:
             return None
 

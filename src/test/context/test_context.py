@@ -473,3 +473,91 @@ def test_context_to_dict_normal_includes_next_exam():
     assert "next_exam" in d
     assert "next_deadline" in d
     assert "next_eval" in d
+
+
+# --- Shared TIS session (context eval / slot times) -------------------------
+
+def test_fetch_next_eval_uses_shared_tis_session(monkeypatch):
+    """fetch_next_eval must authenticate once and hand that session to evaluations.
+
+    Regression: constructing TISAuthEval() without a session raised
+    "No session — call ensure() first", the bare except swallowed it, and
+    context never reported pending evaluations.
+    """
+    from sustech_survival import sso
+    from sustech_survival.tis import eval as eval_module
+
+    session = object()
+    seen = {}
+
+    class _Auth:
+        def ensure(self):
+            return True, ""
+
+        @property
+        def session(self):
+            return session
+
+    class _Eval:
+        def evaluations(self, xnxq=None, status="all", *, session=None):
+            seen["session"] = session
+            seen["status"] = status
+            return [{"course_name": "CS101", "lsjgzt": "0",
+                     "evaluationName": "期末评价"}]
+
+    monkeypatch.setattr(sso, "TISAuth", _Auth)
+    monkeypatch.setattr(eval_module, "TISAuthEval", _Eval)
+
+    out = fetch_next_eval()
+
+    assert seen["session"] is session
+    assert seen["status"] == "all"
+    assert out is not None
+    assert out["course"] == "CS101"
+    assert out["name"].startswith("期末评价")
+
+
+def test_fetch_next_eval_reports_auth_error(monkeypatch):
+    """A failed ensure() must surface the auth hint instead of silently None."""
+    from sustech_survival import sso
+    from sustech_survival.tis import eval as eval_module
+
+    class _Auth:
+        def ensure(self):
+            return False, "credentials invalid"
+
+    class _Eval:
+        def evaluations(self, *args, **kwargs):
+            raise AssertionError("evaluations must not run without a session")
+
+    monkeypatch.setattr(sso, "TISAuth", _Auth)
+    monkeypatch.setattr(eval_module, "TISAuthEval", _Eval)
+
+    assert fetch_next_eval() == {"error": "auth", "hint": "sustech sso check"}
+
+
+def test_slot_times_reuses_cached_session(monkeypatch):
+    """slot_times must call ensure() rather than forcing a fresh CAS login."""
+    from sustech_survival import sso
+    from sustech_survival.context import slot_times
+
+    class _Resp:
+        def json(self):
+            return {"content": [{"xj": "1", "kssj": "08:00", "jssj": "08:50"}]}
+
+    class _Session:
+        def post(self, url, data=None, timeout=None):
+            assert "queryKbjg" in url
+            return _Resp()
+
+    class _Auth:
+        def ensure(self):
+            return True, ""
+
+        @property
+        def session(self):
+            return _Session()
+
+    monkeypatch.setattr(sso, "TISAuth", _Auth)
+
+    assert slot_times(3) == {1: ("08:00", "08:50")}
