@@ -570,12 +570,63 @@ def fetch_next_deadline() -> Optional[dict]:
         return {"error": "unavailable", "message": str(e), "source": "bb"}
 
 
-def fetch_next_exam() -> Optional[dict]:
-    """Get nearest TIS exam by date. Returns {name, code, date, time, building, room}.
+def _clock_time(text: str) -> Optional[tuple]:
+    """``"09:00"`` -> ``(9, 0)``; None when it is not an HH:MM time."""
+    m = re.fullmatch(r"\s*(\d{1,2}):(\d{2})\s*", text or "")
+    if not m or int(m.group(1)) > 23 or int(m.group(2)) > 59:
+        return None
+    return int(m.group(1)), int(m.group(2))
+
+
+def _slot_times(slot: str) -> tuple:
+    """``"09:00-11:00"`` -> ``((9, 0), (11, 0))``; either side None if unreadable."""
+    start, _, end = (slot or "").partition("-")
+    return _clock_time(start), _clock_time(end)
+
+
+def _exam_window(exam: dict) -> Optional[tuple]:
+    """(start, end) datetimes of a TIS exam in CHINA_TZ, or None without a date.
+
+    Times come from KSJTSJ (``"09:00-11:00"``) and fall back to the KSJC/JSJC
+    period times. An unknown start is the start of the day and an unknown end
+    the end of the day, so an exam is never dropped before its day is over.
+    """
+    from sustech_survival.tis.exams import _PERIOD_TIMES
+
+    try:
+        day = date.fromisoformat((exam.get("KSRQ") or "")[:10])
+    except ValueError:
+        return None
+    start, end = _slot_times(exam.get("KSJTSJ") or "")
+    try:
+        if start is None:
+            start = _slot_times(_PERIOD_TIMES.get(int(exam.get("KSJC")), ""))[0]
+        if end is None:
+            end = _slot_times(_PERIOD_TIMES.get(int(exam.get("JSJC")), ""))[1]
+    except (TypeError, ValueError):
+        pass
+    begin = datetime(day.year, day.month, day.day, *(start or (0, 0)), tzinfo=CHINA_TZ)
+    if end is None:
+        finish = datetime(day.year, day.month, day.day, tzinfo=CHINA_TZ) + timedelta(days=1)
+    else:
+        finish = datetime(day.year, day.month, day.day, *end, tzinfo=CHINA_TZ)
+    return begin, finish
+
+
+def fetch_next_exam(now: Optional[datetime] = None) -> Optional[dict]:
+    """Get the nearest TIS exam that has not ended yet.
+
+    Returns {name, code, date, time, building, room}. Exams are ordered by
+    date and start time (KSJTSJ, else the KSJC period); one that has already
+    ended — an earlier day, or earlier today — is skipped. Exams whose date
+    can't be read are kept, after the dated ones.
 
     On auth failure returns {"error": "auth", "hint": "sustech sso check"} so agents
     know exactly what to do without guessing. Matches fetch_next_deadline / fetch_next_eval
     shape for Context integration.
+
+    Args:
+        now: injectable current time for tests (defaults to ``now_()``).
     """
     from sustech_survival.sso import TISAuth
     from sustech_survival.tis.exams import fetch_exams
@@ -592,8 +643,21 @@ def fetch_next_exam() -> Optional[dict]:
     if not exams:
         return None
 
-    # Sort by date — fetch_exams already sorts, but enforce here for safety
-    exams = sorted(exams, key=lambda x: x.get("KSRQ", ""))
+    now = now or now_()
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=CHINA_TZ)
+    dated, undated = [], []
+    for exam in exams:
+        window = _exam_window(exam)
+        if window is None:
+            undated.append(exam)
+        elif window[1] > now:
+            dated.append((window[0], exam))
+    # Stable sort: exams at the same start keep the order TIS returned them in.
+    dated.sort(key=lambda item: item[0])
+    exams = [exam for _, exam in dated] + undated
+    if not exams:
+        return None
 
     nearest = exams[0]
     return {
@@ -972,7 +1036,7 @@ class Context:
     @property
     def next_exam(self) -> Optional[dict]:
         if not hasattr(self, "_exam_cache"):
-            self._exam_cache = fetch_next_exam()
+            self._exam_cache = fetch_next_exam(now=self.dt)
         return self._exam_cache
 
     # -- Tiered exporters ------------------------------------------------

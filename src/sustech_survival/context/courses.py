@@ -138,13 +138,29 @@ def _load(course_query: str, now: Optional[datetime] = None) -> dict:
     return {"course": hits[0], "sessions": sessions, "zc_now": zc_now}
 
 
+def _session_end(s: dict) -> datetime:
+    """When a session ends (CHINA_TZ): the end of its last period.
+
+    Falls back to the end of its day when the period has no known time.
+    """
+    from sustech_survival.tis.exams import _PERIOD_TIMES
+
+    d = s["date"]
+    slot = _PERIOD_TIMES.get(s["periods"][1]) or _PERIOD_TIMES.get(s["periods"][0])
+    if slot:
+        hh, mm = (int(x) for x in slot.split("-")[1].split(":"))
+        return datetime(d.year, d.month, d.day, hh, mm, tzinfo=CHINA_TZ)
+    return datetime(d.year, d.month, d.day, tzinfo=CHINA_TZ) + timedelta(days=1)
+
+
 def course_when(course_query: str, when: str,
                 now: Optional[datetime] = None) -> dict:
     """Find the next / last session of a course.
 
     Args:
         course_query: fuzzy course name (Chinese or English substring).
-        when: "next" (>= today) or "last" (<= today).
+        when: "next" (the first session that has not ended yet) or
+            "last" (<= today).
         now: injectable "today" for tests.
 
     Returns:
@@ -153,9 +169,13 @@ def course_when(course_query: str, when: str,
     """
     data = _load(course_query, now)
     sessions = [s for s in data["sessions"] if s["course"] == data["course"]]
-    today = (now or _now()).date()
+    current = now or _now()
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=CHINA_TZ)
+    today = current.date()
     if when == "next":
-        upcoming = [s for s in sessions if s["date"] >= today]
+        # A session earlier today that has already ended is not "next".
+        upcoming = [s for s in sessions if _session_end(s) > current]
         pick = upcoming[0] if upcoming else None
         reason = "no more sessions this semester" if not pick else None
         edge = sessions[-1] if sessions else None  # last ever (for context)
