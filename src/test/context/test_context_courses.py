@@ -92,6 +92,22 @@ def test_next_weekly_lab():
     assert s["periods"] == (1, 8)
 
 
+def test_next_skips_a_session_that_ended_earlier_today():
+    # Wed 2026-09-09 (week 1) the lab runs periods 1-8, which end at 16:45.
+    evening = datetime(2026, 9, 9, 18, 0, tzinfo=CHINA_TZ)
+    s = _run("材料学综合实验I", "next", now=evening)["session"]
+    assert s["date"].isoformat() == "2026-09-16"  # Wed of week 2
+    assert s["week"] == 2
+
+
+def test_next_keeps_todays_session_until_it_ends():
+    for hour in (7, 12):  # before it starts, and while it is running
+        now = datetime(2026, 9, 9, hour, 0, tzinfo=CHINA_TZ)
+        s = _run("材料学综合实验I", "next", now=now)["session"]
+        assert s["date"].isoformat() == "2026-09-09"
+        assert s["week"] == 1
+
+
 def test_last_before_term_classes_start():
     res = _run("材料学综合实验I", "last")
     assert res["session"] is None

@@ -377,6 +377,21 @@ def test_override_time_changes_now():
 
 # --- fetch_next_exam (Q8: bb ddl + tis exams correlated in context) -----
 
+BEFORE_JUNE_EXAMS = datetime(2026, 6, 1, 9, 0, tzinfo=CHINA_TZ)
+
+
+def _exam(name: str, day: str, slot: str, ks: str = "1", js: str = "2") -> dict:
+    return {"KCMC": name, "KCDM": name, "KSRQ": day, "KSJTSJ": slot,
+            "KSJC": ks, "JSJC": js, "JXLMC": "A", "JXCDMC": "1"}
+
+
+def _next_exam(exams: list, now: datetime):
+    from sustech_survival.context import fetch_next_exam
+    with patch("sustech_survival.sso.TISAuth.ensure", return_value=(True, "")), \
+         patch("sustech_survival.tis.exams.fetch_exams", return_value=exams):
+        return fetch_next_exam(now=now)
+
+
 def test_fetch_next_exam_returns_nearest_exam():
     """fetch_next_exam should return the first (nearest-by-date) exam."""
     from sustech_survival.context import fetch_next_exam
@@ -392,7 +407,7 @@ def test_fetch_next_exam_returns_nearest_exam():
     ]
     with patch("sustech_survival.sso.TISAuth.ensure", return_value=(True, "")), \
          patch("sustech_survival.tis.exams.fetch_exams", return_value=fake_exams):
-        result = fetch_next_exam()
+        result = fetch_next_exam(now=BEFORE_JUNE_EXAMS)
 
     # The earliest date is 2026-06-15 (大学物理)
     assert result is not None
@@ -428,7 +443,7 @@ def test_fetch_next_exam_sorts_by_date():
     ]
     with patch("sustech_survival.sso.TISAuth.ensure", return_value=(True, "")), \
          patch("sustech_survival.tis.exams.fetch_exams", return_value=fake_exams):
-        result = fetch_next_exam()
+        result = fetch_next_exam(now=BEFORE_JUNE_EXAMS)
     assert result["name"] == "Earlier Exam"
 
 
@@ -473,3 +488,42 @@ def test_context_to_dict_normal_includes_next_exam():
     assert "next_exam" in d
     assert "next_deadline" in d
     assert "next_eval" in d
+
+
+def test_fetch_next_exam_skips_exams_that_have_ended():
+    """An exam on an earlier day is not the next exam (#43)."""
+    exams = [_exam("Past", "2026-06-15", "09:00-11:00"),
+             _exam("Future", "2026-06-20", "09:00-11:00")]
+    now = datetime(2026, 6, 16, 9, 0, tzinfo=CHINA_TZ)
+    assert _next_exam(exams, now)["name"] == "Future"
+
+
+def test_fetch_next_exam_uses_time_of_day():
+    """Same day: an exam that ended this morning is skipped, one in progress or
+    later today is kept, and same-day exams are ordered by start time (#43)."""
+    exams = [_exam("Afternoon", "2026-06-15", "14:00-16:00", "5", "6"),
+             _exam("Evening", "2026-06-15", "19:00-21:00", "11", "12"),
+             _exam("Morning", "2026-06-15", "09:00-11:00")]
+
+    def at(hour: int, minute: int = 0) -> datetime:
+        return datetime(2026, 6, 15, hour, minute, tzinfo=CHINA_TZ)
+
+    assert _next_exam(exams, at(8))["name"] == "Morning"
+    assert _next_exam(exams, at(10, 30))["name"] == "Morning"  # in progress
+    assert _next_exam(exams, at(12))["name"] == "Afternoon"
+    assert _next_exam(exams, at(16, 30))["name"] == "Evening"
+    assert _next_exam(exams, at(21, 30)) is None
+
+
+def test_fetch_next_exam_falls_back_to_period_times():
+    """Without KSJTSJ the end time comes from the JSJC period (第2节 ends 09:45)."""
+    exams = [_exam("Early", "2026-06-15", "", "1", "2"),
+             _exam("Late", "2026-06-15", "", "3", "4")]
+    assert _next_exam(exams, datetime(2026, 6, 15, 9, 40, tzinfo=CHINA_TZ))["name"] == "Early"
+    assert _next_exam(exams, datetime(2026, 6, 15, 9, 50, tzinfo=CHINA_TZ))["name"] == "Late"
+
+
+def test_fetch_next_exam_keeps_exam_without_a_time_until_its_day_ends():
+    exams = [_exam("Untimed", "2026-06-15", "", "", "")]
+    assert _next_exam(exams, datetime(2026, 6, 15, 23, 0, tzinfo=CHINA_TZ))["name"] == "Untimed"
+    assert _next_exam(exams, datetime(2026, 6, 16, 0, 0, tzinfo=CHINA_TZ)) is None
